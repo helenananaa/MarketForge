@@ -1,4 +1,5 @@
 pub mod account;
+pub mod actor;
 pub mod engine;
 pub mod jsonl;
 pub mod log;
@@ -11,6 +12,10 @@ pub mod spot;
 pub mod trading;
 
 pub use account::{ClearingError, FeeRatePpm, Money, PositionQty};
+pub use actor::{
+    AccountSnapshot, AccountSnapshots, ActorExecution, ActorExecutionResult, ActorRejectReason,
+    ActorSeq, MarketActor, MarketExecution, MarketStatus, RoomId,
+};
 pub use engine::OrderBook;
 pub use jsonl::{
     read_command_log_jsonl, read_event_log_jsonl, write_command_log_jsonl, write_event_log_jsonl,
