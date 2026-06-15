@@ -168,7 +168,9 @@ mod tests {
                 Trade {
                     trade_id: 0,
                     maker_order_id: 1,
+                    maker_account_id: 1001,
                     taker_order_id: 3,
+                    taker_account_id: 1003,
                     price_tick: 100,
                     qty: 3,
                     taker_side: Side::Buy,
@@ -176,7 +178,9 @@ mod tests {
                 Trade {
                     trade_id: 1,
                     maker_order_id: 2,
+                    maker_account_id: 1002,
                     taker_order_id: 3,
+                    taker_account_id: 1003,
                     price_tick: 101,
                     qty: 4,
                     taker_side: Side::Buy,

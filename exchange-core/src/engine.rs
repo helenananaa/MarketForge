@@ -206,7 +206,9 @@ impl OrderBook {
             events.push(Event::TradePrinted(Trade {
                 trade_id: self.take_trade_id(),
                 maker_order_id: resting.order_id,
+                maker_account_id: resting.account_id,
                 taker_order_id: incoming.order_id,
+                taker_account_id: incoming.account_id,
                 price_tick: resting.price_tick,
                 qty: fill_qty,
                 taker_side: incoming.side,
@@ -413,7 +415,9 @@ mod tests {
             vec![Trade {
                 trade_id: 0,
                 maker_order_id: 1,
+                maker_account_id: 1001,
                 taker_order_id: 2,
+                taker_account_id: 1002,
                 price_tick: 100,
                 qty: 4,
                 taker_side: Side::Buy,

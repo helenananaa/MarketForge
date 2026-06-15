@@ -62,7 +62,9 @@ pub struct Order {
 pub struct Trade {
     pub trade_id: u64,
     pub maker_order_id: OrderId,
+    pub maker_account_id: AccountId,
     pub taker_order_id: OrderId,
+    pub taker_account_id: AccountId,
     pub price_tick: PriceTick,
     pub qty: Qty,
     pub taker_side: Side,
