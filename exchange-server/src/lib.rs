@@ -11,7 +11,7 @@ use std::{
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderValue, Method, StatusCode},
     routing::{get, post},
 };
@@ -78,6 +78,7 @@ fn app(state: SharedState) -> Router {
             get(agent_status).post(start_agents),
         )
         .route("/rooms/{room_id}/agents/stop", post(stop_agents))
+        .route("/rooms/{room_id}/events", get(room_events))
         .route("/rooms/{room_id}/view", get(market_view))
         .route("/rooms/{room_id}/book", get(book_snapshot))
         .route("/rooms/{room_id}/accounts", get(account_snapshots))
@@ -183,6 +184,30 @@ async fn stop_agents(
         worker.stop();
     }
     Ok(Json(AgentWorkerStatus::stopped(room_id)))
+}
+
+async fn room_events(
+    State(state): State<SharedState>,
+    Path(room_id): Path<String>,
+    Query(query): Query<RoomEventsQuery>,
+) -> ApiResult<RoomEventsResponse> {
+    let state = lock_state(&state)?;
+    let history = state
+        .rooms
+        .execution_history(&room_id)
+        .map_err(api_error_from_room)?;
+    let limit = query.limit.unwrap_or(100).min(500);
+    let start = history.len().saturating_sub(limit);
+    let executions = history[start..]
+        .iter()
+        .cloned()
+        .map(RoomExecutionSummary::from_execution)
+        .collect();
+
+    Ok(Json(RoomEventsResponse {
+        room_id,
+        executions,
+    }))
 }
 
 async fn market_view(
@@ -417,6 +442,52 @@ pub struct ListRoomsResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomEventsQuery {
+    pub limit: Option<usize>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomEventsResponse {
+    pub room_id: String,
+    pub executions: Vec<RoomExecutionSummary>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomExecutionSummary {
+    pub room_id: String,
+    pub command_seq: u64,
+    pub status: MarketStatus,
+    pub accepted: bool,
+    pub reject_reason: Option<String>,
+    pub events: Vec<EventSummary>,
+    pub clearing_event_count: usize,
+}
+
+impl RoomExecutionSummary {
+    fn from_execution(execution: ActorExecution) -> Self {
+        let (accepted, reject_reason, events, clearing_event_count) = match execution.result {
+            ActorExecutionResult::Accepted(market_execution) => {
+                let (events, clearing_event_count) = summarize_market_execution(market_execution);
+                (true, None, events, clearing_event_count)
+            }
+            ActorExecutionResult::Rejected(reason) => {
+                (false, Some(reject_reason_to_string(reason)), Vec::new(), 0)
+            }
+        };
+
+        Self {
+            room_id: execution.room_id,
+            command_seq: execution.command_seq,
+            status: execution.status,
+            accepted,
+            reject_reason,
+            events,
+            clearing_event_count,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SubmitOrderRequest {
     pub participant_id: ParticipantId,
     pub account_id: AccountId,
@@ -484,27 +555,19 @@ impl OrderResponse {
         action: OrderAction,
         execution: ActorExecution,
     ) -> Self {
-        let (accepted, reject_reason, events, clearing_event_count) = match execution.result {
-            ActorExecutionResult::Accepted(market_execution) => {
-                let (events, clearing_event_count) = summarize_market_execution(market_execution);
-                (true, None, events, clearing_event_count)
-            }
-            ActorExecutionResult::Rejected(reason) => {
-                (false, Some(reject_reason_to_string(reason)), Vec::new(), 0)
-            }
-        };
+        let summary = RoomExecutionSummary::from_execution(execution);
 
         Self {
             participant_id,
             account_id,
             action,
-            room_id: execution.room_id,
-            command_seq: execution.command_seq,
-            status: execution.status,
-            accepted,
-            reject_reason,
-            events,
-            clearing_event_count,
+            room_id: summary.room_id,
+            command_seq: summary.command_seq,
+            status: summary.status,
+            accepted: summary.accepted,
+            reject_reason: summary.reject_reason,
+            events: summary.events,
+            clearing_event_count: summary.clearing_event_count,
         }
     }
 }
@@ -692,6 +755,14 @@ impl HttpTradingClient {
 
     pub fn market_view(&self, room_id: &str) -> Result<MarketView, HttpTradingError> {
         self.get_json(&format!("/rooms/{room_id}/view"))
+    }
+
+    pub fn room_events(
+        &self,
+        room_id: &str,
+        limit: usize,
+    ) -> Result<RoomEventsResponse, HttpTradingError> {
+        self.get_json(&format!("/rooms/{room_id}/events?limit={limit}"))
     }
 
     pub fn submit_order(
@@ -1008,6 +1079,77 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn room_events_include_submitted_orders() {
+        let app = new_app();
+        let scenario = serde_json::to_string(&spot_scenario("events-room")).unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(scenario))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let order = serde_json::json!({
+            "participant_id": "human-1",
+            "account_id": 20,
+            "action": {
+                "PlaceLimit": {
+                    "side": "Buy",
+                    "price_tick": 100,
+                    "qty": 2
+                }
+            }
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/events-room/orders")
+                    .header("content-type", "application/json")
+                    .body(Body::from(order.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/events-room/events?limit=10")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let events: RoomEventsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(events.room_id, "events-room");
+        assert_eq!(events.executions.len(), 1);
+        assert!(events.executions[0].accepted);
+        assert!(
+            events.executions[0]
+                .events
+                .iter()
+                .any(|event| matches!(event, EventSummary::OrderRested { .. }))
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

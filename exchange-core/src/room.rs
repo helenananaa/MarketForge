@@ -9,6 +9,7 @@ use crate::{
 #[derive(Debug, Default)]
 pub struct RoomManager {
     rooms: BTreeMap<RoomId, MarketActor>,
+    executions: BTreeMap<RoomId, Vec<ActorExecution>>,
 }
 
 impl RoomManager {
@@ -32,6 +33,8 @@ impl RoomManager {
         } = scenario.bootstrap().map_err(RoomManagerError::Scenario)?;
         let room_id = actor.room_id().to_string();
         self.rooms.insert(room_id.clone(), actor);
+        self.executions
+            .insert(room_id.clone(), seed_executions.clone());
 
         Ok(RoomBootstrap {
             room_id,
@@ -44,7 +47,12 @@ impl RoomManager {
         room_id: &str,
         command: Command,
     ) -> Result<ActorExecution, RoomManagerError> {
-        self.room_mut(room_id).map(|room| room.apply(command))
+        let execution = self.room_mut(room_id)?.apply(command);
+        self.executions
+            .entry(room_id.to_string())
+            .or_default()
+            .push(execution.clone());
+        Ok(execution)
     }
 
     pub fn pause_room(&mut self, room_id: &str) -> Result<(), RoomManagerError> {
@@ -98,6 +106,15 @@ impl RoomManager {
 
     pub fn account_snapshots(&self, room_id: &str) -> Result<AccountSnapshots, RoomManagerError> {
         self.room(room_id).map(MarketActor::account_snapshots)
+    }
+
+    pub fn execution_history(&self, room_id: &str) -> Result<&[ActorExecution], RoomManagerError> {
+        self.room(room_id)?;
+        Ok(self
+            .executions
+            .get(room_id)
+            .map(Vec::as_slice)
+            .unwrap_or_default())
     }
 }
 
@@ -190,6 +207,24 @@ mod tests {
                 .iter()
                 .any(|record| matches!(record.event, Event::TradePrinted(_)))
         );
+        assert_eq!(manager.execution_history("room-1").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn exposes_execution_history_for_room_timeline() {
+        let mut manager = RoomManager::new();
+        manager.create_room(spot_scenario("room-1")).unwrap();
+
+        assert_eq!(manager.execution_history("room-1").unwrap().len(), 1);
+
+        manager
+            .apply("room-1", limit(2, 20, Side::Buy, 100, 2))
+            .unwrap();
+
+        let history = manager.execution_history("room-1").unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].command_seq, 0);
+        assert_eq!(history[1].command_seq, 1);
     }
 
     #[test]

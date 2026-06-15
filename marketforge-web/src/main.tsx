@@ -57,6 +57,7 @@ type ApiEvent = {
   price_tick?: number;
   qty?: number;
   remaining_qty?: number;
+  unfilled_qty?: number;
   reason?: string;
 };
 type OrderResponse = {
@@ -69,6 +70,23 @@ type OrderResponse = {
   reject_reason: string | null;
   events: ApiEvent[];
   clearing_event_count: number;
+};
+type RoomExecutionSummary = {
+  room_id: string;
+  command_seq: number;
+  status: string;
+  accepted: boolean;
+  reject_reason: string | null;
+  events: ApiEvent[];
+  clearing_event_count: number;
+};
+type RoomEventsResponse = {
+  room_id: string;
+  executions: RoomExecutionSummary[];
+};
+type TimelineRow = {
+  execution: RoomExecutionSummary;
+  event?: ApiEvent;
 };
 type LogEntry = {
   id: string;
@@ -85,6 +103,7 @@ function App() {
   const [activeRoom, setActiveRoom] = useState("");
   const [view, setView] = useState<MarketView | null>(null);
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
+  const [roomEvents, setRoomEvents] = useState<RoomExecutionSummary[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -133,12 +152,14 @@ function App() {
       if (!room) {
         return;
       }
-      const [nextView, nextAgents] = await Promise.all([
+      const [nextView, nextAgents, nextEvents] = await Promise.all([
         api<MarketView>(`/rooms/${room}/view`),
         api<AgentStatus>(`/rooms/${room}/agents`),
+        api<RoomEventsResponse>(`/rooms/${room}/events?limit=80`),
       ]);
       setView(nextView);
       setAgentStatus(nextAgents);
+      setRoomEvents(nextEvents.executions);
     },
     [activeRoom, api],
   );
@@ -446,7 +467,7 @@ function App() {
             <button className="tab">策略</button>
           </div>
           <div className="bottom-content">
-            <ActivityTable logs={logs} />
+            <ActivityTable executions={roomEvents} logs={logs} />
             <AccountTable accounts={accounts} />
           </div>
         </section>
@@ -612,27 +633,92 @@ function TicketInput({
   );
 }
 
-function ActivityTable({ logs }: { logs: LogEntry[] }) {
+function ActivityTable({
+  executions,
+  logs,
+}: {
+  executions: RoomExecutionSummary[];
+  logs: LogEntry[];
+}) {
+  const rows = executions
+    .flatMap<TimelineRow>((execution) =>
+      execution.events.length === 0
+        ? [{ execution }]
+        : execution.events.map((event) => ({ execution, event })),
+    )
+    .reverse()
+    .slice(0, 9);
+
   return (
     <div className="data-table activity">
       <div className="data-head">
-        <span>时间</span>
-        <span>类型</span>
+        <span>序号</span>
+        <span>事件</span>
         <span>说明</span>
       </div>
-      {logs.length === 0 ? (
-        <div className="data-empty">暂无委托</div>
+      {rows.length === 0 && logs.length === 0 ? (
+        <div className="data-empty">暂无房间事件</div>
       ) : (
-        logs.slice(0, 7).map((log) => (
-          <div className="data-row" key={log.id}>
-            <span>{new Date(Number(log.id.split("-")[0])).toLocaleTimeString()}</span>
-            <strong className={log.level}>{log.level}</strong>
-            <span>{log.text}</span>
-          </div>
-        ))
+        <>
+          {rows.map(({ execution, event }, index) => (
+            <div
+              className="data-row"
+              key={`${execution.command_seq}-${event?.seq ?? "reject"}-${index}`}
+            >
+              <span>#{execution.command_seq}</span>
+              <strong className={eventTone(event, execution)}>{event?.type ?? "Rejected"}</strong>
+              <span>{eventDescription(event, execution)}</span>
+            </div>
+          ))}
+          {logs.slice(0, 2).map((log) => (
+            <div className="data-row" key={log.id}>
+              <span>local</span>
+              <strong className={log.level}>{log.level}</strong>
+              <span>{log.text}</span>
+            </div>
+          ))}
+        </>
       )}
     </div>
   );
+}
+
+function eventTone(event: ApiEvent | undefined, execution: RoomExecutionSummary) {
+  if (!execution.accepted || event?.type.includes("Rejected")) {
+    return "warn";
+  }
+  if (event?.type === "TradePrinted" || event?.type === "OrderFilled") {
+    return "ok";
+  }
+  return "info";
+}
+
+function eventDescription(event: ApiEvent | undefined, execution: RoomExecutionSummary) {
+  if (!event) {
+    return execution.reject_reason ?? "rejected";
+  }
+  switch (event.type) {
+    case "TradePrinted":
+      return `成交 ${event.qty} @ ${event.price_tick}, trade #${event.trade_id}`;
+    case "OrderRested":
+      return `挂单 #${event.order_id}, ${event.remaining_qty} @ ${event.price_tick}`;
+    case "OrderAccepted":
+      return `订单 #${event.order_id} 已接受`;
+    case "OrderFilled":
+      return `订单 #${event.order_id} 已完全成交`;
+    case "OrderPartiallyFilled":
+      return `订单 #${event.order_id} 部分成交，剩余 ${event.remaining_qty}`;
+    case "OrderCanceled":
+      return `订单 #${event.order_id} 已撤销，剩余 ${event.remaining_qty}`;
+    case "RiskRejected":
+    case "OrderRejected":
+    case "CancelRejected":
+      return `订单 #${event.order_id} 被拒绝：${event.reason}`;
+    case "OrderExpired":
+      return `订单 #${event.order_id} 过期，未成交 ${event.unfilled_qty}`;
+    default:
+      return event.type;
+  }
 }
 
 function AccountTable({ accounts }: { accounts: AnyAccount[] }) {
