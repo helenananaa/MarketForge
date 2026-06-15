@@ -1,5 +1,7 @@
 pub mod account;
 pub mod actor;
+pub mod agents;
+pub mod clock;
 pub mod engine;
 pub mod gateway;
 pub mod jsonl;
@@ -20,6 +22,11 @@ pub use actor::{
     AccountSnapshot, AccountSnapshots, ActorExecution, ActorExecutionResult, ActorRejectReason,
     ActorSeq, MarketActor, MarketExecution, MarketStatus, RoomId,
 };
+pub use agents::{
+    AgentParticipantStep, AgentRuntime, AgentStep, AgentTemplate, DcaTrader, DcaTraderConfig,
+    GridTrader, GridTraderConfig, NoiseTrader, NoiseTraderConfig,
+};
+pub use clock::SimulationClock;
 pub use engine::OrderBook;
 pub use gateway::{
     GatewayError, GatewayExecution, GatewayRequest, MarketView, OrderAction, OrderGateway,

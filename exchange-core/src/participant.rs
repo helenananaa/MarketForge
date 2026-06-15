@@ -31,7 +31,7 @@ pub trait Participant {
     fn decide(&mut self) -> Vec<OrderAction>;
 }
 
-pub fn run_participant_once<T: TradingApi, P: Participant>(
+pub fn run_participant_once<T: TradingApi, P: Participant + ?Sized>(
     api: &mut T,
     participant: &mut P,
 ) -> Result<Vec<GatewayExecution>, GatewayError> {
