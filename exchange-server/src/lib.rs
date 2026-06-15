@@ -1,6 +1,12 @@
 use std::{
+    collections::BTreeMap,
     net::SocketAddr,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+    time::Duration,
 };
 
 use axum::{
@@ -10,33 +16,40 @@ use axum::{
     routing::{get, post},
 };
 use exchange_core::{
-    AccountSnapshots, ActorExecution, ActorExecutionResult, ActorRejectReason, BookSnapshot, Event,
-    GatewayRequest, MarketExecution, MarketStatus, MarketView, OrderAction, OrderGateway, OrderId,
-    Participant, ParticipantId, RoomManager, RoomManagerError, ScenarioConfig, TradingApi,
-    model::AccountId,
+    AccountSnapshots, ActorExecution, ActorExecutionResult, ActorRejectReason, AgentTemplate,
+    BookSnapshot, Event, GatewayRequest, MarketExecution, MarketStatus, MarketView, OrderAction,
+    OrderGateway, OrderId, Participant, ParticipantId, RoomId, RoomManager, RoomManagerError,
+    ScenarioConfig, TradingApi, model::AccountId,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 type SharedState = Arc<Mutex<AppState>>;
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<ErrorResponse>)>;
 
-#[derive(Debug)]
 struct AppState {
     rooms: RoomManager,
     next_order_id: OrderId,
+    base_url: String,
+    agent_workers: BTreeMap<RoomId, AgentWorkerHandle>,
 }
 
-impl Default for AppState {
-    fn default() -> Self {
+impl AppState {
+    fn new(base_url: impl Into<String>) -> Self {
         Self {
             rooms: RoomManager::new(),
             next_order_id: 1,
+            base_url: base_url.into(),
+            agent_workers: BTreeMap::new(),
         }
     }
 }
 
 pub fn new_app() -> Router {
-    app(Arc::new(Mutex::new(AppState::default())))
+    new_app_with_base_url("http://127.0.0.1:3000")
+}
+
+pub fn new_app_with_base_url(base_url: impl Into<String>) -> Router {
+    app(Arc::new(Mutex::new(AppState::new(base_url))))
 }
 
 pub async fn serve(addr: SocketAddr) -> Result<(), std::io::Error> {
@@ -46,13 +59,19 @@ pub async fn serve(addr: SocketAddr) -> Result<(), std::io::Error> {
 }
 
 pub async fn serve_listener(listener: tokio::net::TcpListener) -> Result<(), std::io::Error> {
-    axum::serve(listener, new_app()).await
+    let addr = listener.local_addr()?;
+    axum::serve(listener, new_app_with_base_url(format!("http://{addr}"))).await
 }
 
 fn app(state: SharedState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/rooms", post(create_room).get(list_rooms))
+        .route(
+            "/rooms/{room_id}/agents",
+            get(agent_status).post(start_agents),
+        )
+        .route("/rooms/{room_id}/agents/stop", post(stop_agents))
         .route("/rooms/{room_id}/view", get(market_view))
         .route("/rooms/{room_id}/book", get(book_snapshot))
         .route("/rooms/{room_id}/accounts", get(account_snapshots))
@@ -68,18 +87,51 @@ async fn health() -> Json<HealthResponse> {
 
 async fn create_room(
     State(state): State<SharedState>,
-    Json(scenario): Json<ScenarioConfig>,
+    Json(payload): Json<serde_json::Value>,
 ) -> ApiResult<CreateRoomResponse> {
     let mut state = lock_state(&state)?;
+    let request = parse_create_room_payload(payload)?;
     let bootstrap = state
         .rooms
-        .create_room(scenario)
+        .create_room(request.scenario)
         .map_err(api_error_from_room)?;
+    let room_id = bootstrap.room_id;
+    let seed_execution_count = bootstrap.seed_executions.len();
+    let mut agent_status = AgentWorkerStatus::stopped(room_id.clone());
+
+    if !request.agents.is_empty() && request.autostart_agents.unwrap_or(true) {
+        agent_status = start_agent_worker_for_room(
+            &mut state,
+            room_id.clone(),
+            StartAgentsRequest {
+                agents: request.agents,
+                interval_ms: request.agent_interval_ms,
+            },
+        )?;
+    }
 
     Ok(Json(CreateRoomResponse {
-        room_id: bootstrap.room_id,
-        seed_execution_count: bootstrap.seed_executions.len(),
+        room_id,
+        seed_execution_count,
+        agent_worker: agent_status,
     }))
+}
+
+fn parse_create_room_payload(
+    payload: serde_json::Value,
+) -> Result<CreateRoomRequest, (StatusCode, Json<ErrorResponse>)> {
+    if payload.get("scenario").is_some() {
+        return serde_json::from_value(payload).map_err(api_error_from_json);
+    }
+
+    serde_json::from_value::<ScenarioConfig>(payload)
+        .map(|scenario| CreateRoomRequest {
+            scenario,
+            agents: Vec::new(),
+            agent_interval_ms: None,
+            autostart_agents: None,
+        })
+        .map_err(api_error_from_json)
 }
 
 async fn list_rooms(State(state): State<SharedState>) -> ApiResult<ListRoomsResponse> {
@@ -93,6 +145,37 @@ async fn list_rooms(State(state): State<SharedState>) -> ApiResult<ListRoomsResp
             .map(str::to_string)
             .collect(),
     }))
+}
+
+async fn start_agents(
+    State(state): State<SharedState>,
+    Path(room_id): Path<String>,
+    Json(request): Json<StartAgentsRequest>,
+) -> ApiResult<AgentWorkerStatus> {
+    let mut state = lock_state(&state)?;
+    state.rooms.status(&room_id).map_err(api_error_from_room)?;
+    start_agent_worker_for_room(&mut state, room_id, request).map(Json)
+}
+
+async fn agent_status(
+    State(state): State<SharedState>,
+    Path(room_id): Path<String>,
+) -> ApiResult<AgentWorkerStatus> {
+    let state = lock_state(&state)?;
+    state.rooms.status(&room_id).map_err(api_error_from_room)?;
+    Ok(Json(agent_status_for_room(&state, &room_id)))
+}
+
+async fn stop_agents(
+    State(state): State<SharedState>,
+    Path(room_id): Path<String>,
+) -> ApiResult<AgentWorkerStatus> {
+    let mut state = lock_state(&state)?;
+    state.rooms.status(&room_id).map_err(api_error_from_room)?;
+    if let Some(worker) = state.agent_workers.remove(&room_id) {
+        worker.stop();
+    }
+    Ok(Json(AgentWorkerStatus::stopped(room_id)))
 }
 
 async fn market_view(
@@ -213,6 +296,60 @@ fn lock_state(
     })
 }
 
+fn start_agent_worker_for_room(
+    state: &mut AppState,
+    room_id: RoomId,
+    request: StartAgentsRequest,
+) -> Result<AgentWorkerStatus, (StatusCode, Json<ErrorResponse>)> {
+    if request.agents.is_empty() {
+        return Ok(AgentWorkerStatus::stopped(room_id));
+    }
+
+    if let Some(worker) = state.agent_workers.remove(&room_id) {
+        worker.stop();
+    }
+
+    let interval_ms = request
+        .interval_ms
+        .unwrap_or(DEFAULT_AGENT_INTERVAL_MS)
+        .max(1);
+    let participant_ids = request
+        .agents
+        .iter()
+        .map(|template| template.participant_id().to_string())
+        .collect::<Vec<_>>();
+    let worker = AgentWorkerHandle::spawn(
+        state.base_url.clone(),
+        room_id.clone(),
+        request.agents,
+        Duration::from_millis(interval_ms),
+    )
+    .map_err(|error| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: error.to_string(),
+            }),
+        )
+    })?;
+    state.agent_workers.insert(room_id.clone(), worker);
+
+    Ok(AgentWorkerStatus {
+        room_id,
+        running: true,
+        interval_ms,
+        participants: participant_ids,
+    })
+}
+
+fn agent_status_for_room(state: &AppState, room_id: &str) -> AgentWorkerStatus {
+    state
+        .agent_workers
+        .get(room_id)
+        .map(|worker| worker.status(room_id.to_string()))
+        .unwrap_or_else(|| AgentWorkerStatus::stopped(room_id.to_string()))
+}
+
 fn api_error_from_room(error: RoomManagerError) -> (StatusCode, Json<ErrorResponse>) {
     let status = match error {
         RoomManagerError::RoomNotFound { .. } => StatusCode::NOT_FOUND,
@@ -225,6 +362,15 @@ fn api_error_from_room(error: RoomManagerError) -> (StatusCode, Json<ErrorRespon
         status,
         Json(ErrorResponse {
             error: format!("{error:?}"),
+        }),
+    )
+}
+
+fn api_error_from_json(error: serde_json::Error) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: format!("invalid room request: {error}"),
         }),
     )
 }
@@ -255,6 +401,7 @@ pub struct ErrorResponse {
 pub struct CreateRoomResponse {
     pub room_id: String,
     pub seed_execution_count: usize,
+    pub agent_worker: AgentWorkerStatus,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -267,6 +414,40 @@ pub struct SubmitOrderRequest {
     pub participant_id: ParticipantId,
     pub account_id: AccountId,
     pub action: OrderAction,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CreateRoomRequest {
+    pub scenario: ScenarioConfig,
+    #[serde(default)]
+    pub agents: Vec<AgentTemplate>,
+    pub agent_interval_ms: Option<u64>,
+    pub autostart_agents: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct StartAgentsRequest {
+    pub agents: Vec<AgentTemplate>,
+    pub interval_ms: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AgentWorkerStatus {
+    pub room_id: String,
+    pub running: bool,
+    pub interval_ms: u64,
+    pub participants: Vec<ParticipantId>,
+}
+
+impl AgentWorkerStatus {
+    fn stopped(room_id: String) -> Self {
+        Self {
+            room_id,
+            running: false,
+            interval_ms: 0,
+            participants: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -491,6 +672,13 @@ impl HttpTradingClient {
         self.post_json("/rooms", scenario)
     }
 
+    pub fn create_room_with_agents(
+        &self,
+        request: &CreateRoomRequest,
+    ) -> Result<CreateRoomResponse, HttpTradingError> {
+        self.post_json("/rooms", request)
+    }
+
     pub fn list_rooms(&self) -> Result<ListRoomsResponse, HttpTradingError> {
         self.get_json("/rooms")
     }
@@ -513,6 +701,22 @@ impl HttpTradingClient {
 
     pub fn resume_room(&self, room_id: &str) -> Result<RoomStatusResponse, HttpTradingError> {
         self.post_json(&format!("/rooms/{room_id}/resume"), &())
+    }
+
+    pub fn start_agents(
+        &self,
+        room_id: &str,
+        request: &StartAgentsRequest,
+    ) -> Result<AgentWorkerStatus, HttpTradingError> {
+        self.post_json(&format!("/rooms/{room_id}/agents"), request)
+    }
+
+    pub fn agent_status(&self, room_id: &str) -> Result<AgentWorkerStatus, HttpTradingError> {
+        self.get_json(&format!("/rooms/{room_id}/agents"))
+    }
+
+    pub fn stop_agents(&self, room_id: &str) -> Result<AgentWorkerStatus, HttpTradingError> {
+        self.post_json(&format!("/rooms/{room_id}/agents/stop"), &())
     }
 
     fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, HttpTradingError> {
@@ -598,6 +802,107 @@ pub fn run_remote_participant_once<P: Participant + ?Sized>(
         .collect()
 }
 
+const DEFAULT_AGENT_INTERVAL_MS: u64 = 1_000;
+
+struct AgentWorkerHandle {
+    stop: Arc<AtomicBool>,
+    interval_ms: u64,
+    participants: Vec<ParticipantId>,
+}
+
+impl AgentWorkerHandle {
+    fn spawn(
+        base_url: String,
+        room_id: RoomId,
+        templates: Vec<AgentTemplate>,
+        interval: Duration,
+    ) -> Result<Self, AgentWorkerError> {
+        if templates.is_empty() {
+            return Err(AgentWorkerError::NoAgents);
+        }
+
+        let interval_ms = interval.as_millis().try_into().unwrap_or(u64::MAX);
+        let participants = templates
+            .iter()
+            .map(|template| template.participant_id().to_string())
+            .collect::<Vec<_>>();
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
+        thread::Builder::new()
+            .name(format!("marketforge-agents-{room_id}"))
+            .spawn(move || {
+                let client = HttpTradingClient::new(base_url);
+                let mut participants = templates
+                    .into_iter()
+                    .map(AgentTemplate::into_participant)
+                    .collect::<Vec<_>>();
+
+                while !worker_stop.load(Ordering::Relaxed) {
+                    for participant in &mut participants {
+                        if worker_stop.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        let _ = run_remote_participant_once(&client, participant.as_mut());
+                    }
+                    sleep_until_next_step(interval, &worker_stop);
+                }
+            })
+            .map_err(AgentWorkerError::Spawn)?;
+
+        Ok(Self {
+            stop,
+            interval_ms,
+            participants,
+        })
+    }
+
+    fn status(&self, room_id: String) -> AgentWorkerStatus {
+        AgentWorkerStatus {
+            room_id,
+            running: !self.stop.load(Ordering::Relaxed),
+            interval_ms: self.interval_ms,
+            participants: self.participants.clone(),
+        }
+    }
+
+    fn stop(self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Drop for AgentWorkerHandle {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+fn sleep_until_next_step(interval: Duration, stop: &AtomicBool) {
+    let mut slept = Duration::ZERO;
+    while slept < interval && !stop.load(Ordering::Relaxed) {
+        let remaining = interval - slept;
+        let chunk = remaining.min(Duration::from_millis(50));
+        thread::sleep(chunk);
+        slept += chunk;
+    }
+}
+
+#[derive(Debug)]
+enum AgentWorkerError {
+    NoAgents,
+    Spawn(std::io::Error),
+}
+
+impl std::fmt::Display for AgentWorkerError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoAgents => formatter.write_str("agent worker needs at least one agent"),
+            Self::Spawn(error) => write!(formatter, "failed to spawn agent worker: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for AgentWorkerError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -606,9 +911,9 @@ mod tests {
         http::{Method, Request},
     };
     use exchange_core::{
-        DcaTrader, DcaTraderConfig, InstrumentConfig, MarketConfig, ParticipantConfig,
-        ParticipantKind, Side, SpotClearingConfig, SpotMarketConfig, SpotRiskConfig,
-        scenario::ScenarioAccount,
+        AgentTemplate, DcaTrader, DcaTraderConfig, InstrumentConfig, MarketConfig,
+        ParticipantConfig, ParticipantKind, Side, SpotClearingConfig, SpotMarketConfig,
+        SpotRiskConfig, scenario::ScenarioAccount,
     };
     use tower::ServiceExt;
 
@@ -633,6 +938,23 @@ mod tests {
             ],
             seed_orders: vec![],
         }
+    }
+
+    fn dca_template(room_id: &str, participant_id: &str, account_id: AccountId) -> AgentTemplate {
+        AgentTemplate::DcaTrader(DcaTraderConfig {
+            participant: ParticipantConfig {
+                participant_id: participant_id.to_string(),
+                kind: ParticipantKind::RuleAgent,
+                room_id: room_id.to_string(),
+                account_id,
+            },
+            interval_steps: 1,
+            order_qty: 2,
+            use_market_order: false,
+            limit_offset_ticks: 0,
+            fallback_price_tick: 100,
+            side: Side::Buy,
+        })
     }
 
     #[tokio::test]
@@ -723,5 +1045,48 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, EventSummary::OrderRested { .. }))
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn room_can_autostart_agent_worker_over_http() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            serve_listener(listener).await.unwrap();
+        });
+        let base_url = format!("http://{addr}");
+
+        let view = tokio::task::spawn_blocking(move || {
+            let client = HttpTradingClient::new(base_url);
+            let room = CreateRoomRequest {
+                scenario: spot_scenario("worker-ai"),
+                agents: vec![dca_template("worker-ai", "dca-worker", 20)],
+                agent_interval_ms: Some(20),
+                autostart_agents: Some(true),
+            };
+            let created = client.create_room_with_agents(&room).unwrap();
+            assert!(created.agent_worker.running);
+            assert_eq!(created.agent_worker.participants, vec!["dca-worker"]);
+
+            let mut view = client.market_view("worker-ai").unwrap();
+            for _ in 0..20 {
+                if !view.book.bids.is_empty() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(20));
+                view = client.market_view("worker-ai").unwrap();
+            }
+
+            let status = client.agent_status("worker-ai").unwrap();
+            assert!(status.running);
+            client.stop_agents("worker-ai").unwrap();
+            view
+        })
+        .await
+        .unwrap();
+
+        server.abort();
+        assert_eq!(view.book.bids[0].price_tick, 100);
+        assert!(view.book.bids[0].qty >= 2);
     }
 }

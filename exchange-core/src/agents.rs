@@ -76,6 +76,24 @@ impl AgentRuntime {
     }
 }
 
+impl AgentTemplate {
+    pub fn participant_id(&self) -> &str {
+        match self {
+            Self::NoiseTrader(config) => &config.participant.participant_id,
+            Self::DcaTrader(config) => &config.participant.participant_id,
+            Self::GridTrader(config) => &config.participant.participant_id,
+        }
+    }
+
+    pub fn into_participant(self) -> Box<dyn Participant> {
+        match self {
+            Self::NoiseTrader(config) => Box::new(NoiseTrader::new(config)),
+            Self::DcaTrader(config) => Box::new(DcaTrader::new(config)),
+            Self::GridTrader(config) => Box::new(GridTrader::new(config)),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentStep {
     pub step: u64,

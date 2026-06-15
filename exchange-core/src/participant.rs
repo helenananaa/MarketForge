@@ -25,7 +25,7 @@ pub struct ParticipantConfig {
     pub account_id: AccountId,
 }
 
-pub trait Participant {
+pub trait Participant: Send {
     fn config(&self) -> &ParticipantConfig;
     fn observe(&mut self, view: &MarketView);
     fn decide(&mut self) -> Vec<OrderAction>;
