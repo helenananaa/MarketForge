@@ -1,0 +1,8 @@
+[workspace]
+members = ["exchange-core"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://example.invalid/MarketForge"
