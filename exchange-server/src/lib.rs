@@ -12,7 +12,7 @@ use std::{
 use axum::{
     Json, Router,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderValue, Method, StatusCode},
     routing::{get, post},
 };
 use exchange_core::{
@@ -22,6 +22,7 @@ use exchange_core::{
     ScenarioConfig, TradingApi, model::AccountId,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use tower_http::cors::CorsLayer;
 
 type SharedState = Arc<Mutex<AppState>>;
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<ErrorResponse>)>;
@@ -64,6 +65,11 @@ pub async fn serve_listener(listener: tokio::net::TcpListener) -> Result<(), std
 }
 
 fn app(state: SharedState) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin("http://127.0.0.1:5173".parse::<HeaderValue>().unwrap())
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([axum::http::header::CONTENT_TYPE]);
+
     Router::new()
         .route("/health", get(health))
         .route("/rooms", post(create_room).get(list_rooms))
@@ -78,6 +84,7 @@ fn app(state: SharedState) -> Router {
         .route("/rooms/{room_id}/orders", post(submit_order))
         .route("/rooms/{room_id}/pause", post(pause_room))
         .route("/rooms/{room_id}/resume", post(resume_room))
+        .layer(cors)
         .with_state(state)
 }
 
