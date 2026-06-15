@@ -42,7 +42,7 @@ pub struct GatewayExecution {
     pub execution: ActorExecution,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MarketView {
     pub room_id: RoomId,
     pub status: MarketStatus,
