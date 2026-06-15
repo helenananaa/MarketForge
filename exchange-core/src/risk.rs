@@ -9,6 +9,8 @@ use crate::{
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SpotRiskConfig {
+    pub price_tick_size: Option<PriceTick>,
+    pub lot_size: Option<u64>,
     pub max_order_qty: Option<u64>,
     pub max_order_notional: Option<Money>,
     pub allow_short: bool,
@@ -16,6 +18,8 @@ pub struct SpotRiskConfig {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PerpRiskConfig {
+    pub price_tick_size: Option<PriceTick>,
+    pub lot_size: Option<u64>,
     pub max_order_qty: Option<u64>,
     pub max_order_notional: Option<Money>,
     pub max_abs_position_qty: Option<PositionQty>,
@@ -78,6 +82,8 @@ impl SpotRiskEngine {
         order: &NewOrder,
         context: RiskContext,
     ) -> Result<(), RiskRejectReason> {
+        check_tick_and_lot(order, self.config.price_tick_size, self.config.lot_size)?;
+
         if self
             .config
             .max_order_qty
@@ -155,6 +161,8 @@ impl PerpRiskEngine {
         order: &NewOrder,
         context: RiskContext,
     ) -> Result<(), RiskRejectReason> {
+        check_tick_and_lot(order, self.config.price_tick_size, self.config.lot_size)?;
+
         if self
             .config
             .max_order_qty
@@ -174,6 +182,26 @@ impl PerpRiskEngine {
 
         Ok(())
     }
+}
+
+fn check_tick_and_lot(
+    order: &NewOrder,
+    price_tick_size: Option<PriceTick>,
+    lot_size: Option<u64>,
+) -> Result<(), RiskRejectReason> {
+    if let Some(lot_size) = lot_size
+        && (lot_size == 0 || !order.qty.is_multiple_of(lot_size))
+    {
+        return Err(RiskRejectReason::InvalidLotSize);
+    }
+
+    if let (OrderKind::Limit { price_tick }, Some(price_tick_size)) = (order.kind, price_tick_size)
+        && (price_tick_size <= 0 || price_tick % price_tick_size != 0)
+    {
+        return Err(RiskRejectReason::InvalidPriceTick);
+    }
+
+    Ok(())
 }
 
 fn risk_price_tick(order: &NewOrder, context: RiskContext) -> Result<PriceTick, RiskRejectReason> {

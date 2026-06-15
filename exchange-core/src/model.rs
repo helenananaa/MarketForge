@@ -136,6 +136,8 @@ pub enum RiskRejectReason {
     MaxPositionExceeded,
     InsufficientMargin,
     UnsupportedMarketOrder,
+    InvalidPriceTick,
+    InvalidLotSize,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
