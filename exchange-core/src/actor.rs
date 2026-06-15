@@ -178,13 +178,13 @@ pub enum MarketExecution {
     Perp(PerpTradingExecution),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AccountSnapshot {
     Spot(SpotAccountSnapshot),
     Perp(PerpAccountSnapshot),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AccountSnapshots {
     Spot(Vec<SpotAccountSnapshot>),
     Perp(Vec<PerpAccountSnapshot>),

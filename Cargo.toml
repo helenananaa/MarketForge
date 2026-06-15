@@ -1,5 +1,5 @@
 [workspace]
-members = ["exchange-core"]
+members = ["exchange-core", "exchange-server"]
 resolver = "3"
 
 [workspace.package]
