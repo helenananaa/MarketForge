@@ -5,6 +5,7 @@ pub mod log;
 pub mod model;
 pub mod perp;
 pub mod replay;
+pub mod risk;
 pub mod spot;
 pub mod trading;
 
@@ -22,6 +23,7 @@ pub use perp::{
     PerpAccount, PerpAccountSnapshot, PerpAccountStore, PerpClearingConfig, PerpClearingEvent,
 };
 pub use replay::{LoggedOrderBook, ReplayEngine, ReplayReport};
+pub use risk::{PerpRiskConfig, PerpRiskEngine, RiskContext, SpotRiskConfig, SpotRiskEngine};
 pub use spot::{
     SpotAccount, SpotAccountSnapshot, SpotAccountStore, SpotClearingConfig, SpotClearingEvent,
 };

@@ -48,6 +48,15 @@ pub enum Command {
     CancelOrder(CancelOrder),
 }
 
+impl Command {
+    pub fn order_id(&self) -> OrderId {
+        match self {
+            Self::NewOrder(order) => order.order_id,
+            Self::CancelOrder(cancel) => cancel.order_id,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Order {
     pub order_id: OrderId,
@@ -78,6 +87,10 @@ pub enum Event {
     OrderRejected {
         order_id: OrderId,
         reason: RejectReason,
+    },
+    RiskRejected {
+        order_id: OrderId,
+        reason: RiskRejectReason,
     },
     TradePrinted(Trade),
     OrderPartiallyFilled {
@@ -111,6 +124,18 @@ pub enum RejectReason {
     DuplicateOrderId,
     InvalidQuantity,
     InvalidPrice,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RiskRejectReason {
+    AccountNotFound,
+    InsufficientCash,
+    InsufficientPosition,
+    MaxOrderQtyExceeded,
+    MaxOrderNotionalExceeded,
+    MaxPositionExceeded,
+    InsufficientMargin,
+    UnsupportedMarketOrder,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

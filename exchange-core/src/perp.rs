@@ -152,6 +152,10 @@ impl PerpAccountStore {
         self.accounts.get(&account_id)
     }
 
+    pub fn config(&self) -> PerpClearingConfig {
+        self.config
+    }
+
     pub fn account_snapshot(&self, account_id: AccountId) -> Option<PerpAccountSnapshot> {
         self.account(account_id)
             .map(|account| account.snapshot(self.config, self.mark_price_tick))

@@ -84,6 +84,15 @@ impl SpotAccountStore {
         account_id: AccountId,
         cash_balance: Money,
     ) -> SpotAccountSnapshot {
+        self.create_account_with_position(account_id, cash_balance, 0)
+    }
+
+    pub fn create_account_with_position(
+        &mut self,
+        account_id: AccountId,
+        cash_balance: Money,
+        position_qty: PositionQty,
+    ) -> SpotAccountSnapshot {
         let account = self.accounts.entry(account_id).or_insert(SpotAccount {
             account_id,
             cash_balance: 0,
@@ -91,11 +100,16 @@ impl SpotAccountStore {
             fees_paid: 0,
         });
         account.cash_balance = cash_balance;
+        account.position_qty = position_qty;
         account.snapshot()
     }
 
     pub fn account(&self, account_id: AccountId) -> Option<&SpotAccount> {
         self.accounts.get(&account_id)
+    }
+
+    pub fn config(&self) -> SpotClearingConfig {
+        self.config
     }
 
     pub fn account_snapshot(&self, account_id: AccountId) -> Option<SpotAccountSnapshot> {
