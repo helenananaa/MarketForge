@@ -93,7 +93,7 @@ pub enum PerpClearingEvent {
     },
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PerpAccountStore {
     accounts: BTreeMap<AccountId, PerpAccount>,
     config: PerpClearingConfig,

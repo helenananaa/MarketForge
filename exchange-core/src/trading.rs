@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{
     OrderBook,
     account::{ClearingError, Money},
@@ -8,7 +10,7 @@ use crate::{
     spot::{SpotAccountSnapshot, SpotAccountStore, SpotClearingConfig, SpotClearingEvent},
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SpotTradingEngine {
     book: OrderBook,
     accounts: SpotAccountStore,
@@ -130,7 +132,7 @@ pub struct SpotTradingExecution {
     pub clearing_events: Vec<SpotClearingEvent>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PerpTradingEngine {
     book: OrderBook,
     accounts: PerpAccountStore,

@@ -1,11 +1,13 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
+use serde::{Deserialize, Serialize};
+
 use crate::model::{
     BookLevel, BookSnapshot, CancelOrder, CancelRejectReason, Command, Event, NewOrder, Order,
     OrderId, OrderKind, PriceTick, Qty, RejectReason, Side, Trade,
 };
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct OrderBook {
     bids: BTreeMap<PriceTick, VecDeque<Order>>,
     asks: BTreeMap<PriceTick, VecDeque<Order>>,
@@ -15,7 +17,7 @@ pub struct OrderBook {
     next_trade_id: u64,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct OrderLocation {
     side: Side,
     price_tick: PriceTick,

@@ -151,7 +151,7 @@ impl MarketConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum MarketEngine {
     Spot(SpotTradingEngine),
     Perp(PerpTradingEngine),

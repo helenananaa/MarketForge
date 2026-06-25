@@ -94,7 +94,7 @@ type LogEntry = {
   text: string;
 };
 
-const API_DEFAULT = "http://127.0.0.1:3000";
+const API_DEFAULT = "http://127.0.0.1:57305";
 const ROOM_DEFAULT = "demo-web";
 
 function App() {

@@ -65,7 +65,7 @@ pub enum SpotClearingEvent {
     },
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SpotAccountStore {
     accounts: BTreeMap<AccountId, SpotAccount>,
     config: SpotClearingConfig,

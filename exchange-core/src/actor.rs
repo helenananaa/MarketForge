@@ -19,7 +19,7 @@ pub enum MarketStatus {
     Closed,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MarketActor {
     room_id: RoomId,
     config: MarketConfig,
@@ -73,6 +73,10 @@ impl MarketActor {
 
     pub fn close(&mut self) {
         self.status = MarketStatus::Closed;
+    }
+
+    pub fn restore_status(&mut self, status: MarketStatus) {
+        self.status = status;
     }
 
     pub fn create_account(

@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 axum = "0.8"
 exchange-core = { path = "../exchange-core" }
+postgres = { version = "0.19", features = ["with-serde_json-1"] }
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

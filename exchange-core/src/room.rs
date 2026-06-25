@@ -6,7 +6,7 @@ use crate::{
     scenario::{ScenarioBootstrap, ScenarioConfig, ScenarioError},
 };
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct RoomManager {
     rooms: BTreeMap<RoomId, MarketActor>,
     executions: BTreeMap<RoomId, Vec<ActorExecution>>,
@@ -42,6 +42,21 @@ impl RoomManager {
         })
     }
 
+    pub fn restore_room(
+        &mut self,
+        actor: MarketActor,
+        executions: Vec<ActorExecution>,
+    ) -> Result<(), RoomManagerError> {
+        let room_id = actor.room_id().to_string();
+        if self.rooms.contains_key(&room_id) {
+            return Err(RoomManagerError::RoomAlreadyExists { room_id });
+        }
+
+        self.rooms.insert(room_id.clone(), actor);
+        self.executions.insert(room_id, executions);
+        Ok(())
+    }
+
     pub fn apply(
         &mut self,
         room_id: &str,
@@ -65,6 +80,15 @@ impl RoomManager {
 
     pub fn close_room(&mut self, room_id: &str) -> Result<(), RoomManagerError> {
         self.room_mut(room_id).map(|room| room.close())
+    }
+
+    pub fn restore_room_status(
+        &mut self,
+        room_id: &str,
+        status: MarketStatus,
+    ) -> Result<(), RoomManagerError> {
+        self.room_mut(room_id)
+            .map(|room| room.restore_status(status))
     }
 
     pub fn room(&self, room_id: &str) -> Result<&MarketActor, RoomManagerError> {

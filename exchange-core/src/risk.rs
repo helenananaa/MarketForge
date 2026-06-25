@@ -31,7 +31,7 @@ pub struct RiskContext {
     pub best_ask: Option<PriceTick>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SpotRiskEngine {
     config: SpotRiskConfig,
 }
@@ -105,7 +105,7 @@ impl SpotRiskEngine {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PerpRiskEngine {
     config: PerpRiskConfig,
 }
