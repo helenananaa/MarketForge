@@ -1,8 +1,9 @@
-use std::{collections::BTreeMap, env, error::Error, fmt, thread};
+use std::{cmp::Reverse, collections::BTreeMap, env, error::Error, fmt, thread};
 
 use exchange_core::{
-    ActorExecution, Command, MarketActor, MarketStatus, RoomBootstrap, ScenarioConfig,
+    ActorExecution, Command, MarketStatus, RoomBootstrap, ScenarioConfig, SimulationRoom,
     model::{AccountId, OrderKind, Side},
+    transfer::{VenueTransfer, VenueTransferKind, VenueTransferRejectReason, VenueTransferStatus},
 };
 use postgres::{Client, NoTls};
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,16 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 2,
         name: "access_control",
         sql: include_str!("../migrations/0002_access_control.sql"),
+    },
+    SchemaMigration {
+        version: 3,
+        name: "instrument_projection_scope",
+        sql: include_str!("../migrations/0003_instrument_projection_scope.sql"),
+    },
+    SchemaMigration {
+        version: 4,
+        name: "transfer_journal",
+        sql: include_str!("../migrations/0004_transfer_journal.sql"),
     },
 ];
 
@@ -42,6 +53,18 @@ pub trait JournalStore: Send {
         record: &JournalExecution,
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError>;
+
+    fn append_transfers(
+        &mut self,
+        _records: &[JournalTransfer],
+        _snapshot: Option<&JournalSnapshot>,
+    ) -> Result<(), JournalError> {
+        Ok(())
+    }
+
+    fn append_snapshot(&mut self, _snapshot: &JournalSnapshot) -> Result<(), JournalError> {
+        Ok(())
+    }
 
     fn update_room_status(
         &mut self,
@@ -70,6 +93,7 @@ pub trait JournalStore: Send {
         &mut self,
         _user_id: &str,
         _room_id: &str,
+        _instrument_id: Option<&str>,
         _account_id: Option<AccountId>,
         _limit: usize,
     ) -> Result<Vec<OrderProjection>, JournalError> {
@@ -80,6 +104,7 @@ pub trait JournalStore: Send {
         &mut self,
         _user_id: &str,
         _room_id: &str,
+        _instrument_id: Option<&str>,
         _account_id: Option<AccountId>,
         _limit: usize,
     ) -> Result<Vec<TradeProjection>, JournalError> {
@@ -90,6 +115,7 @@ pub trait JournalStore: Send {
         &mut self,
         _user_id: &str,
         _room_id: &str,
+        _instrument_id: Option<&str>,
         _limit: usize,
     ) -> Result<Vec<MarketTickProjection>, JournalError> {
         Ok(Vec::new())
@@ -99,6 +125,7 @@ pub trait JournalStore: Send {
         &mut self,
         _user_id: &str,
         _room_id: &str,
+        _instrument_id: Option<&str>,
         _account_id: Option<AccountId>,
         _limit: usize,
     ) -> Result<Vec<AccountLedgerProjection>, JournalError> {
@@ -109,9 +136,20 @@ pub trait JournalStore: Send {
         &mut self,
         _user_id: &str,
         _room_id: &str,
+        _instrument_id: Option<&str>,
         _account_id: Option<AccountId>,
         _limit: usize,
     ) -> Result<Vec<PositionSnapshotProjection>, JournalError> {
+        Ok(Vec::new())
+    }
+
+    fn query_transfers(
+        &mut self,
+        _user_id: &str,
+        _room_id: &str,
+        _account_id: Option<AccountId>,
+        _limit: usize,
+    ) -> Result<Vec<VenueTransfer>, JournalError> {
         Ok(Vec::new())
     }
 }
@@ -174,6 +212,21 @@ impl JournalExecution {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct JournalTransfer {
+    pub room_id: String,
+    pub transfer: VenueTransfer,
+}
+
+impl JournalTransfer {
+    pub fn recorded(room_id: impl Into<String>, transfer: VenueTransfer) -> Self {
+        Self {
+            room_id: room_id.into(),
+            transfer,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct JournalRecovery {
     pub rooms: Vec<JournalRoom>,
@@ -192,12 +245,13 @@ pub struct JournalRoom {
 pub struct JournalSnapshot {
     pub room_id: String,
     pub command_seq: u64,
-    pub actor: MarketActor,
+    pub actor: SimulationRoom,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OrderProjection {
     pub room_id: String,
+    pub instrument_id: String,
     pub order_id: i64,
     pub account_id: i64,
     pub participant_id: Option<String>,
@@ -214,6 +268,7 @@ pub struct OrderProjection {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TradeProjection {
     pub room_id: String,
+    pub instrument_id: String,
     pub trade_id: i64,
     pub command_seq: i64,
     pub event_seq: i64,
@@ -229,6 +284,7 @@ pub struct TradeProjection {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MarketTickProjection {
     pub room_id: String,
+    pub instrument_id: String,
     pub command_seq: i64,
     pub event_seq: i64,
     pub trade_id: i64,
@@ -240,6 +296,7 @@ pub struct MarketTickProjection {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AccountLedgerProjection {
     pub room_id: String,
+    pub instrument_id: String,
     pub command_seq: i64,
     pub ledger_seq: i64,
     pub market_kind: String,
@@ -266,6 +323,7 @@ pub struct AccountLedgerProjection {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PositionSnapshotProjection {
     pub room_id: String,
+    pub instrument_id: String,
     pub command_seq: i64,
     pub ledger_seq: i64,
     pub market_kind: String,
@@ -285,6 +343,7 @@ pub struct PositionSnapshotProjection {
 pub struct InMemoryJournalStore {
     rooms: Vec<StoredRoom>,
     executions: Vec<JournalExecution>,
+    transfers: BTreeMap<(String, u64), VenueTransfer>,
     snapshots: Vec<JournalSnapshot>,
     room_members: BTreeMap<(String, String), String>,
     account_owners: BTreeMap<(String, AccountId), String>,
@@ -356,6 +415,28 @@ impl JournalStore for InMemoryJournalStore {
         Ok(())
     }
 
+    fn append_transfers(
+        &mut self,
+        records: &[JournalTransfer],
+        snapshot: Option<&JournalSnapshot>,
+    ) -> Result<(), JournalError> {
+        for record in records {
+            self.transfers.insert(
+                (record.room_id.clone(), record.transfer.transfer_id),
+                record.transfer.clone(),
+            );
+        }
+        if let Some(snapshot) = snapshot {
+            self.snapshots.push(snapshot.clone());
+        }
+        Ok(())
+    }
+
+    fn append_snapshot(&mut self, snapshot: &JournalSnapshot) -> Result<(), JournalError> {
+        self.snapshots.push(snapshot.clone());
+        Ok(())
+    }
+
     fn user_can_access_room(&mut self, user_id: &str, room_id: &str) -> Result<bool, JournalError> {
         Ok(self
             .room_members
@@ -397,6 +478,7 @@ impl JournalStore for InMemoryJournalStore {
         &mut self,
         _user_id: &str,
         _room_id: &str,
+        _instrument_id: Option<&str>,
         _account_id: Option<AccountId>,
         _limit: usize,
     ) -> Result<Vec<OrderProjection>, JournalError> {
@@ -407,6 +489,7 @@ impl JournalStore for InMemoryJournalStore {
         &mut self,
         _user_id: &str,
         _room_id: &str,
+        _instrument_id: Option<&str>,
         _account_id: Option<AccountId>,
         _limit: usize,
     ) -> Result<Vec<TradeProjection>, JournalError> {
@@ -417,6 +500,7 @@ impl JournalStore for InMemoryJournalStore {
         &mut self,
         _user_id: &str,
         _room_id: &str,
+        _instrument_id: Option<&str>,
         _limit: usize,
     ) -> Result<Vec<MarketTickProjection>, JournalError> {
         Ok(Vec::new())
@@ -426,6 +510,7 @@ impl JournalStore for InMemoryJournalStore {
         &mut self,
         _user_id: &str,
         _room_id: &str,
+        _instrument_id: Option<&str>,
         _account_id: Option<AccountId>,
         _limit: usize,
     ) -> Result<Vec<AccountLedgerProjection>, JournalError> {
@@ -436,10 +521,32 @@ impl JournalStore for InMemoryJournalStore {
         &mut self,
         _user_id: &str,
         _room_id: &str,
+        _instrument_id: Option<&str>,
         _account_id: Option<AccountId>,
         _limit: usize,
     ) -> Result<Vec<PositionSnapshotProjection>, JournalError> {
         Ok(Vec::new())
+    }
+
+    fn query_transfers(
+        &mut self,
+        _user_id: &str,
+        room_id: &str,
+        account_id: Option<AccountId>,
+        limit: usize,
+    ) -> Result<Vec<VenueTransfer>, JournalError> {
+        let mut transfers = self
+            .transfers
+            .iter()
+            .filter(|((transfer_room_id, _), transfer)| {
+                transfer_room_id == room_id
+                    && account_id.is_none_or(|account_id| transfer.account_id == account_id)
+            })
+            .map(|(_, transfer)| transfer.clone())
+            .collect::<Vec<_>>();
+        transfers.sort_by_key(|transfer| Reverse(transfer.transfer_id));
+        transfers.truncate(limit.clamp(1, 500));
+        Ok(transfers)
     }
 }
 
@@ -479,7 +586,7 @@ impl PostgresJournalStore {
 
     fn ensure_schema(&mut self) -> Result<(), JournalError> {
         let database_url = self.database_url.clone();
-        run_postgres(database_url, |client| run_schema_migrations(client))
+        run_postgres(database_url, run_schema_migrations)
     }
 
     fn insert_execution(
@@ -533,6 +640,11 @@ impl PostgresJournalStore {
         record: &JournalExecution,
     ) -> Result<(), JournalError> {
         let command_seq = i64_from_u64(record.command_seq, "command_seq")?;
+        let instrument_id = record
+            .execution
+            .instrument_id
+            .as_deref()
+            .unwrap_or("legacy-primary");
 
         if let Command::NewOrder(order) = &record.command {
             let order_id = i64_from_u64(order.order_id, "order_id")?;
@@ -547,6 +659,7 @@ impl PostgresJournalStore {
                 r#"
                 INSERT INTO marketforge_orders (
                     room_id,
+                    instrument_id,
                     order_id,
                     account_id,
                     participant_id,
@@ -559,8 +672,8 @@ impl PostgresJournalStore {
                     created_command_seq,
                     updated_command_seq
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'submitted', $8, $9, $9)
-                ON CONFLICT (room_id, order_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'submitted', $9, $10, $10)
+                ON CONFLICT (room_id, instrument_id, order_id)
                 DO UPDATE SET
                     account_id = EXCLUDED.account_id,
                     participant_id = EXCLUDED.participant_id,
@@ -575,6 +688,7 @@ impl PostgresJournalStore {
                 "#,
                 &[
                     &record.room_id,
+                    &instrument_id,
                     &order_id,
                     &account_id,
                     &record.participant_id,
@@ -615,6 +729,7 @@ impl PostgresJournalStore {
                     r#"
                     INSERT INTO marketforge_trades (
                         room_id,
+                        instrument_id,
                         trade_id,
                         command_seq,
                         event_seq,
@@ -626,8 +741,8 @@ impl PostgresJournalStore {
                         qty,
                         taker_side
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                    ON CONFLICT (room_id, trade_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    ON CONFLICT (room_id, instrument_id, trade_id)
                     DO UPDATE SET
                         command_seq = EXCLUDED.command_seq,
                         event_seq = EXCLUDED.event_seq,
@@ -641,6 +756,7 @@ impl PostgresJournalStore {
                     "#,
                     &[
                         &record.room_id,
+                        &instrument_id,
                         &trade_id,
                         &command_seq,
                         &event_seq,
@@ -659,6 +775,7 @@ impl PostgresJournalStore {
                     r#"
                     INSERT INTO marketforge_market_ticks (
                         room_id,
+                        instrument_id,
                         command_seq,
                         event_seq,
                         trade_id,
@@ -666,7 +783,7 @@ impl PostgresJournalStore {
                         qty,
                         taker_side
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                     ON CONFLICT (room_id, command_seq, event_seq)
                     DO UPDATE SET
                         trade_id = EXCLUDED.trade_id,
@@ -676,6 +793,7 @@ impl PostgresJournalStore {
                     "#,
                     &[
                         &record.room_id,
+                        &instrument_id,
                         &command_seq,
                         &event_seq,
                         &trade_id,
@@ -698,6 +816,11 @@ impl PostgresJournalStore {
         event: &EventSummary,
     ) -> Result<(), JournalError> {
         let command_seq = i64_from_u64(record.command_seq, "command_seq")?;
+        let instrument_id = record
+            .execution
+            .instrument_id
+            .as_deref()
+            .unwrap_or("legacy-primary");
         let event_seq = i64_from_u64(event_seq(event), "event_seq")?;
         let order_id = event_order_id(event)
             .map(|order_id| i64_from_u64(order_id, "order_id"))
@@ -716,6 +839,7 @@ impl PostgresJournalStore {
             r#"
             INSERT INTO marketforge_order_events (
                 room_id,
+                instrument_id,
                 command_seq,
                 event_seq,
                 event_type,
@@ -726,7 +850,7 @@ impl PostgresJournalStore {
                 remaining_qty,
                 payload_json
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (room_id, command_seq, event_seq)
             DO UPDATE SET
                 event_type = EXCLUDED.event_type,
@@ -739,6 +863,7 @@ impl PostgresJournalStore {
             "#,
             &[
                 &record.room_id,
+                &instrument_id,
                 &command_seq,
                 &event_seq,
                 &event_type(event),
@@ -766,6 +891,11 @@ impl PostgresJournalStore {
 
         let order_id = i64_from_u64(order_id, "order_id")?;
         let command_seq = i64_from_u64(record.command_seq, "command_seq")?;
+        let instrument_id = record
+            .execution
+            .instrument_id
+            .as_deref()
+            .unwrap_or("legacy-primary");
         let remaining_qty = remaining_qty
             .map(|qty| i64_from_u64(qty, "remaining_qty"))
             .transpose()?;
@@ -774,14 +904,15 @@ impl PostgresJournalStore {
             r#"
             UPDATE marketforge_orders
             SET
-                status = $3,
-                remaining_qty = COALESCE($4, remaining_qty),
-                updated_command_seq = $5,
+                status = $4,
+                remaining_qty = COALESCE($5, remaining_qty),
+                updated_command_seq = $6,
                 updated_at = now()
-            WHERE room_id = $1 AND order_id = $2
+            WHERE room_id = $1 AND instrument_id = $2 AND order_id = $3
             "#,
             &[
                 &record.room_id,
+                &instrument_id,
                 &order_id,
                 &status,
                 &remaining_qty,
@@ -798,6 +929,11 @@ impl PostgresJournalStore {
         record: &JournalExecution,
     ) -> Result<(), JournalError> {
         let command_seq = i64_from_u64(record.command_seq, "command_seq")?;
+        let instrument_id = record
+            .execution
+            .instrument_id
+            .as_deref()
+            .unwrap_or("legacy-primary");
 
         for (index, event) in record.execution.clearing_events.iter().enumerate() {
             let rows = clearing_ledger_rows(index, event)?;
@@ -806,6 +942,7 @@ impl PostgresJournalStore {
                     r#"
                     INSERT INTO marketforge_account_ledger (
                         room_id,
+                        instrument_id,
                         command_seq,
                         ledger_seq,
                         market_kind,
@@ -830,7 +967,7 @@ impl PostgresJournalStore {
                         payload_json
                     )
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+                            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
                     ON CONFLICT (room_id, command_seq, ledger_seq)
                     DO UPDATE SET
                         market_kind = EXCLUDED.market_kind,
@@ -856,6 +993,7 @@ impl PostgresJournalStore {
                     "#,
                     &[
                         &record.room_id,
+                        &instrument_id,
                         &command_seq,
                         &row.ledger_seq,
                         &row.market_kind,
@@ -886,6 +1024,7 @@ impl PostgresJournalStore {
                     r#"
                     INSERT INTO marketforge_position_snapshots (
                         room_id,
+                        instrument_id,
                         command_seq,
                         ledger_seq,
                         market_kind,
@@ -902,7 +1041,7 @@ impl PostgresJournalStore {
                         payload_json
                     )
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                            $11, $12, $13, $14, $15)
+                            $11, $12, $13, $14, $15, $16)
                     ON CONFLICT (room_id, command_seq, ledger_seq)
                     DO UPDATE SET
                         market_kind = EXCLUDED.market_kind,
@@ -920,6 +1059,7 @@ impl PostgresJournalStore {
                     "#,
                     &[
                         &record.room_id,
+                        &instrument_id,
                         &command_seq,
                         &row.ledger_seq,
                         &row.market_kind,
@@ -959,6 +1099,130 @@ impl PostgresJournalStore {
             DO UPDATE SET actor_json = EXCLUDED.actor_json, created_at = now()
             "#,
             &[&snapshot.room_id, &command_seq, &actor_json],
+        )
+        .map_err(JournalError::Postgres)?;
+
+        Ok(())
+    }
+
+    fn insert_transfer(
+        tx: &mut postgres::Transaction<'_>,
+        record: &JournalTransfer,
+    ) -> Result<(), JournalError> {
+        let transfer = &record.transfer;
+        let transfer_id = i64_from_u64(transfer.transfer_id, "transfer_id")?;
+        let event_seq = transfer_event_seq(transfer)?;
+        let account_id = i64_from_u64(transfer.account_id, "account_id")?;
+        let amount = i64_from_i128(transfer.amount, "amount")?;
+        let requested_at_step = i64_from_u64(transfer.requested_at_step, "requested_at_step")?;
+        let available_after_step =
+            i64_from_u64(transfer.available_after_step, "available_after_step")?;
+        let completed_at_step = transfer
+            .completed_at_step
+            .map(|step| i64_from_u64(step, "completed_at_step"))
+            .transpose()?;
+        let payload_json = serde_json::to_value(transfer).map_err(JournalError::Serialize)?;
+        let kind = transfer_kind_name(transfer.kind);
+        let status = transfer_status_name(transfer.status);
+        let reject_reason = transfer
+            .reject_reason
+            .as_ref()
+            .map(transfer_reject_reason_name);
+
+        tx.execute(
+            r#"
+            INSERT INTO marketforge_transfer_events (
+                room_id,
+                transfer_id,
+                event_seq,
+                kind,
+                account_id,
+                asset_id,
+                amount,
+                requested_at_step,
+                available_after_step,
+                completed_at_step,
+                status,
+                reject_reason,
+                payload_json
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ON CONFLICT (room_id, transfer_id, event_seq)
+            DO UPDATE SET
+                kind = EXCLUDED.kind,
+                account_id = EXCLUDED.account_id,
+                asset_id = EXCLUDED.asset_id,
+                amount = EXCLUDED.amount,
+                requested_at_step = EXCLUDED.requested_at_step,
+                available_after_step = EXCLUDED.available_after_step,
+                completed_at_step = EXCLUDED.completed_at_step,
+                status = EXCLUDED.status,
+                reject_reason = EXCLUDED.reject_reason,
+                payload_json = EXCLUDED.payload_json
+            "#,
+            &[
+                &record.room_id,
+                &transfer_id,
+                &event_seq,
+                &kind,
+                &account_id,
+                &transfer.asset_id,
+                &amount,
+                &requested_at_step,
+                &available_after_step,
+                &completed_at_step,
+                &status,
+                &reject_reason,
+                &payload_json,
+            ],
+        )
+        .map_err(JournalError::Postgres)?;
+
+        tx.execute(
+            r#"
+            INSERT INTO marketforge_transfers (
+                room_id,
+                transfer_id,
+                kind,
+                account_id,
+                asset_id,
+                amount,
+                requested_at_step,
+                available_after_step,
+                completed_at_step,
+                status,
+                reject_reason,
+                payload_json
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            ON CONFLICT (room_id, transfer_id)
+            DO UPDATE SET
+                kind = EXCLUDED.kind,
+                account_id = EXCLUDED.account_id,
+                asset_id = EXCLUDED.asset_id,
+                amount = EXCLUDED.amount,
+                requested_at_step = EXCLUDED.requested_at_step,
+                available_after_step = EXCLUDED.available_after_step,
+                completed_at_step = EXCLUDED.completed_at_step,
+                status = EXCLUDED.status,
+                reject_reason = EXCLUDED.reject_reason,
+                payload_json = EXCLUDED.payload_json,
+                updated_at = now()
+            "#,
+            &[
+                &record.room_id,
+                &transfer_id,
+                &kind,
+                &account_id,
+                &transfer.asset_id,
+                &amount,
+                &requested_at_step,
+                &available_after_step,
+                &completed_at_step,
+                &status,
+                &reject_reason,
+                &payload_json,
+            ],
         )
         .map_err(JournalError::Postgres)?;
 
@@ -1156,6 +1420,36 @@ impl JournalStore for PostgresJournalStore {
         })
     }
 
+    fn append_transfers(
+        &mut self,
+        records: &[JournalTransfer],
+        snapshot: Option<&JournalSnapshot>,
+    ) -> Result<(), JournalError> {
+        let database_url = self.database_url.clone();
+        let records = records.to_vec();
+        let snapshot = snapshot.cloned();
+        run_postgres(database_url, move |client| {
+            let mut tx = client.transaction().map_err(JournalError::Postgres)?;
+            for record in &records {
+                Self::insert_transfer(&mut tx, record)?;
+            }
+            if let Some(snapshot) = &snapshot {
+                Self::insert_snapshot(&mut tx, snapshot)?;
+            }
+            tx.commit().map_err(JournalError::Postgres)
+        })
+    }
+
+    fn append_snapshot(&mut self, snapshot: &JournalSnapshot) -> Result<(), JournalError> {
+        let database_url = self.database_url.clone();
+        let snapshot = snapshot.clone();
+        run_postgres(database_url, move |client| {
+            let mut tx = client.transaction().map_err(JournalError::Postgres)?;
+            Self::insert_snapshot(&mut tx, &snapshot)?;
+            tx.commit().map_err(JournalError::Postgres)
+        })
+    }
+
     fn update_room_status(
         &mut self,
         room_id: &str,
@@ -1239,30 +1533,33 @@ impl JournalStore for PostgresJournalStore {
         &mut self,
         user_id: &str,
         room_id: &str,
+        instrument_id: Option<&str>,
         account_id: Option<AccountId>,
         limit: usize,
     ) -> Result<Vec<OrderProjection>, JournalError> {
         let database_url = self.database_url.clone();
         let user_id = user_id.to_string();
         let room_id = room_id.to_string();
+        let instrument_id = instrument_id.map(str::to_string);
         let account_id = optional_i64_account_id(account_id)?;
         let limit = bounded_query_limit(limit)?;
         run_postgres(database_url, move |client| {
             client
                 .query(
                     r#"
-                    SELECT room_id, order_id, account_id, participant_id, side, order_type,
+                    SELECT room_id, instrument_id, order_id, account_id, participant_id, side, order_type,
                            limit_price_tick, original_qty, status, remaining_qty,
                            created_command_seq, updated_command_seq
                     FROM marketforge_orders
                     WHERE room_id = $1
-                      AND ($2::BIGINT IS NULL OR account_id = $2)
+                      AND ($2::TEXT IS NULL OR instrument_id = $2)
+                      AND ($3::BIGINT IS NULL OR account_id = $3)
                       AND (
                           EXISTS (
                               SELECT 1
                               FROM marketforge_room_members member
                               WHERE member.room_id = marketforge_orders.room_id
-                                AND member.user_id = $4
+                                AND member.user_id = $5
                                 AND member.role IN ('owner', 'admin')
                           )
                           OR EXISTS (
@@ -1270,19 +1567,20 @@ impl JournalStore for PostgresJournalStore {
                               FROM marketforge_account_owners owner
                               WHERE owner.room_id = marketforge_orders.room_id
                                 AND owner.account_id = marketforge_orders.account_id
-                                AND owner.user_id = $4
+                                AND owner.user_id = $5
                           )
                       )
                     ORDER BY updated_command_seq DESC, order_id DESC
-                    LIMIT $3
+                    LIMIT $4
                     "#,
-                    &[&room_id, &account_id, &limit, &user_id],
+                    &[&room_id, &instrument_id, &account_id, &limit, &user_id],
                 )
                 .map_err(JournalError::Postgres)?
                 .into_iter()
                 .map(|row| {
                     Ok(OrderProjection {
                         room_id: row.get("room_id"),
+                        instrument_id: row.get("instrument_id"),
                         order_id: row.get("order_id"),
                         account_id: row.get("account_id"),
                         participant_id: row.get("participant_id"),
@@ -1304,50 +1602,54 @@ impl JournalStore for PostgresJournalStore {
         &mut self,
         user_id: &str,
         room_id: &str,
+        instrument_id: Option<&str>,
         account_id: Option<AccountId>,
         limit: usize,
     ) -> Result<Vec<TradeProjection>, JournalError> {
         let database_url = self.database_url.clone();
         let user_id = user_id.to_string();
         let room_id = room_id.to_string();
+        let instrument_id = instrument_id.map(str::to_string);
         let account_id = optional_i64_account_id(account_id)?;
         let limit = bounded_query_limit(limit)?;
         run_postgres(database_url, move |client| {
             client
                 .query(
                     r#"
-                    SELECT room_id, trade_id, command_seq, event_seq, maker_order_id,
+                    SELECT room_id, instrument_id, trade_id, command_seq, event_seq, maker_order_id,
                            maker_account_id, taker_order_id, taker_account_id,
                            price_tick, qty, taker_side
                     FROM marketforge_trades
                     WHERE room_id = $1
-                      AND ($2::BIGINT IS NULL OR maker_account_id = $2 OR taker_account_id = $2)
+                      AND ($2::TEXT IS NULL OR instrument_id = $2)
+                      AND ($3::BIGINT IS NULL OR maker_account_id = $3 OR taker_account_id = $3)
                       AND (
                           EXISTS (
                               SELECT 1
                               FROM marketforge_room_members member
                               WHERE member.room_id = marketforge_trades.room_id
-                                AND member.user_id = $4
+                                AND member.user_id = $5
                                 AND member.role IN ('owner', 'admin')
                           )
                           OR EXISTS (
                               SELECT 1
                               FROM marketforge_account_owners owner
                               WHERE owner.room_id = marketforge_trades.room_id
-                                AND owner.user_id = $4
+                                AND owner.user_id = $5
                                 AND owner.account_id IN (maker_account_id, taker_account_id)
                           )
                       )
                     ORDER BY command_seq DESC, event_seq DESC
-                    LIMIT $3
+                    LIMIT $4
                     "#,
-                    &[&room_id, &account_id, &limit, &user_id],
+                    &[&room_id, &instrument_id, &account_id, &limit, &user_id],
                 )
                 .map_err(JournalError::Postgres)?
                 .into_iter()
                 .map(|row| {
                     Ok(TradeProjection {
                         room_id: row.get("room_id"),
+                        instrument_id: row.get("instrument_id"),
                         trade_id: row.get("trade_id"),
                         command_seq: row.get("command_seq"),
                         event_seq: row.get("event_seq"),
@@ -1368,35 +1670,39 @@ impl JournalStore for PostgresJournalStore {
         &mut self,
         user_id: &str,
         room_id: &str,
+        instrument_id: Option<&str>,
         limit: usize,
     ) -> Result<Vec<MarketTickProjection>, JournalError> {
         let database_url = self.database_url.clone();
         let user_id = user_id.to_string();
         let room_id = room_id.to_string();
+        let instrument_id = instrument_id.map(str::to_string);
         let limit = bounded_query_limit(limit)?;
         run_postgres(database_url, move |client| {
             client
                 .query(
                     r#"
-                    SELECT room_id, command_seq, event_seq, trade_id, price_tick, qty, taker_side
+                    SELECT room_id, instrument_id, command_seq, event_seq, trade_id, price_tick, qty, taker_side
                     FROM marketforge_market_ticks
                     WHERE room_id = $1
+                      AND ($2::TEXT IS NULL OR instrument_id = $2)
                       AND EXISTS (
                           SELECT 1
                           FROM marketforge_room_members member
                           WHERE member.room_id = marketforge_market_ticks.room_id
-                            AND member.user_id = $3
+                            AND member.user_id = $4
                       )
                     ORDER BY command_seq DESC, event_seq DESC
-                    LIMIT $2
+                    LIMIT $3
                     "#,
-                    &[&room_id, &limit, &user_id],
+                    &[&room_id, &instrument_id, &limit, &user_id],
                 )
                 .map_err(JournalError::Postgres)?
                 .into_iter()
                 .map(|row| {
                     Ok(MarketTickProjection {
                         room_id: row.get("room_id"),
+                        instrument_id: row.get("instrument_id"),
                         command_seq: row.get("command_seq"),
                         event_seq: row.get("event_seq"),
                         trade_id: row.get("trade_id"),
@@ -1413,32 +1719,35 @@ impl JournalStore for PostgresJournalStore {
         &mut self,
         user_id: &str,
         room_id: &str,
+        instrument_id: Option<&str>,
         account_id: Option<AccountId>,
         limit: usize,
     ) -> Result<Vec<AccountLedgerProjection>, JournalError> {
         let database_url = self.database_url.clone();
         let user_id = user_id.to_string();
         let room_id = room_id.to_string();
+        let instrument_id = instrument_id.map(str::to_string);
         let account_id = optional_i64_account_id(account_id)?;
         let limit = bounded_query_limit(limit)?;
         run_postgres(database_url, move |client| {
             client
                 .query(
                     r#"
-                    SELECT room_id, command_seq, ledger_seq, market_kind, account_id, trade_id,
+                    SELECT room_id, instrument_id, command_seq, ledger_seq, market_kind, account_id, trade_id,
                            account_side, cash_delta, position_delta, fee, realized_pnl,
                            price_tick, qty, notional, cash_balance, position_qty,
                            avg_entry_price_tick, realized_pnl_total, unrealized_pnl,
                            equity, initial_margin, fees_paid
                     FROM marketforge_account_ledger
                     WHERE room_id = $1
-                      AND ($2::BIGINT IS NULL OR account_id = $2)
+                      AND ($2::TEXT IS NULL OR instrument_id = $2)
+                      AND ($3::BIGINT IS NULL OR account_id = $3)
                       AND (
                           EXISTS (
                               SELECT 1
                               FROM marketforge_room_members member
                               WHERE member.room_id = marketforge_account_ledger.room_id
-                                AND member.user_id = $4
+                                AND member.user_id = $5
                                 AND member.role IN ('owner', 'admin')
                           )
                           OR EXISTS (
@@ -1446,19 +1755,20 @@ impl JournalStore for PostgresJournalStore {
                               FROM marketforge_account_owners owner
                               WHERE owner.room_id = marketforge_account_ledger.room_id
                                 AND owner.account_id = marketforge_account_ledger.account_id
-                                AND owner.user_id = $4
+                                AND owner.user_id = $5
                           )
                       )
                     ORDER BY command_seq DESC, ledger_seq DESC
-                    LIMIT $3
+                    LIMIT $4
                     "#,
-                    &[&room_id, &account_id, &limit, &user_id],
+                    &[&room_id, &instrument_id, &account_id, &limit, &user_id],
                 )
                 .map_err(JournalError::Postgres)?
                 .into_iter()
                 .map(|row| {
                     Ok(AccountLedgerProjection {
                         room_id: row.get("room_id"),
+                        instrument_id: row.get("instrument_id"),
                         command_seq: row.get("command_seq"),
                         ledger_seq: row.get("ledger_seq"),
                         market_kind: row.get("market_kind"),
@@ -1490,30 +1800,33 @@ impl JournalStore for PostgresJournalStore {
         &mut self,
         user_id: &str,
         room_id: &str,
+        instrument_id: Option<&str>,
         account_id: Option<AccountId>,
         limit: usize,
     ) -> Result<Vec<PositionSnapshotProjection>, JournalError> {
         let database_url = self.database_url.clone();
         let user_id = user_id.to_string();
         let room_id = room_id.to_string();
+        let instrument_id = instrument_id.map(str::to_string);
         let account_id = optional_i64_account_id(account_id)?;
         let limit = bounded_query_limit(limit)?;
         run_postgres(database_url, move |client| {
             client
                 .query(
                     r#"
-                    SELECT room_id, command_seq, ledger_seq, market_kind, account_id, trade_id,
+                    SELECT room_id, instrument_id, command_seq, ledger_seq, market_kind, account_id, trade_id,
                            cash_balance, position_qty, avg_entry_price_tick, realized_pnl,
                            unrealized_pnl, equity, initial_margin, fees_paid
                     FROM marketforge_position_snapshots
                     WHERE room_id = $1
-                      AND ($2::BIGINT IS NULL OR account_id = $2)
+                      AND ($2::TEXT IS NULL OR instrument_id = $2)
+                      AND ($3::BIGINT IS NULL OR account_id = $3)
                       AND (
                           EXISTS (
                               SELECT 1
                               FROM marketforge_room_members member
                               WHERE member.room_id = marketforge_position_snapshots.room_id
-                                AND member.user_id = $4
+                                AND member.user_id = $5
                                 AND member.role IN ('owner', 'admin')
                           )
                           OR EXISTS (
@@ -1521,19 +1834,20 @@ impl JournalStore for PostgresJournalStore {
                               FROM marketforge_account_owners owner
                               WHERE owner.room_id = marketforge_position_snapshots.room_id
                                 AND owner.account_id = marketforge_position_snapshots.account_id
-                                AND owner.user_id = $4
+                                AND owner.user_id = $5
                           )
                       )
                     ORDER BY command_seq DESC, ledger_seq DESC
-                    LIMIT $3
+                    LIMIT $4
                     "#,
-                    &[&room_id, &account_id, &limit, &user_id],
+                    &[&room_id, &instrument_id, &account_id, &limit, &user_id],
                 )
                 .map_err(JournalError::Postgres)?
                 .into_iter()
                 .map(|row| {
                     Ok(PositionSnapshotProjection {
                         room_id: row.get("room_id"),
+                        instrument_id: row.get("instrument_id"),
                         command_seq: row.get("command_seq"),
                         ledger_seq: row.get("ledger_seq"),
                         market_kind: row.get("market_kind"),
@@ -1548,6 +1862,57 @@ impl JournalStore for PostgresJournalStore {
                         initial_margin: row.get("initial_margin"),
                         fees_paid: row.get("fees_paid"),
                     })
+                })
+                .collect()
+        })
+    }
+
+    fn query_transfers(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        account_id: Option<AccountId>,
+        limit: usize,
+    ) -> Result<Vec<VenueTransfer>, JournalError> {
+        let database_url = self.database_url.clone();
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        let account_id = optional_i64_account_id(account_id)?;
+        let limit = bounded_query_limit(limit)?;
+        run_postgres(database_url, move |client| {
+            client
+                .query(
+                    r#"
+                    SELECT payload_json
+                    FROM marketforge_transfers
+                    WHERE room_id = $1
+                      AND ($2::BIGINT IS NULL OR account_id = $2)
+                      AND (
+                          EXISTS (
+                              SELECT 1
+                              FROM marketforge_room_members member
+                              WHERE member.room_id = marketforge_transfers.room_id
+                                AND member.user_id = $4
+                                AND member.role IN ('owner', 'admin')
+                          )
+                          OR EXISTS (
+                              SELECT 1
+                              FROM marketforge_account_owners owner
+                              WHERE owner.room_id = marketforge_transfers.room_id
+                                AND owner.account_id = marketforge_transfers.account_id
+                                AND owner.user_id = $4
+                          )
+                      )
+                    ORDER BY transfer_id DESC
+                    LIMIT $3
+                    "#,
+                    &[&room_id, &account_id, &limit, &user_id],
+                )
+                .map_err(JournalError::Postgres)?
+                .into_iter()
+                .map(|row| {
+                    let payload_json: Value = row.get("payload_json");
+                    serde_json::from_value(payload_json).map_err(JournalError::Serialize)
                 })
                 .collect()
         })
@@ -1688,6 +2053,54 @@ fn side_name(side: Side) -> &'static str {
         Side::Buy => "buy",
         Side::Sell => "sell",
     }
+}
+
+fn transfer_kind_name(kind: VenueTransferKind) -> &'static str {
+    match kind {
+        VenueTransferKind::Deposit => "deposit",
+        VenueTransferKind::Withdrawal => "withdrawal",
+    }
+}
+
+fn transfer_status_name(status: VenueTransferStatus) -> &'static str {
+    match status {
+        VenueTransferStatus::Pending => "pending",
+        VenueTransferStatus::Completed => "completed",
+        VenueTransferStatus::Rejected => "rejected",
+    }
+}
+
+fn transfer_reject_reason_name(reason: &VenueTransferRejectReason) -> String {
+    match reason {
+        VenueTransferRejectReason::NonPositiveAmount => "non_positive_amount".to_string(),
+        VenueTransferRejectReason::InsufficientAvailableBalance => {
+            "insufficient_available_balance".to_string()
+        }
+        VenueTransferRejectReason::InsufficientPortfolioBalance => {
+            "insufficient_portfolio_balance".to_string()
+        }
+        VenueTransferRejectReason::AssetNotAcceptedByVenue => {
+            "asset_not_accepted_by_venue".to_string()
+        }
+        VenueTransferRejectReason::AssetNotWithdrawableFromVenue => {
+            "asset_not_withdrawable_from_venue".to_string()
+        }
+        VenueTransferRejectReason::BalanceOverflow => "balance_overflow".to_string(),
+    }
+}
+
+fn transfer_event_seq(transfer: &VenueTransfer) -> Result<i64, JournalError> {
+    let event_seq = match transfer.status {
+        VenueTransferStatus::Pending => 0,
+        VenueTransferStatus::Rejected => 0,
+        VenueTransferStatus::Completed
+            if transfer.completed_at_step == Some(transfer.requested_at_step) =>
+        {
+            0
+        }
+        VenueTransferStatus::Completed => 1,
+    };
+    Ok(event_seq)
 }
 
 fn clearing_ledger_rows(

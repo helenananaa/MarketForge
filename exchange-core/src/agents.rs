@@ -393,6 +393,10 @@ mod tests {
     fn spot_scenario() -> ScenarioConfig {
         ScenarioConfig {
             room_id: "room-1".to_string(),
+            venue_preset: None,
+            venue_rules: crate::VenueRuleConfig::default(),
+            venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
+            assets: Vec::new(),
             market: MarketConfig::Spot(SpotMarketConfig {
                 instrument: InstrumentConfig::new("V-BTC-SPOT", 1, 1).unwrap(),
                 clearing: SpotClearingConfig::default(),
@@ -401,6 +405,10 @@ mod tests {
                     ..SpotRiskConfig::default()
                 },
             }),
+            extra_markets: Vec::new(),
+            initial_portfolios: Vec::new(),
+            initial_allocations: Vec::new(),
+            routed_initial_allocations: Vec::new(),
             accounts: vec![
                 ScenarioAccount::Basic {
                     account_id: 20,
@@ -413,6 +421,7 @@ mod tests {
                 },
             ],
             seed_orders: vec![],
+            routed_seed_orders: Vec::new(),
         }
     }
 
@@ -484,6 +493,8 @@ mod tests {
         let mut second = NoiseTrader::new(config);
         let empty_view = MarketView {
             room_id: "room-1".to_string(),
+            venue_id: "default-venue".to_string(),
+            instrument_id: "V-BTC-SPOT".to_string(),
             status: MarketStatus::Running,
             book: BookSnapshot {
                 bids: Vec::new(),

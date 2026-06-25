@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     actor::{AccountSnapshots, ActorExecution, MarketStatus, RoomId},
+    market::{InstrumentId, VenueId},
     model::{AccountId, BookSnapshot, Command, NewOrder, OrderId, OrderKind, PriceTick, Qty, Side},
     room::{RoomManager, RoomManagerError},
 };
@@ -28,6 +29,7 @@ pub enum OrderAction {
 pub struct GatewayRequest {
     pub participant_id: ParticipantId,
     pub room_id: RoomId,
+    pub instrument_id: Option<InstrumentId>,
     pub account_id: AccountId,
     pub action: OrderAction,
 }
@@ -36,6 +38,7 @@ pub struct GatewayRequest {
 pub struct GatewayExecution {
     pub participant_id: ParticipantId,
     pub room_id: RoomId,
+    pub instrument_id: InstrumentId,
     pub account_id: AccountId,
     pub action: OrderAction,
     pub command: Command,
@@ -45,6 +48,8 @@ pub struct GatewayExecution {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MarketView {
     pub room_id: RoomId,
+    pub venue_id: VenueId,
+    pub instrument_id: InstrumentId,
     pub status: MarketStatus,
     pub book: BookSnapshot,
     pub accounts: AccountSnapshots,
@@ -58,6 +63,11 @@ pub enum GatewayError {
 pub trait TradingApi {
     fn submit_action(&mut self, request: GatewayRequest) -> Result<GatewayExecution, GatewayError>;
     fn market_view(&self, room_id: &str) -> Result<MarketView, GatewayError>;
+    fn market_view_for(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+    ) -> Result<MarketView, GatewayError>;
 }
 
 pub struct OrderGateway<'a> {
@@ -115,14 +125,24 @@ impl<'a> OrderGateway<'a> {
 impl TradingApi for OrderGateway<'_> {
     fn submit_action(&mut self, request: GatewayRequest) -> Result<GatewayExecution, GatewayError> {
         let command = self.action_to_command(request.account_id, &request.action);
+        let instrument_id = match request.instrument_id {
+            Some(instrument_id) => instrument_id,
+            None => self
+                .rooms
+                .room(&request.room_id)
+                .map_err(GatewayError::Room)?
+                .primary_instrument_id()
+                .to_string(),
+        };
         let execution = self
             .rooms
-            .apply(&request.room_id, command.clone())
+            .apply_to_instrument(&request.room_id, &instrument_id, command.clone())
             .map_err(GatewayError::Room)?;
 
         Ok(GatewayExecution {
             participant_id: request.participant_id,
             room_id: request.room_id,
+            instrument_id,
             account_id: request.account_id,
             action: request.action,
             command,
@@ -131,16 +151,33 @@ impl TradingApi for OrderGateway<'_> {
     }
 
     fn market_view(&self, room_id: &str) -> Result<MarketView, GatewayError> {
+        let instrument_id = self
+            .rooms
+            .room(room_id)
+            .map_err(GatewayError::Room)?
+            .primary_instrument_id()
+            .to_string();
+        self.market_view_for(room_id, &instrument_id)
+    }
+
+    fn market_view_for(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+    ) -> Result<MarketView, GatewayError> {
+        let room = self.rooms.room(room_id).map_err(GatewayError::Room)?;
         Ok(MarketView {
             room_id: room_id.to_string(),
-            status: self.rooms.status(room_id).map_err(GatewayError::Room)?,
+            venue_id: room.venue_id().to_string(),
+            instrument_id: instrument_id.to_string(),
+            status: room.status(),
             book: self
                 .rooms
-                .book_snapshot(room_id)
+                .book_snapshot_for(room_id, instrument_id)
                 .map_err(GatewayError::Room)?,
             accounts: self
                 .rooms
-                .account_snapshots(room_id)
+                .account_snapshots_for(room_id, instrument_id)
                 .map_err(GatewayError::Room)?,
         })
     }
@@ -160,11 +197,19 @@ mod tests {
     fn spot_scenario() -> ScenarioConfig {
         ScenarioConfig {
             room_id: "room-1".to_string(),
+            venue_preset: None,
+            venue_rules: crate::VenueRuleConfig::default(),
+            venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
+            assets: Vec::new(),
             market: MarketConfig::Spot(SpotMarketConfig {
                 instrument: InstrumentConfig::new("V-BTC-SPOT", 1, 1).unwrap(),
                 clearing: SpotClearingConfig::default(),
                 risk: SpotRiskConfig::default(),
             }),
+            extra_markets: Vec::new(),
+            initial_portfolios: Vec::new(),
+            initial_allocations: Vec::new(),
+            routed_initial_allocations: Vec::new(),
             accounts: vec![
                 ScenarioAccount::Spot {
                     account_id: 10,
@@ -177,6 +222,7 @@ mod tests {
                 },
             ],
             seed_orders: vec![],
+            routed_seed_orders: Vec::new(),
         }
     }
 
@@ -190,6 +236,7 @@ mod tests {
             .submit_action(GatewayRequest {
                 participant_id: "human-1".to_string(),
                 room_id: "room-1".to_string(),
+                instrument_id: None,
                 account_id: 20,
                 action: OrderAction::PlaceLimit {
                     side: Side::Buy,
@@ -218,6 +265,8 @@ mod tests {
         let view = gateway.market_view("room-1").unwrap();
 
         assert_eq!(view.room_id, "room-1");
+        assert_eq!(view.venue_id, "default-venue");
+        assert_eq!(view.instrument_id, "V-BTC-SPOT");
         assert_eq!(view.status, MarketStatus::Running);
         assert!(view.book.bids.is_empty());
     }

@@ -20,9 +20,12 @@ use axum::{
 };
 use exchange_core::{
     AccountSnapshots, ActorExecution, ActorExecutionResult, ActorRejectReason, AgentTemplate,
-    BookSnapshot, Event, GatewayRequest, MarketExecution, MarketStatus, MarketView, OrderAction,
-    OrderGateway, OrderId, Participant, ParticipantId, RoomId, RoomManager, RoomManagerError,
-    ScenarioConfig, SpotAccountSnapshot, SpotClearingEvent, TradingApi,
+    AssetLedgerEntry, BookSnapshot, Event, GatewayRequest, InstrumentId, MarketExecution,
+    MarketStatus, MarketView, Money, OrderAction, OrderGateway, OrderId, Participant,
+    ParticipantId, PortfolioAccountSnapshot, RoomId, RoomManager, RoomManagerError,
+    RoomNetWorthSnapshot, ScenarioConfig, SimulationClock, SpotAccountSnapshot, SpotClearingEvent,
+    TradingApi, VenueAccountSnapshot, VenueAccountVenueSnapshot, VenueToVenueTransfer,
+    VenueTransfer,
     model::{AccountId, Command},
     perp::{PerpAccountSnapshot, PerpClearingEvent},
 };
@@ -31,8 +34,8 @@ use tower_http::cors::CorsLayer;
 
 use crate::journal::{
     AccountLedgerProjection, JournalError, JournalExecution, JournalRecovery, JournalSnapshot,
-    JournalStore, MarketTickProjection, OrderProjection, PositionSnapshotProjection,
-    TradeProjection, journal_store_from_env,
+    JournalStore, JournalTransfer, MarketTickProjection, OrderProjection,
+    PositionSnapshotProjection, TradeProjection, journal_store_from_env,
 };
 
 type SharedState = Arc<Mutex<AppState>>;
@@ -145,6 +148,61 @@ fn app(state: SharedState) -> Router {
         .route("/rooms/{room_id}/book", get(book_snapshot))
         .route("/rooms/{room_id}/accounts", get(account_snapshots))
         .route(
+            "/rooms/{room_id}/venue/accounts",
+            get(venue_account_snapshots),
+        )
+        .route(
+            "/rooms/{room_id}/venue/accounts/by-venue",
+            get(venue_account_snapshots_by_venue),
+        )
+        .route("/rooms/{room_id}/portfolio", get(room_portfolios))
+        .route("/rooms/{room_id}/assets/ledger", get(room_asset_ledger))
+        .route("/rooms/{room_id}/net-worth", get(room_net_worth))
+        .route("/rooms/{room_id}/clock", get(room_clock))
+        .route("/rooms/{room_id}/clock/advance", post(advance_room_clock))
+        .route("/rooms/{room_id}/transfers", get(room_transfers))
+        .route("/rooms/{room_id}/transfers/deposit", post(submit_deposit))
+        .route(
+            "/rooms/{room_id}/transfers/withdraw",
+            post(submit_withdrawal),
+        )
+        .route(
+            "/rooms/{room_id}/transfers/venue-to-venue",
+            post(submit_venue_to_venue_transfer),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/view",
+            get(market_view_for_instrument),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/book",
+            get(book_snapshot_for_instrument),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/accounts",
+            get(account_snapshots_for_instrument),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/orders",
+            get(room_orders_for_instrument).post(submit_order_for_instrument),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/trades",
+            get(room_trades_for_instrument),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/ticks",
+            get(room_ticks_for_instrument),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/ledger",
+            get(room_ledger_for_instrument),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/positions",
+            get(room_positions_for_instrument),
+        )
+        .route(
             "/rooms/{room_id}/orders",
             get(room_orders).post(submit_order),
         )
@@ -171,7 +229,7 @@ async fn create_room(
     let user_id = current_user_id(&headers)?;
     let request = parse_create_room_payload(payload)?;
     let mut candidate_rooms = state.rooms.clone();
-    let seed_commands = request.scenario.seed_orders.clone();
+    let seed_commands = request.scenario.seed_commands();
     let account_ids = scenario_account_ids(&request.scenario);
     let bootstrap = candidate_rooms
         .create_room(request.scenario.clone())
@@ -266,7 +324,7 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
         let replay_after_command_seq =
             if let Some(snapshot) = snapshots_by_room.get(room.room_id.as_str()) {
                 rooms
-                    .restore_room(snapshot.actor.clone(), Vec::new())
+                    .restore_simulation_room(snapshot.actor.clone(), Vec::new())
                     .map_err(|error| JournalError::Recovery(format!("{error:?}")))?;
                 Some(snapshot.command_seq)
             } else {
@@ -279,7 +337,7 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
                     .map(|execution| execution.command_seq)
             };
 
-        let seed_count = room.scenario.seed_orders.len();
+        let seed_count = room.scenario.seed_order_count();
         for record in executions_by_room
             .get(room.room_id.as_str())
             .into_iter()
@@ -295,9 +353,13 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
             rooms
                 .restore_room_status(&room.room_id, record.execution.status)
                 .map_err(|error| JournalError::Recovery(format!("{error:?}")))?;
-            let replayed = rooms
-                .apply(&room.room_id, record.command.clone())
-                .map_err(|error| JournalError::Recovery(format!("{error:?}")))?;
+            let replayed = match record.execution.instrument_id.as_deref() {
+                Some(instrument_id) => {
+                    rooms.apply_to_instrument(&room.room_id, instrument_id, record.command.clone())
+                }
+                None => rooms.apply(&room.room_id, record.command.clone()),
+            }
+            .map_err(|error| JournalError::Recovery(format!("{error:?}")))?;
             let replayed_summary = RoomExecutionSummary::from_execution(replayed);
             if !execution_summary_matches(&record.execution, &replayed_summary) {
                 return Err(JournalError::Recovery(format!(
@@ -321,6 +383,7 @@ fn execution_summary_matches(
 ) -> bool {
     stored.room_id == replayed.room_id
         && stored.command_seq == replayed.command_seq
+        && stored.instrument_id == replayed.instrument_id
         && stored.status == replayed.status
         && stored.accepted == replayed.accepted
         && stored.reject_reason == replayed.reject_reason
@@ -411,18 +474,34 @@ fn latest_room_snapshot(
     Some(JournalSnapshot {
         room_id: room_id.to_string(),
         command_seq,
-        actor: rooms.room(room_id).ok()?.clone(),
+        actor: rooms.simulation_room(room_id).ok()?.clone(),
     })
 }
 
 fn room_snapshot_if_due(rooms: &RoomManager, record: &JournalExecution) -> Option<JournalSnapshot> {
-    if record.command_seq % SNAPSHOT_INTERVAL_COMMANDS != 0 {
+    if !record
+        .command_seq
+        .is_multiple_of(SNAPSHOT_INTERVAL_COMMANDS)
+    {
         return None;
     }
     Some(JournalSnapshot {
         room_id: record.room_id.clone(),
         command_seq: record.command_seq,
-        actor: rooms.room(&record.room_id).ok()?.clone(),
+        actor: rooms.simulation_room(&record.room_id).ok()?.clone(),
+    })
+}
+
+fn current_room_snapshot(rooms: &RoomManager, room_id: &str) -> Option<JournalSnapshot> {
+    let command_seq = rooms
+        .execution_history(room_id)
+        .ok()
+        .and_then(|history| history.last().map(|execution| execution.command_seq))
+        .unwrap_or(0);
+    Some(JournalSnapshot {
+        room_id: room_id.to_string(),
+        command_seq,
+        actor: rooms.simulation_room(room_id).ok()?.clone(),
     })
 }
 
@@ -519,6 +598,25 @@ async fn room_orders(
     Path(room_id): Path<String>,
     Query(query): Query<ProjectionQuery>,
 ) -> ApiResult<RoomOrdersResponse> {
+    room_orders_response(state, headers, room_id, query.instrument_id.clone(), query).await
+}
+
+async fn room_orders_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+    Query(query): Query<ProjectionQuery>,
+) -> ApiResult<RoomOrdersResponse> {
+    room_orders_response(state, headers, room_id, Some(instrument_id), query).await
+}
+
+async fn room_orders_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+    query: ProjectionQuery,
+) -> ApiResult<RoomOrdersResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
     ensure_room_access(&mut state, &user_id, &room_id)?;
@@ -527,6 +625,7 @@ async fn room_orders(
         .query_orders(
             &user_id,
             &room_id,
+            instrument_id.as_deref(),
             query.account_id,
             query_limit(query.limit),
         )
@@ -540,6 +639,25 @@ async fn room_trades(
     Path(room_id): Path<String>,
     Query(query): Query<ProjectionQuery>,
 ) -> ApiResult<RoomTradesResponse> {
+    room_trades_response(state, headers, room_id, query.instrument_id.clone(), query).await
+}
+
+async fn room_trades_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+    Query(query): Query<ProjectionQuery>,
+) -> ApiResult<RoomTradesResponse> {
+    room_trades_response(state, headers, room_id, Some(instrument_id), query).await
+}
+
+async fn room_trades_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+    query: ProjectionQuery,
+) -> ApiResult<RoomTradesResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
     ensure_room_access(&mut state, &user_id, &room_id)?;
@@ -548,6 +666,7 @@ async fn room_trades(
         .query_trades(
             &user_id,
             &room_id,
+            instrument_id.as_deref(),
             query.account_id,
             query_limit(query.limit),
         )
@@ -561,12 +680,36 @@ async fn room_ticks(
     Path(room_id): Path<String>,
     Query(query): Query<ProjectionQuery>,
 ) -> ApiResult<RoomTicksResponse> {
+    room_ticks_response(state, headers, room_id, query.instrument_id.clone(), query).await
+}
+
+async fn room_ticks_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+    Query(query): Query<ProjectionQuery>,
+) -> ApiResult<RoomTicksResponse> {
+    room_ticks_response(state, headers, room_id, Some(instrument_id), query).await
+}
+
+async fn room_ticks_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+    query: ProjectionQuery,
+) -> ApiResult<RoomTicksResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
     ensure_room_access(&mut state, &user_id, &room_id)?;
     let ticks = state
         .journal
-        .query_market_ticks(&user_id, &room_id, query_limit(query.limit))
+        .query_market_ticks(
+            &user_id,
+            &room_id,
+            instrument_id.as_deref(),
+            query_limit(query.limit),
+        )
         .map_err(api_error_from_journal)?;
     Ok(Json(RoomTicksResponse { room_id, ticks }))
 }
@@ -577,6 +720,25 @@ async fn room_ledger(
     Path(room_id): Path<String>,
     Query(query): Query<ProjectionQuery>,
 ) -> ApiResult<RoomLedgerResponse> {
+    room_ledger_response(state, headers, room_id, query.instrument_id.clone(), query).await
+}
+
+async fn room_ledger_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+    Query(query): Query<ProjectionQuery>,
+) -> ApiResult<RoomLedgerResponse> {
+    room_ledger_response(state, headers, room_id, Some(instrument_id), query).await
+}
+
+async fn room_ledger_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+    query: ProjectionQuery,
+) -> ApiResult<RoomLedgerResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
     ensure_room_access(&mut state, &user_id, &room_id)?;
@@ -585,6 +747,7 @@ async fn room_ledger(
         .query_account_ledger(
             &user_id,
             &room_id,
+            instrument_id.as_deref(),
             query.account_id,
             query_limit(query.limit),
         )
@@ -598,6 +761,25 @@ async fn room_positions(
     Path(room_id): Path<String>,
     Query(query): Query<ProjectionQuery>,
 ) -> ApiResult<RoomPositionsResponse> {
+    room_positions_response(state, headers, room_id, query.instrument_id.clone(), query).await
+}
+
+async fn room_positions_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+    Query(query): Query<ProjectionQuery>,
+) -> ApiResult<RoomPositionsResponse> {
+    room_positions_response(state, headers, room_id, Some(instrument_id), query).await
+}
+
+async fn room_positions_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+    query: ProjectionQuery,
+) -> ApiResult<RoomPositionsResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
     ensure_room_access(&mut state, &user_id, &room_id)?;
@@ -606,6 +788,7 @@ async fn room_positions(
         .query_position_snapshots(
             &user_id,
             &room_id,
+            instrument_id.as_deref(),
             query.account_id,
             query_limit(query.limit),
         )
@@ -696,19 +879,41 @@ async fn market_view(
     headers: HeaderMap,
     Path(room_id): Path<String>,
 ) -> ApiResult<MarketView> {
+    market_view_response(state, headers, room_id, None).await
+}
+
+async fn market_view_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+) -> ApiResult<MarketView> {
+    market_view_response(state, headers, room_id, Some(instrument_id)).await
+}
+
+async fn market_view_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+) -> ApiResult<MarketView> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
     ensure_room_access(&mut state, &user_id, &room_id)?;
+    let room = state.rooms.room(&room_id).map_err(api_error_from_room)?;
+    let venue_id = room.venue_id().to_string();
+    let instrument_id = instrument_id.unwrap_or_else(|| room.primary_instrument_id().to_string());
     Ok(Json(MarketView {
         room_id: room_id.clone(),
+        venue_id,
+        instrument_id: instrument_id.clone(),
         status: state.rooms.status(&room_id).map_err(api_error_from_room)?,
         book: state
             .rooms
-            .book_snapshot(&room_id)
+            .book_snapshot_for(&room_id, &instrument_id)
             .map_err(api_error_from_room)?,
         accounts: state
             .rooms
-            .account_snapshots(&room_id)
+            .account_snapshots_for(&room_id, &instrument_id)
             .map_err(api_error_from_room)?,
     }))
 }
@@ -718,12 +923,37 @@ async fn book_snapshot(
     headers: HeaderMap,
     Path(room_id): Path<String>,
 ) -> ApiResult<BookSnapshot> {
+    book_snapshot_response(state, headers, room_id, None).await
+}
+
+async fn book_snapshot_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+) -> ApiResult<BookSnapshot> {
+    book_snapshot_response(state, headers, room_id, Some(instrument_id)).await
+}
+
+async fn book_snapshot_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+) -> ApiResult<BookSnapshot> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
     ensure_room_access(&mut state, &user_id, &room_id)?;
+    let instrument_id = match instrument_id {
+        Some(instrument_id) => instrument_id,
+        None => state
+            .rooms
+            .room(&room_id)
+            .map(|room| room.primary_instrument_id().to_string())
+            .map_err(api_error_from_room)?,
+    };
     state
         .rooms
-        .book_snapshot(&room_id)
+        .book_snapshot_for(&room_id, &instrument_id)
         .map(Json)
         .map_err(api_error_from_room)
 }
@@ -733,14 +963,317 @@ async fn account_snapshots(
     headers: HeaderMap,
     Path(room_id): Path<String>,
 ) -> ApiResult<AccountSnapshots> {
+    account_snapshots_response(state, headers, room_id, None).await
+}
+
+async fn account_snapshots_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+) -> ApiResult<AccountSnapshots> {
+    account_snapshots_response(state, headers, room_id, Some(instrument_id)).await
+}
+
+async fn account_snapshots_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+) -> ApiResult<AccountSnapshots> {
+    let mut state = lock_state(&state)?;
+    let user_id = current_user_id(&headers)?;
+    ensure_room_access(&mut state, &user_id, &room_id)?;
+    let instrument_id = match instrument_id {
+        Some(instrument_id) => instrument_id,
+        None => state
+            .rooms
+            .room(&room_id)
+            .map(|room| room.primary_instrument_id().to_string())
+            .map_err(api_error_from_room)?,
+    };
+    state
+        .rooms
+        .account_snapshots_for(&room_id, &instrument_id)
+        .map(Json)
+        .map_err(api_error_from_room)
+}
+
+async fn venue_account_snapshots(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+) -> ApiResult<RoomVenueAccountsResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
     ensure_room_access(&mut state, &user_id, &room_id)?;
     state
         .rooms
-        .account_snapshots(&room_id)
+        .venue_account_snapshots(&room_id)
+        .map(|accounts| {
+            Json(RoomVenueAccountsResponse {
+                room_id: room_id.clone(),
+                accounts,
+            })
+        })
+        .map_err(api_error_from_room)
+}
+
+async fn venue_account_snapshots_by_venue(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+) -> ApiResult<RoomVenueAccountsByVenueResponse> {
+    let mut state = lock_state(&state)?;
+    let user_id = current_user_id(&headers)?;
+    ensure_room_access(&mut state, &user_id, &room_id)?;
+    state
+        .rooms
+        .venue_account_snapshots_by_venue(&room_id)
+        .map(|accounts| {
+            Json(RoomVenueAccountsByVenueResponse {
+                room_id: room_id.clone(),
+                accounts,
+            })
+        })
+        .map_err(api_error_from_room)
+}
+
+async fn room_portfolios(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+) -> ApiResult<RoomPortfoliosResponse> {
+    let mut state = lock_state(&state)?;
+    let user_id = current_user_id(&headers)?;
+    ensure_room_access(&mut state, &user_id, &room_id)?;
+    state
+        .rooms
+        .portfolio_snapshots(&room_id)
+        .map(|accounts| {
+            Json(RoomPortfoliosResponse {
+                room_id: room_id.clone(),
+                accounts,
+            })
+        })
+        .map_err(api_error_from_room)
+}
+
+async fn room_asset_ledger(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+) -> ApiResult<RoomAssetLedgerResponse> {
+    let mut state = lock_state(&state)?;
+    let user_id = current_user_id(&headers)?;
+    ensure_room_access(&mut state, &user_id, &room_id)?;
+    state
+        .rooms
+        .asset_ledger(&room_id)
+        .map(|ledger| {
+            Json(RoomAssetLedgerResponse {
+                room_id: room_id.clone(),
+                ledger: ledger.to_vec(),
+            })
+        })
+        .map_err(api_error_from_room)
+}
+
+async fn room_net_worth(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+) -> ApiResult<RoomNetWorthSnapshot> {
+    let mut state = lock_state(&state)?;
+    let user_id = current_user_id(&headers)?;
+    ensure_room_access(&mut state, &user_id, &room_id)?;
+    state
+        .rooms
+        .net_worth_snapshot(&room_id)
         .map(Json)
         .map_err(api_error_from_room)
+}
+
+async fn room_clock(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+) -> ApiResult<RoomClockResponse> {
+    let mut state = lock_state(&state)?;
+    let user_id = current_user_id(&headers)?;
+    ensure_room_access(&mut state, &user_id, &room_id)?;
+    state
+        .rooms
+        .clock(&room_id)
+        .map(|clock| {
+            Json(RoomClockResponse {
+                room_id: room_id.clone(),
+                clock,
+            })
+        })
+        .map_err(api_error_from_room)
+}
+
+async fn advance_room_clock(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Json(request): Json<AdvanceClockRequest>,
+) -> ApiResult<AdvanceClockResponse> {
+    let mut state = lock_state(&state)?;
+    let user_id = current_user_id(&headers)?;
+    ensure_room_access(&mut state, &user_id, &room_id)?;
+    let mut candidate_rooms = state.rooms.clone();
+    let completed_transfers = candidate_rooms
+        .advance_clock(&room_id, request.steps)
+        .map_err(api_error_from_room)?;
+    let clock = candidate_rooms
+        .clock(&room_id)
+        .map_err(api_error_from_room)?;
+    let snapshot = current_room_snapshot(&candidate_rooms, &room_id)
+        .expect("room access was checked before advancing clock");
+    if completed_transfers.is_empty() {
+        state
+            .journal
+            .append_snapshot(&snapshot)
+            .map_err(api_error_from_journal)?;
+    } else {
+        let records = completed_transfers
+            .iter()
+            .cloned()
+            .map(|transfer| JournalTransfer::recorded(room_id.clone(), transfer))
+            .collect::<Vec<_>>();
+        state
+            .journal
+            .append_transfers(&records, Some(&snapshot))
+            .map_err(api_error_from_journal)?;
+    }
+    state.rooms = candidate_rooms;
+
+    Ok(Json(AdvanceClockResponse {
+        room_id,
+        clock,
+        completed_transfers,
+    }))
+}
+
+async fn room_transfers(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+) -> ApiResult<RoomTransfersResponse> {
+    let mut state = lock_state(&state)?;
+    let user_id = current_user_id(&headers)?;
+    ensure_room_access(&mut state, &user_id, &room_id)?;
+    state
+        .journal
+        .query_transfers(&user_id, &room_id, None, 100)
+        .map(|transfers| {
+            Json(RoomTransfersResponse {
+                room_id: room_id.clone(),
+                transfers,
+            })
+        })
+        .map_err(api_error_from_journal)
+}
+
+async fn submit_deposit(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Json(request): Json<TransferRequest>,
+) -> ApiResult<TransferResponse> {
+    let mut state = lock_state(&state)?;
+    let user_id = current_user_id(&headers)?;
+    ensure_account_access(&mut state, &user_id, &room_id, request.account_id)?;
+    let mut candidate_rooms = state.rooms.clone();
+    let transfer = candidate_rooms
+        .submit_deposit(
+            &room_id,
+            request.venue_id.as_deref(),
+            request.account_id,
+            request.asset_id,
+            request.amount,
+        )
+        .map_err(api_error_from_room)?;
+    let snapshot = current_room_snapshot(&candidate_rooms, &room_id)
+        .expect("room access was checked before submitting deposit");
+    let record = JournalTransfer::recorded(room_id.clone(), transfer.clone());
+    state
+        .journal
+        .append_transfers(&[record], Some(&snapshot))
+        .map_err(api_error_from_journal)?;
+    state.rooms = candidate_rooms;
+
+    Ok(Json(TransferResponse { room_id, transfer }))
+}
+
+async fn submit_withdrawal(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Json(request): Json<TransferRequest>,
+) -> ApiResult<TransferResponse> {
+    let mut state = lock_state(&state)?;
+    let user_id = current_user_id(&headers)?;
+    ensure_account_access(&mut state, &user_id, &room_id, request.account_id)?;
+    let mut candidate_rooms = state.rooms.clone();
+    let transfer = candidate_rooms
+        .submit_withdrawal(
+            &room_id,
+            request.venue_id.as_deref(),
+            request.account_id,
+            request.asset_id,
+            request.amount,
+        )
+        .map_err(api_error_from_room)?;
+    let snapshot = current_room_snapshot(&candidate_rooms, &room_id)
+        .expect("room access was checked before submitting withdrawal");
+    let record = JournalTransfer::recorded(room_id.clone(), transfer.clone());
+    state
+        .journal
+        .append_transfers(&[record], Some(&snapshot))
+        .map_err(api_error_from_journal)?;
+    state.rooms = candidate_rooms;
+
+    Ok(Json(TransferResponse { room_id, transfer }))
+}
+
+async fn submit_venue_to_venue_transfer(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Json(request): Json<VenueToVenueTransferRequest>,
+) -> ApiResult<VenueToVenueTransferResponse> {
+    let mut state = lock_state(&state)?;
+    let user_id = current_user_id(&headers)?;
+    ensure_account_access(&mut state, &user_id, &room_id, request.account_id)?;
+    let mut candidate_rooms = state.rooms.clone();
+    let transfer = candidate_rooms
+        .submit_venue_to_venue_transfer(
+            &room_id,
+            &request.from_venue_id,
+            &request.to_venue_id,
+            request.account_id,
+            request.asset_id,
+            request.amount,
+        )
+        .map_err(api_error_from_room)?;
+    let snapshot = current_room_snapshot(&candidate_rooms, &room_id)
+        .expect("room access was checked before submitting venue-to-venue transfer");
+    let mut records = vec![JournalTransfer::recorded(
+        room_id.clone(),
+        transfer.withdrawal.clone(),
+    )];
+    if let Some(deposit) = &transfer.deposit {
+        records.push(JournalTransfer::recorded(room_id.clone(), deposit.clone()));
+    }
+    state
+        .journal
+        .append_transfers(&records, Some(&snapshot))
+        .map_err(api_error_from_journal)?;
+    state.rooms = candidate_rooms;
+
+    Ok(Json(VenueToVenueTransferResponse { room_id, transfer }))
 }
 
 async fn submit_order(
@@ -749,16 +1282,37 @@ async fn submit_order(
     Path(room_id): Path<String>,
     Json(request): Json<SubmitOrderRequest>,
 ) -> ApiResult<OrderResponse> {
+    submit_order_response(state, headers, room_id, None, request).await
+}
+
+async fn submit_order_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+    Json(request): Json<SubmitOrderRequest>,
+) -> ApiResult<OrderResponse> {
+    submit_order_response(state, headers, room_id, Some(instrument_id), request).await
+}
+
+async fn submit_order_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+    request: SubmitOrderRequest,
+) -> ApiResult<OrderResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
     ensure_account_access(&mut state, &user_id, &room_id, request.account_id)?;
     let first_order_id = state.next_order_id;
     let mut candidate_rooms = state.rooms.clone();
     let mut gateway = OrderGateway::new(&mut candidate_rooms, first_order_id);
+    let instrument_id = instrument_id.or_else(|| request.instrument_id.clone());
     let execution = gateway
         .submit_action(GatewayRequest {
             participant_id: request.participant_id.clone(),
             room_id,
+            instrument_id,
             account_id: request.account_id,
             action: request.action.clone(),
         })
@@ -919,9 +1473,11 @@ fn api_error(status: StatusCode, error: impl Into<String>) -> (StatusCode, Json<
 fn api_error_from_room(error: RoomManagerError) -> (StatusCode, Json<ErrorResponse>) {
     let status = match error {
         RoomManagerError::RoomNotFound { .. } => StatusCode::NOT_FOUND,
-        RoomManagerError::RoomAlreadyExists { .. } | RoomManagerError::Scenario(_) => {
-            StatusCode::BAD_REQUEST
-        }
+        RoomManagerError::RoomAlreadyExists { .. }
+        | RoomManagerError::MarketConfig(_)
+        | RoomManagerError::Actor(_)
+        | RoomManagerError::Scenario(_)
+        | RoomManagerError::Simulation(_) => StatusCode::BAD_REQUEST,
     };
 
     (
@@ -991,6 +1547,7 @@ pub struct RoomEventsQuery {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProjectionQuery {
+    pub instrument_id: Option<InstrumentId>,
     pub account_id: Option<AccountId>,
     pub limit: Option<usize>,
 }
@@ -1031,9 +1588,89 @@ pub struct RoomPositionsResponse {
     pub positions: Vec<PositionSnapshotProjection>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomVenueAccountsResponse {
+    pub room_id: String,
+    pub accounts: Vec<VenueAccountSnapshot>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomVenueAccountsByVenueResponse {
+    pub room_id: String,
+    pub accounts: Vec<VenueAccountVenueSnapshot>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomPortfoliosResponse {
+    pub room_id: String,
+    pub accounts: Vec<PortfolioAccountSnapshot>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomAssetLedgerResponse {
+    pub room_id: String,
+    pub ledger: Vec<AssetLedgerEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomClockResponse {
+    pub room_id: String,
+    pub clock: SimulationClock,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AdvanceClockRequest {
+    pub steps: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AdvanceClockResponse {
+    pub room_id: String,
+    pub clock: SimulationClock,
+    pub completed_transfers: Vec<VenueTransfer>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TransferRequest {
+    #[serde(default)]
+    pub venue_id: Option<String>,
+    pub account_id: AccountId,
+    pub asset_id: String,
+    pub amount: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TransferResponse {
+    pub room_id: String,
+    pub transfer: VenueTransfer,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct VenueToVenueTransferRequest {
+    pub from_venue_id: String,
+    pub to_venue_id: String,
+    pub account_id: AccountId,
+    pub asset_id: String,
+    pub amount: Money,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct VenueToVenueTransferResponse {
+    pub room_id: String,
+    pub transfer: VenueToVenueTransfer,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomTransfersResponse {
+    pub room_id: String,
+    pub transfers: Vec<VenueTransfer>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoomExecutionSummary {
     pub room_id: String,
+    #[serde(default)]
+    pub instrument_id: Option<InstrumentId>,
     pub command_seq: u64,
     pub status: MarketStatus,
     pub accepted: bool,
@@ -1062,6 +1699,7 @@ impl RoomExecutionSummary {
 
         Self {
             room_id: execution.room_id,
+            instrument_id: Some(execution.instrument_id),
             command_seq: execution.command_seq,
             status: execution.status,
             accepted,
@@ -1076,6 +1714,8 @@ impl RoomExecutionSummary {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SubmitOrderRequest {
     pub participant_id: ParticipantId,
+    #[serde(default)]
+    pub instrument_id: Option<InstrumentId>,
     pub account_id: AccountId,
     pub action: OrderAction,
 }
@@ -1126,6 +1766,7 @@ pub struct OrderResponse {
     pub account_id: AccountId,
     pub action: OrderAction,
     pub room_id: String,
+    pub instrument_id: Option<InstrumentId>,
     pub command_seq: u64,
     pub status: MarketStatus,
     pub accepted: bool,
@@ -1149,6 +1790,7 @@ impl OrderResponse {
             account_id,
             action,
             room_id: summary.room_id,
+            instrument_id: summary.instrument_id,
             command_seq: summary.command_seq,
             status: summary.status,
             accepted: summary.accepted,
@@ -1195,7 +1837,11 @@ fn reject_reason_to_string(reason: ActorRejectReason) -> String {
     match reason {
         ActorRejectReason::MarketPaused => "market paused".to_string(),
         ActorRejectReason::MarketClosed => "market closed".to_string(),
+        ActorRejectReason::InstrumentNotFound { instrument_id } => {
+            format!("instrument not found: {instrument_id}")
+        }
         ActorRejectReason::WrongMarketKind => "wrong market kind".to_string(),
+        ActorRejectReason::VenueRule(reason) => format!("venue rule rejected: {reason:?}"),
         ActorRejectReason::Clearing(error) => format!("clearing error: {error:?}"),
     }
 }
@@ -1519,6 +2165,16 @@ impl HttpTradingClient {
         self.get_json(&format!("/rooms/{room_id}/view"))
     }
 
+    pub fn market_view_for(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+    ) -> Result<MarketView, HttpTradingError> {
+        self.get_json(&format!(
+            "/rooms/{room_id}/instruments/{instrument_id}/view"
+        ))
+    }
+
     pub fn room_events(
         &self,
         room_id: &str,
@@ -1533,6 +2189,18 @@ impl HttpTradingClient {
         request: &SubmitOrderRequest,
     ) -> Result<OrderResponse, HttpTradingError> {
         self.post_json(&format!("/rooms/{room_id}/orders"), request)
+    }
+
+    pub fn submit_order_for(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+        request: &SubmitOrderRequest,
+    ) -> Result<OrderResponse, HttpTradingError> {
+        self.post_json(
+            &format!("/rooms/{room_id}/instruments/{instrument_id}/orders"),
+            request,
+        )
     }
 
     pub fn pause_room(&self, room_id: &str) -> Result<RoomStatusResponse, HttpTradingError> {
@@ -1634,6 +2302,7 @@ pub fn run_remote_participant_once<P: Participant + ?Sized>(
                 &config.room_id,
                 &SubmitOrderRequest {
                     participant_id: config.participant_id.clone(),
+                    instrument_id: None,
                     account_id: config.account_id,
                     action,
                 },
@@ -1753,7 +2422,8 @@ mod tests {
     use exchange_core::{
         AgentTemplate, DcaTrader, DcaTraderConfig, GatewayRequest, InstrumentConfig, MarketConfig,
         NewOrder, OrderKind, ParticipantConfig, ParticipantKind, RoomBootstrap, Side,
-        SpotClearingConfig, SpotMarketConfig, SpotRiskConfig, scenario::ScenarioAccount,
+        SpotClearingConfig, SpotMarketConfig, SpotRiskConfig,
+        scenario::{ScenarioAccount, ScenarioPortfolio},
     };
     use tower::ServiceExt;
 
@@ -1762,11 +2432,19 @@ mod tests {
     fn spot_scenario(room_id: &str) -> ScenarioConfig {
         ScenarioConfig {
             room_id: room_id.to_string(),
+            venue_preset: None,
+            venue_rules: exchange_core::VenueRuleConfig::default(),
+            venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
+            assets: Vec::new(),
             market: MarketConfig::Spot(SpotMarketConfig {
                 instrument: InstrumentConfig::new("V-BTC-SPOT", 1, 1).unwrap(),
                 clearing: SpotClearingConfig::default(),
                 risk: SpotRiskConfig::default(),
             }),
+            extra_markets: Vec::new(),
+            initial_portfolios: Vec::new(),
+            initial_allocations: Vec::new(),
+            routed_initial_allocations: Vec::new(),
             accounts: vec![
                 ScenarioAccount::Spot {
                     account_id: 10,
@@ -1779,6 +2457,7 @@ mod tests {
                 },
             ],
             seed_orders: vec![],
+            routed_seed_orders: Vec::new(),
         }
     }
 
@@ -1792,6 +2471,55 @@ mod tests {
             qty: 8,
         })];
         scenario
+    }
+
+    fn spot_perp_scenario(room_id: &str) -> ScenarioConfig {
+        ScenarioConfig {
+            room_id: room_id.to_string(),
+            venue_preset: None,
+            venue_rules: exchange_core::VenueRuleConfig::default(),
+            venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
+            assets: Vec::new(),
+            market: MarketConfig::Spot(SpotMarketConfig {
+                instrument: InstrumentConfig::new("V-BTC-SPOT", 1, 1).unwrap(),
+                clearing: SpotClearingConfig::default(),
+                risk: SpotRiskConfig::default(),
+            }),
+            extra_markets: vec![MarketConfig::Perp(exchange_core::PerpMarketConfig {
+                instrument: InstrumentConfig::new("V-BTC-PERP", 1, 1).unwrap(),
+                clearing: exchange_core::PerpClearingConfig {
+                    leverage: 10,
+                    ..exchange_core::PerpClearingConfig::default()
+                },
+                risk: exchange_core::PerpRiskConfig::default(),
+                initial_mark_price_tick: 100,
+            })],
+            initial_portfolios: Vec::new(),
+            initial_allocations: Vec::new(),
+            routed_initial_allocations: Vec::new(),
+            accounts: vec![
+                ScenarioAccount::Spot {
+                    account_id: 10,
+                    cash_balance: 1_000,
+                    position_qty: 10,
+                },
+                ScenarioAccount::Basic {
+                    account_id: 20,
+                    cash_balance: 1_000,
+                },
+            ],
+            seed_orders: Vec::new(),
+            routed_seed_orders: vec![exchange_core::ScenarioSeedOrder {
+                instrument_id: Some("V-BTC-PERP".to_string()),
+                command: Command::NewOrder(NewOrder {
+                    order_id: 10_000,
+                    account_id: 20,
+                    side: Side::Sell,
+                    kind: OrderKind::Limit { price_tick: 100 },
+                    qty: 5,
+                }),
+            }],
+        }
     }
 
     fn dca_template(room_id: &str, participant_id: &str, account_id: AccountId) -> AgentTemplate {
@@ -1856,6 +2584,549 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn create_room_can_configure_venue_price_limits() {
+        let app = new_app();
+        let mut scenario = spot_scenario("venue-rules-room");
+        scenario.venue_rules = exchange_core::VenueRuleConfig {
+            price_limits: vec![exchange_core::PriceLimitRuleConfig {
+                instrument_id: "V-BTC-SPOT".to_string(),
+                reference_price_tick: 100,
+                limit_up_ppm: 100_000,
+                limit_down_ppm: 100_000,
+            }],
+            ..exchange_core::VenueRuleConfig::default()
+        };
+        let scenario = serde_json::to_string(&scenario).unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(scenario))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let order = serde_json::json!({
+            "participant_id": "human-1",
+            "account_id": 20,
+            "action": {
+                "PlaceLimit": {
+                    "side": "Buy",
+                    "price_tick": 111,
+                    "qty": 1
+                }
+            }
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/venue-rules-room/orders")
+                    .header("content-type", "application/json")
+                    .body(Body::from(order.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let order_response: OrderResponse = serde_json::from_slice(&body).unwrap();
+        assert!(!order_response.accepted);
+        assert!(
+            order_response
+                .reject_reason
+                .as_deref()
+                .unwrap_or_default()
+                .contains("PriceLimitExceeded")
+        );
+    }
+
+    #[tokio::test]
+    async fn venue_accounts_endpoint_reports_cross_asset_balances() {
+        let app = new_app();
+        let scenario = serde_json::to_string(&seeded_spot_scenario("venue-room")).unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(scenario))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let order = serde_json::json!({
+            "participant_id": "human-1",
+            "account_id": 20,
+            "action": {
+                "PlaceLimit": {
+                    "side": "Buy",
+                    "price_tick": 104,
+                    "qty": 2
+                }
+            }
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/venue-room/orders")
+                    .header("content-type", "application/json")
+                    .body(Body::from(order.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/venue-room/venue/accounts")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let accounts: RoomVenueAccountsResponse = serde_json::from_slice(&body).unwrap();
+
+        let balance_total = |account_id, asset_id: &str| {
+            accounts
+                .accounts
+                .iter()
+                .find(|account| account.account_id == account_id)
+                .and_then(|account| {
+                    account
+                        .balances
+                        .iter()
+                        .find(|balance| balance.asset_id == asset_id)
+                })
+                .map(|balance| balance.total)
+                .expect("venue balance should exist")
+        };
+        assert_eq!(balance_total(10, "V"), 8);
+        assert_eq!(balance_total(10, "BTC"), 1_208);
+        assert_eq!(balance_total(20, "V"), 2);
+        assert_eq!(balance_total(20, "BTC"), 792);
+    }
+
+    #[tokio::test]
+    async fn transfer_routes_apply_deposit_and_withdrawal_after_clock_delay() {
+        let app = new_app();
+        let mut scenario = spot_scenario("transfer-room");
+        scenario.venue_rules = exchange_core::VenueRuleConfig {
+            transfers: exchange_core::TransferPolicyConfig {
+                deposit_delay_steps: 2,
+                withdrawal_delay_steps: 1,
+            },
+            ..exchange_core::VenueRuleConfig::default()
+        };
+        let mut wallet_balances = BTreeMap::new();
+        wallet_balances.insert("BTC".to_string(), 500);
+        scenario.initial_portfolios = vec![ScenarioPortfolio {
+            account_id: 20,
+            balances: wallet_balances,
+        }];
+        let scenario = serde_json::to_string(&scenario).unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(scenario))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let transfer = serde_json::json!({
+            "account_id": 20,
+            "asset_id": "BTC",
+            "amount": 250
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/transfer-room/transfers/deposit")
+                    .header("content-type", "application/json")
+                    .body(Body::from(transfer.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let transfer_response: TransferResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            transfer_response.transfer.status,
+            exchange_core::VenueTransferStatus::Pending
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/transfer-room/portfolio")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let portfolios: RoomPortfoliosResponse = serde_json::from_slice(&body).unwrap();
+        let btc_wallet = portfolios
+            .accounts
+            .iter()
+            .find(|account| account.account_id == 20)
+            .and_then(|account| {
+                account
+                    .balances
+                    .iter()
+                    .find(|balance| balance.asset_id == "BTC")
+            })
+            .unwrap();
+        assert_eq!(btc_wallet.total, 500);
+        assert_eq!(btc_wallet.reserved, 250);
+
+        let advance = serde_json::json!({ "steps": 1 });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/transfer-room/clock/advance")
+                    .header("content-type", "application/json")
+                    .body(Body::from(advance.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let advance_response: AdvanceClockResponse = serde_json::from_slice(&body).unwrap();
+        assert!(advance_response.completed_transfers.is_empty());
+
+        let advance = serde_json::json!({ "steps": 1 });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/transfer-room/clock/advance")
+                    .header("content-type", "application/json")
+                    .body(Body::from(advance.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let advance_response: AdvanceClockResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(advance_response.completed_transfers.len(), 1);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/transfer-room/portfolio")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let portfolios: RoomPortfoliosResponse = serde_json::from_slice(&body).unwrap();
+        let btc_wallet = portfolios
+            .accounts
+            .iter()
+            .find(|account| account.account_id == 20)
+            .and_then(|account| {
+                account
+                    .balances
+                    .iter()
+                    .find(|balance| balance.asset_id == "BTC")
+            })
+            .unwrap();
+        assert_eq!(btc_wallet.total, 250);
+        assert_eq!(btc_wallet.reserved, 0);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/transfer-room/transfers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let transfers: RoomTransfersResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(transfers.transfers.len(), 1);
+        assert_eq!(
+            transfers.transfers[0].status,
+            exchange_core::VenueTransferStatus::Completed
+        );
+
+        let transfer = serde_json::json!({
+            "account_id": 20,
+            "asset_id": "BTC",
+            "amount": 100
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/transfer-room/transfers/withdraw")
+                    .header("content-type", "application/json")
+                    .body(Body::from(transfer.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/transfer-room/venue/accounts")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let accounts: RoomVenueAccountsResponse = serde_json::from_slice(&body).unwrap();
+        let btc = accounts
+            .accounts
+            .iter()
+            .find(|account| account.account_id == 20)
+            .and_then(|account| {
+                account
+                    .balances
+                    .iter()
+                    .find(|balance| balance.asset_id == "BTC")
+            })
+            .unwrap();
+        assert_eq!(btc.total, 1_250);
+        assert_eq!(btc.reserved, 100);
+
+        let advance = serde_json::json!({ "steps": 1 });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/transfer-room/clock/advance")
+                    .header("content-type", "application/json")
+                    .body(Body::from(advance.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/transfer-room/venue/accounts")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let accounts: RoomVenueAccountsResponse = serde_json::from_slice(&body).unwrap();
+        let btc = accounts
+            .accounts
+            .iter()
+            .find(|account| account.account_id == 20)
+            .and_then(|account| {
+                account
+                    .balances
+                    .iter()
+                    .find(|balance| balance.asset_id == "BTC")
+            })
+            .unwrap();
+        assert_eq!(btc.total, 1_150);
+        assert_eq!(btc.reserved, 0);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/transfer-room/portfolio")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let portfolios: RoomPortfoliosResponse = serde_json::from_slice(&body).unwrap();
+        let btc_wallet = portfolios
+            .accounts
+            .iter()
+            .find(|account| account.account_id == 20)
+            .and_then(|account| {
+                account
+                    .balances
+                    .iter()
+                    .find(|balance| balance.asset_id == "BTC")
+            })
+            .unwrap();
+        assert_eq!(btc_wallet.total, 350);
+        assert_eq!(btc_wallet.reserved, 0);
+    }
+
+    #[tokio::test]
+    async fn instrument_routes_target_non_primary_market() {
+        let app = new_app();
+        let scenario = serde_json::to_string(&spot_perp_scenario("multi-room")).unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(scenario))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/multi-room/instruments/V-BTC-PERP/view")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let perp_view: MarketView = serde_json::from_slice(&body).unwrap();
+        assert_eq!(perp_view.instrument_id, "V-BTC-PERP");
+        assert_eq!(perp_view.book.asks[0].price_tick, 100);
+
+        let order = serde_json::json!({
+            "participant_id": "human-1",
+            "account_id": 10,
+            "action": {
+                "PlaceLimit": {
+                    "side": "Buy",
+                    "price_tick": 100,
+                    "qty": 2
+                }
+            }
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/multi-room/instruments/V-BTC-PERP/orders")
+                    .header("content-type", "application/json")
+                    .body(Body::from(order.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let order_response: OrderResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(order_response.instrument_id.as_deref(), Some("V-BTC-PERP"));
+        assert!(order_response.accepted);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/multi-room/view")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let spot_view: MarketView = serde_json::from_slice(&body).unwrap();
+        assert_eq!(spot_view.instrument_id, "V-BTC-SPOT");
+        assert!(spot_view.book.bids.is_empty());
+        assert!(spot_view.book.asks.is_empty());
     }
 
     #[tokio::test]
@@ -1951,10 +3222,16 @@ mod tests {
 
         for uri in [
             "/rooms/query-room/orders",
+            "/rooms/query-room/orders?instrument_id=V-BTC-SPOT",
             "/rooms/query-room/trades",
             "/rooms/query-room/ticks",
             "/rooms/query-room/ledger",
             "/rooms/query-room/positions",
+            "/rooms/query-room/instruments/V-BTC-SPOT/orders",
+            "/rooms/query-room/instruments/V-BTC-SPOT/trades",
+            "/rooms/query-room/instruments/V-BTC-SPOT/ticks",
+            "/rooms/query-room/instruments/V-BTC-SPOT/ledger",
+            "/rooms/query-room/instruments/V-BTC-SPOT/positions",
         ] {
             let response = app
                 .clone()
@@ -2198,9 +3475,8 @@ mod tests {
         let mut rooms = RoomManager::new();
         let bootstrap = rooms.create_room(scenario.clone()).unwrap();
         let seed_records = scenario
-            .seed_orders
-            .iter()
-            .cloned()
+            .seed_commands()
+            .into_iter()
             .zip(bootstrap.seed_executions.iter().cloned())
             .map(|(command, execution)| JournalExecution::seed(command, execution))
             .collect::<Vec<_>>();
@@ -2209,6 +3485,7 @@ mod tests {
             .submit_action(GatewayRequest {
                 participant_id: "human-1".to_string(),
                 room_id: "recovered-room".to_string(),
+                instrument_id: None,
                 account_id: 20,
                 action: OrderAction::PlaceLimit {
                     side: Side::Buy,
@@ -2226,7 +3503,7 @@ mod tests {
         let snapshot = JournalSnapshot {
             room_id: "recovered-room".to_string(),
             command_seq: submitted_record.command_seq,
-            actor: rooms.room("recovered-room").unwrap().clone(),
+            actor: rooms.simulation_room("recovered-room").unwrap().clone(),
         };
 
         let mut executions = seed_records;
@@ -2366,6 +3643,7 @@ mod tests {
             }
         });
         let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
@@ -2389,7 +3667,25 @@ mod tests {
                 _ => None,
             })
             .unwrap();
+        let transfer = serde_json::json!({
+            "account_id": 20,
+            "asset_id": "BTC",
+            "amount": 25
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(format!("/rooms/{room_id}/transfers/deposit"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(transfer.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
         assert_postgres_trade_projection(&database_url, &room_id, submitted_order_id);
+        assert_postgres_transfer_projection(&database_url, &room_id);
 
         let recovered = new_app_recovering_with_journal(
             "http://127.0.0.1:57305",
@@ -2462,6 +3758,22 @@ mod tests {
                 .unwrap()
                 .get(0);
             assert_eq!(access_migration_name, "access_control");
+            let instrument_migration_name: String = client
+                .query_one(
+                    "SELECT name FROM marketforge_schema_migrations WHERE version = 3",
+                    &[],
+                )
+                .unwrap()
+                .get(0);
+            assert_eq!(instrument_migration_name, "instrument_projection_scope");
+            let transfer_migration_name: String = client
+                .query_one(
+                    "SELECT name FROM marketforge_schema_migrations WHERE version = 4",
+                    &[],
+                )
+                .unwrap()
+                .get(0);
+            assert_eq!(transfer_migration_name, "transfer_journal");
 
             let order_count: i64 = client
                 .query_one(
@@ -2475,32 +3787,36 @@ mod tests {
             let seed_order = client
                 .query_one(
                     r#"
-                    SELECT status, remaining_qty
+                    SELECT instrument_id, status, remaining_qty
                     FROM marketforge_orders
                     WHERE room_id = $1 AND order_id = 10000
                     "#,
                     &[&room_id],
                 )
                 .unwrap();
+            let seed_instrument_id: String = seed_order.get("instrument_id");
             let seed_status: String = seed_order.get("status");
             let seed_remaining_qty: i64 = seed_order.get("remaining_qty");
+            assert_eq!(seed_instrument_id, "V-BTC-SPOT");
             assert_eq!(seed_status, "partially_filled");
             assert_eq!(seed_remaining_qty, 6);
 
             let taker_order = client
                 .query_one(
                     r#"
-                    SELECT status, remaining_qty, account_id, participant_id
+                    SELECT instrument_id, status, remaining_qty, account_id, participant_id
                     FROM marketforge_orders
                     WHERE room_id = $1 AND order_id = $2
                     "#,
                     &[&room_id, &taker_order_id],
                 )
                 .unwrap();
+            let taker_instrument_id: String = taker_order.get("instrument_id");
             let taker_status: String = taker_order.get("status");
             let taker_remaining_qty: i64 = taker_order.get("remaining_qty");
             let taker_account_id: i64 = taker_order.get("account_id");
             let participant_id: Option<String> = taker_order.get("participant_id");
+            assert_eq!(taker_instrument_id, "V-BTC-SPOT");
             assert_eq!(taker_status, "filled");
             assert_eq!(taker_remaining_qty, 0);
             assert_eq!(taker_account_id, 20);
@@ -2509,18 +3825,20 @@ mod tests {
             let trade = client
                 .query_one(
                     r#"
-                    SELECT maker_account_id, taker_account_id, price_tick, qty, taker_side
+                    SELECT instrument_id, maker_account_id, taker_account_id, price_tick, qty, taker_side
                     FROM marketforge_trades
                     WHERE room_id = $1
                     "#,
                     &[&room_id],
                 )
                 .unwrap();
+            let trade_instrument_id: String = trade.get("instrument_id");
             let maker_account_id: i64 = trade.get("maker_account_id");
             let taker_account_id: i64 = trade.get("taker_account_id");
             let price_tick: i64 = trade.get("price_tick");
             let qty: i64 = trade.get("qty");
             let taker_side: String = trade.get("taker_side");
+            assert_eq!(trade_instrument_id, "V-BTC-SPOT");
             assert_eq!(maker_account_id, 10);
             assert_eq!(taker_account_id, 20);
             assert_eq!(price_tick, 104);
@@ -2548,18 +3866,20 @@ mod tests {
             let buyer_ledger = client
                 .query_one(
                     r#"
-                    SELECT account_side, cash_delta, position_delta, cash_balance, position_qty
+                    SELECT instrument_id, account_side, cash_delta, position_delta, cash_balance, position_qty
                     FROM marketforge_account_ledger
                     WHERE room_id = $1 AND account_id = 20
                     "#,
                     &[&room_id],
                 )
                 .unwrap();
+            let ledger_instrument_id: String = buyer_ledger.get("instrument_id");
             let account_side: String = buyer_ledger.get("account_side");
             let cash_delta: i64 = buyer_ledger.get("cash_delta");
             let position_delta: i64 = buyer_ledger.get("position_delta");
             let cash_balance: i64 = buyer_ledger.get("cash_balance");
             let position_qty: i64 = buyer_ledger.get("position_qty");
+            assert_eq!(ledger_instrument_id, "V-BTC-SPOT");
             assert_eq!(account_side, "buy");
             assert_eq!(cash_delta, -208);
             assert_eq!(position_delta, 2);
@@ -2574,6 +3894,45 @@ mod tests {
                 .unwrap()
                 .get(0);
             assert_eq!(position_count, 2);
+        })
+        .join()
+        .unwrap();
+    }
+
+    fn assert_postgres_transfer_projection(database_url: &str, room_id: &str) {
+        let database_url = database_url.to_string();
+        let room_id = room_id.to_string();
+        std::thread::spawn(move || {
+            let mut client = postgres::Client::connect(&database_url, postgres::NoTls).unwrap();
+            let transfer = client
+                .query_one(
+                    r#"
+                    SELECT kind, account_id, asset_id, amount, status
+                    FROM marketforge_transfers
+                    WHERE room_id = $1
+                    "#,
+                    &[&room_id],
+                )
+                .unwrap();
+            let kind: String = transfer.get("kind");
+            let account_id: i64 = transfer.get("account_id");
+            let asset_id: String = transfer.get("asset_id");
+            let amount: i64 = transfer.get("amount");
+            let status: String = transfer.get("status");
+            assert_eq!(kind, "deposit");
+            assert_eq!(account_id, 20);
+            assert_eq!(asset_id, "BTC");
+            assert_eq!(amount, 25);
+            assert_eq!(status, "completed");
+
+            let event_count: i64 = client
+                .query_one(
+                    "SELECT count(*) FROM marketforge_transfer_events WHERE room_id = $1",
+                    &[&room_id],
+                )
+                .unwrap()
+                .get(0);
+            assert_eq!(event_count, 1);
         })
         .join()
         .unwrap();

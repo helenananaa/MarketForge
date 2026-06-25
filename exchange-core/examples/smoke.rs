@@ -73,6 +73,10 @@ fn main() {
 fn smoke_scenario() -> ScenarioConfig {
     ScenarioConfig {
         room_id: "demo-spot".to_string(),
+        venue_preset: None,
+        venue_rules: exchange_core::VenueRuleConfig::default(),
+        venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
+        assets: Vec::new(),
         market: MarketConfig::Spot(SpotMarketConfig {
             instrument: InstrumentConfig::new("V-BTC-SPOT", 1, 1).unwrap(),
             clearing: SpotClearingConfig::default(),
@@ -81,6 +85,10 @@ fn smoke_scenario() -> ScenarioConfig {
                 ..SpotRiskConfig::default()
             },
         }),
+        extra_markets: Vec::new(),
+        initial_portfolios: Vec::new(),
+        initial_allocations: Vec::new(),
+        routed_initial_allocations: Vec::new(),
         accounts: vec![
             ScenarioAccount::Basic {
                 account_id: 20,
@@ -99,6 +107,7 @@ fn smoke_scenario() -> ScenarioConfig {
             kind: OrderKind::Limit { price_tick: 105 },
             qty: 3,
         })],
+        routed_seed_orders: Vec::new(),
     }
 }
 

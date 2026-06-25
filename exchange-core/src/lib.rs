@@ -10,17 +10,24 @@ pub mod market;
 pub mod model;
 pub mod participant;
 pub mod perp;
+pub mod portfolio;
 pub mod replay;
 pub mod risk;
 pub mod room;
 pub mod scenario;
+pub mod simulation;
 pub mod spot;
 pub mod trading;
+pub mod transfer;
+pub mod venue_rules;
 
-pub use account::{ClearingError, FeeRatePpm, Money, PositionQty};
+pub use account::{
+    ClearingError, FeeRatePpm, Money, PositionQty, VenueAccountError, VenueAccountSnapshot,
+    VenueAccountStore, VenueAssetBalance, VenueBalanceSnapshot,
+};
 pub use actor::{
     AccountSnapshot, AccountSnapshots, ActorExecution, ActorExecutionResult, ActorRejectReason,
-    ActorSeq, MarketActor, MarketExecution, MarketStatus, RoomId,
+    ActorSeq, ExchangeActor, MarketActor, MarketExecution, MarketStatus, RoomId,
 };
 pub use agents::{
     AgentParticipantStep, AgentRuntime, AgentStep, AgentTemplate, DcaTrader, DcaTraderConfig,
@@ -37,8 +44,9 @@ pub use jsonl::{
 };
 pub use log::{CommandRecord, EventLog, EventRecord, LogSeq, RecordedExecution};
 pub use market::{
-    InstrumentConfig, MarketConfig, MarketConfigError, MarketEngine, MarketKind, PerpMarketConfig,
-    SpotMarketConfig,
+    AssetConfig, AssetId, AssetKind, AssetSelector, ExchangeConfig, InstrumentConfig, InstrumentId,
+    MarketConfig, MarketConfigError, MarketEngine, MarketKind, PerpMarketConfig, SpotMarketConfig,
+    VenueAssetPolicyConfig, VenueAssetPolicyConfigError, VenueId,
 };
 pub use model::{
     BookLevel, BookSnapshot, CancelOrder, Command, Event, NewOrder, Order, OrderId, OrderKind,
@@ -48,13 +56,34 @@ pub use participant::{Participant, ParticipantConfig, ParticipantKind, run_parti
 pub use perp::{
     PerpAccount, PerpAccountSnapshot, PerpAccountStore, PerpClearingConfig, PerpClearingEvent,
 };
+pub use portfolio::{
+    PortfolioAccountSnapshot, PortfolioAssetBalance, PortfolioBalanceSnapshot, PortfolioError,
+    PortfolioStore,
+};
 pub use replay::{LoggedOrderBook, ReplayEngine, ReplayReport};
 pub use risk::{PerpRiskConfig, PerpRiskEngine, RiskContext, SpotRiskConfig, SpotRiskEngine};
 pub use room::{RoomBootstrap, RoomManager, RoomManagerError};
-pub use scenario::{ScenarioAccount, ScenarioBootstrap, ScenarioConfig, ScenarioError};
+pub use scenario::{
+    ScenarioAccount, ScenarioAllocation, ScenarioBootstrap, ScenarioConfig, ScenarioError,
+    ScenarioPortfolio, ScenarioSeedOrder, ScenarioVenueAllocation,
+};
+pub use simulation::{
+    AccountNetWorthAssetSnapshot, AccountNetWorthSnapshot, AssetLedgerEntry, AssetLedgerKind,
+    PendingVenueTransfer, RoomNetWorthSnapshot, SimulationBootstrap, SimulationRoom,
+    SimulationRoomError, UserId, VenueAccountVenueSnapshot, VenueToVenueTransfer,
+};
 pub use spot::{
     SpotAccount, SpotAccountSnapshot, SpotAccountStore, SpotClearingConfig, SpotClearingEvent,
 };
 pub use trading::{
     PerpTradingEngine, PerpTradingExecution, SpotTradingEngine, SpotTradingExecution,
+};
+pub use transfer::{
+    TransferId, VenueTransfer, VenueTransferKind, VenueTransferRejectReason, VenueTransferStatus,
+    VenueTransferStore,
+};
+pub use venue_rules::{
+    CircuitBreakerRuleConfig, PendingSpotBuy, PriceLimitRuleConfig, SettlementRuleConfig,
+    TradingSessionRuleConfig, TradingSessionWindow, TransferPolicyConfig, VenuePreset,
+    VenueRuleConfig, VenueRuleConfigError, VenueRuleEngine, VenueRuleRejectReason,
 };

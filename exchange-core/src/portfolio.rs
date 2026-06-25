@@ -2,30 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    market::AssetId,
-    model::{AccountId, PriceTick, Qty},
-};
-
-pub type Money = i128;
-pub type PositionQty = i128;
-pub type FeeRatePpm = u32;
-
-const FEE_DENOMINATOR_PPM: Money = 1_000_000;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ClearingError {
-    InvalidPrice,
-    InvalidLeverage,
-    NotionalOverflow,
-}
+use crate::{account::Money, market::AssetId, model::AccountId};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct VenueAccountStore {
-    balances: BTreeMap<AccountId, BTreeMap<AssetId, VenueAssetBalance>>,
+pub struct PortfolioStore {
+    balances: BTreeMap<AccountId, BTreeMap<AssetId, PortfolioAssetBalance>>,
 }
 
-impl VenueAccountStore {
+impl PortfolioStore {
     pub fn new() -> Self {
         Self::default()
     }
@@ -35,7 +19,7 @@ impl VenueAccountStore {
         account_id: AccountId,
         asset_id: impl Into<AssetId>,
         total: Money,
-    ) -> VenueBalanceSnapshot {
+    ) -> PortfolioBalanceSnapshot {
         let asset_id = asset_id.into();
         let balance = self.balance_mut(account_id, asset_id.clone());
         balance.total = total;
@@ -52,32 +36,17 @@ impl VenueAccountStore {
         account_id: AccountId,
         asset_id: impl Into<AssetId>,
         delta: Money,
-    ) -> Result<VenueBalanceSnapshot, VenueAccountError> {
+    ) -> Result<PortfolioBalanceSnapshot, PortfolioError> {
         let asset_id = asset_id.into();
         let balance = self.balance_mut(account_id, asset_id.clone());
         let next_total = balance
             .total
             .checked_add(delta)
-            .ok_or(VenueAccountError::BalanceOverflow)?;
+            .ok_or(PortfolioError::BalanceOverflow)?;
         if next_total < balance.reserved {
-            return Err(VenueAccountError::InsufficientAvailableBalance);
+            return Err(PortfolioError::InsufficientAvailableBalance);
         }
         balance.total = next_total;
-        Ok(balance.snapshot(account_id, asset_id))
-    }
-
-    pub fn apply_signed_delta(
-        &mut self,
-        account_id: AccountId,
-        asset_id: impl Into<AssetId>,
-        delta: Money,
-    ) -> Result<VenueBalanceSnapshot, VenueAccountError> {
-        let asset_id = asset_id.into();
-        let balance = self.balance_mut(account_id, asset_id.clone());
-        balance.total = balance
-            .total
-            .checked_add(delta)
-            .ok_or(VenueAccountError::BalanceOverflow)?;
         Ok(balance.snapshot(account_id, asset_id))
     }
 
@@ -86,14 +55,14 @@ impl VenueAccountStore {
         account_id: AccountId,
         asset_id: impl Into<AssetId>,
         amount: Money,
-    ) -> Result<VenueBalanceSnapshot, VenueAccountError> {
+    ) -> Result<PortfolioBalanceSnapshot, PortfolioError> {
         if amount < 0 {
-            return Err(VenueAccountError::NegativeAmount);
+            return Err(PortfolioError::NegativeAmount);
         }
         let asset_id = asset_id.into();
         let balance = self.balance_mut(account_id, asset_id.clone());
         if balance.available() < amount {
-            return Err(VenueAccountError::InsufficientAvailableBalance);
+            return Err(PortfolioError::InsufficientAvailableBalance);
         }
         balance.reserved += amount;
         Ok(balance.snapshot(account_id, asset_id))
@@ -104,14 +73,14 @@ impl VenueAccountStore {
         account_id: AccountId,
         asset_id: impl Into<AssetId>,
         amount: Money,
-    ) -> Result<VenueBalanceSnapshot, VenueAccountError> {
+    ) -> Result<PortfolioBalanceSnapshot, PortfolioError> {
         if amount < 0 {
-            return Err(VenueAccountError::NegativeAmount);
+            return Err(PortfolioError::NegativeAmount);
         }
         let asset_id = asset_id.into();
         let balance = self.balance_mut(account_id, asset_id.clone());
         if balance.reserved < amount {
-            return Err(VenueAccountError::InsufficientReservedBalance);
+            return Err(PortfolioError::InsufficientReservedBalance);
         }
         balance.reserved -= amount;
         Ok(balance.snapshot(account_id, asset_id))
@@ -121,14 +90,14 @@ impl VenueAccountStore {
         &self,
         account_id: AccountId,
         asset_id: &str,
-    ) -> Option<VenueBalanceSnapshot> {
+    ) -> Option<PortfolioBalanceSnapshot> {
         self.balances
             .get(&account_id)
             .and_then(|balances| balances.get(asset_id))
             .map(|balance| balance.snapshot(account_id, asset_id.to_string()))
     }
 
-    pub fn account_snapshot(&self, account_id: AccountId) -> VenueAccountSnapshot {
+    pub fn account_snapshot(&self, account_id: AccountId) -> PortfolioAccountSnapshot {
         let balances = self
             .balances
             .get(&account_id)
@@ -140,13 +109,13 @@ impl VenueAccountStore {
             })
             .unwrap_or_default();
 
-        VenueAccountSnapshot {
+        PortfolioAccountSnapshot {
             account_id,
             balances,
         }
     }
 
-    pub fn account_snapshots(&self) -> Vec<VenueAccountSnapshot> {
+    pub fn account_snapshots(&self) -> Vec<PortfolioAccountSnapshot> {
         self.balances
             .keys()
             .map(|account_id| self.account_snapshot(*account_id))
@@ -162,7 +131,11 @@ impl VenueAccountStore {
             .collect()
     }
 
-    fn balance_mut(&mut self, account_id: AccountId, asset_id: AssetId) -> &mut VenueAssetBalance {
+    fn balance_mut(
+        &mut self,
+        account_id: AccountId,
+        asset_id: AssetId,
+    ) -> &mut PortfolioAssetBalance {
         self.balances
             .entry(account_id)
             .or_default()
@@ -172,18 +145,18 @@ impl VenueAccountStore {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct VenueAssetBalance {
+pub struct PortfolioAssetBalance {
     pub total: Money,
     pub reserved: Money,
 }
 
-impl VenueAssetBalance {
+impl PortfolioAssetBalance {
     pub fn available(&self) -> Money {
         self.total - self.reserved
     }
 
-    fn snapshot(&self, account_id: AccountId, asset_id: AssetId) -> VenueBalanceSnapshot {
-        VenueBalanceSnapshot {
+    fn snapshot(&self, account_id: AccountId, asset_id: AssetId) -> PortfolioBalanceSnapshot {
+        PortfolioBalanceSnapshot {
             account_id,
             asset_id,
             total: self.total,
@@ -194,7 +167,7 @@ impl VenueAssetBalance {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct VenueBalanceSnapshot {
+pub struct PortfolioBalanceSnapshot {
     pub account_id: AccountId,
     pub asset_id: AssetId,
     pub total: Money,
@@ -203,31 +176,17 @@ pub struct VenueBalanceSnapshot {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct VenueAccountSnapshot {
+pub struct PortfolioAccountSnapshot {
     pub account_id: AccountId,
-    pub balances: Vec<VenueBalanceSnapshot>,
+    pub balances: Vec<PortfolioBalanceSnapshot>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum VenueAccountError {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PortfolioError {
     BalanceOverflow,
     NegativeAmount,
     InsufficientAvailableBalance,
     InsufficientReservedBalance,
-}
-
-pub(crate) fn notional(price_tick: PriceTick, qty: Qty) -> Result<Money, ClearingError> {
-    if price_tick <= 0 {
-        return Err(ClearingError::InvalidPrice);
-    }
-
-    Money::from(price_tick)
-        .checked_mul(Money::from(qty))
-        .ok_or(ClearingError::NotionalOverflow)
-}
-
-pub(crate) fn fee_for(notional: Money, fee_rate_ppm: FeeRatePpm) -> Money {
-    notional * Money::from(fee_rate_ppm) / FEE_DENOMINATOR_PPM
 }
 
 #[cfg(test)]
@@ -235,37 +194,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn venue_account_store_reserves_releases_and_snapshots_assets() {
-        let mut store = VenueAccountStore::new();
+    fn portfolio_store_reserves_releases_and_applies_deltas() {
+        let mut store = PortfolioStore::new();
 
         let initial = store.set_balance(10, "USDT", 1_000);
         assert_eq!(initial.available, 1_000);
 
-        let reserved = store.reserve(10, "USDT", 250).unwrap();
-        assert_eq!(reserved.reserved, 250);
-        assert_eq!(reserved.available, 750);
+        let reserved = store.reserve(10, "USDT", 400).unwrap();
+        assert_eq!(reserved.reserved, 400);
+        assert_eq!(reserved.available, 600);
 
         assert_eq!(
-            store.reserve(10, "USDT", 751),
-            Err(VenueAccountError::InsufficientAvailableBalance)
+            store.apply_delta(10, "USDT", -700),
+            Err(PortfolioError::InsufficientAvailableBalance)
         );
 
-        let released = store.release(10, "USDT", 100).unwrap();
-        assert_eq!(released.reserved, 150);
-        assert_eq!(released.available, 850);
+        let released = store.release(10, "USDT", 150).unwrap();
+        assert_eq!(released.reserved, 250);
 
-        let updated = store.apply_delta(10, "USDT", -500).unwrap();
-        assert_eq!(updated.total, 500);
-        assert_eq!(updated.available, 350);
-        assert_eq!(
-            store.apply_delta(10, "USDT", -351),
-            Err(VenueAccountError::InsufficientAvailableBalance)
-        );
-
-        let signed = store.apply_signed_delta(10, "USDT", -700).unwrap();
-        assert_eq!(signed.total, -200);
-        assert_eq!(signed.reserved, 150);
-        assert_eq!(signed.available, -350);
+        let debited = store.apply_delta(10, "USDT", -500).unwrap();
+        assert_eq!(debited.total, 500);
+        assert_eq!(debited.available, 250);
         assert_eq!(store.asset_ids(), vec!["USDT"]);
     }
 }

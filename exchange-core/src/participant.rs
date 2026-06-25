@@ -46,6 +46,7 @@ pub fn run_participant_once<T: TradingApi, P: Participant + ?Sized>(
             api.submit_action(GatewayRequest {
                 participant_id: config.participant_id.clone(),
                 room_id: config.room_id.clone(),
+                instrument_id: None,
                 account_id: config.account_id,
                 action,
             })
@@ -95,16 +96,25 @@ mod tests {
     fn spot_scenario() -> ScenarioConfig {
         ScenarioConfig {
             room_id: "room-1".to_string(),
+            venue_preset: None,
+            venue_rules: crate::VenueRuleConfig::default(),
+            venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
+            assets: Vec::new(),
             market: MarketConfig::Spot(SpotMarketConfig {
                 instrument: InstrumentConfig::new("V-BTC-SPOT", 1, 1).unwrap(),
                 clearing: SpotClearingConfig::default(),
                 risk: SpotRiskConfig::default(),
             }),
+            extra_markets: Vec::new(),
+            initial_portfolios: Vec::new(),
+            initial_allocations: Vec::new(),
+            routed_initial_allocations: Vec::new(),
             accounts: vec![ScenarioAccount::Basic {
                 account_id: 20,
                 cash_balance: 1_000,
             }],
             seed_orders: vec![],
+            routed_seed_orders: Vec::new(),
         }
     }
 

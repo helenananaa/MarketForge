@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -7,7 +9,14 @@ use crate::{
     risk::{PerpRiskConfig, SpotRiskConfig},
     spot::SpotClearingConfig,
     trading::{PerpTradingEngine, SpotTradingEngine},
+    venue_rules::{VenueRuleConfig, VenueRuleConfigError},
 };
+
+pub type AssetId = String;
+pub type VenueId = String;
+pub type InstrumentId = String;
+
+pub const DEFAULT_VENUE_ID: &str = "default-venue";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum MarketKind {
@@ -16,8 +25,54 @@ pub enum MarketKind {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AssetConfig {
+    pub asset_id: AssetId,
+    #[serde(default)]
+    pub kind: AssetKind,
+    #[serde(default)]
+    pub tags: BTreeSet<String>,
+    pub issuer: Option<String>,
+    pub native_venue: Option<VenueId>,
+    #[serde(default)]
+    pub listed_venues: BTreeSet<VenueId>,
+}
+
+impl AssetConfig {
+    pub fn new(asset_id: impl Into<AssetId>) -> Result<Self, MarketConfigError> {
+        let config = Self {
+            asset_id: asset_id.into(),
+            kind: AssetKind::default(),
+            tags: BTreeSet::new(),
+            issuer: None,
+            native_venue: None,
+            listed_venues: BTreeSet::new(),
+        };
+        if config.asset_id.trim().is_empty() {
+            return Err(MarketConfigError::EmptyAssetId);
+        }
+        Ok(config)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum AssetKind {
+    Fiat,
+    Crypto,
+    Stablecoin,
+    Equity,
+    Commodity,
+    Derivative,
+    #[default]
+    Custom,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct InstrumentConfig {
+    pub instrument_id: InstrumentId,
+    pub venue_id: VenueId,
     pub symbol: String,
+    pub base_asset: AssetId,
+    pub quote_asset: AssetId,
     pub tick_size: PriceTick,
     pub lot_size: Qty,
 }
@@ -28,8 +83,33 @@ impl InstrumentConfig {
         tick_size: PriceTick,
         lot_size: Qty,
     ) -> Result<Self, MarketConfigError> {
+        let symbol = symbol.into();
+        Self::new_for_venue(
+            DEFAULT_VENUE_ID,
+            symbol.clone(),
+            inferred_base_asset(&symbol),
+            inferred_quote_asset(&symbol),
+            symbol,
+            tick_size,
+            lot_size,
+        )
+    }
+
+    pub fn new_for_venue(
+        venue_id: impl Into<VenueId>,
+        instrument_id: impl Into<InstrumentId>,
+        base_asset: impl Into<AssetId>,
+        quote_asset: impl Into<AssetId>,
+        symbol: impl Into<String>,
+        tick_size: PriceTick,
+        lot_size: Qty,
+    ) -> Result<Self, MarketConfigError> {
         let config = Self {
+            instrument_id: instrument_id.into(),
+            venue_id: venue_id.into(),
             symbol: symbol.into(),
+            base_asset: base_asset.into(),
+            quote_asset: quote_asset.into(),
             tick_size,
             lot_size,
         };
@@ -40,6 +120,18 @@ impl InstrumentConfig {
     pub fn validate(&self) -> Result<(), MarketConfigError> {
         if self.symbol.trim().is_empty() {
             return Err(MarketConfigError::EmptySymbol);
+        }
+        if self.instrument_id.trim().is_empty() {
+            return Err(MarketConfigError::EmptyInstrumentId);
+        }
+        if self.venue_id.trim().is_empty() {
+            return Err(MarketConfigError::EmptyVenueId);
+        }
+        if self.base_asset.trim().is_empty() || self.quote_asset.trim().is_empty() {
+            return Err(MarketConfigError::EmptyAssetId);
+        }
+        if self.base_asset == self.quote_asset {
+            return Err(MarketConfigError::DuplicateAssetId);
         }
         if self.tick_size <= 0 {
             return Err(MarketConfigError::InvalidTickSize);
@@ -136,6 +228,14 @@ impl MarketConfig {
         &self.instrument().symbol
     }
 
+    pub fn instrument_id(&self) -> &str {
+        &self.instrument().instrument_id
+    }
+
+    pub fn venue_id(&self) -> &str {
+        &self.instrument().venue_id
+    }
+
     pub fn validate(&self) -> Result<(), MarketConfigError> {
         match self {
             Self::Spot(config) => config.validate(),
@@ -166,14 +266,405 @@ impl MarketEngine {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ExchangeConfig {
+    pub venue_id: VenueId,
+    #[serde(default)]
+    pub venue_rules: VenueRuleConfig,
+    #[serde(default)]
+    pub asset_policy: VenueAssetPolicyConfig,
+    pub assets: Vec<AssetConfig>,
+    pub markets: Vec<MarketConfig>,
+}
+
+impl ExchangeConfig {
+    pub fn new(
+        venue_id: impl Into<VenueId>,
+        markets: Vec<MarketConfig>,
+    ) -> Result<Self, MarketConfigError> {
+        let venue_id = venue_id.into();
+        let assets = assets_from_markets(&markets);
+        let config = Self {
+            venue_id,
+            venue_rules: VenueRuleConfig::default(),
+            asset_policy: VenueAssetPolicyConfig::default(),
+            assets,
+            markets,
+        };
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub fn new_single(market: MarketConfig) -> Result<Self, MarketConfigError> {
+        Self::new(market.venue_id().to_string(), vec![market])
+    }
+
+    pub fn validate(&self) -> Result<(), MarketConfigError> {
+        if self.venue_id.trim().is_empty() {
+            return Err(MarketConfigError::EmptyVenueId);
+        }
+        if self.markets.is_empty() {
+            return Err(MarketConfigError::EmptyExchangeMarkets);
+        }
+        self.venue_rules
+            .validate()
+            .map_err(MarketConfigError::VenueRule)?;
+        self.asset_policy
+            .validate()
+            .map_err(MarketConfigError::AssetPolicy)?;
+
+        let mut asset_ids = BTreeSet::new();
+        for asset in &self.assets {
+            asset.validate()?;
+            if !asset_ids.insert(asset.asset_id.clone()) {
+                return Err(MarketConfigError::DuplicateAssetId);
+            }
+        }
+
+        let mut instrument_ids = BTreeSet::new();
+        for market in &self.markets {
+            market.validate()?;
+            if market.venue_id() != self.venue_id {
+                return Err(MarketConfigError::VenueMismatch);
+            }
+            if !instrument_ids.insert(market.instrument_id().to_string()) {
+                return Err(MarketConfigError::DuplicateInstrumentId);
+            }
+
+            let instrument = market.instrument();
+            if !asset_ids.contains(&instrument.base_asset)
+                || !asset_ids.contains(&instrument.quote_asset)
+            {
+                return Err(MarketConfigError::UnknownAssetId);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn primary_instrument_id(&self) -> &str {
+        self.markets[0].instrument_id()
+    }
+
+    pub fn accepts_deposit_asset(&self, asset_id: &str) -> bool {
+        self.asset_policy.allows_deposit(
+            asset_id,
+            self.asset_config(asset_id),
+            self.assets.iter().map(|asset| asset.asset_id.as_str()),
+        )
+    }
+
+    pub fn accepts_withdrawal_asset(&self, asset_id: &str) -> bool {
+        self.asset_policy.allows_withdrawal(
+            asset_id,
+            self.asset_config(asset_id),
+            self.assets.iter().map(|asset| asset.asset_id.as_str()),
+        )
+    }
+
+    pub fn merge_asset_metadata(&mut self, assets: &[AssetConfig]) {
+        for asset in assets {
+            match self
+                .assets
+                .iter_mut()
+                .find(|existing| existing.asset_id == asset.asset_id)
+            {
+                Some(existing) => *existing = asset.clone(),
+                None => self.assets.push(asset.clone()),
+            }
+        }
+    }
+
+    fn asset_config(&self, asset_id: &str) -> Option<&AssetConfig> {
+        self.assets.iter().find(|asset| asset.asset_id == asset_id)
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct VenueAssetPolicyConfig {
+    #[serde(default)]
+    pub deposit_assets: BTreeSet<AssetId>,
+    #[serde(default)]
+    pub withdrawal_assets: BTreeSet<AssetId>,
+    #[serde(default)]
+    pub settlement_assets: BTreeSet<AssetId>,
+    #[serde(default)]
+    pub margin_assets: BTreeSet<AssetId>,
+    #[serde(default)]
+    pub deposit_rules: Vec<AssetSelector>,
+    #[serde(default)]
+    pub withdrawal_rules: Vec<AssetSelector>,
+    #[serde(default)]
+    pub settlement_rules: Vec<AssetSelector>,
+    #[serde(default)]
+    pub margin_rules: Vec<AssetSelector>,
+}
+
+impl VenueAssetPolicyConfig {
+    pub fn validate(&self) -> Result<(), VenueAssetPolicyConfigError> {
+        for asset_id in self
+            .deposit_assets
+            .iter()
+            .chain(self.withdrawal_assets.iter())
+            .chain(self.settlement_assets.iter())
+            .chain(self.margin_assets.iter())
+        {
+            if asset_id.trim().is_empty() {
+                return Err(VenueAssetPolicyConfigError::EmptyAssetId);
+            }
+        }
+        for selector in self
+            .deposit_rules
+            .iter()
+            .chain(self.withdrawal_rules.iter())
+            .chain(self.settlement_rules.iter())
+            .chain(self.margin_rules.iter())
+        {
+            selector.validate()?;
+        }
+        Ok(())
+    }
+
+    pub fn merge_overrides(mut self, overrides: Self) -> Self {
+        if !overrides.deposit_assets.is_empty() {
+            self.deposit_assets = overrides.deposit_assets;
+        }
+        if !overrides.withdrawal_assets.is_empty() {
+            self.withdrawal_assets = overrides.withdrawal_assets;
+        }
+        if !overrides.settlement_assets.is_empty() {
+            self.settlement_assets = overrides.settlement_assets;
+        }
+        if !overrides.margin_assets.is_empty() {
+            self.margin_assets = overrides.margin_assets;
+        }
+        if !overrides.deposit_rules.is_empty() {
+            self.deposit_rules = overrides.deposit_rules;
+        }
+        if !overrides.withdrawal_rules.is_empty() {
+            self.withdrawal_rules = overrides.withdrawal_rules;
+        }
+        if !overrides.settlement_rules.is_empty() {
+            self.settlement_rules = overrides.settlement_rules;
+        }
+        if !overrides.margin_rules.is_empty() {
+            self.margin_rules = overrides.margin_rules;
+        }
+        self
+    }
+
+    pub fn allows_deposit<'a>(
+        &self,
+        asset_id: &str,
+        asset: Option<&AssetConfig>,
+        fallback_assets: impl Iterator<Item = &'a str>,
+    ) -> bool {
+        asset_allowed_or_fallback(
+            &self.deposit_assets,
+            &self.deposit_rules,
+            asset_id,
+            asset,
+            fallback_assets,
+        )
+    }
+
+    pub fn allows_withdrawal<'a>(
+        &self,
+        asset_id: &str,
+        asset: Option<&AssetConfig>,
+        fallback_assets: impl Iterator<Item = &'a str>,
+    ) -> bool {
+        asset_allowed_or_fallback(
+            &self.withdrawal_assets,
+            &self.withdrawal_rules,
+            asset_id,
+            asset,
+            fallback_assets,
+        )
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "type")]
+pub enum AssetSelector {
+    Any,
+    AssetIds { asset_ids: BTreeSet<AssetId> },
+    Kinds { kinds: BTreeSet<AssetKind> },
+    TagsAny { tags: BTreeSet<String> },
+    TagsAll { tags: BTreeSet<String> },
+    Issuer { issuer: String },
+    NativeVenue { venue_id: VenueId },
+    ListedOnVenue { venue_id: VenueId },
+}
+
+impl AssetSelector {
+    fn validate(&self) -> Result<(), VenueAssetPolicyConfigError> {
+        match self {
+            Self::Any => Ok(()),
+            Self::AssetIds { asset_ids } => validate_non_empty_set(asset_ids),
+            Self::Kinds { kinds } => {
+                if kinds.is_empty() {
+                    Err(VenueAssetPolicyConfigError::EmptySelector)
+                } else {
+                    Ok(())
+                }
+            }
+            Self::TagsAny { tags } | Self::TagsAll { tags } => validate_non_empty_set(tags),
+            Self::Issuer { issuer } => validate_non_empty_value(issuer),
+            Self::NativeVenue { venue_id } | Self::ListedOnVenue { venue_id } => {
+                validate_non_empty_value(venue_id)
+            }
+        }
+    }
+
+    fn matches(&self, asset_id: &str, asset: Option<&AssetConfig>) -> bool {
+        match self {
+            Self::Any => true,
+            Self::AssetIds { asset_ids } => asset_ids.contains(asset_id),
+            Self::Kinds { kinds } => asset.is_some_and(|asset| kinds.contains(&asset.kind)),
+            Self::TagsAny { tags } => {
+                asset.is_some_and(|asset| tags.iter().any(|tag| asset.tags.contains(tag)))
+            }
+            Self::TagsAll { tags } => {
+                asset.is_some_and(|asset| tags.iter().all(|tag| asset.tags.contains(tag)))
+            }
+            Self::Issuer { issuer } => asset
+                .and_then(|asset| asset.issuer.as_deref())
+                .is_some_and(|asset_issuer| asset_issuer == issuer),
+            Self::NativeVenue { venue_id } => asset
+                .and_then(|asset| asset.native_venue.as_deref())
+                .is_some_and(|asset_venue| asset_venue == venue_id),
+            Self::ListedOnVenue { venue_id } => {
+                asset.is_some_and(|asset| asset.listed_venues.contains(venue_id))
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum VenueAssetPolicyConfigError {
+    EmptyAssetId,
+    EmptySelector,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MarketConfigError {
+    EmptyAssetId,
+    EmptyVenueId,
+    EmptyInstrumentId,
     EmptySymbol,
+    DuplicateAssetId,
+    DuplicateInstrumentId,
+    EmptyExchangeMarkets,
+    UnknownAssetId,
+    VenueMismatch,
     InvalidTickSize,
     InvalidLotSize,
     InvalidInitialMarkPrice,
     InvalidLeverage,
+    VenueRule(VenueRuleConfigError),
+    AssetPolicy(VenueAssetPolicyConfigError),
     Clearing(ClearingError),
+}
+
+impl AssetConfig {
+    fn validate(&self) -> Result<(), MarketConfigError> {
+        if self.asset_id.trim().is_empty() {
+            return Err(MarketConfigError::EmptyAssetId);
+        }
+        if self.tags.iter().any(|tag| tag.trim().is_empty())
+            || self
+                .issuer
+                .as_deref()
+                .is_some_and(|issuer| issuer.trim().is_empty())
+            || self
+                .native_venue
+                .as_deref()
+                .is_some_and(|venue_id| venue_id.trim().is_empty())
+            || self
+                .listed_venues
+                .iter()
+                .any(|venue_id| venue_id.trim().is_empty())
+        {
+            return Err(MarketConfigError::EmptyAssetId);
+        }
+        Ok(())
+    }
+}
+
+fn assets_from_markets(markets: &[MarketConfig]) -> Vec<AssetConfig> {
+    let mut ids = BTreeSet::new();
+    for market in markets {
+        let instrument = market.instrument();
+        ids.insert(instrument.base_asset.clone());
+        ids.insert(instrument.quote_asset.clone());
+    }
+
+    ids.into_iter()
+        .map(|asset_id| AssetConfig {
+            asset_id,
+            kind: AssetKind::default(),
+            tags: BTreeSet::new(),
+            issuer: None,
+            native_venue: None,
+            listed_venues: BTreeSet::new(),
+        })
+        .collect()
+}
+
+fn asset_allowed_or_fallback<'a>(
+    explicit_assets: &BTreeSet<AssetId>,
+    selectors: &[AssetSelector],
+    asset_id: &str,
+    asset: Option<&AssetConfig>,
+    fallback_assets: impl Iterator<Item = &'a str>,
+) -> bool {
+    if explicit_assets.is_empty() && selectors.is_empty() {
+        fallback_assets
+            .into_iter()
+            .any(|allowed| allowed == asset_id)
+    } else {
+        explicit_assets.contains(asset_id)
+            || selectors
+                .iter()
+                .any(|selector| selector.matches(asset_id, asset))
+    }
+}
+
+fn validate_non_empty_set<T: AsRef<str>>(
+    values: &BTreeSet<T>,
+) -> Result<(), VenueAssetPolicyConfigError> {
+    if values.is_empty() || values.iter().any(|value| value.as_ref().trim().is_empty()) {
+        Err(VenueAssetPolicyConfigError::EmptySelector)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_non_empty_value(value: &str) -> Result<(), VenueAssetPolicyConfigError> {
+    if value.trim().is_empty() {
+        Err(VenueAssetPolicyConfigError::EmptySelector)
+    } else {
+        Ok(())
+    }
+}
+
+fn inferred_base_asset(symbol: &str) -> AssetId {
+    symbol
+        .split(['-', '/', '_'])
+        .next()
+        .filter(|part| !part.is_empty())
+        .unwrap_or(symbol)
+        .to_string()
+}
+
+fn inferred_quote_asset(symbol: &str) -> AssetId {
+    symbol
+        .split(['-', '/', '_'])
+        .nth(1)
+        .filter(|part| !part.is_empty())
+        .unwrap_or("USD")
+        .to_string()
 }
 
 #[cfg(test)]
@@ -228,6 +719,60 @@ mod tests {
         assert_eq!(config.symbol(), "V-BTC-PERP");
         let engine = config.build_engine().expect("perp engine should build");
         assert_eq!(engine.kind(), MarketKind::Perp);
+    }
+
+    #[test]
+    fn exchange_config_groups_markets_by_venue_and_assets() {
+        let spot = MarketConfig::Spot(SpotMarketConfig {
+            instrument: InstrumentConfig::new_for_venue(
+                "binance",
+                "binance:btc-usdt:spot",
+                "BTC",
+                "USDT",
+                "BTC-USDT Spot",
+                1,
+                1,
+            )
+            .unwrap(),
+            clearing: SpotClearingConfig::default(),
+            risk: SpotRiskConfig::default(),
+        });
+        let perp = MarketConfig::Perp(PerpMarketConfig {
+            instrument: InstrumentConfig::new_for_venue(
+                "binance",
+                "binance:btc-usdt:perp",
+                "BTC",
+                "USDT",
+                "BTC-USDT Perp",
+                1,
+                1,
+            )
+            .unwrap(),
+            clearing: PerpClearingConfig {
+                leverage: 10,
+                ..PerpClearingConfig::default()
+            },
+            risk: PerpRiskConfig::default(),
+            initial_mark_price_tick: 100,
+        });
+
+        let exchange = ExchangeConfig::new("binance", vec![spot.clone(), perp]).unwrap();
+
+        assert_eq!(exchange.venue_id, "binance");
+        assert_eq!(exchange.primary_instrument_id(), "binance:btc-usdt:spot");
+        assert_eq!(
+            exchange
+                .assets
+                .iter()
+                .map(|asset| asset.asset_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["BTC", "USDT"]
+        );
+
+        assert_eq!(
+            ExchangeConfig::new("okx", vec![spot]).map(|_| ()),
+            Err(MarketConfigError::VenueMismatch)
+        );
     }
 
     #[test]
