@@ -237,6 +237,7 @@ mod tests {
             side,
             kind: OrderKind::Limit { price_tick },
             qty,
+            reduce_only: false,
         })
     }
 
@@ -304,6 +305,10 @@ mod tests {
                 account_id: 10,
                 cash_balance: 1_000,
                 position_qty: 10,
+                reserved_cash: 0,
+                reserved_position: 5,
+                available_cash: 1_000,
+                available_position: 5,
                 fees_paid: 0,
             }))
         );

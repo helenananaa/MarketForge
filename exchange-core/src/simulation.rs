@@ -13,7 +13,7 @@ use crate::{
         ExchangeConfig, MarketConfig, MarketConfigError, MarketKind, VenueAssetPolicyConfig,
         VenueId,
     },
-    model::{AccountId, BookSnapshot, Command},
+    model::{AccountId, BookSnapshot, Command, OrderId},
     portfolio::{PortfolioAccountSnapshot, PortfolioStore},
     scenario::{
         ScenarioAccount, ScenarioConfig, ScenarioError, ScenarioPortfolio, ScenarioSeedOrder,
@@ -143,6 +143,10 @@ impl SimulationRoom {
         &self.primary_venue_id
     }
 
+    pub fn next_command_seq(&self) -> crate::actor::ActorSeq {
+        self.primary_exchange().next_command_seq()
+    }
+
     pub fn venue_ids(&self) -> Vec<&str> {
         self.exchanges.keys().map(String::as_str).collect()
     }
@@ -215,6 +219,23 @@ impl SimulationRoom {
             .apply_to_instrument(instrument_id, command)
     }
 
+    pub fn liquidate_account(
+        &mut self,
+        instrument_id: &str,
+        account_id: AccountId,
+        order_id: OrderId,
+    ) -> Result<ActorExecution, ActorRejectReason> {
+        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
+            ActorRejectReason::InstrumentNotFound {
+                instrument_id: instrument_id.to_string(),
+            }
+        })?;
+        self.exchanges
+            .get_mut(&venue_id)
+            .expect("venue id was resolved from exchanges")
+            .liquidate_account(instrument_id, account_id, order_id)
+    }
+
     pub fn book_snapshot(&self) -> BookSnapshot {
         self.primary_exchange().book_snapshot()
     }
@@ -271,6 +292,22 @@ impl SimulationRoom {
             .get(&venue_id)
             .expect("venue id was resolved from exchanges")
             .account_snapshots_for(instrument_id)
+    }
+
+    pub fn order_owner_for(
+        &self,
+        instrument_id: &str,
+        order_id: OrderId,
+    ) -> Result<Option<AccountId>, ActorRejectReason> {
+        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
+            ActorRejectReason::InstrumentNotFound {
+                instrument_id: instrument_id.to_string(),
+            }
+        })?;
+        self.exchanges
+            .get(&venue_id)
+            .expect("venue id was resolved from exchanges")
+            .order_owner_for(instrument_id, order_id)
     }
 
     pub fn venue_account_snapshot(&self, account_id: AccountId) -> VenueAccountSnapshot {
@@ -417,6 +454,15 @@ impl SimulationRoom {
 
     pub fn transfers(&self) -> Vec<VenueTransfer> {
         self.primary_exchange().transfers()
+    }
+
+    pub(crate) fn normalize_after_restore(&mut self) -> Result<(), ActorRejectReason> {
+        for exchange in self.exchanges.values_mut() {
+            exchange
+                .normalize_after_restore()
+                .map_err(ActorRejectReason::Clearing)?;
+        }
+        Ok(())
     }
 
     pub fn asset_ledger(&self) -> &[AssetLedgerEntry] {

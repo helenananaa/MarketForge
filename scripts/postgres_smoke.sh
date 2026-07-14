@@ -44,7 +44,15 @@ create_room() {
         \"room_id\": \"${ROOM_ID}\",
         \"market\": {
           \"Spot\": {
-            \"instrument\": {\"symbol\": \"V-BTC-SPOT\", \"tick_size\": 1, \"lot_size\": 1},
+            \"instrument\": {
+              \"instrument_id\": \"V-BTC-SPOT\",
+              \"venue_id\": \"default-venue\",
+              \"symbol\": \"V-BTC-SPOT\",
+              \"base_asset\": \"V\",
+              \"quote_asset\": \"BTC\",
+              \"tick_size\": 1,
+              \"lot_size\": 1
+            },
             \"clearing\": {\"maker_fee_ppm\": 0, \"taker_fee_ppm\": 0},
             \"risk\": {
               \"price_tick_size\": null,
@@ -60,7 +68,7 @@ create_room() {
           {\"Basic\": {\"account_id\": 20, \"cash_balance\": 10000}}
         ],
         \"seed_orders\": [
-          {\"NewOrder\": {\"order_id\": 10000, \"account_id\": 10, \"side\": \"Sell\", \"kind\": {\"Limit\": {\"price_tick\": 104}}, \"qty\": 8}}
+          {\"NewOrder\": {\"order_id\": 10000, \"account_id\": 10, \"side\": \"Sell\", \"kind\": {\"Limit\": {\"price_tick\": 104}}, \"qty\": 8, \"reduce_only\": false}}
         ]
       },
       \"agents\": [],
@@ -80,14 +88,18 @@ assert_projected_tables() {
     SELECT
       (SELECT name FROM marketforge_schema_migrations WHERE version = 1),
       (SELECT name FROM marketforge_schema_migrations WHERE version = 2),
+      (SELECT name FROM marketforge_schema_migrations WHERE version = 3),
+      (SELECT name FROM marketforge_schema_migrations WHERE version = 4),
+      (SELECT name FROM marketforge_schema_migrations WHERE version = 5),
+      (SELECT name FROM marketforge_schema_migrations WHERE version = 6),
       (SELECT count(*) FROM marketforge_orders WHERE room_id = '${ROOM_ID}'),
       (SELECT count(*) FROM marketforge_trades WHERE room_id = '${ROOM_ID}'),
       (SELECT count(*) FROM marketforge_market_ticks WHERE room_id = '${ROOM_ID}'),
       (SELECT count(*) FROM marketforge_account_ledger WHERE room_id = '${ROOM_ID}'),
       (SELECT count(*) FROM marketforge_position_snapshots WHERE room_id = '${ROOM_ID}');
   ")"
-  if [[ "${counts}" != "initial_schema|access_control|2|1|1|2|2" ]]; then
-    echo "expected migration/order/trade/tick/ledger/position counts initial_schema|access_control|2|1|1|2|2, got: ${counts}" >&2
+  if [[ "${counts}" != "initial_schema|access_control|instrument_projection_scope|transfer_journal|margin_projection_fields|claim_unowned_legacy_rooms|2|1|1|2|2" ]]; then
+    echo "expected current migrations and projection counts, got: ${counts}" >&2
     return 1
   fi
 }

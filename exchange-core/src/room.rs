@@ -3,11 +3,11 @@ use std::collections::BTreeMap;
 use crate::{
     account::{Money, VenueAccountSnapshot},
     actor::{
-        AccountSnapshot, AccountSnapshots, ActorExecution, ActorRejectReason, ExchangeActor,
-        MarketActor, MarketStatus, RoomId,
+        AccountSnapshot, AccountSnapshots, ActorExecution, ActorExecutionResult, ActorRejectReason,
+        ExchangeActor, MarketActor, MarketExecution, MarketStatus, RoomId,
     },
     clock::SimulationClock,
-    model::{AccountId, BookSnapshot, Command},
+    model::{AccountId, BookSnapshot, Command, OrderId},
     portfolio::PortfolioAccountSnapshot,
     scenario::{ScenarioConfig, ScenarioError},
     simulation::{
@@ -16,6 +16,9 @@ use crate::{
     },
     transfer::VenueTransfer,
 };
+
+const SYSTEM_LIQUIDATION_ORDER_ID_BASE: OrderId = 9_000_000_000_000_000_000;
+const SYSTEM_LIQUIDATION_ORDER_ID_STRIDE: OrderId = 1_000;
 
 #[derive(Clone, Debug, Default)]
 pub struct RoomManager {
@@ -64,8 +67,10 @@ impl RoomManager {
         }
 
         let exchange = ExchangeActor::from_market(actor).map_err(RoomManagerError::MarketConfig)?;
-        self.rooms
-            .insert(room_id.clone(), SimulationRoom::from_exchange(exchange));
+        let mut room = SimulationRoom::from_exchange(exchange);
+        room.normalize_after_restore()
+            .map_err(RoomManagerError::Actor)?;
+        self.rooms.insert(room_id.clone(), room);
         self.executions.insert(room_id, executions);
         Ok(())
     }
@@ -80,15 +85,17 @@ impl RoomManager {
             return Err(RoomManagerError::RoomAlreadyExists { room_id });
         }
 
-        self.rooms
-            .insert(room_id.clone(), SimulationRoom::from_exchange(exchange));
+        let mut room = SimulationRoom::from_exchange(exchange);
+        room.normalize_after_restore()
+            .map_err(RoomManagerError::Actor)?;
+        self.rooms.insert(room_id.clone(), room);
         self.executions.insert(room_id, executions);
         Ok(())
     }
 
     pub fn restore_simulation_room(
         &mut self,
-        room: SimulationRoom,
+        mut room: SimulationRoom,
         executions: Vec<ActorExecution>,
     ) -> Result<(), RoomManagerError> {
         let room_id = room.room_id().to_string();
@@ -96,6 +103,8 @@ impl RoomManager {
             return Err(RoomManagerError::RoomAlreadyExists { room_id });
         }
 
+        room.normalize_after_restore()
+            .map_err(RoomManagerError::Actor)?;
         self.rooms.insert(room_id.clone(), room);
         self.executions.insert(room_id, executions);
         Ok(())
@@ -107,10 +116,7 @@ impl RoomManager {
         command: Command,
     ) -> Result<ActorExecution, RoomManagerError> {
         let execution = self.simulation_room_mut(room_id)?.apply(command);
-        self.executions
-            .entry(room_id.to_string())
-            .or_default()
-            .push(execution.clone());
+        self.record_execution_and_auto_liquidate(room_id, execution.clone(), true)?;
         Ok(execution)
     }
 
@@ -124,11 +130,86 @@ impl RoomManager {
             .simulation_room_mut(room_id)?
             .apply_to_instrument(instrument_id, command)
             .map_err(RoomManagerError::Actor)?;
-        self.executions
-            .entry(room_id.to_string())
-            .or_default()
-            .push(execution.clone());
+        self.record_execution_and_auto_liquidate(room_id, execution.clone(), true)?;
         Ok(execution)
+    }
+
+    pub fn liquidate_account(
+        &mut self,
+        room_id: &str,
+        instrument_id: &str,
+        account_id: AccountId,
+        order_id: OrderId,
+    ) -> Result<ActorExecution, RoomManagerError> {
+        let execution = self
+            .simulation_room_mut(room_id)?
+            .liquidate_account(instrument_id, account_id, order_id)
+            .map_err(RoomManagerError::Actor)?;
+        self.record_execution_and_auto_liquidate(room_id, execution.clone(), false)?;
+        Ok(execution)
+    }
+
+    fn record_execution_and_auto_liquidate(
+        &mut self,
+        room_id: &str,
+        execution: ActorExecution,
+        scan_liquidatable_accounts: bool,
+    ) -> Result<(), RoomManagerError> {
+        let mut pending = vec![(execution, scan_liquidatable_accounts)];
+        let mut liquidation_index = 0;
+
+        while let Some((execution, should_scan)) = pending.pop() {
+            let triggers = if should_scan {
+                self.liquidatable_accounts_for_execution(room_id, &execution)?
+            } else {
+                Vec::new()
+            };
+            self.executions
+                .entry(room_id.to_string())
+                .or_default()
+                .push(execution.clone());
+
+            for trigger in triggers {
+                let order_id =
+                    system_liquidation_order_id(execution.command_seq, liquidation_index)?;
+                liquidation_index += 1;
+                let liquidation = self
+                    .simulation_room_mut(room_id)?
+                    .liquidate_account(&trigger.instrument_id, trigger.account_id, order_id)
+                    .map_err(RoomManagerError::Actor)?;
+                pending.push((liquidation, false));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn liquidatable_accounts_for_execution(
+        &self,
+        room_id: &str,
+        execution: &ActorExecution,
+    ) -> Result<Vec<LiquidationTrigger>, RoomManagerError> {
+        if !matches!(
+            execution.result,
+            ActorExecutionResult::Accepted(MarketExecution::Perp(_))
+        ) {
+            return Ok(Vec::new());
+        }
+        let accounts = self
+            .simulation_room(room_id)?
+            .account_snapshots_for(&execution.instrument_id)
+            .map_err(RoomManagerError::Actor)?;
+        let AccountSnapshots::Perp(accounts) = accounts else {
+            return Ok(Vec::new());
+        };
+        Ok(accounts
+            .into_iter()
+            .filter(|account| account.margin_status == crate::PerpMarginStatus::Liquidatable)
+            .map(|account| LiquidationTrigger {
+                instrument_id: execution.instrument_id.clone(),
+                account_id: account.account_id,
+            })
+            .collect())
     }
 
     pub fn pause_room(&mut self, room_id: &str) -> Result<(), RoomManagerError> {
@@ -236,6 +317,17 @@ impl RoomManager {
     ) -> Result<AccountSnapshots, RoomManagerError> {
         self.simulation_room(room_id)?
             .account_snapshots_for(instrument_id)
+            .map_err(RoomManagerError::Actor)
+    }
+
+    pub fn order_owner_for(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+        order_id: OrderId,
+    ) -> Result<Option<AccountId>, RoomManagerError> {
+        self.simulation_room(room_id)?
+            .order_owner_for(instrument_id, order_id)
             .map_err(RoomManagerError::Actor)
     }
 
@@ -375,12 +467,40 @@ pub struct RoomBootstrap {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RoomManagerError {
-    RoomAlreadyExists { room_id: RoomId },
-    RoomNotFound { room_id: RoomId },
+    RoomAlreadyExists {
+        room_id: RoomId,
+    },
+    RoomNotFound {
+        room_id: RoomId,
+    },
+    SystemOrderIdOverflow,
+    OrderOwnershipMismatch {
+        order_id: OrderId,
+        account_id: AccountId,
+        owner_account_id: AccountId,
+    },
     MarketConfig(crate::market::MarketConfigError),
     Actor(ActorRejectReason),
     Scenario(ScenarioError),
     Simulation(SimulationRoomError),
+}
+
+struct LiquidationTrigger {
+    instrument_id: String,
+    account_id: AccountId,
+}
+
+fn system_liquidation_order_id(
+    trigger_command_seq: u64,
+    liquidation_index: u64,
+) -> Result<OrderId, RoomManagerError> {
+    let offset = trigger_command_seq
+        .checked_mul(SYSTEM_LIQUIDATION_ORDER_ID_STRIDE)
+        .and_then(|offset| offset.checked_add(liquidation_index))
+        .ok_or(RoomManagerError::SystemOrderIdOverflow)?;
+    SYSTEM_LIQUIDATION_ORDER_ID_BASE
+        .checked_add(offset)
+        .ok_or(RoomManagerError::SystemOrderIdOverflow)
 }
 
 #[cfg(test)]
@@ -389,13 +509,17 @@ mod tests {
     use crate::{
         AssetKind, AssetSelector,
         actor::{ActorExecutionResult, ActorRejectReason, MarketExecution},
-        market::{InstrumentConfig, MarketConfig, SpotMarketConfig},
-        model::{BookLevel, Event, NewOrder, OrderKind, Side},
-        risk::SpotRiskConfig,
+        market::{
+            ExchangeConfig, InstrumentConfig, MarketConfig, PerpMarketConfig, SpotMarketConfig,
+        },
+        model::{BookLevel, Event, NewOrder, OrderKind, SetMarkPrice, Side},
+        perp::{PerpAccountSnapshot, PerpClearingConfig, PerpMarginStatus},
+        risk::{PerpRiskConfig, SpotRiskConfig},
         scenario::{
             ScenarioAccount, ScenarioAllocation, ScenarioPortfolio, ScenarioVenueAllocation,
         },
         spot::SpotClearingConfig,
+        transfer::{VenueTransferRejectReason, VenueTransferStatus},
     };
 
     fn spot_scenario(room_id: &str) -> ScenarioConfig {
@@ -437,6 +561,7 @@ mod tests {
             side,
             kind: OrderKind::Limit { price_tick },
             qty,
+            reduce_only: false,
         })
     }
 
@@ -506,6 +631,324 @@ mod tests {
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].command_seq, 0);
         assert_eq!(history[1].command_seq, 1);
+    }
+
+    #[test]
+    fn restore_rebuilds_legacy_market_reservations_before_withdrawal() {
+        let config =
+            ExchangeConfig::new("binance", vec![venue_spot_market("binance", "btc-usdt")]).unwrap();
+        let mut exchange = ExchangeActor::new("legacy-room", config).unwrap();
+        exchange.create_account(20, 1_000);
+        let execution = exchange
+            .apply_to_instrument("btc-usdt", limit(1, 20, Side::Buy, 100, 6))
+            .unwrap();
+        assert!(matches!(
+            execution.result,
+            ActorExecutionResult::Accepted(MarketExecution::Spot(_))
+        ));
+        assert_eq!(
+            exchange
+                .venue_balance_snapshot(20, "USDT")
+                .unwrap()
+                .reserved,
+            600
+        );
+
+        let room = SimulationRoom::from_exchange(exchange);
+        let mut legacy_json = serde_json::to_value(room).unwrap();
+        legacy_json
+            .pointer_mut("/exchanges/binance")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("market_reservations");
+        *legacy_json
+            .pointer_mut("/exchanges/binance/venue_accounts/balances/20/USDT/reserved")
+            .unwrap() = serde_json::json!(0);
+        let legacy_room: SimulationRoom = serde_json::from_value(legacy_json).unwrap();
+        assert_eq!(
+            legacy_room
+                .venue_account_snapshot(20)
+                .balances
+                .into_iter()
+                .find(|balance| balance.asset_id == "USDT")
+                .unwrap()
+                .reserved,
+            0
+        );
+
+        let mut manager = RoomManager::new();
+        manager
+            .restore_simulation_room(legacy_room, Vec::new())
+            .unwrap();
+        let restored_balance = manager
+            .venue_account_snapshot("legacy-room", 20)
+            .unwrap()
+            .balances
+            .into_iter()
+            .find(|balance| balance.asset_id == "USDT")
+            .unwrap();
+        assert_eq!(restored_balance.total, 1_000);
+        assert_eq!(restored_balance.reserved, 600);
+        assert_eq!(restored_balance.available, 400);
+
+        let withdrawal = manager
+            .submit_withdrawal("legacy-room", None, 20, "USDT", 1_000)
+            .unwrap();
+        assert_eq!(withdrawal.status, VenueTransferStatus::Rejected);
+        assert_eq!(
+            withdrawal.reject_reason,
+            Some(VenueTransferRejectReason::InsufficientAvailableBalance)
+        );
+        let balance_after = manager
+            .venue_account_snapshot("legacy-room", 20)
+            .unwrap()
+            .balances
+            .into_iter()
+            .find(|balance| balance.asset_id == "USDT")
+            .unwrap();
+        assert_eq!(balance_after.total, 1_000);
+        assert_eq!(balance_after.reserved, 600);
+    }
+
+    #[test]
+    fn restore_market_actor_rebuilds_venue_balances_and_reservations() {
+        let mut actor = MarketActor::new(
+            "legacy-market-room",
+            venue_spot_market("binance", "btc-usdt"),
+        )
+        .unwrap();
+        actor.create_account(20, 1_000);
+        let execution = actor.apply(limit(1, 20, Side::Buy, 100, 6));
+        assert!(matches!(
+            execution.result,
+            ActorExecutionResult::Accepted(MarketExecution::Spot(_))
+        ));
+        assert!(matches!(
+            actor.account_snapshot(20),
+            Some(AccountSnapshot::Spot(crate::SpotAccountSnapshot {
+                cash_balance: 1_000,
+                reserved_cash: 600,
+                ..
+            }))
+        ));
+
+        let mut manager = RoomManager::new();
+        manager.restore_room(actor, vec![execution]).unwrap();
+        let restored_balance = manager
+            .venue_account_snapshot("legacy-market-room", 20)
+            .unwrap()
+            .balances
+            .into_iter()
+            .find(|balance| balance.asset_id == "USDT")
+            .unwrap();
+        assert_eq!(restored_balance.total, 1_000);
+        assert_eq!(restored_balance.reserved, 600);
+        assert_eq!(restored_balance.available, 400);
+
+        let withdrawal = manager
+            .submit_withdrawal("legacy-market-room", None, 20, "USDT", 1_000)
+            .unwrap();
+        assert_eq!(withdrawal.status, VenueTransferStatus::Rejected);
+        assert_eq!(
+            withdrawal.reject_reason,
+            Some(VenueTransferRejectReason::InsufficientAvailableBalance)
+        );
+        assert_eq!(
+            manager.book_snapshot("legacy-market-room").unwrap().bids,
+            vec![BookLevel {
+                price_tick: 100,
+                qty: 6,
+            }]
+        );
+    }
+
+    #[test]
+    fn room_manager_records_perp_liquidation_execution() {
+        let scenario = ScenarioConfig {
+            room_id: "perp-liquidation-room".to_string(),
+            venue_preset: None,
+            venue_rules: crate::VenueRuleConfig::default(),
+            venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
+            assets: Vec::new(),
+            market: MarketConfig::Perp(PerpMarketConfig {
+                instrument: InstrumentConfig::new("V-BTC-PERP", 1, 1).unwrap(),
+                clearing: PerpClearingConfig {
+                    leverage: 10,
+                    maintenance_margin_ppm: 50_000,
+                    ..PerpClearingConfig::default()
+                },
+                risk: PerpRiskConfig::default(),
+                initial_mark_price_tick: 80,
+            }),
+            extra_markets: Vec::new(),
+            initial_portfolios: Vec::new(),
+            initial_allocations: Vec::new(),
+            routed_initial_allocations: Vec::new(),
+            accounts: vec![
+                ScenarioAccount::Basic {
+                    account_id: 10,
+                    cash_balance: 10_000,
+                },
+                ScenarioAccount::Basic {
+                    account_id: 20,
+                    cash_balance: 200,
+                },
+                ScenarioAccount::Basic {
+                    account_id: 30,
+                    cash_balance: 10_000,
+                },
+            ],
+            seed_orders: Vec::new(),
+            routed_seed_orders: Vec::new(),
+        };
+        let mut manager = RoomManager::new();
+        manager.create_room(scenario).unwrap();
+
+        manager
+            .apply("perp-liquidation-room", limit(1, 10, Side::Sell, 100, 10))
+            .unwrap();
+        manager
+            .apply("perp-liquidation-room", limit(3, 30, Side::Buy, 80, 10))
+            .unwrap();
+        manager
+            .apply(
+                "perp-liquidation-room",
+                Command::NewOrder(NewOrder {
+                    order_id: 2,
+                    account_id: 20,
+                    side: Side::Buy,
+                    kind: OrderKind::Market,
+                    qty: 10,
+                    reduce_only: false,
+                }),
+            )
+            .unwrap();
+
+        let history = manager.execution_history("perp-liquidation-room").unwrap();
+        assert_eq!(history.len(), 4);
+        let ActorExecutionResult::Accepted(MarketExecution::Perp(result)) =
+            history.last().unwrap().result.clone()
+        else {
+            panic!("expected accepted perp liquidation");
+        };
+        assert_eq!(result.clearing_events.len(), 2);
+        assert!(matches!(
+            manager
+                .account_snapshot("perp-liquidation-room", 20)
+                .unwrap(),
+            Some(AccountSnapshot::Perp(PerpAccountSnapshot {
+                position_qty: 0,
+                margin_status: PerpMarginStatus::Flat,
+                ..
+            }))
+        ));
+    }
+
+    #[test]
+    fn room_manager_retries_failed_liquidation_once_on_later_external_command() {
+        let scenario = ScenarioConfig {
+            room_id: "perp-retry-room".to_string(),
+            venue_preset: None,
+            venue_rules: crate::VenueRuleConfig::default(),
+            venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
+            assets: Vec::new(),
+            market: MarketConfig::Perp(PerpMarketConfig {
+                instrument: InstrumentConfig::new("V-BTC-PERP", 1, 1).unwrap(),
+                clearing: PerpClearingConfig {
+                    leverage: 10,
+                    maintenance_margin_ppm: 50_000,
+                    ..PerpClearingConfig::default()
+                },
+                risk: PerpRiskConfig::default(),
+                initial_mark_price_tick: 100,
+            }),
+            extra_markets: Vec::new(),
+            initial_portfolios: Vec::new(),
+            initial_allocations: Vec::new(),
+            routed_initial_allocations: Vec::new(),
+            accounts: vec![
+                ScenarioAccount::Basic {
+                    account_id: 10,
+                    cash_balance: 10_000,
+                },
+                ScenarioAccount::Basic {
+                    account_id: 20,
+                    cash_balance: 200,
+                },
+                ScenarioAccount::Basic {
+                    account_id: 30,
+                    cash_balance: 10_000,
+                },
+            ],
+            seed_orders: Vec::new(),
+            routed_seed_orders: Vec::new(),
+        };
+        let mut manager = RoomManager::new();
+        manager.create_room(scenario).unwrap();
+        manager
+            .apply("perp-retry-room", limit(1, 10, Side::Sell, 100, 10))
+            .unwrap();
+        manager
+            .apply(
+                "perp-retry-room",
+                Command::NewOrder(NewOrder {
+                    order_id: 2,
+                    account_id: 20,
+                    side: Side::Buy,
+                    kind: OrderKind::Market,
+                    qty: 10,
+                    reduce_only: false,
+                }),
+            )
+            .unwrap();
+        manager
+            .apply(
+                "perp-retry-room",
+                Command::SetMarkPrice(SetMarkPrice { price_tick: 80 }),
+            )
+            .unwrap();
+
+        let history = manager.execution_history("perp-retry-room").unwrap();
+        assert!(matches!(
+            history.last().unwrap().result,
+            ActorExecutionResult::Rejected(ActorRejectReason::Clearing(
+                crate::ClearingError::LiquidationUnfilled
+            ))
+        ));
+        assert!(matches!(
+            manager.account_snapshot("perp-retry-room", 20).unwrap(),
+            Some(AccountSnapshot::Perp(PerpAccountSnapshot {
+                position_qty: 10,
+                margin_status: PerpMarginStatus::Liquidatable,
+                ..
+            }))
+        ));
+
+        manager
+            .apply("perp-retry-room", limit(3, 30, Side::Buy, 80, 10))
+            .unwrap();
+
+        let history = manager.execution_history("perp-retry-room").unwrap();
+        let ActorExecutionResult::Accepted(MarketExecution::Perp(liquidation)) =
+            &history.last().unwrap().result
+        else {
+            panic!("expected successful retried liquidation");
+        };
+        assert!(
+            liquidation
+                .events
+                .iter()
+                .any(|event| matches!(event.event, Event::TradePrinted(_)))
+        );
+        assert!(matches!(
+            manager.account_snapshot("perp-retry-room", 20).unwrap(),
+            Some(AccountSnapshot::Perp(PerpAccountSnapshot {
+                position_qty: 0,
+                margin_status: PerpMarginStatus::Flat,
+                ..
+            }))
+        ));
     }
 
     #[test]

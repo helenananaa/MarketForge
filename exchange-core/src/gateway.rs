@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     actor::{AccountSnapshots, ActorExecution, MarketStatus, RoomId},
     market::{InstrumentId, VenueId},
-    model::{AccountId, BookSnapshot, Command, NewOrder, OrderId, OrderKind, PriceTick, Qty, Side},
+    model::{
+        AccountId, AmendOrder, BookSnapshot, Command, NewOrder, OrderId, OrderKind, PriceTick, Qty,
+        Side,
+    },
     room::{RoomManager, RoomManagerError},
 };
 
@@ -20,8 +23,42 @@ pub enum OrderAction {
         side: Side,
         qty: Qty,
     },
+    PlacePostOnly {
+        side: Side,
+        price_tick: PriceTick,
+        qty: Qty,
+    },
+    PlaceImmediateOrCancel {
+        side: Side,
+        price_tick: Option<PriceTick>,
+        qty: Qty,
+    },
+    PlaceFillOrKill {
+        side: Side,
+        price_tick: Option<PriceTick>,
+        qty: Qty,
+    },
+    PlaceReduceOnlyMarket {
+        side: Side,
+        qty: Qty,
+    },
+    PlaceReduceOnlyImmediateOrCancel {
+        side: Side,
+        price_tick: Option<PriceTick>,
+        qty: Qty,
+    },
+    PlaceReduceOnlyFillOrKill {
+        side: Side,
+        price_tick: Option<PriceTick>,
+        qty: Qty,
+    },
     Cancel {
         order_id: OrderId,
+    },
+    Amend {
+        order_id: OrderId,
+        price_tick: Option<PriceTick>,
+        qty: Option<Qty>,
     },
 }
 
@@ -101,6 +138,7 @@ impl<'a> OrderGateway<'a> {
                     price_tick: *price_tick,
                 },
                 qty: *qty,
+                reduce_only: false,
             }),
             OrderAction::PlaceMarket { side, qty } => Command::NewOrder(NewOrder {
                 order_id: self.take_order_id(),
@@ -108,9 +146,97 @@ impl<'a> OrderGateway<'a> {
                 side: *side,
                 kind: OrderKind::Market,
                 qty: *qty,
+                reduce_only: false,
+            }),
+            OrderAction::PlacePostOnly {
+                side,
+                price_tick,
+                qty,
+            } => Command::NewOrder(NewOrder {
+                order_id: self.take_order_id(),
+                account_id,
+                side: *side,
+                kind: OrderKind::PostOnly {
+                    price_tick: *price_tick,
+                },
+                qty: *qty,
+                reduce_only: false,
+            }),
+            OrderAction::PlaceImmediateOrCancel {
+                side,
+                price_tick,
+                qty,
+            } => Command::NewOrder(NewOrder {
+                order_id: self.take_order_id(),
+                account_id,
+                side: *side,
+                kind: OrderKind::ImmediateOrCancel {
+                    price_tick: *price_tick,
+                },
+                qty: *qty,
+                reduce_only: false,
+            }),
+            OrderAction::PlaceFillOrKill {
+                side,
+                price_tick,
+                qty,
+            } => Command::NewOrder(NewOrder {
+                order_id: self.take_order_id(),
+                account_id,
+                side: *side,
+                kind: OrderKind::FillOrKill {
+                    price_tick: *price_tick,
+                },
+                qty: *qty,
+                reduce_only: false,
+            }),
+            OrderAction::PlaceReduceOnlyMarket { side, qty } => Command::NewOrder(NewOrder {
+                order_id: self.take_order_id(),
+                account_id,
+                side: *side,
+                kind: OrderKind::Market,
+                qty: *qty,
+                reduce_only: true,
+            }),
+            OrderAction::PlaceReduceOnlyImmediateOrCancel {
+                side,
+                price_tick,
+                qty,
+            } => Command::NewOrder(NewOrder {
+                order_id: self.take_order_id(),
+                account_id,
+                side: *side,
+                kind: OrderKind::ImmediateOrCancel {
+                    price_tick: *price_tick,
+                },
+                qty: *qty,
+                reduce_only: true,
+            }),
+            OrderAction::PlaceReduceOnlyFillOrKill {
+                side,
+                price_tick,
+                qty,
+            } => Command::NewOrder(NewOrder {
+                order_id: self.take_order_id(),
+                account_id,
+                side: *side,
+                kind: OrderKind::FillOrKill {
+                    price_tick: *price_tick,
+                },
+                qty: *qty,
+                reduce_only: true,
             }),
             OrderAction::Cancel { order_id } => Command::CancelOrder(crate::model::CancelOrder {
                 order_id: *order_id,
+            }),
+            OrderAction::Amend {
+                order_id,
+                price_tick,
+                qty,
+            } => Command::AmendOrder(AmendOrder {
+                order_id: *order_id,
+                price_tick: *price_tick,
+                qty: *qty,
             }),
         }
     }
@@ -124,7 +250,6 @@ impl<'a> OrderGateway<'a> {
 
 impl TradingApi for OrderGateway<'_> {
     fn submit_action(&mut self, request: GatewayRequest) -> Result<GatewayExecution, GatewayError> {
-        let command = self.action_to_command(request.account_id, &request.action);
         let instrument_id = match request.instrument_id {
             Some(instrument_id) => instrument_id,
             None => self
@@ -134,6 +259,22 @@ impl TradingApi for OrderGateway<'_> {
                 .primary_instrument_id()
                 .to_string(),
         };
+        if let Some(order_id) = existing_order_id(&request.action)
+            && let Some(owner_account_id) = self
+                .rooms
+                .order_owner_for(&request.room_id, &instrument_id, order_id)
+                .map_err(GatewayError::Room)?
+            && owner_account_id != request.account_id
+        {
+            return Err(GatewayError::Room(
+                RoomManagerError::OrderOwnershipMismatch {
+                    order_id,
+                    account_id: request.account_id,
+                    owner_account_id,
+                },
+            ));
+        }
+        let command = self.action_to_command(request.account_id, &request.action);
         let execution = self
             .rooms
             .apply_to_instrument(&request.room_id, &instrument_id, command.clone())
@@ -180,6 +321,20 @@ impl TradingApi for OrderGateway<'_> {
                 .account_snapshots_for(room_id, instrument_id)
                 .map_err(GatewayError::Room)?,
         })
+    }
+}
+
+fn existing_order_id(action: &OrderAction) -> Option<OrderId> {
+    match action {
+        OrderAction::Cancel { order_id } | OrderAction::Amend { order_id, .. } => Some(*order_id),
+        OrderAction::PlaceLimit { .. }
+        | OrderAction::PlaceMarket { .. }
+        | OrderAction::PlacePostOnly { .. }
+        | OrderAction::PlaceImmediateOrCancel { .. }
+        | OrderAction::PlaceFillOrKill { .. }
+        | OrderAction::PlaceReduceOnlyMarket { .. }
+        | OrderAction::PlaceReduceOnlyImmediateOrCancel { .. }
+        | OrderAction::PlaceReduceOnlyFillOrKill { .. } => None,
     }
 }
 
@@ -257,6 +412,68 @@ mod tests {
     }
 
     #[test]
+    fn gateway_rejects_cross_account_cancel_and_amend_but_allows_owner() {
+        let mut rooms = RoomManager::new();
+        rooms.create_room(spot_scenario()).unwrap();
+        let mut gateway = OrderGateway::new(&mut rooms, 1);
+        gateway
+            .submit_action(GatewayRequest {
+                participant_id: "owner".to_string(),
+                room_id: "room-1".to_string(),
+                instrument_id: None,
+                account_id: 20,
+                action: OrderAction::PlaceLimit {
+                    side: Side::Buy,
+                    price_tick: 90,
+                    qty: 2,
+                },
+            })
+            .unwrap();
+
+        for action in [
+            OrderAction::Amend {
+                order_id: 1,
+                price_tick: None,
+                qty: Some(1),
+            },
+            OrderAction::Cancel { order_id: 1 },
+        ] {
+            assert!(matches!(
+                gateway.submit_action(GatewayRequest {
+                    participant_id: "attacker".to_string(),
+                    room_id: "room-1".to_string(),
+                    instrument_id: None,
+                    account_id: 10,
+                    action,
+                }),
+                Err(GatewayError::Room(
+                    RoomManagerError::OrderOwnershipMismatch {
+                        order_id: 1,
+                        account_id: 10,
+                        owner_account_id: 20,
+                    }
+                ))
+            ));
+        }
+        assert_eq!(gateway.market_view("room-1").unwrap().book.bids[0].qty, 2);
+
+        let owner_cancel = gateway
+            .submit_action(GatewayRequest {
+                participant_id: "owner".to_string(),
+                room_id: "room-1".to_string(),
+                instrument_id: None,
+                account_id: 20,
+                action: OrderAction::Cancel { order_id: 1 },
+            })
+            .unwrap();
+        assert!(matches!(
+            owner_cancel.execution.result,
+            ActorExecutionResult::Accepted(MarketExecution::Spot(_))
+        ));
+        assert!(gateway.market_view("room-1").unwrap().book.bids.is_empty());
+    }
+
+    #[test]
     fn gateway_can_provide_market_view() {
         let mut rooms = RoomManager::new();
         rooms.create_room(spot_scenario()).unwrap();
@@ -269,5 +486,101 @@ mod tests {
         assert_eq!(view.instrument_id, "V-BTC-SPOT");
         assert_eq!(view.status, MarketStatus::Running);
         assert!(view.book.bids.is_empty());
+    }
+
+    #[test]
+    fn gateway_maps_post_only_action_to_post_only_order_kind() {
+        let mut rooms = RoomManager::new();
+        rooms.create_room(spot_scenario()).unwrap();
+        let mut gateway = OrderGateway::new(&mut rooms, 10);
+
+        let execution = gateway
+            .submit_action(GatewayRequest {
+                participant_id: "maker-1".to_string(),
+                room_id: "room-1".to_string(),
+                instrument_id: None,
+                account_id: 20,
+                action: OrderAction::PlacePostOnly {
+                    side: Side::Buy,
+                    price_tick: 99,
+                    qty: 2,
+                },
+            })
+            .expect("gateway should route post-only action");
+
+        assert_eq!(
+            execution.command,
+            Command::NewOrder(NewOrder {
+                order_id: 10,
+                account_id: 20,
+                side: Side::Buy,
+                kind: OrderKind::PostOnly { price_tick: 99 },
+                qty: 2,
+                reduce_only: false,
+            })
+        );
+    }
+
+    #[test]
+    fn gateway_maps_reduce_only_market_action_to_reduce_only_order() {
+        let mut rooms = RoomManager::new();
+        rooms.create_room(spot_scenario()).unwrap();
+        let mut gateway = OrderGateway::new(&mut rooms, 20);
+
+        let execution = gateway
+            .submit_action(GatewayRequest {
+                participant_id: "closer-1".to_string(),
+                room_id: "room-1".to_string(),
+                instrument_id: None,
+                account_id: 20,
+                action: OrderAction::PlaceReduceOnlyMarket {
+                    side: Side::Sell,
+                    qty: 2,
+                },
+            })
+            .expect("gateway should route reduce-only market action");
+
+        assert_eq!(
+            execution.command,
+            Command::NewOrder(NewOrder {
+                order_id: 20,
+                account_id: 20,
+                side: Side::Sell,
+                kind: OrderKind::Market,
+                qty: 2,
+                reduce_only: true,
+            })
+        );
+    }
+
+    #[test]
+    fn gateway_maps_amend_action_to_amend_command() {
+        let mut rooms = RoomManager::new();
+        rooms.create_room(spot_scenario()).unwrap();
+        let mut gateway = OrderGateway::new(&mut rooms, 30);
+
+        let execution = gateway
+            .submit_action(GatewayRequest {
+                participant_id: "amender-1".to_string(),
+                room_id: "room-1".to_string(),
+                instrument_id: None,
+                account_id: 20,
+                action: OrderAction::Amend {
+                    order_id: 1,
+                    price_tick: Some(99),
+                    qty: Some(2),
+                },
+            })
+            .expect("gateway should route amend action");
+
+        assert_eq!(
+            execution.command,
+            Command::AmendOrder(AmendOrder {
+                order_id: 1,
+                price_tick: Some(99),
+                qty: Some(2),
+            })
+        );
+        assert_eq!(gateway.next_order_id(), 30);
     }
 }

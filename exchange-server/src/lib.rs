@@ -15,7 +15,7 @@ pub mod journal;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::{HeaderMap, HeaderValue, Method, StatusCode},
+    http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     routing::{get, post},
 };
 use exchange_core::{
@@ -26,7 +26,7 @@ use exchange_core::{
     RoomNetWorthSnapshot, ScenarioConfig, SimulationClock, SpotAccountSnapshot, SpotClearingEvent,
     TradingApi, VenueAccountSnapshot, VenueAccountVenueSnapshot, VenueToVenueTransfer,
     VenueTransfer,
-    model::{AccountId, Command},
+    model::{AccountId, Command, OrderKind, SetMarkPrice},
     perp::{PerpAccountSnapshot, PerpClearingEvent},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -43,6 +43,72 @@ type ApiResult<T> = Result<Json<T>, (StatusCode, Json<ErrorResponse>)>;
 const SNAPSHOT_INTERVAL_COMMANDS: u64 = 100;
 const USER_ID_HEADER: &str = "x-user-id";
 const DEFAULT_USER_ID: &str = "local-user";
+const SYSTEM_LIQUIDATION_ORDER_ID_BASE: OrderId = 9_000_000_000_000_000_000;
+
+mod json_i128 {
+    use std::fmt;
+
+    use serde::{
+        Deserializer, Serializer,
+        de::{self, Visitor},
+    };
+
+    pub fn serialize<S>(value: &i128, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if let Ok(value) = i64::try_from(*value) {
+            serializer.serialize_i64(value)
+        } else if let Ok(value) = u64::try_from(*value) {
+            serializer.serialize_u64(value)
+        } else {
+            serializer.serialize_str(&value.to_string())
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<i128, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct I128Visitor;
+
+        impl Visitor<'_> for I128Visitor {
+            type Value = i128;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("an integer or a base-10 i128 string")
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E> {
+                Ok(i128::from(value))
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E> {
+                Ok(i128::from(value))
+            }
+
+            fn visit_i128<E>(self, value: i128) -> Result<Self::Value, E> {
+                Ok(value)
+            }
+
+            fn visit_u128<E>(self, value: u128) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                i128::try_from(value).map_err(E::custom)
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                value.parse().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_any(I128Visitor)
+    }
+}
 
 struct AppState {
     rooms: RoomManager,
@@ -74,7 +140,7 @@ impl AppState {
         mut journal: Box<dyn JournalStore>,
     ) -> Result<Self, JournalError> {
         let recovery = journal.load_recovery()?;
-        let next_order_id = next_order_id_from_recovery(&recovery);
+        let next_order_id = next_order_id_from_recovery(&recovery)?;
         let rooms = recover_rooms(&recovery)?;
         let executions = execution_summaries_from_recovery(&recovery);
 
@@ -133,7 +199,10 @@ fn app(state: SharedState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin("http://127.0.0.1:57304".parse::<HeaderValue>().unwrap())
         .allow_methods([Method::GET, Method::POST])
-        .allow_headers([axum::http::header::CONTENT_TYPE]);
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            HeaderName::from_static(USER_ID_HEADER),
+        ]);
 
     Router::new()
         .route("/health", get(health))
@@ -173,6 +242,10 @@ fn app(state: SharedState) -> Router {
         .route(
             "/rooms/{room_id}/instruments/{instrument_id}/view",
             get(market_view_for_instrument),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/mark-price",
+            post(set_mark_price_for_instrument),
         )
         .route(
             "/rooms/{room_id}/instruments/{instrument_id}/book",
@@ -228,8 +301,10 @@ async fn create_room(
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
     let request = parse_create_room_payload(payload)?;
+    validate_agent_templates(&request.scenario.room_id, &request.agents)?;
     let mut candidate_rooms = state.rooms.clone();
     let seed_commands = request.scenario.seed_commands();
+    let next_order_id = next_api_order_id_after_commands(state.next_order_id, &seed_commands)?;
     let account_ids = scenario_account_ids(&request.scenario);
     let bootstrap = candidate_rooms
         .create_room(request.scenario.clone())
@@ -262,6 +337,7 @@ async fn create_room(
             .collect(),
     );
     state.rooms = candidate_rooms;
+    state.next_order_id = next_order_id;
 
     let mut agent_status = AgentWorkerStatus::stopped(room_id.clone());
 
@@ -269,6 +345,7 @@ async fn create_room(
         agent_status = start_agent_worker_for_room(
             &mut state,
             room_id.clone(),
+            user_id.clone(),
             StartAgentsRequest {
                 agents: request.agents,
                 interval_ms: request.agent_interval_ms,
@@ -349,6 +426,9 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
             if record.participant_id.is_none() && record.command_seq < seed_count as u64 {
                 continue;
             }
+            if record.participant_id.is_none() && is_system_liquidation_command(&record.command) {
+                continue;
+            }
 
             rooms
                 .restore_room_status(&room.room_id, record.execution.status)
@@ -383,7 +463,7 @@ fn execution_summary_matches(
 ) -> bool {
     stored.room_id == replayed.room_id
         && stored.command_seq == replayed.command_seq
-        && stored.instrument_id == replayed.instrument_id
+        && (stored.instrument_id.is_none() || stored.instrument_id == replayed.instrument_id)
         && stored.status == replayed.status
         && stored.accepted == replayed.accepted
         && stored.reject_reason == replayed.reject_reason
@@ -451,18 +531,136 @@ fn execution_summaries_from_recovery(
     executions
 }
 
-fn next_order_id_from_recovery(recovery: &JournalRecovery) -> OrderId {
-    recovery
-        .executions
+fn next_order_id_from_recovery(recovery: &JournalRecovery) -> Result<OrderId, JournalError> {
+    let mut next_order_id = 1;
+    for execution in &recovery.executions {
+        let Command::NewOrder(order) = &execution.command else {
+            continue;
+        };
+        if order.order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE {
+            if execution.participant_id.is_none()
+                && is_system_liquidation_command(&execution.command)
+            {
+                continue;
+            }
+            return Err(JournalError::Recovery(format!(
+                "order id {} in room {} uses the reserved system-order range",
+                order.order_id, execution.room_id
+            )));
+        }
+        let following_order_id = order.order_id.checked_add(1).ok_or_else(|| {
+            JournalError::Recovery(format!(
+                "order id {} in room {} cannot be incremented",
+                order.order_id, execution.room_id
+            ))
+        })?;
+        next_order_id = next_order_id.max(following_order_id);
+    }
+    Ok(next_order_id)
+}
+
+fn next_api_order_id_after_commands(
+    current: OrderId,
+    commands: &[Command],
+) -> Result<OrderId, (StatusCode, Json<ErrorResponse>)> {
+    let mut next_order_id = current;
+    for command in commands {
+        let Command::NewOrder(order) = command else {
+            continue;
+        };
+        if order.order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "seed order id {} uses the reserved system-order range",
+                    order.order_id
+                ),
+            ));
+        }
+        let following_order_id = order.order_id.checked_add(1).ok_or_else(|| {
+            api_error(
+                StatusCode::BAD_REQUEST,
+                format!("seed order id {} cannot be incremented", order.order_id),
+            )
+        })?;
+        next_order_id = next_order_id.max(following_order_id);
+    }
+    Ok(next_order_id)
+}
+
+fn is_system_liquidation_command(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::NewOrder(order)
+            if order.order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE
+                && order.reduce_only
+                && matches!(
+                    order.kind,
+                    OrderKind::Market | OrderKind::FillOrKill { price_tick: None }
+                )
+    )
+}
+
+fn command_from_actor_execution(execution: &ActorExecution) -> Option<Command> {
+    match &execution.result {
+        ActorExecutionResult::Accepted(MarketExecution::Spot(execution)) => {
+            Some(execution.command.command.clone())
+        }
+        ActorExecutionResult::Accepted(MarketExecution::Perp(execution)) => {
+            Some(execution.command.command.clone())
+        }
+        ActorExecutionResult::Rejected(_) => None,
+    }
+}
+
+fn journal_new_executions(
+    state: &mut AppState,
+    candidate_rooms: &RoomManager,
+    room_id: &str,
+    previous_history_len: usize,
+    first_record: JournalExecution,
+) -> Result<(), JournalError> {
+    let new_history = candidate_rooms
+        .execution_history(room_id)
+        .map_err(|error| JournalError::Recovery(format!("{error:?}")))?
         .iter()
-        .filter(|execution| execution.participant_id.is_some())
-        .filter_map(|execution| match &execution.command {
-            Command::NewOrder(order) => Some(order.order_id),
-            Command::CancelOrder(_) => None,
-        })
-        .max()
-        .and_then(|order_id| order_id.checked_add(1))
-        .unwrap_or(1)
+        .skip(previous_history_len)
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut journal_records = vec![first_record];
+    for system_execution in new_history.into_iter().skip(1) {
+        if let Some(command) = command_from_actor_execution(&system_execution) {
+            journal_records.push(JournalExecution::system(command, system_execution));
+        }
+    }
+
+    let snapshot = batch_snapshot_if_due(candidate_rooms, &journal_records);
+    state
+        .journal
+        .append_executions(&journal_records, snapshot.as_ref())?;
+    let timeline = state.executions.entry(room_id.to_string()).or_default();
+    timeline.extend(journal_records.into_iter().map(|record| record.execution));
+
+    Ok(())
+}
+
+fn batch_snapshot_if_due(
+    rooms: &RoomManager,
+    records: &[JournalExecution],
+) -> Option<JournalSnapshot> {
+    if !records.iter().any(|record| {
+        record
+            .command_seq
+            .is_multiple_of(SNAPSHOT_INTERVAL_COMMANDS)
+    }) {
+        return None;
+    }
+    let final_record = records.last()?;
+    Some(JournalSnapshot {
+        room_id: final_record.room_id.clone(),
+        command_seq: final_record.command_seq,
+        actor: rooms.simulation_room(&final_record.room_id).ok()?.clone(),
+    })
 }
 
 fn latest_room_snapshot(
@@ -478,31 +676,25 @@ fn latest_room_snapshot(
     })
 }
 
-fn room_snapshot_if_due(rooms: &RoomManager, record: &JournalExecution) -> Option<JournalSnapshot> {
-    if !record
-        .command_seq
-        .is_multiple_of(SNAPSHOT_INTERVAL_COMMANDS)
-    {
-        return None;
-    }
-    Some(JournalSnapshot {
-        room_id: record.room_id.clone(),
-        command_seq: record.command_seq,
-        actor: rooms.simulation_room(&record.room_id).ok()?.clone(),
-    })
-}
-
-fn current_room_snapshot(rooms: &RoomManager, room_id: &str) -> Option<JournalSnapshot> {
-    let command_seq = rooms
-        .execution_history(room_id)
-        .ok()
-        .and_then(|history| history.last().map(|execution| execution.command_seq))
-        .unwrap_or(0);
+fn current_room_snapshot(
+    rooms: &RoomManager,
+    room_id: &str,
+    command_seq: u64,
+) -> Option<JournalSnapshot> {
     Some(JournalSnapshot {
         room_id: room_id.to_string(),
         command_seq,
         actor: rooms.simulation_room(room_id).ok()?.clone(),
     })
+}
+
+fn last_persisted_command_seq(state: &AppState, room_id: &str) -> u64 {
+    state
+        .executions
+        .get(room_id)
+        .and_then(|executions| executions.last())
+        .map(|execution| execution.command_seq)
+        .unwrap_or(0)
 }
 
 async fn list_rooms(
@@ -539,8 +731,8 @@ async fn start_agents(
 ) -> ApiResult<AgentWorkerStatus> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
-    start_agent_worker_for_room(&mut state, room_id, request).map(Json)
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
+    start_agent_worker_for_room(&mut state, room_id, user_id, request).map(Json)
 }
 
 async fn agent_status(
@@ -550,7 +742,7 @@ async fn agent_status(
 ) -> ApiResult<AgentWorkerStatus> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     Ok(Json(agent_status_for_room(&state, &room_id)))
 }
 
@@ -561,7 +753,7 @@ async fn stop_agents(
 ) -> ApiResult<AgentWorkerStatus> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     if let Some(worker) = state.agent_workers.remove(&room_id) {
         worker.stop();
     }
@@ -576,7 +768,7 @@ async fn room_events(
 ) -> ApiResult<RoomEventsResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     let history = state
         .executions
         .get(&room_id)
@@ -619,7 +811,7 @@ async fn room_orders_response(
 ) -> ApiResult<RoomOrdersResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_projection_access(&mut state, &user_id, &room_id, query.account_id)?;
     let orders = state
         .journal
         .query_orders(
@@ -660,7 +852,7 @@ async fn room_trades_response(
 ) -> ApiResult<RoomTradesResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_projection_access(&mut state, &user_id, &room_id, query.account_id)?;
     let trades = state
         .journal
         .query_trades(
@@ -741,7 +933,7 @@ async fn room_ledger_response(
 ) -> ApiResult<RoomLedgerResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_projection_access(&mut state, &user_id, &room_id, query.account_id)?;
     let ledger = state
         .journal
         .query_account_ledger(
@@ -782,7 +974,7 @@ async fn room_positions_response(
 ) -> ApiResult<RoomPositionsResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_projection_access(&mut state, &user_id, &room_id, query.account_id)?;
     let positions = state
         .journal
         .query_position_snapshots(
@@ -842,6 +1034,38 @@ fn ensure_room_access(
     ))
 }
 
+fn ensure_room_admin(
+    state: &mut AppState,
+    user_id: &str,
+    room_id: &str,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    state.rooms.status(room_id).map_err(api_error_from_room)?;
+    if state
+        .journal
+        .user_can_administer_room(user_id, room_id)
+        .map_err(api_error_from_journal)?
+    {
+        return Ok(());
+    }
+
+    Err(api_error(
+        StatusCode::FORBIDDEN,
+        format!("user {user_id} cannot administer room {room_id}"),
+    ))
+}
+
+fn ensure_projection_access(
+    state: &mut AppState,
+    user_id: &str,
+    room_id: &str,
+    account_id: Option<AccountId>,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    match account_id {
+        Some(account_id) => ensure_account_access(state, user_id, room_id, account_id),
+        None => ensure_room_admin(state, user_id, room_id),
+    }
+}
+
 fn ensure_account_access(
     state: &mut AppState,
     user_id: &str,
@@ -898,7 +1122,7 @@ async fn market_view_response(
 ) -> ApiResult<MarketView> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     let room = state.rooms.room(&room_id).map_err(api_error_from_room)?;
     let venue_id = room.venue_id().to_string();
     let instrument_id = instrument_id.unwrap_or_else(|| room.primary_instrument_id().to_string());
@@ -982,7 +1206,7 @@ async fn account_snapshots_response(
 ) -> ApiResult<AccountSnapshots> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     let instrument_id = match instrument_id {
         Some(instrument_id) => instrument_id,
         None => state
@@ -1005,7 +1229,7 @@ async fn venue_account_snapshots(
 ) -> ApiResult<RoomVenueAccountsResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     state
         .rooms
         .venue_account_snapshots(&room_id)
@@ -1025,7 +1249,7 @@ async fn venue_account_snapshots_by_venue(
 ) -> ApiResult<RoomVenueAccountsByVenueResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     state
         .rooms
         .venue_account_snapshots_by_venue(&room_id)
@@ -1045,7 +1269,7 @@ async fn room_portfolios(
 ) -> ApiResult<RoomPortfoliosResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     state
         .rooms
         .portfolio_snapshots(&room_id)
@@ -1065,7 +1289,7 @@ async fn room_asset_ledger(
 ) -> ApiResult<RoomAssetLedgerResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     state
         .rooms
         .asset_ledger(&room_id)
@@ -1085,7 +1309,7 @@ async fn room_net_worth(
 ) -> ApiResult<RoomNetWorthSnapshot> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     state
         .rooms
         .net_worth_snapshot(&room_id)
@@ -1121,7 +1345,7 @@ async fn advance_room_clock(
 ) -> ApiResult<AdvanceClockResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     let mut candidate_rooms = state.rooms.clone();
     let completed_transfers = candidate_rooms
         .advance_clock(&room_id, request.steps)
@@ -1129,8 +1353,17 @@ async fn advance_room_clock(
     let clock = candidate_rooms
         .clock(&room_id)
         .map_err(api_error_from_room)?;
-    let snapshot = current_room_snapshot(&candidate_rooms, &room_id)
-        .expect("room access was checked before advancing clock");
+    let snapshot = current_room_snapshot(
+        &candidate_rooms,
+        &room_id,
+        last_persisted_command_seq(&state, &room_id),
+    )
+    .ok_or_else(|| {
+        api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("room {room_id} disappeared while advancing its clock"),
+        )
+    })?;
     if completed_transfers.is_empty() {
         state
             .journal
@@ -1163,7 +1396,7 @@ async fn room_transfers(
 ) -> ApiResult<RoomTransfersResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     state
         .journal
         .query_transfers(&user_id, &room_id, None, 100)
@@ -1195,8 +1428,17 @@ async fn submit_deposit(
             request.amount,
         )
         .map_err(api_error_from_room)?;
-    let snapshot = current_room_snapshot(&candidate_rooms, &room_id)
-        .expect("room access was checked before submitting deposit");
+    let snapshot = current_room_snapshot(
+        &candidate_rooms,
+        &room_id,
+        last_persisted_command_seq(&state, &room_id),
+    )
+    .ok_or_else(|| {
+        api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("room {room_id} disappeared while submitting a deposit"),
+        )
+    })?;
     let record = JournalTransfer::recorded(room_id.clone(), transfer.clone());
     state
         .journal
@@ -1226,8 +1468,17 @@ async fn submit_withdrawal(
             request.amount,
         )
         .map_err(api_error_from_room)?;
-    let snapshot = current_room_snapshot(&candidate_rooms, &room_id)
-        .expect("room access was checked before submitting withdrawal");
+    let snapshot = current_room_snapshot(
+        &candidate_rooms,
+        &room_id,
+        last_persisted_command_seq(&state, &room_id),
+    )
+    .ok_or_else(|| {
+        api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("room {room_id} disappeared while submitting a withdrawal"),
+        )
+    })?;
     let record = JournalTransfer::recorded(room_id.clone(), transfer.clone());
     state
         .journal
@@ -1258,8 +1509,17 @@ async fn submit_venue_to_venue_transfer(
             request.amount,
         )
         .map_err(api_error_from_room)?;
-    let snapshot = current_room_snapshot(&candidate_rooms, &room_id)
-        .expect("room access was checked before submitting venue-to-venue transfer");
+    let snapshot = current_room_snapshot(
+        &candidate_rooms,
+        &room_id,
+        last_persisted_command_seq(&state, &room_id),
+    )
+    .ok_or_else(|| {
+        api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("room {room_id} disappeared while submitting a venue transfer"),
+        )
+    })?;
     let mut records = vec![JournalTransfer::recorded(
         room_id.clone(),
         transfer.withdrawal.clone(),
@@ -1294,6 +1554,42 @@ async fn submit_order_for_instrument(
     submit_order_response(state, headers, room_id, Some(instrument_id), request).await
 }
 
+async fn set_mark_price_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+    Json(request): Json<SetMarkPriceRequest>,
+) -> ApiResult<RoomExecutionSummary> {
+    let mut state = lock_state(&state)?;
+    let user_id = current_user_id(&headers)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
+    let mut candidate_rooms = state.rooms.clone();
+    let previous_history_len = candidate_rooms
+        .execution_history(&room_id)
+        .map_err(api_error_from_room)?
+        .len();
+    let command = Command::SetMarkPrice(SetMarkPrice {
+        price_tick: request.price_tick,
+    });
+    let execution = candidate_rooms
+        .apply_to_instrument(&room_id, &instrument_id, command.clone())
+        .map_err(api_error_from_room)?;
+    let response = RoomExecutionSummary::from_execution(execution.clone());
+    let journal_record = JournalExecution::system(command, execution);
+    let journal_room_id = journal_record.room_id.clone();
+    journal_new_executions(
+        &mut state,
+        &candidate_rooms,
+        &journal_room_id,
+        previous_history_len,
+        journal_record,
+    )
+    .map_err(api_error_from_journal)?;
+    state.rooms = candidate_rooms;
+
+    Ok(Json(response))
+}
+
 async fn submit_order_response(
     state: SharedState,
     headers: HeaderMap,
@@ -1305,7 +1601,19 @@ async fn submit_order_response(
     let user_id = current_user_id(&headers)?;
     ensure_account_access(&mut state, &user_id, &room_id, request.account_id)?;
     let first_order_id = state.next_order_id;
+    if order_action_allocates_id(&request.action)
+        && first_order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE
+    {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "API order-id range is exhausted",
+        ));
+    }
     let mut candidate_rooms = state.rooms.clone();
+    let previous_history_len = candidate_rooms
+        .execution_history(&room_id)
+        .map_err(api_error_from_room)?
+        .len();
     let mut gateway = OrderGateway::new(&mut candidate_rooms, first_order_id);
     let instrument_id = instrument_id.or_else(|| request.instrument_id.clone());
     let execution = gateway
@@ -1331,21 +1639,26 @@ async fn submit_order_response(
         execution.command,
         execution.execution,
     );
-    let snapshot = room_snapshot_if_due(&candidate_rooms, &journal_record);
-
-    state
-        .journal
-        .append_execution(&journal_record, snapshot.as_ref())
-        .map_err(api_error_from_journal)?;
-    state
-        .executions
-        .entry(journal_record.room_id.clone())
-        .or_default()
-        .push(journal_record.execution.clone());
+    let journal_room_id = journal_record.room_id.clone();
+    journal_new_executions(
+        &mut state,
+        &candidate_rooms,
+        &journal_room_id,
+        previous_history_len,
+        journal_record,
+    )
+    .map_err(api_error_from_journal)?;
     state.rooms = candidate_rooms;
     state.next_order_id = next_order_id;
 
     Ok(Json(response))
+}
+
+fn order_action_allocates_id(action: &OrderAction) -> bool {
+    !matches!(
+        action,
+        OrderAction::Cancel { .. } | OrderAction::Amend { .. }
+    )
 }
 
 async fn pause_room(
@@ -1355,7 +1668,7 @@ async fn pause_room(
 ) -> ApiResult<RoomStatusResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     let mut candidate_rooms = state.rooms.clone();
     candidate_rooms
         .pause_room(&room_id)
@@ -1378,7 +1691,7 @@ async fn resume_room(
 ) -> ApiResult<RoomStatusResponse> {
     let mut state = lock_state(&state)?;
     let user_id = current_user_id(&headers)?;
-    ensure_room_access(&mut state, &user_id, &room_id)?;
+    ensure_room_admin(&mut state, &user_id, &room_id)?;
     let mut candidate_rooms = state.rooms.clone();
     candidate_rooms
         .resume_room(&room_id)
@@ -1410,14 +1723,16 @@ fn lock_state(
 fn start_agent_worker_for_room(
     state: &mut AppState,
     room_id: RoomId,
+    user_id: String,
     request: StartAgentsRequest,
 ) -> Result<AgentWorkerStatus, (StatusCode, Json<ErrorResponse>)> {
-    if request.agents.is_empty() {
-        return Ok(AgentWorkerStatus::stopped(room_id));
-    }
+    validate_agent_templates(&room_id, &request.agents)?;
 
     if let Some(worker) = state.agent_workers.remove(&room_id) {
         worker.stop();
+    }
+    if request.agents.is_empty() {
+        return Ok(AgentWorkerStatus::stopped(room_id));
     }
 
     let interval_ms = request
@@ -1432,6 +1747,7 @@ fn start_agent_worker_for_room(
     let worker = AgentWorkerHandle::spawn(
         state.base_url.clone(),
         room_id.clone(),
+        user_id,
         request.agents,
         Duration::from_millis(interval_ms),
     )
@@ -1450,7 +1766,32 @@ fn start_agent_worker_for_room(
         running: true,
         interval_ms,
         participants: participant_ids,
+        last_error: None,
     })
+}
+
+fn validate_agent_templates(
+    room_id: &str,
+    templates: &[AgentTemplate],
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    for template in templates {
+        let configured_room_id = match template {
+            AgentTemplate::NoiseTrader(config) => &config.participant.room_id,
+            AgentTemplate::DcaTrader(config) => &config.participant.room_id,
+            AgentTemplate::GridTrader(config) => &config.participant.room_id,
+        };
+        if configured_room_id != room_id {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "agent {} is configured for room {}, not path room {room_id}",
+                    template.participant_id(),
+                    configured_room_id
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn agent_status_for_room(state: &AppState, room_id: &str) -> AgentWorkerStatus {
@@ -1473,11 +1814,13 @@ fn api_error(status: StatusCode, error: impl Into<String>) -> (StatusCode, Json<
 fn api_error_from_room(error: RoomManagerError) -> (StatusCode, Json<ErrorResponse>) {
     let status = match error {
         RoomManagerError::RoomNotFound { .. } => StatusCode::NOT_FOUND,
+        RoomManagerError::OrderOwnershipMismatch { .. } => StatusCode::FORBIDDEN,
         RoomManagerError::RoomAlreadyExists { .. }
         | RoomManagerError::MarketConfig(_)
         | RoomManagerError::Actor(_)
         | RoomManagerError::Scenario(_)
-        | RoomManagerError::Simulation(_) => StatusCode::BAD_REQUEST,
+        | RoomManagerError::Simulation(_)
+        | RoomManagerError::SystemOrderIdOverflow => StatusCode::BAD_REQUEST,
     };
 
     (
@@ -1721,6 +2064,11 @@ pub struct SubmitOrderRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SetMarkPriceRequest {
+    pub price_tick: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CreateRoomRequest {
     pub scenario: ScenarioConfig,
     #[serde(default)]
@@ -1741,6 +2089,8 @@ pub struct AgentWorkerStatus {
     pub running: bool,
     pub interval_ms: u64,
     pub participants: Vec<ParticipantId>,
+    #[serde(default)]
+    pub last_error: Option<String>,
 }
 
 impl AgentWorkerStatus {
@@ -1750,6 +2100,7 @@ impl AgentWorkerStatus {
             running: false,
             interval_ms: 0,
             participants: Vec::new(),
+            last_error: None,
         }
     }
 }
@@ -1909,6 +2260,19 @@ pub enum EventSummary {
         order_id: OrderId,
         reason: String,
     },
+    OrderAmended {
+        seq: u64,
+        order_id: OrderId,
+        old_price_tick: i64,
+        new_price_tick: i64,
+        old_qty: u64,
+        new_qty: u64,
+    },
+    AmendRejected {
+        seq: u64,
+        order_id: OrderId,
+        reason: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1920,9 +2284,12 @@ pub enum ClearingEventSummary {
         seller_account_id: AccountId,
         price_tick: i64,
         qty: u64,
-        notional: i64,
-        buyer_fee: i64,
-        seller_fee: i64,
+        #[serde(with = "json_i128")]
+        notional: i128,
+        #[serde(with = "json_i128")]
+        buyer_fee: i128,
+        #[serde(with = "json_i128")]
+        seller_fee: i128,
         buyer: SpotAccountStateSummary,
         seller: SpotAccountStateSummary,
     },
@@ -1932,31 +2299,67 @@ pub enum ClearingEventSummary {
         seller_account_id: AccountId,
         price_tick: i64,
         qty: u64,
-        notional: i64,
-        buyer_fee: i64,
-        seller_fee: i64,
-        buyer_realized_pnl: i64,
-        seller_realized_pnl: i64,
+        #[serde(with = "json_i128")]
+        notional: i128,
+        #[serde(with = "json_i128")]
+        buyer_fee: i128,
+        #[serde(with = "json_i128")]
+        seller_fee: i128,
+        #[serde(with = "json_i128")]
+        buyer_realized_pnl: i128,
+        #[serde(with = "json_i128")]
+        seller_realized_pnl: i128,
         buyer: PerpAccountStateSummary,
         seller: PerpAccountStateSummary,
+    },
+    PerpMarginStatusChanged {
+        account_id: AccountId,
+        previous_status: String,
+        new_status: String,
+        mark_price_tick: i64,
+        account: PerpAccountStateSummary,
+    },
+    PerpLiquidationSettled {
+        account_id: AccountId,
+        order_id: u64,
+        #[serde(with = "json_i128")]
+        liquidation_notional: i128,
+        #[serde(with = "json_i128")]
+        liquidation_fee: i128,
+        #[serde(with = "json_i128")]
+        insurance_fund_payment: i128,
+        #[serde(with = "json_i128")]
+        auto_deleveraging_loss: i128,
+        auto_deleveraging_allocations: Vec<PerpAutoDeleveragingAllocationSummary>,
+        #[serde(with = "json_i128")]
+        socialized_loss: i128,
+        socialized_loss_allocations: Vec<PerpSocializedLossAllocationSummary>,
+        #[serde(with = "json_i128")]
+        bad_debt: i128,
+        #[serde(with = "json_i128")]
+        insurance_fund_balance: i128,
+        account: PerpAccountStateSummary,
     },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SpotAccountStateSummary {
     pub account_id: AccountId,
-    pub cash_balance: i64,
-    pub position_qty: i64,
-    pub fees_paid: i64,
+    #[serde(with = "json_i128")]
+    pub cash_balance: i128,
+    #[serde(with = "json_i128")]
+    pub position_qty: i128,
+    #[serde(with = "json_i128")]
+    pub fees_paid: i128,
 }
 
 impl SpotAccountStateSummary {
     fn from_snapshot(snapshot: SpotAccountSnapshot) -> Self {
         Self {
             account_id: snapshot.account_id,
-            cash_balance: amount_to_i64(snapshot.cash_balance),
-            position_qty: amount_to_i64(snapshot.position_qty),
-            fees_paid: amount_to_i64(snapshot.fees_paid),
+            cash_balance: snapshot.cash_balance,
+            position_qty: snapshot.position_qty,
+            fees_paid: snapshot.fees_paid,
         }
     }
 }
@@ -1964,28 +2367,68 @@ impl SpotAccountStateSummary {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PerpAccountStateSummary {
     pub account_id: AccountId,
-    pub cash_balance: i64,
-    pub position_qty: i64,
+    #[serde(with = "json_i128")]
+    pub cash_balance: i128,
+    #[serde(with = "json_i128")]
+    pub position_qty: i128,
     pub avg_entry_price_tick: i64,
-    pub realized_pnl: i64,
-    pub unrealized_pnl: i64,
-    pub equity: i64,
-    pub initial_margin: i64,
-    pub fees_paid: i64,
+    #[serde(with = "json_i128")]
+    pub realized_pnl: i128,
+    #[serde(with = "json_i128")]
+    pub unrealized_pnl: i128,
+    #[serde(with = "json_i128")]
+    pub equity: i128,
+    #[serde(with = "json_i128")]
+    pub initial_margin: i128,
+    #[serde(with = "json_i128")]
+    pub maintenance_margin: i128,
+    pub margin_status: String,
+    #[serde(with = "json_i128")]
+    pub reserved_margin: i128,
+    #[serde(with = "json_i128")]
+    pub available_cash: i128,
+    #[serde(with = "json_i128")]
+    pub fees_paid: i128,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PerpSocializedLossAllocationSummary {
+    pub account_id: AccountId,
+    #[serde(with = "json_i128")]
+    pub loss: i128,
+    pub account: PerpAccountStateSummary,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PerpAutoDeleveragingAllocationSummary {
+    pub account_id: AccountId,
+    #[serde(with = "json_i128")]
+    pub position_delta: i128,
+    pub price_tick: i64,
+    pub qty: u64,
+    #[serde(with = "json_i128")]
+    pub realized_pnl: i128,
+    #[serde(with = "json_i128")]
+    pub loss: i128,
+    pub account: PerpAccountStateSummary,
 }
 
 impl PerpAccountStateSummary {
     fn from_snapshot(snapshot: PerpAccountSnapshot) -> Self {
         Self {
             account_id: snapshot.account_id,
-            cash_balance: amount_to_i64(snapshot.cash_balance),
-            position_qty: amount_to_i64(snapshot.position_qty),
+            cash_balance: snapshot.cash_balance,
+            position_qty: snapshot.position_qty,
             avg_entry_price_tick: snapshot.avg_entry_price_tick,
-            realized_pnl: amount_to_i64(snapshot.realized_pnl),
-            unrealized_pnl: amount_to_i64(snapshot.unrealized_pnl),
-            equity: amount_to_i64(snapshot.equity),
-            initial_margin: amount_to_i64(snapshot.initial_margin),
-            fees_paid: amount_to_i64(snapshot.fees_paid),
+            realized_pnl: snapshot.realized_pnl,
+            unrealized_pnl: snapshot.unrealized_pnl,
+            equity: snapshot.equity,
+            initial_margin: snapshot.initial_margin,
+            maintenance_margin: snapshot.maintenance_margin,
+            margin_status: snapshot.margin_status.as_str().to_string(),
+            reserved_margin: snapshot.reserved_margin,
+            available_cash: snapshot.available_cash,
+            fees_paid: snapshot.fees_paid,
         }
     }
 }
@@ -2010,9 +2453,9 @@ impl ClearingEventSummary {
                 seller_account_id,
                 price_tick,
                 qty,
-                notional: amount_to_i64(notional),
-                buyer_fee: amount_to_i64(buyer_fee),
-                seller_fee: amount_to_i64(seller_fee),
+                notional,
+                buyer_fee,
+                seller_fee,
                 buyer: SpotAccountStateSummary::from_snapshot(buyer),
                 seller: SpotAccountStateSummary::from_snapshot(seller),
             },
@@ -2040,20 +2483,74 @@ impl ClearingEventSummary {
                 seller_account_id,
                 price_tick,
                 qty,
-                notional: amount_to_i64(notional),
-                buyer_fee: amount_to_i64(buyer_fee),
-                seller_fee: amount_to_i64(seller_fee),
-                buyer_realized_pnl: amount_to_i64(buyer_realized_pnl),
-                seller_realized_pnl: amount_to_i64(seller_realized_pnl),
+                notional,
+                buyer_fee,
+                seller_fee,
+                buyer_realized_pnl,
+                seller_realized_pnl,
                 buyer: PerpAccountStateSummary::from_snapshot(buyer),
                 seller: PerpAccountStateSummary::from_snapshot(seller),
             },
+            PerpClearingEvent::MarginStatusChanged {
+                account_id,
+                previous_status,
+                new_status,
+                mark_price_tick,
+                snapshot,
+            } => Self::PerpMarginStatusChanged {
+                account_id,
+                previous_status: previous_status.as_str().to_string(),
+                new_status: new_status.as_str().to_string(),
+                mark_price_tick,
+                account: PerpAccountStateSummary::from_snapshot(snapshot),
+            },
+            PerpClearingEvent::LiquidationSettled {
+                account_id,
+                order_id,
+                liquidation_notional,
+                liquidation_fee,
+                insurance_fund_payment,
+                auto_deleveraging_loss,
+                auto_deleveraging_allocations,
+                socialized_loss,
+                socialized_loss_allocations,
+                bad_debt,
+                insurance_fund_balance,
+                snapshot,
+            } => Self::PerpLiquidationSettled {
+                account_id,
+                order_id,
+                liquidation_notional,
+                liquidation_fee,
+                insurance_fund_payment,
+                auto_deleveraging_loss,
+                auto_deleveraging_allocations: auto_deleveraging_allocations
+                    .into_iter()
+                    .map(|allocation| PerpAutoDeleveragingAllocationSummary {
+                        account_id: allocation.account_id,
+                        position_delta: allocation.position_delta,
+                        price_tick: allocation.price_tick,
+                        qty: allocation.qty,
+                        realized_pnl: allocation.realized_pnl,
+                        loss: allocation.loss,
+                        account: PerpAccountStateSummary::from_snapshot(allocation.snapshot),
+                    })
+                    .collect(),
+                socialized_loss,
+                socialized_loss_allocations: socialized_loss_allocations
+                    .into_iter()
+                    .map(|allocation| PerpSocializedLossAllocationSummary {
+                        account_id: allocation.account_id,
+                        loss: allocation.loss,
+                        account: PerpAccountStateSummary::from_snapshot(allocation.snapshot),
+                    })
+                    .collect(),
+                bad_debt,
+                insurance_fund_balance,
+                account: PerpAccountStateSummary::from_snapshot(snapshot),
+            },
         }
     }
-}
-
-fn amount_to_i64(value: i128) -> i64 {
-    i64::try_from(value).expect("clearing amount should fit in API summary")
 }
 
 impl EventSummary {
@@ -2121,6 +2618,25 @@ impl EventSummary {
                 order_id,
                 reason: format!("{reason:?}"),
             },
+            Event::OrderAmended {
+                order_id,
+                old_price_tick,
+                new_price_tick,
+                old_qty,
+                new_qty,
+            } => Self::OrderAmended {
+                seq,
+                order_id,
+                old_price_tick,
+                new_price_tick,
+                old_qty,
+                new_qty,
+            },
+            Event::AmendRejected { order_id, reason } => Self::AmendRejected {
+                seq,
+                order_id,
+                reason: format!("{reason:?}"),
+            },
         }
     }
 }
@@ -2133,6 +2649,7 @@ fn default_taker_side() -> exchange_core::Side {
 pub struct HttpTradingClient {
     base_url: String,
     client: reqwest::blocking::Client,
+    user_id: Option<String>,
 }
 
 impl HttpTradingClient {
@@ -2140,6 +2657,15 @@ impl HttpTradingClient {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             client: reqwest::blocking::Client::new(),
+            user_id: None,
+        }
+    }
+
+    pub fn with_user_id(base_url: impl Into<String>, user_id: impl Into<String>) -> Self {
+        Self {
+            base_url: base_url.into().trim_end_matches('/').to_string(),
+            client: reqwest::blocking::Client::new(),
+            user_id: Some(user_id.into()),
         }
     }
 
@@ -2228,11 +2754,11 @@ impl HttpTradingClient {
     }
 
     fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, HttpTradingError> {
-        let response = self
-            .client
-            .get(format!("{}{}", self.base_url, path))
-            .send()
-            .map_err(HttpTradingError::Http)?;
+        let mut request = self.client.get(format!("{}{}", self.base_url, path));
+        if let Some(user_id) = &self.user_id {
+            request = request.header(USER_ID_HEADER, user_id);
+        }
+        let response = request.send().map_err(HttpTradingError::Http)?;
         decode_response(response)
     }
 
@@ -2241,12 +2767,14 @@ impl HttpTradingClient {
         path: &str,
         body: &B,
     ) -> Result<T, HttpTradingError> {
-        let response = self
+        let mut request = self
             .client
             .post(format!("{}{}", self.base_url, path))
-            .json(body)
-            .send()
-            .map_err(HttpTradingError::Http)?;
+            .json(body);
+        if let Some(user_id) = &self.user_id {
+            request = request.header(USER_ID_HEADER, user_id);
+        }
+        let response = request.send().map_err(HttpTradingError::Http)?;
         decode_response(response)
     }
 }
@@ -2315,6 +2843,7 @@ const DEFAULT_AGENT_INTERVAL_MS: u64 = 1_000;
 
 struct AgentWorkerHandle {
     stop: Arc<AtomicBool>,
+    last_error: Arc<Mutex<Option<String>>>,
     interval_ms: u64,
     participants: Vec<ParticipantId>,
 }
@@ -2323,6 +2852,7 @@ impl AgentWorkerHandle {
     fn spawn(
         base_url: String,
         room_id: RoomId,
+        user_id: String,
         templates: Vec<AgentTemplate>,
         interval: Duration,
     ) -> Result<Self, AgentWorkerError> {
@@ -2337,10 +2867,12 @@ impl AgentWorkerHandle {
             .collect::<Vec<_>>();
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
+        let last_error = Arc::new(Mutex::new(None));
+        let worker_last_error = Arc::clone(&last_error);
         thread::Builder::new()
             .name(format!("marketforge-agents-{room_id}"))
             .spawn(move || {
-                let client = HttpTradingClient::new(base_url);
+                let client = HttpTradingClient::with_user_id(base_url, user_id);
                 let mut participants = templates
                     .into_iter()
                     .map(AgentTemplate::into_participant)
@@ -2351,7 +2883,15 @@ impl AgentWorkerHandle {
                         if worker_stop.load(Ordering::Relaxed) {
                             break;
                         }
-                        let _ = run_remote_participant_once(&client, participant.as_mut());
+                        if let Err(error) =
+                            run_remote_participant_once(&client, participant.as_mut())
+                        {
+                            if let Ok(mut last_error) = worker_last_error.lock() {
+                                *last_error = Some(error.to_string());
+                            }
+                            worker_stop.store(true, Ordering::Relaxed);
+                            return;
+                        }
                     }
                     sleep_until_next_step(interval, &worker_stop);
                 }
@@ -2360,6 +2900,7 @@ impl AgentWorkerHandle {
 
         Ok(Self {
             stop,
+            last_error,
             interval_ms,
             participants,
         })
@@ -2371,6 +2912,11 @@ impl AgentWorkerHandle {
             running: !self.stop.load(Ordering::Relaxed),
             interval_ms: self.interval_ms,
             participants: self.participants.clone(),
+            last_error: self
+                .last_error
+                .lock()
+                .ok()
+                .and_then(|last_error| last_error.clone()),
         }
     }
 
@@ -2469,6 +3015,7 @@ mod tests {
             side: Side::Sell,
             kind: OrderKind::Limit { price_tick: 104 },
             qty: 8,
+            reduce_only: false,
         })];
         scenario
     }
@@ -2517,8 +3064,57 @@ mod tests {
                     side: Side::Sell,
                     kind: OrderKind::Limit { price_tick: 100 },
                     qty: 5,
+                    reduce_only: false,
                 }),
             }],
+        }
+    }
+
+    fn perp_liquidation_scenario(room_id: &str) -> ScenarioConfig {
+        perp_liquidation_scenario_with_mark(room_id, 80)
+    }
+
+    fn perp_liquidation_scenario_with_mark(
+        room_id: &str,
+        initial_mark_price_tick: i64,
+    ) -> ScenarioConfig {
+        ScenarioConfig {
+            room_id: room_id.to_string(),
+            venue_preset: None,
+            venue_rules: exchange_core::VenueRuleConfig::default(),
+            venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
+            assets: Vec::new(),
+            market: MarketConfig::Perp(exchange_core::PerpMarketConfig {
+                instrument: InstrumentConfig::new("V-BTC-PERP", 1, 1).unwrap(),
+                clearing: exchange_core::PerpClearingConfig {
+                    leverage: 10,
+                    maintenance_margin_ppm: 50_000,
+                    liquidation_fee_ppm: 10_000,
+                    ..exchange_core::PerpClearingConfig::default()
+                },
+                risk: exchange_core::PerpRiskConfig::default(),
+                initial_mark_price_tick,
+            }),
+            extra_markets: Vec::new(),
+            initial_portfolios: Vec::new(),
+            initial_allocations: Vec::new(),
+            routed_initial_allocations: Vec::new(),
+            accounts: vec![
+                ScenarioAccount::Basic {
+                    account_id: 10,
+                    cash_balance: 10_000,
+                },
+                ScenarioAccount::Basic {
+                    account_id: 20,
+                    cash_balance: 200,
+                },
+                ScenarioAccount::Basic {
+                    account_id: 30,
+                    cash_balance: 10_000,
+                },
+            ],
+            seed_orders: Vec::new(),
+            routed_seed_orders: Vec::new(),
         }
     }
 
@@ -2537,6 +3133,248 @@ mod tests {
             fallback_price_tick: 100,
             side: Side::Buy,
         })
+    }
+
+    #[tokio::test]
+    async fn cors_preflight_allows_user_identity_header() {
+        let response = new_app()
+            .oneshot(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri("/rooms")
+                    .header("origin", "http://127.0.0.1:57304")
+                    .header("access-control-request-method", "POST")
+                    .header("access-control-request-headers", "content-type, x-user-id")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let allowed_headers = response
+            .headers()
+            .get("access-control-allow-headers")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_ascii_lowercase();
+        assert!(allowed_headers.contains("x-user-id"));
+    }
+
+    #[test]
+    fn account_summaries_preserve_i128_values() {
+        let summary = SpotAccountStateSummary::from_snapshot(SpotAccountSnapshot {
+            account_id: 7,
+            cash_balance: i128::MAX,
+            position_qty: i128::MIN + 1,
+            reserved_cash: 0,
+            reserved_position: 0,
+            available_cash: i128::MAX,
+            available_position: i128::MIN + 1,
+            fees_paid: i128::MAX - 1,
+        });
+        assert_eq!(summary.cash_balance, i128::MAX);
+        assert_eq!(summary.position_qty, i128::MIN + 1);
+        assert_eq!(summary.fees_paid, i128::MAX - 1);
+        let json = serde_json::to_string(&summary).unwrap();
+        let round_trip: SpotAccountStateSummary = serde_json::from_str(&json).unwrap();
+        assert_eq!(round_trip, summary);
+
+        let normal = SpotAccountStateSummary::from_snapshot(SpotAccountSnapshot {
+            account_id: 8,
+            cash_balance: 42,
+            position_qty: -3,
+            reserved_cash: 0,
+            reserved_position: 0,
+            available_cash: 42,
+            available_position: -3,
+            fees_paid: 1,
+        });
+        let normal_json = serde_json::to_value(normal).unwrap();
+        assert_eq!(normal_json["cash_balance"], 42);
+
+        let execution = RoomExecutionSummary {
+            room_id: "i128-room".to_string(),
+            instrument_id: Some("V-BTC-SPOT".to_string()),
+            command_seq: 3,
+            status: MarketStatus::Running,
+            accepted: true,
+            reject_reason: None,
+            events: Vec::new(),
+            clearing_events: vec![ClearingEventSummary::SpotTradeSettled {
+                trade_id: 1,
+                buyer_account_id: 7,
+                seller_account_id: 8,
+                price_tick: 100,
+                qty: 1,
+                notional: i128::MAX,
+                buyer_fee: 42,
+                seller_fee: i128::MIN,
+                buyer: summary.clone(),
+                seller: summary,
+            }],
+            clearing_event_count: 1,
+        };
+        let execution_json = serde_json::to_value(&execution).unwrap();
+        assert_eq!(execution_json["clearing_events"][0]["buyer_fee"], 42);
+        assert_eq!(
+            execution_json["clearing_events"][0]["notional"],
+            i128::MAX.to_string()
+        );
+        let round_trip: RoomExecutionSummary = serde_json::from_value(execution_json).unwrap();
+        match &round_trip.clearing_events[0] {
+            ClearingEventSummary::SpotTradeSettled {
+                notional,
+                buyer_fee,
+                seller_fee,
+                buyer,
+                ..
+            } => {
+                assert_eq!(*notional, i128::MAX);
+                assert_eq!(*buyer_fee, 42);
+                assert_eq!(*seller_fee, i128::MIN);
+                assert_eq!(buyer.cash_balance, i128::MAX);
+            }
+            other => panic!("unexpected clearing event: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reserved_and_max_order_ids_are_rejected_without_overflow() {
+        let command_with_id = |order_id| {
+            Command::NewOrder(NewOrder {
+                order_id,
+                account_id: 10,
+                side: Side::Sell,
+                kind: OrderKind::Limit { price_tick: 100 },
+                qty: 1,
+                reduce_only: false,
+            })
+        };
+        for order_id in [SYSTEM_LIQUIDATION_ORDER_ID_BASE, OrderId::MAX] {
+            assert!(next_api_order_id_after_commands(1, &[command_with_id(order_id)]).is_err());
+        }
+
+        let scenario = spot_scenario("invalid-recovery-id");
+        let mut rooms = RoomManager::new();
+        rooms.create_room(scenario).unwrap();
+        let execution = rooms
+            .apply("invalid-recovery-id", command_with_id(1))
+            .unwrap();
+        let mut record =
+            JournalExecution::submitted("api".to_string(), 10, command_with_id(1), execution);
+        let mut system_record = record.clone();
+        system_record.participant_id = None;
+        system_record.command = Command::NewOrder(NewOrder {
+            order_id: SYSTEM_LIQUIDATION_ORDER_ID_BASE,
+            account_id: 10,
+            side: Side::Sell,
+            kind: OrderKind::Market,
+            qty: 1,
+            reduce_only: true,
+        });
+        let system_recovery = JournalRecovery {
+            rooms: Vec::new(),
+            executions: vec![system_record],
+            snapshots: Vec::new(),
+        };
+        assert_eq!(next_order_id_from_recovery(&system_recovery).unwrap(), 1);
+
+        record.command = command_with_id(OrderId::MAX);
+        let recovery = JournalRecovery {
+            rooms: Vec::new(),
+            executions: vec![record],
+            snapshots: Vec::new(),
+        };
+        assert!(next_order_id_from_recovery(&recovery).is_err());
+    }
+
+    #[test]
+    fn recovery_skips_atomic_system_liquidation_records() {
+        let room_id = "recovered-liquidation-room";
+        let scenario = perp_liquidation_scenario(room_id);
+        let mut rooms = RoomManager::new();
+        rooms.create_room(scenario.clone()).unwrap();
+
+        let commands = [
+            Command::NewOrder(NewOrder {
+                order_id: 1,
+                account_id: 30,
+                side: Side::Buy,
+                kind: OrderKind::Limit { price_tick: 80 },
+                qty: 10,
+                reduce_only: false,
+            }),
+            Command::NewOrder(NewOrder {
+                order_id: 2,
+                account_id: 10,
+                side: Side::Sell,
+                kind: OrderKind::Limit { price_tick: 100 },
+                qty: 10,
+                reduce_only: false,
+            }),
+            Command::NewOrder(NewOrder {
+                order_id: 3,
+                account_id: 20,
+                side: Side::Buy,
+                kind: OrderKind::Market,
+                qty: 10,
+                reduce_only: false,
+            }),
+        ];
+        let participants = [("bidder", 30), ("seller", 10), ("distressed", 20)];
+        let mut records = Vec::new();
+        for (command, (participant_id, account_id)) in commands.into_iter().zip(participants) {
+            let execution = rooms.apply(room_id, command.clone()).unwrap();
+            records.push(JournalExecution::submitted(
+                participant_id.to_string(),
+                account_id,
+                command,
+                execution,
+            ));
+        }
+
+        let history = rooms.execution_history(room_id).unwrap();
+        assert_eq!(history.len(), 4);
+        let liquidation = history.last().unwrap().clone();
+        let liquidation_command = command_from_actor_execution(&liquidation).unwrap();
+        assert!(is_system_liquidation_command(&liquidation_command));
+        assert!(matches!(
+            liquidation_command,
+            Command::NewOrder(NewOrder {
+                kind: OrderKind::FillOrKill { price_tick: None },
+                ..
+            })
+        ));
+        records.push(JournalExecution::system(liquidation_command, liquidation));
+        for record in &mut records {
+            record.execution.instrument_id = None;
+        }
+
+        let recovery = JournalRecovery {
+            rooms: vec![journal::JournalRoom {
+                room_id: room_id.to_string(),
+                scenario,
+                status: MarketStatus::Running,
+            }],
+            executions: records,
+            snapshots: Vec::new(),
+        };
+        assert_eq!(next_order_id_from_recovery(&recovery).unwrap(), 4);
+
+        let recovered = recover_rooms(&recovery).unwrap();
+        assert_eq!(recovered.execution_history(room_id).unwrap().len(), 4);
+        let AccountSnapshots::Perp(accounts) = recovered
+            .account_snapshots_for(room_id, "V-BTC-PERP")
+            .unwrap()
+        else {
+            panic!("expected perp account snapshots");
+        };
+        let distressed = accounts
+            .iter()
+            .find(|account| account.account_id == 20)
+            .unwrap();
+        assert_eq!(distressed.position_qty, 0);
     }
 
     #[tokio::test]
@@ -2584,6 +3422,154 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn api_order_ids_start_after_seed_order_ids() {
+        let app = new_app();
+        let scenario = serde_json::to_string(&seeded_spot_scenario("seed-id-room")).unwrap();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(scenario))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let order = serde_json::json!({
+            "participant_id": "human-1",
+            "account_id": 20,
+            "action": {
+                "PlaceLimit": {
+                    "side": "Buy",
+                    "price_tick": 99,
+                    "qty": 1
+                }
+            }
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/seed-id-room/orders")
+                    .header("content-type", "application/json")
+                    .body(Body::from(order.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let order: OrderResponse = serde_json::from_slice(&body).unwrap();
+        assert!(order.events.iter().any(|event| matches!(
+            event,
+            EventSummary::OrderAccepted {
+                order_id: 10_001,
+                ..
+            }
+        )));
+    }
+
+    #[tokio::test]
+    async fn account_cannot_cancel_or_amend_another_accounts_order() {
+        let app = new_app();
+        let scenario = serde_json::to_string(&spot_scenario("order-owner-room")).unwrap();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(scenario))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let owner_order = serde_json::json!({
+            "participant_id": "owner-10",
+            "account_id": 10,
+            "action": {"PlaceLimit": {"side": "Sell", "price_tick": 105, "qty": 2}}
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/order-owner-room/orders")
+                    .header("content-type", "application/json")
+                    .body(Body::from(owner_order.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let order: OrderResponse = serde_json::from_slice(&body).unwrap();
+        let order_id = order
+            .events
+            .iter()
+            .find_map(|event| match event {
+                EventSummary::OrderAccepted { order_id, .. } => Some(*order_id),
+                _ => None,
+            })
+            .unwrap();
+
+        for action in [
+            serde_json::json!({"Cancel": {"order_id": order_id}}),
+            serde_json::json!({"Amend": {
+                "order_id": order_id,
+                "price_tick": 104,
+                "qty": 1
+            }}),
+        ] {
+            let request = serde_json::json!({
+                "participant_id": "attacker-20",
+                "account_id": 20,
+                "action": action
+            });
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(Method::POST)
+                        .uri("/rooms/order-owner-room/orders")
+                        .header("content-type", "application/json")
+                        .body(Body::from(request.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/order-owner-room/book")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let book: BookSnapshot = serde_json::from_slice(&body).unwrap();
+        assert_eq!(book.asks[0].qty, 2);
     }
 
     #[tokio::test]
@@ -3202,6 +4188,266 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn room_events_include_auto_liquidation_execution() {
+        let app = new_app();
+        let scenario =
+            serde_json::to_string(&perp_liquidation_scenario("auto-liquidation-room")).unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(scenario))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let orders = [
+            serde_json::json!({
+                "participant_id": "bidder",
+                "account_id": 30,
+                "action": {
+                    "PlaceLimit": {
+                        "side": "Buy",
+                        "price_tick": 80,
+                        "qty": 10
+                    }
+                }
+            }),
+            serde_json::json!({
+                "participant_id": "seller",
+                "account_id": 10,
+                "action": {
+                    "PlaceLimit": {
+                        "side": "Sell",
+                        "price_tick": 100,
+                        "qty": 10
+                    }
+                }
+            }),
+            serde_json::json!({
+                "participant_id": "distressed",
+                "account_id": 20,
+                "action": {
+                    "PlaceMarket": {
+                        "side": "Buy",
+                        "qty": 10
+                    }
+                }
+            }),
+        ];
+
+        for order in orders {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(Method::POST)
+                        .uri("/rooms/auto-liquidation-room/orders")
+                        .header("content-type", "application/json")
+                        .body(Body::from(order.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/auto-liquidation-room/events?limit=10")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let events: RoomEventsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(events.executions.len(), 4);
+        let liquidation = events.executions.last().unwrap();
+        assert!(liquidation.accepted);
+        assert!(liquidation.clearing_events.iter().any(
+            |event| matches!(event, ClearingEventSummary::PerpMarginStatusChanged {
+                    account_id: 20,
+                    new_status,
+                    ..
+                } if new_status == "flat")
+        ));
+        assert!(liquidation.clearing_events.iter().any(|event| matches!(
+            event,
+            ClearingEventSummary::PerpLiquidationSettled {
+                account_id: 20,
+                liquidation_notional: 800,
+                liquidation_fee: 8,
+                ..
+            }
+        )));
+    }
+
+    #[tokio::test]
+    async fn mark_price_update_can_trigger_auto_liquidation() {
+        let app = new_app();
+        let scenario = serde_json::to_string(&perp_liquidation_scenario_with_mark(
+            "mark-liquidation-room",
+            100,
+        ))
+        .unwrap();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(scenario))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let orders = [
+            serde_json::json!({
+                "participant_id": "bidder",
+                "account_id": 30,
+                "action": {
+                    "PlaceLimit": {
+                        "side": "Buy",
+                        "price_tick": 80,
+                        "qty": 10
+                    }
+                }
+            }),
+            serde_json::json!({
+                "participant_id": "seller",
+                "account_id": 10,
+                "action": {
+                    "PlaceLimit": {
+                        "side": "Sell",
+                        "price_tick": 100,
+                        "qty": 10
+                    }
+                }
+            }),
+            serde_json::json!({
+                "participant_id": "buyer",
+                "account_id": 20,
+                "action": {
+                    "PlaceMarket": {
+                        "side": "Buy",
+                        "qty": 10
+                    }
+                }
+            }),
+        ];
+
+        for order in orders {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(Method::POST)
+                        .uri("/rooms/mark-liquidation-room/orders")
+                        .header("content-type", "application/json")
+                        .body(Body::from(order.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/mark-liquidation-room/instruments/V-BTC-PERP/mark-price")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"price_tick":80}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let mark_execution: RoomExecutionSummary = serde_json::from_slice(&body).unwrap();
+        assert!(mark_execution.clearing_events.iter().any(
+            |event| matches!(event, ClearingEventSummary::PerpMarginStatusChanged {
+                    account_id: 20,
+                    new_status,
+                    ..
+                } if new_status == "liquidatable")
+        ));
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/mark-liquidation-room/events?limit=10")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let events: RoomEventsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(events.executions.len(), 5);
+        assert!(
+            events
+                .executions
+                .last()
+                .unwrap()
+                .clearing_events
+                .iter()
+                .any(
+                    |event| matches!(event, ClearingEventSummary::PerpMarginStatusChanged {
+                    account_id: 20,
+                    new_status,
+                    ..
+                } if new_status == "flat")
+                )
+        );
+        assert!(
+            events
+                .executions
+                .last()
+                .unwrap()
+                .clearing_events
+                .iter()
+                .any(|event| matches!(
+                    event,
+                    ClearingEventSummary::PerpLiquidationSettled {
+                        account_id: 20,
+                        liquidation_notional: 800,
+                        liquidation_fee: 8,
+                        ..
+                    }
+                ))
+        );
+    }
+
+    #[tokio::test]
     async fn projection_query_routes_are_available_without_postgres() {
         let app = new_app();
         let scenario = serde_json::to_string(&spot_scenario("query-room")).unwrap();
@@ -3315,6 +4561,209 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ordinary_room_members_cannot_access_admin_surfaces() {
+        #[derive(Default)]
+        struct RoleJournal {
+            roles: BTreeMap<(String, String), String>,
+            account_owners: BTreeMap<(String, AccountId), String>,
+        }
+
+        impl JournalStore for RoleJournal {
+            fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
+                Ok(JournalRecovery::default())
+            }
+
+            fn create_room(
+                &mut self,
+                owner_user_id: &str,
+                _scenario: &ScenarioConfig,
+                bootstrap: &RoomBootstrap,
+                account_ids: &[AccountId],
+                _seed_records: &[JournalExecution],
+                _initial_snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                let room_id = bootstrap.room_id.clone();
+                self.roles.insert(
+                    (room_id.clone(), owner_user_id.to_string()),
+                    "owner".to_string(),
+                );
+                self.roles.insert(
+                    (room_id.clone(), "member".to_string()),
+                    "member".to_string(),
+                );
+                self.roles
+                    .insert((room_id.clone(), "admin".to_string()), "admin".to_string());
+                for account_id in account_ids {
+                    self.account_owners
+                        .insert((room_id.clone(), *account_id), owner_user_id.to_string());
+                }
+                Ok(())
+            }
+
+            fn append_executions(
+                &mut self,
+                _records: &[JournalExecution],
+                _snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                Ok(())
+            }
+
+            fn update_room_status(
+                &mut self,
+                _room_id: &str,
+                _status: MarketStatus,
+            ) -> Result<(), JournalError> {
+                Ok(())
+            }
+
+            fn user_can_access_room(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+            ) -> Result<bool, JournalError> {
+                Ok(self
+                    .roles
+                    .contains_key(&(room_id.to_string(), user_id.to_string())))
+            }
+
+            fn user_can_administer_room(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+            ) -> Result<bool, JournalError> {
+                Ok(self
+                    .roles
+                    .get(&(room_id.to_string(), user_id.to_string()))
+                    .is_some_and(|role| role == "owner" || role == "admin"))
+            }
+
+            fn user_can_access_account(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+                account_id: AccountId,
+            ) -> Result<bool, JournalError> {
+                if self.user_can_administer_room(user_id, room_id)? {
+                    return Ok(true);
+                }
+                Ok(self
+                    .account_owners
+                    .get(&(room_id.to_string(), account_id))
+                    .is_some_and(|owner| owner == user_id))
+            }
+        }
+
+        let app = new_app_with_journal("http://127.0.0.1:57305", Box::new(RoleJournal::default()));
+        let scenario = serde_json::to_string(&spot_scenario("role-room")).unwrap();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .header(USER_ID_HEADER, "owner")
+                    .body(Body::from(scenario))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/role-room/book")
+                    .header(USER_ID_HEADER, "member")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        for path in [
+            "/rooms/role-room/events",
+            "/rooms/role-room/view",
+            "/rooms/role-room/accounts",
+            "/rooms/role-room/venue/accounts",
+            "/rooms/role-room/venue/accounts/by-venue",
+            "/rooms/role-room/portfolio",
+            "/rooms/role-room/assets/ledger",
+            "/rooms/role-room/net-worth",
+            "/rooms/role-room/transfers",
+            "/rooms/role-room/orders",
+            "/rooms/role-room/trades",
+            "/rooms/role-room/ledger",
+            "/rooms/role-room/positions",
+            "/rooms/role-room/agents",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(Method::GET)
+                        .uri(path)
+                        .header(USER_ID_HEADER, "member")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "path {path}");
+        }
+
+        let mutations = [
+            (
+                "/rooms/role-room/clock/advance",
+                serde_json::json!({"steps": 1}),
+            ),
+            ("/rooms/role-room/pause", serde_json::json!(null)),
+            ("/rooms/role-room/resume", serde_json::json!(null)),
+            (
+                "/rooms/role-room/instruments/V-BTC-SPOT/mark-price",
+                serde_json::json!({"price_tick": 90}),
+            ),
+            (
+                "/rooms/role-room/agents",
+                serde_json::json!({"agents": [], "interval_ms": 10}),
+            ),
+            ("/rooms/role-room/agents/stop", serde_json::json!(null)),
+        ];
+        for (path, body) in mutations {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(Method::POST)
+                        .uri(path)
+                        .header("content-type", "application/json")
+                        .header(USER_ID_HEADER, "member")
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "path {path}");
+        }
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/role-room/accounts")
+                    .header(USER_ID_HEADER, "admin")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn failed_journal_append_does_not_commit_order_state() {
         struct FailingAppendJournal;
 
@@ -3335,12 +4784,20 @@ mod tests {
                 Ok(())
             }
 
-            fn append_execution(
+            fn append_executions(
                 &mut self,
-                _record: &JournalExecution,
+                _records: &[JournalExecution],
                 _snapshot: Option<&JournalSnapshot>,
             ) -> Result<(), JournalError> {
                 Err(JournalError::CountOutOfRange(0))
+            }
+
+            fn user_can_administer_room(
+                &mut self,
+                _user_id: &str,
+                _room_id: &str,
+            ) -> Result<bool, JournalError> {
+                Ok(true)
             }
 
             fn update_room_status(
@@ -3431,6 +4888,132 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn failed_multi_execution_batch_does_not_commit_any_timeline_entry() {
+        struct RejectMultiExecutionJournal;
+
+        impl JournalStore for RejectMultiExecutionJournal {
+            fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
+                Ok(JournalRecovery::default())
+            }
+
+            fn create_room(
+                &mut self,
+                _owner_user_id: &str,
+                _scenario: &ScenarioConfig,
+                _bootstrap: &RoomBootstrap,
+                _account_ids: &[AccountId],
+                _seed_records: &[JournalExecution],
+                _initial_snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                Ok(())
+            }
+
+            fn append_executions(
+                &mut self,
+                records: &[JournalExecution],
+                _snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                if records.len() > 1 {
+                    return Err(JournalError::CountOutOfRange(records.len()));
+                }
+                Ok(())
+            }
+
+            fn update_room_status(
+                &mut self,
+                _room_id: &str,
+                _status: MarketStatus,
+            ) -> Result<(), JournalError> {
+                Ok(())
+            }
+
+            fn user_can_administer_room(
+                &mut self,
+                _user_id: &str,
+                _room_id: &str,
+            ) -> Result<bool, JournalError> {
+                Ok(true)
+            }
+        }
+
+        let app = new_app_with_journal(
+            "http://127.0.0.1:57305",
+            Box::new(RejectMultiExecutionJournal),
+        );
+        let scenario =
+            serde_json::to_string(&perp_liquidation_scenario("batch-failure-room")).unwrap();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(scenario))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let orders = [
+            serde_json::json!({
+                "participant_id": "bidder",
+                "account_id": 30,
+                "action": {"PlaceLimit": {"side": "Buy", "price_tick": 80, "qty": 10}}
+            }),
+            serde_json::json!({
+                "participant_id": "seller",
+                "account_id": 10,
+                "action": {"PlaceLimit": {"side": "Sell", "price_tick": 100, "qty": 10}}
+            }),
+            serde_json::json!({
+                "participant_id": "distressed",
+                "account_id": 20,
+                "action": {"PlaceMarket": {"side": "Buy", "qty": 10}}
+            }),
+        ];
+
+        for (index, order) in orders.into_iter().enumerate() {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(Method::POST)
+                        .uri("/rooms/batch-failure-room/orders")
+                        .header("content-type", "application/json")
+                        .body(Body::from(order.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let expected = if index < 2 {
+                StatusCode::OK
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            assert_eq!(response.status(), expected);
+        }
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/batch-failure-room/events?limit=10")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let events: RoomEventsResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(events.executions.len(), 2);
+    }
+
+    #[tokio::test]
     async fn recovery_replays_rooms_and_restores_next_order_id() {
         #[derive(Clone)]
         struct RecoveryJournal {
@@ -3454,12 +5037,20 @@ mod tests {
                 Ok(())
             }
 
-            fn append_execution(
+            fn append_executions(
                 &mut self,
-                _record: &JournalExecution,
+                _records: &[JournalExecution],
                 _snapshot: Option<&JournalSnapshot>,
             ) -> Result<(), JournalError> {
                 Ok(())
+            }
+
+            fn user_can_administer_room(
+                &mut self,
+                _user_id: &str,
+                _room_id: &str,
+            ) -> Result<bool, JournalError> {
+                Ok(true)
             }
 
             fn update_room_status(
@@ -3569,12 +5160,13 @@ mod tests {
             .await
             .unwrap();
         let order: OrderResponse = serde_json::from_slice(&body).unwrap();
-        assert!(
-            order
-                .events
-                .iter()
-                .any(|event| matches!(event, EventSummary::OrderAccepted { order_id: 2, .. }))
-        );
+        assert!(order.events.iter().any(|event| matches!(
+            event,
+            EventSummary::OrderAccepted {
+                order_id: 10_001,
+                ..
+            }
+        )));
 
         let response = app
             .oneshot(
@@ -3597,6 +5189,182 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn recovered_clock_snapshot_keeps_last_command_sequence_across_second_restart() {
+        #[derive(Clone)]
+        struct SharedRecoveryJournal {
+            recovery: Arc<Mutex<JournalRecovery>>,
+        }
+
+        impl SharedRecoveryJournal {
+            fn store_snapshot(recovery: &mut JournalRecovery, snapshot: &JournalSnapshot) {
+                if let Some(existing) = recovery
+                    .snapshots
+                    .iter_mut()
+                    .find(|existing| existing.room_id == snapshot.room_id)
+                {
+                    if snapshot.command_seq >= existing.command_seq {
+                        *existing = snapshot.clone();
+                    }
+                } else {
+                    recovery.snapshots.push(snapshot.clone());
+                }
+            }
+        }
+
+        impl JournalStore for SharedRecoveryJournal {
+            fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
+                self.recovery
+                    .lock()
+                    .map(|recovery| recovery.clone())
+                    .map_err(|_| JournalError::Recovery("shared recovery lock poisoned".into()))
+            }
+
+            fn create_room(
+                &mut self,
+                _owner_user_id: &str,
+                _scenario: &ScenarioConfig,
+                _bootstrap: &RoomBootstrap,
+                _account_ids: &[AccountId],
+                _seed_records: &[JournalExecution],
+                _initial_snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                Ok(())
+            }
+
+            fn append_executions(
+                &mut self,
+                records: &[JournalExecution],
+                snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                let mut recovery = self
+                    .recovery
+                    .lock()
+                    .map_err(|_| JournalError::Recovery("shared recovery lock poisoned".into()))?;
+                recovery.executions.extend_from_slice(records);
+                if let Some(snapshot) = snapshot {
+                    Self::store_snapshot(&mut recovery, snapshot);
+                }
+                Ok(())
+            }
+
+            fn append_snapshot(&mut self, snapshot: &JournalSnapshot) -> Result<(), JournalError> {
+                let mut recovery = self
+                    .recovery
+                    .lock()
+                    .map_err(|_| JournalError::Recovery("shared recovery lock poisoned".into()))?;
+                Self::store_snapshot(&mut recovery, snapshot);
+                Ok(())
+            }
+
+            fn update_room_status(
+                &mut self,
+                _room_id: &str,
+                _status: MarketStatus,
+            ) -> Result<(), JournalError> {
+                Ok(())
+            }
+
+            fn user_can_administer_room(
+                &mut self,
+                _user_id: &str,
+                _room_id: &str,
+            ) -> Result<bool, JournalError> {
+                Ok(true)
+            }
+        }
+
+        let scenario = seeded_spot_scenario("snapshot-seq-room");
+        let mut rooms = RoomManager::new();
+        let bootstrap = rooms.create_room(scenario.clone()).unwrap();
+        let mut executions = scenario
+            .seed_commands()
+            .into_iter()
+            .zip(bootstrap.seed_executions.iter().cloned())
+            .map(|(command, execution)| JournalExecution::seed(command, execution))
+            .collect::<Vec<_>>();
+        let mut gateway = OrderGateway::new(&mut rooms, 10_001);
+        let submitted = gateway
+            .submit_action(GatewayRequest {
+                participant_id: "human-1".to_string(),
+                room_id: "snapshot-seq-room".to_string(),
+                instrument_id: None,
+                account_id: 20,
+                action: OrderAction::PlaceLimit {
+                    side: Side::Buy,
+                    price_tick: 99,
+                    qty: 1,
+                },
+            })
+            .unwrap();
+        let submitted_record = JournalExecution::submitted(
+            submitted.participant_id,
+            submitted.account_id,
+            submitted.command,
+            submitted.execution,
+        );
+        let snapshot = JournalSnapshot {
+            room_id: "snapshot-seq-room".to_string(),
+            command_seq: submitted_record.command_seq,
+            actor: rooms.simulation_room("snapshot-seq-room").unwrap().clone(),
+        };
+        assert_eq!(snapshot.command_seq, 1);
+        executions.push(submitted_record);
+
+        let recovery = Arc::new(Mutex::new(JournalRecovery {
+            rooms: vec![journal::JournalRoom {
+                room_id: "snapshot-seq-room".to_string(),
+                scenario,
+                status: MarketStatus::Running,
+            }],
+            executions,
+            snapshots: vec![snapshot],
+        }));
+
+        let first_app = new_app_recovering_with_journal(
+            "http://127.0.0.1:57305",
+            Box::new(SharedRecoveryJournal {
+                recovery: Arc::clone(&recovery),
+            }),
+        )
+        .unwrap();
+        let response = first_app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/snapshot-seq-room/clock/advance")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"steps":7}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(recovery.lock().unwrap().snapshots[0].command_seq, 1);
+
+        let second_app = new_app_recovering_with_journal(
+            "http://127.0.0.1:57305",
+            Box::new(SharedRecoveryJournal { recovery }),
+        )
+        .unwrap();
+        let response = second_app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/snapshot-seq-room/clock")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let clock: RoomClockResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(clock.clock.step(), 7);
+    }
+
+    #[tokio::test]
     async fn postgres_journal_persists_and_recovers_room_when_configured() {
         let Ok(database_url) = std::env::var("MARKETFORGE_TEST_DATABASE_URL") else {
             return;
@@ -3609,7 +5377,11 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         );
-        let scenario = seeded_spot_scenario(&room_id);
+        let mut scenario = seeded_spot_scenario(&room_id);
+        scenario.initial_portfolios = vec![ScenarioPortfolio {
+            account_id: 20,
+            balances: BTreeMap::from([("BTC".to_string(), 25)]),
+        }];
 
         cleanup_postgres_room(&database_url, &room_id);
         let app = new_app_recovering_with_journal(
@@ -3952,6 +5724,65 @@ mod tests {
         .join();
     }
 
+    #[tokio::test]
+    async fn agent_templates_cannot_target_a_different_room() {
+        let app = new_app();
+        let scenario = serde_json::to_string(&spot_scenario("agent-path-room")).unwrap();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(scenario))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let request = StartAgentsRequest {
+            agents: vec![dca_template("other-room", "cross-room-agent", 20)],
+            interval_ms: Some(10),
+        };
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/agent-path-room/agents")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_string(&request).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn agent_worker_stops_and_reports_http_errors() {
+        let worker = AgentWorkerHandle::spawn(
+            "http://127.0.0.1:0".to_string(),
+            "agent-error-room".to_string(),
+            DEFAULT_USER_ID.to_string(),
+            vec![dca_template("agent-error-room", "failing-agent", 20)],
+            Duration::from_millis(1),
+        )
+        .unwrap();
+
+        let mut status = worker.status("agent-error-room".to_string());
+        for _ in 0..50 {
+            if !status.running {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+            status = worker.status("agent-error-room".to_string());
+        }
+        assert!(!status.running);
+        assert!(status.last_error.is_some());
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn rule_agent_can_trade_through_real_http_client() {
         let listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
@@ -3967,7 +5798,7 @@ mod tests {
         });
 
         let responses = tokio::task::spawn_blocking(move || {
-            let client = HttpTradingClient::new(base_url);
+            let client = HttpTradingClient::with_user_id(base_url, "alice");
             client.create_room(&spot_scenario("remote-ai")).unwrap();
             let mut participant = DcaTrader::new(DcaTraderConfig {
                 participant: ParticipantConfig {
@@ -4016,7 +5847,7 @@ mod tests {
         });
 
         let view = tokio::task::spawn_blocking(move || {
-            let client = HttpTradingClient::new(base_url);
+            let client = HttpTradingClient::with_user_id(base_url, "alice");
             let room = CreateRoomRequest {
                 scenario: spot_scenario("worker-ai"),
                 agents: vec![dca_template("worker-ai", "dca-worker", 20)],

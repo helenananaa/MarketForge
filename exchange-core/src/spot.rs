@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     account::{ClearingError, FeeRatePpm, Money, PositionQty, fee_for, notional},
-    model::{AccountId, PriceTick, Qty, Side, Trade},
+    model::{AccountId, OrderId, PriceTick, Qty, Side, Trade},
 };
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -18,6 +18,8 @@ pub struct SpotAccount {
     pub account_id: AccountId,
     pub cash_balance: Money,
     pub position_qty: PositionQty,
+    pub reserved_cash: Money,
+    pub reserved_position: PositionQty,
     pub fees_paid: Money,
 }
 
@@ -27,8 +29,20 @@ impl SpotAccount {
             account_id: self.account_id,
             cash_balance: self.cash_balance,
             position_qty: self.position_qty,
+            reserved_cash: self.reserved_cash,
+            reserved_position: self.reserved_position,
+            available_cash: self.available_cash(),
+            available_position: self.available_position(),
             fees_paid: self.fees_paid,
         }
+    }
+
+    pub fn available_cash(&self) -> Money {
+        self.cash_balance - self.reserved_cash
+    }
+
+    pub fn available_position(&self) -> PositionQty {
+        self.position_qty - self.reserved_position
     }
 }
 
@@ -37,6 +51,14 @@ pub struct SpotAccountSnapshot {
     pub account_id: AccountId,
     pub cash_balance: Money,
     pub position_qty: PositionQty,
+    #[serde(default)]
+    pub reserved_cash: Money,
+    #[serde(default)]
+    pub reserved_position: PositionQty,
+    #[serde(default)]
+    pub available_cash: Money,
+    #[serde(default)]
+    pub available_position: PositionQty,
     pub fees_paid: Money,
 }
 
@@ -68,13 +90,26 @@ pub enum SpotClearingEvent {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SpotAccountStore {
     accounts: BTreeMap<AccountId, SpotAccount>,
+    #[serde(default)]
+    order_reservations: BTreeMap<OrderId, SpotOrderReservation>,
     config: SpotClearingConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct SpotOrderReservation {
+    account_id: AccountId,
+    side: Side,
+    price_tick: PriceTick,
+    qty: Qty,
+    reserved_cash: Money,
+    reserved_position: PositionQty,
 }
 
 impl SpotAccountStore {
     pub fn new(config: SpotClearingConfig) -> Self {
         Self {
             accounts: BTreeMap::new(),
+            order_reservations: BTreeMap::new(),
             config,
         }
     }
@@ -97,11 +132,30 @@ impl SpotAccountStore {
             account_id,
             cash_balance: 0,
             position_qty: 0,
+            reserved_cash: 0,
+            reserved_position: 0,
             fees_paid: 0,
         });
         account.cash_balance = cash_balance;
         account.position_qty = position_qty;
+        account.reserved_cash = 0;
+        account.reserved_position = 0;
         account.snapshot()
+    }
+
+    pub fn sync_account_balances(
+        &mut self,
+        account_id: AccountId,
+        cash_balance: Money,
+        position_qty: PositionQty,
+    ) -> Result<SpotAccountSnapshot, ClearingError> {
+        let account = self.account_mut(account_id);
+        if cash_balance < account.reserved_cash || position_qty < account.reserved_position {
+            return Err(ClearingError::InsufficientAvailableBalance);
+        }
+        account.cash_balance = cash_balance;
+        account.position_qty = position_qty;
+        Ok(account.snapshot())
     }
 
     pub fn account(&self, account_id: AccountId) -> Option<&SpotAccount> {
@@ -120,24 +174,100 @@ impl SpotAccountStore {
         self.accounts.values().map(SpotAccount::snapshot).collect()
     }
 
+    pub fn reserve_resting_order(
+        &mut self,
+        order_id: OrderId,
+        account_id: AccountId,
+        side: Side,
+        price_tick: PriceTick,
+        qty: Qty,
+    ) -> Result<(), ClearingError> {
+        if qty == 0 {
+            return Ok(());
+        }
+        self.release_order_reservation(order_id)?;
+
+        let reservation = self.reservation_for_order(account_id, side, price_tick, qty)?;
+        let account = self.account_mut(account_id);
+        if account.available_cash() < reservation.reserved_cash
+            || account.available_position() < reservation.reserved_position
+        {
+            return Err(ClearingError::InsufficientAvailableBalance);
+        }
+        account.reserved_cash = account
+            .reserved_cash
+            .checked_add(reservation.reserved_cash)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        account.reserved_position = account
+            .reserved_position
+            .checked_add(reservation.reserved_position)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        self.order_reservations.insert(order_id, reservation);
+        Ok(())
+    }
+
+    pub fn release_order_reservation(&mut self, order_id: OrderId) -> Result<(), ClearingError> {
+        let Some(reservation) = self.order_reservations.remove(&order_id) else {
+            return Ok(());
+        };
+        let account = self.account_mut(reservation.account_id);
+        account.reserved_cash = account
+            .reserved_cash
+            .checked_sub(reservation.reserved_cash)
+            .ok_or(ClearingError::ReservationUnderflow)?;
+        account.reserved_position = account
+            .reserved_position
+            .checked_sub(reservation.reserved_position)
+            .ok_or(ClearingError::ReservationUnderflow)?;
+        Ok(())
+    }
+
+    pub fn amend_order_reservation(
+        &mut self,
+        order_id: OrderId,
+        price_tick: PriceTick,
+        qty: Qty,
+    ) -> Result<(), ClearingError> {
+        let Some(existing) = self.order_reservations.get(&order_id).cloned() else {
+            return Ok(());
+        };
+        self.release_order_reservation(order_id)?;
+        self.reserve_resting_order(
+            order_id,
+            existing.account_id,
+            existing.side,
+            price_tick,
+            qty,
+        )
+    }
+
     pub fn settle_trade(&mut self, trade: &Trade) -> Result<SpotClearingEvent, ClearingError> {
+        let mut staged = self.clone();
+        let event = staged.settle_trade_inner(trade)?;
+        *self = staged;
+        Ok(event)
+    }
+
+    fn settle_trade_inner(&mut self, trade: &Trade) -> Result<SpotClearingEvent, ClearingError> {
         let notional = notional(trade.price_tick, trade.qty)?;
-        let maker_fee = fee_for(notional, self.config.maker_fee_ppm);
-        let taker_fee = fee_for(notional, self.config.taker_fee_ppm);
+        let maker_fee = fee_for(notional, self.config.maker_fee_ppm)?;
+        let taker_fee = fee_for(notional, self.config.taker_fee_ppm)?;
         let participants = SpotTradeParticipants::from_trade(trade, maker_fee, taker_fee);
+
+        self.release_maker_fill_reservation(trade.maker_order_id, trade.qty)?;
 
         let buyer = self.apply_fill(
             participants.buyer_account_id,
             notional,
             participants.buyer_fee,
             PositionQty::from(trade.qty),
-        );
+        )?;
         let seller = self.apply_fill(
             participants.seller_account_id,
             -notional,
             participants.seller_fee,
             -PositionQty::from(trade.qty),
-        );
+        )?;
 
         Ok(SpotClearingEvent::TradeSettled {
             trade_id: trade.trade_id,
@@ -159,19 +289,117 @@ impl SpotAccountStore {
         signed_notional: Money,
         fee: Money,
         position_delta: PositionQty,
-    ) -> SpotAccountSnapshot {
-        let account = self.accounts.entry(account_id).or_insert(SpotAccount {
+    ) -> Result<SpotAccountSnapshot, ClearingError> {
+        let account = self.account_mut(account_id);
+
+        account.cash_balance = account
+            .cash_balance
+            .checked_sub(signed_notional)
+            .and_then(|balance| balance.checked_sub(fee))
+            .ok_or(ClearingError::BalanceOverflow)?;
+        account.position_qty = account
+            .position_qty
+            .checked_add(position_delta)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        account.fees_paid = account
+            .fees_paid
+            .checked_add(fee)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        Ok(account.snapshot())
+    }
+
+    fn release_maker_fill_reservation(
+        &mut self,
+        order_id: OrderId,
+        fill_qty: Qty,
+    ) -> Result<(), ClearingError> {
+        let Some(mut reservation) = self.order_reservations.remove(&order_id) else {
+            return Ok(());
+        };
+
+        let remaining_qty = reservation
+            .qty
+            .checked_sub(fill_qty)
+            .ok_or(ClearingError::ReservationUnderflow)?;
+        let next_reservation = self.reservation_for_order(
+            reservation.account_id,
+            reservation.side,
+            reservation.price_tick,
+            remaining_qty,
+        )?;
+
+        let release_cash = reservation
+            .reserved_cash
+            .checked_sub(next_reservation.reserved_cash)
+            .ok_or(ClearingError::ReservationUnderflow)?;
+        let release_position = reservation
+            .reserved_position
+            .checked_sub(next_reservation.reserved_position)
+            .ok_or(ClearingError::ReservationUnderflow)?;
+
+        {
+            let account = self.account_mut(reservation.account_id);
+            account.reserved_cash = account
+                .reserved_cash
+                .checked_sub(release_cash)
+                .ok_or(ClearingError::ReservationUnderflow)?;
+            account.reserved_position = account
+                .reserved_position
+                .checked_sub(release_position)
+                .ok_or(ClearingError::ReservationUnderflow)?;
+        }
+
+        if remaining_qty == 0 {
+            return Ok(());
+        }
+
+        reservation.qty = remaining_qty;
+        reservation.reserved_cash = next_reservation.reserved_cash;
+        reservation.reserved_position = next_reservation.reserved_position;
+        self.order_reservations.insert(order_id, reservation);
+
+        Ok(())
+    }
+
+    fn reservation_for_order(
+        &self,
+        account_id: AccountId,
+        side: Side,
+        price_tick: PriceTick,
+        qty: Qty,
+    ) -> Result<SpotOrderReservation, ClearingError> {
+        let reserved_cash = if side == Side::Buy && qty > 0 {
+            let order_notional = notional(price_tick, qty)?;
+            order_notional
+                .checked_add(fee_for(order_notional, self.config.maker_fee_ppm)?)
+                .ok_or(ClearingError::BalanceOverflow)?
+        } else {
+            0
+        };
+        let reserved_position = if side == Side::Sell {
+            PositionQty::from(qty)
+        } else {
+            0
+        };
+        Ok(SpotOrderReservation {
+            account_id,
+            side,
+            price_tick,
+            qty,
+            reserved_cash,
+            reserved_position,
+        })
+    }
+
+    fn account_mut(&mut self, account_id: AccountId) -> &mut SpotAccount {
+        self.accounts.entry(account_id).or_insert(SpotAccount {
             account_id,
             cash_balance: 0,
             position_qty: 0,
+            reserved_cash: 0,
+            reserved_position: 0,
             fees_paid: 0,
-        });
-
-        account.cash_balance -= signed_notional;
-        account.cash_balance -= fee;
-        account.position_qty += position_delta;
-        account.fees_paid += fee;
-        account.snapshot()
+        })
     }
 }
 
@@ -243,12 +471,20 @@ mod tests {
                     account_id: 20,
                     cash_balance: 8_999,
                     position_qty: 10,
+                    reserved_cash: 0,
+                    reserved_position: 0,
+                    available_cash: 8_999,
+                    available_position: 10,
                     fees_paid: 1,
                 },
                 seller: SpotAccountSnapshot {
                     account_id: 10,
                     cash_balance: 11_000,
                     position_qty: -10,
+                    reserved_cash: 0,
+                    reserved_position: 0,
+                    available_cash: 11_000,
+                    available_position: -10,
                     fees_paid: 0,
                 },
             }
@@ -281,6 +517,10 @@ mod tests {
                 account_id: 10,
                 cash_balance: -5_005,
                 position_qty: 5,
+                reserved_cash: 0,
+                reserved_position: 0,
+                available_cash: -5_005,
+                available_position: 5,
                 fees_paid: 5,
             })
         );
@@ -290,6 +530,10 @@ mod tests {
                 account_id: 20,
                 cash_balance: 4_990,
                 position_qty: -5,
+                reserved_cash: 0,
+                reserved_position: 0,
+                available_cash: 4_990,
+                available_position: -5,
                 fees_paid: 10,
             })
         );

@@ -80,6 +80,7 @@ mod tests {
             side,
             kind: OrderKind::Limit { price_tick },
             qty,
+            reduce_only: false,
         })
     }
 
@@ -90,6 +91,7 @@ mod tests {
             side,
             kind: OrderKind::Market,
             qty,
+            reduce_only: false,
         })
     }
 

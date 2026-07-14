@@ -8,7 +8,7 @@ use crate::{
         AssetId, AssetKind, AssetSelector, InstrumentConfig, InstrumentId, MarketConfig,
         MarketKind, VenueAssetPolicyConfig,
     },
-    model::{Command, NewOrder, OrderKind, PriceTick, Qty, Side},
+    model::{Command, NewOrder, PriceTick, Qty, Side},
     spot::SpotClearingEvent,
 };
 
@@ -242,8 +242,12 @@ impl TradingSessionRuleConfig {
 impl TradingSessionWindow {
     pub fn from_hm(open_hour: u64, open_minute: u64, close_hour: u64, close_minute: u64) -> Self {
         Self {
-            open_time_ms: open_hour * HOUR_MS + open_minute * MINUTE_MS,
-            close_time_ms: close_hour * HOUR_MS + close_minute * MINUTE_MS,
+            open_time_ms: open_hour
+                .saturating_mul(HOUR_MS)
+                .saturating_add(open_minute.saturating_mul(MINUTE_MS)),
+            close_time_ms: close_hour
+                .saturating_mul(HOUR_MS)
+                .saturating_add(close_minute.saturating_mul(MINUTE_MS)),
         }
     }
 
@@ -275,7 +279,10 @@ impl PriceLimitRuleConfig {
         if self.reference_price_tick <= 0 {
             return Err(VenueRuleConfigError::InvalidReferencePrice);
         }
-        if self.limit_down_ppm > 1_000_000 {
+        if self.limit_up_ppm > 1_000_000 || self.limit_down_ppm > 1_000_000 {
+            return Err(VenueRuleConfigError::InvalidPriceLimit);
+        }
+        if self.price_bounds().is_none() {
             return Err(VenueRuleConfigError::InvalidPriceLimit);
         }
         Ok(())
@@ -286,17 +293,31 @@ impl PriceLimitRuleConfig {
     }
 
     fn upper_price_tick(&self) -> PriceTick {
-        let scaled = i128::from(self.reference_price_tick)
-            * (PPM_DENOMINATOR + i128::from(self.limit_up_ppm));
-        PriceTick::try_from(scaled / PPM_DENOMINATOR)
-            .expect("price limit upper bound should fit in PriceTick")
+        self.price_bounds()
+            .map(|(_, upper)| upper)
+            .unwrap_or(PriceTick::MAX)
     }
 
     fn lower_price_tick(&self) -> PriceTick {
-        let scaled = i128::from(self.reference_price_tick)
-            * (PPM_DENOMINATOR - i128::from(self.limit_down_ppm));
-        PriceTick::try_from(scaled / PPM_DENOMINATOR)
-            .expect("price limit lower bound should fit in PriceTick")
+        self.price_bounds()
+            .map(|(lower, _)| lower)
+            .unwrap_or(PriceTick::MIN)
+    }
+
+    fn price_bounds(&self) -> Option<(PriceTick, PriceTick)> {
+        let reference = i128::from(self.reference_price_tick);
+        let upper_factor = PPM_DENOMINATOR.checked_add(i128::from(self.limit_up_ppm))?;
+        let lower_factor = PPM_DENOMINATOR.checked_sub(i128::from(self.limit_down_ppm))?;
+        let upper = reference
+            .checked_mul(upper_factor)?
+            .checked_div(PPM_DENOMINATOR)?;
+        let lower = reference
+            .checked_mul(lower_factor)?
+            .checked_div(PPM_DENOMINATOR)?;
+        Some((
+            PriceTick::try_from(lower).ok()?,
+            PriceTick::try_from(upper).ok()?,
+        ))
     }
 }
 
@@ -343,10 +364,6 @@ impl VenueRuleEngine {
             command,
             venue_accounts,
         } = context;
-        let Command::NewOrder(order) = command else {
-            return Ok(());
-        };
-
         if self.config.circuit_breaker.halted {
             return Err(VenueRuleRejectReason::CircuitBreakerHalted {
                 reason: self.config.circuit_breaker.reason.clone(),
@@ -356,15 +373,21 @@ impl VenueRuleEngine {
             return Err(VenueRuleRejectReason::TradingSessionClosed { market_time_ms });
         }
 
-        self.check_price_limit(instrument_id, order)?;
-        self.check_spot_settlement(
-            command_seq,
-            instrument_id,
-            instrument,
-            market_kind,
-            order,
-            venue_accounts,
-        )
+        match command {
+            Command::NewOrder(order) => {
+                self.check_order_price_limit(instrument_id, order)?;
+                self.check_spot_settlement(
+                    command_seq,
+                    instrument_id,
+                    instrument,
+                    market_kind,
+                    order,
+                    venue_accounts,
+                )
+            }
+            Command::AmendOrder(amend) => self.check_price_limit(instrument_id, amend.price_tick),
+            Command::CancelOrder(_) | Command::SetMarkPrice(_) => Ok(()),
+        }
     }
 
     pub fn record_spot_clearing(
@@ -377,7 +400,8 @@ impl VenueRuleEngine {
             return;
         }
 
-        let available_after_seq = command_seq + self.config.settlement.spot_sell_delay_steps;
+        let available_after_seq =
+            command_seq.saturating_add(self.config.settlement.spot_sell_delay_steps);
         for event in clearing_events {
             let SpotClearingEvent::TradeSettled {
                 buyer_account_id,
@@ -396,10 +420,18 @@ impl VenueRuleEngine {
         }
     }
 
-    fn check_price_limit(
+    fn check_order_price_limit(
         &self,
         instrument_id: &str,
         order: &NewOrder,
+    ) -> Result<(), VenueRuleRejectReason> {
+        self.check_price_limit(instrument_id, order.kind.limit_price_tick())
+    }
+
+    fn check_price_limit(
+        &self,
+        instrument_id: &str,
+        price_tick: Option<PriceTick>,
     ) -> Result<(), VenueRuleRejectReason> {
         let Some(price_limit) = self
             .config
@@ -410,7 +442,7 @@ impl VenueRuleEngine {
             return Ok(());
         };
 
-        let OrderKind::Limit { price_tick } = order.kind else {
+        let Some(price_tick) = price_tick else {
             return Ok(());
         };
 
@@ -453,7 +485,7 @@ impl VenueRuleEngine {
                 account_id: order.account_id,
                 instrument_id: instrument_id.to_string(),
                 requested_qty: order.qty,
-                sellable_qty: sellable.max(0) as Qty,
+                sellable_qty: Qty::try_from(sellable.max(0)).unwrap_or(Qty::MAX),
                 unsettled_qty: unsettled,
             });
         }
@@ -547,6 +579,31 @@ mod tests {
         };
 
         assert_eq!(config.validate(), Ok(()));
+    }
+
+    #[test]
+    fn rejects_price_limit_bounds_that_do_not_fit_without_panicking() {
+        let too_wide = PriceLimitRuleConfig {
+            instrument_id: "BTC-USDT".to_string(),
+            reference_price_tick: PriceTick::MAX,
+            limit_up_ppm: 1_000_000,
+            limit_down_ppm: 0,
+        };
+        assert_eq!(
+            too_wide.validate(),
+            Err(VenueRuleConfigError::InvalidPriceLimit)
+        );
+
+        let invalid_rate = PriceLimitRuleConfig {
+            instrument_id: "BTC-USDT".to_string(),
+            reference_price_tick: 100,
+            limit_up_ppm: 1_000_001,
+            limit_down_ppm: 0,
+        };
+        assert_eq!(
+            invalid_rate.validate(),
+            Err(VenueRuleConfigError::InvalidPriceLimit)
+        );
     }
 
     #[test]

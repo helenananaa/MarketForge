@@ -17,7 +17,17 @@ const FEE_DENOMINATOR_PPM: Money = 1_000_000;
 pub enum ClearingError {
     InvalidPrice,
     InvalidLeverage,
+    InvalidMarginRate,
+    InvalidFeeRate,
+    AccountNotFound,
+    AccountNotLiquidatable,
+    InvalidLiquidationQuantity,
+    LiquidationUnfilled,
+    WrongMarketKind,
     NotionalOverflow,
+    BalanceOverflow,
+    InsufficientAvailableBalance,
+    ReservationUnderflow,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -95,7 +105,10 @@ impl VenueAccountStore {
         if balance.available() < amount {
             return Err(VenueAccountError::InsufficientAvailableBalance);
         }
-        balance.reserved += amount;
+        balance.reserved = balance
+            .reserved
+            .checked_add(amount)
+            .ok_or(VenueAccountError::BalanceOverflow)?;
         Ok(balance.snapshot(account_id, asset_id))
     }
 
@@ -162,6 +175,18 @@ impl VenueAccountStore {
             .collect()
     }
 
+    pub fn validate(&self) -> Result<(), VenueAccountError> {
+        if self
+            .balances
+            .values()
+            .flat_map(|balances| balances.values())
+            .any(|balance| balance.total < balance.reserved || balance.reserved < 0)
+        {
+            return Err(VenueAccountError::InsufficientAvailableBalance);
+        }
+        Ok(())
+    }
+
     fn balance_mut(&mut self, account_id: AccountId, asset_id: AssetId) -> &mut VenueAssetBalance {
         self.balances
             .entry(account_id)
@@ -226,8 +251,21 @@ pub(crate) fn notional(price_tick: PriceTick, qty: Qty) -> Result<Money, Clearin
         .ok_or(ClearingError::NotionalOverflow)
 }
 
-pub(crate) fn fee_for(notional: Money, fee_rate_ppm: FeeRatePpm) -> Money {
-    notional * Money::from(fee_rate_ppm) / FEE_DENOMINATOR_PPM
+pub(crate) fn fee_for(notional: Money, fee_rate_ppm: FeeRatePpm) -> Result<Money, ClearingError> {
+    if fee_rate_ppm > 1_000_000 {
+        return Err(ClearingError::InvalidFeeRate);
+    }
+    let rate = Money::from(fee_rate_ppm);
+    let whole = notional / FEE_DENOMINATOR_PPM;
+    let remainder = notional % FEE_DENOMINATOR_PPM;
+    whole
+        .checked_mul(rate)
+        .and_then(|fee| {
+            remainder.checked_mul(rate).and_then(|scaled_remainder| {
+                fee.checked_add(scaled_remainder / FEE_DENOMINATOR_PPM)
+            })
+        })
+        .ok_or(ClearingError::NotionalOverflow)
 }
 
 #[cfg(test)]
@@ -267,5 +305,14 @@ mod tests {
         assert_eq!(signed.reserved, 150);
         assert_eq!(signed.available, -350);
         assert_eq!(store.asset_ids(), vec!["USDT"]);
+    }
+
+    #[test]
+    fn fee_math_handles_extreme_notionals_without_intermediate_overflow() {
+        assert_eq!(fee_for(Money::MAX, 1_000_000), Ok(Money::MAX));
+        assert_eq!(
+            fee_for(1_000, 1_000_001),
+            Err(ClearingError::InvalidFeeRate)
+        );
     }
 }

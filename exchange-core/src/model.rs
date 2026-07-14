@@ -26,6 +26,39 @@ impl Side {
 pub enum OrderKind {
     Limit { price_tick: PriceTick },
     Market,
+    PostOnly { price_tick: PriceTick },
+    ImmediateOrCancel { price_tick: Option<PriceTick> },
+    FillOrKill { price_tick: Option<PriceTick> },
+}
+
+impl OrderKind {
+    pub fn limit_price_tick(self) -> Option<PriceTick> {
+        match self {
+            Self::Limit { price_tick }
+            | Self::PostOnly { price_tick }
+            | Self::ImmediateOrCancel {
+                price_tick: Some(price_tick),
+            }
+            | Self::FillOrKill {
+                price_tick: Some(price_tick),
+            } => Some(price_tick),
+            Self::Market
+            | Self::ImmediateOrCancel { price_tick: None }
+            | Self::FillOrKill { price_tick: None } => None,
+        }
+    }
+
+    pub fn rests_remainder(self) -> bool {
+        matches!(self, Self::Limit { .. } | Self::PostOnly { .. })
+    }
+
+    pub fn is_post_only(self) -> bool {
+        matches!(self, Self::PostOnly { .. })
+    }
+
+    pub fn is_fill_or_kill(self) -> bool {
+        matches!(self, Self::FillOrKill { .. })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -35,6 +68,8 @@ pub struct NewOrder {
     pub side: Side,
     pub kind: OrderKind,
     pub qty: Qty,
+    #[serde(default)]
+    pub reduce_only: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -43,9 +78,23 @@ pub struct CancelOrder {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AmendOrder {
+    pub order_id: OrderId,
+    pub price_tick: Option<PriceTick>,
+    pub qty: Option<Qty>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SetMarkPrice {
+    pub price_tick: PriceTick,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Command {
     NewOrder(NewOrder),
     CancelOrder(CancelOrder),
+    AmendOrder(AmendOrder),
+    SetMarkPrice(SetMarkPrice),
 }
 
 impl Command {
@@ -53,6 +102,8 @@ impl Command {
         match self {
             Self::NewOrder(order) => order.order_id,
             Self::CancelOrder(cancel) => cancel.order_id,
+            Self::AmendOrder(amend) => amend.order_id,
+            Self::SetMarkPrice(_) => 0,
         }
     }
 }
@@ -117,6 +168,17 @@ pub enum Event {
         order_id: OrderId,
         reason: CancelRejectReason,
     },
+    OrderAmended {
+        order_id: OrderId,
+        old_price_tick: PriceTick,
+        new_price_tick: PriceTick,
+        old_qty: Qty,
+        new_qty: Qty,
+    },
+    AmendRejected {
+        order_id: OrderId,
+        reason: AmendRejectReason,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -124,6 +186,8 @@ pub enum RejectReason {
     DuplicateOrderId,
     InvalidQuantity,
     InvalidPrice,
+    PostOnlyWouldTakeLiquidity,
+    FillOrKillWouldNotFill,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -138,11 +202,24 @@ pub enum RiskRejectReason {
     UnsupportedMarketOrder,
     InvalidPriceTick,
     InvalidLotSize,
+    ReduceOnlyUnsupported,
+    ReduceOnlyWouldIncreasePosition,
+    ReduceOnlyExceedsPosition,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CancelRejectReason {
     UnknownOrder,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AmendRejectReason {
+    UnknownOrder,
+    NoChange,
+    InvalidQuantity,
+    InvalidPrice,
+    QuantityIncreaseUnsupported,
+    PriceWouldIncreaseAggression,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

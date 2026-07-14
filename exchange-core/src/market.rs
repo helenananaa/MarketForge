@@ -66,7 +66,7 @@ pub enum AssetKind {
     Custom,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct InstrumentConfig {
     pub instrument_id: InstrumentId,
     pub venue_id: VenueId,
@@ -75,6 +75,46 @@ pub struct InstrumentConfig {
     pub quote_asset: AssetId,
     pub tick_size: PriceTick,
     pub lot_size: Qty,
+}
+
+impl<'de> Deserialize<'de> for InstrumentConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct InstrumentConfigWire {
+            #[serde(default)]
+            instrument_id: Option<InstrumentId>,
+            #[serde(default)]
+            venue_id: Option<VenueId>,
+            symbol: String,
+            #[serde(default)]
+            base_asset: Option<AssetId>,
+            #[serde(default)]
+            quote_asset: Option<AssetId>,
+            tick_size: PriceTick,
+            lot_size: Qty,
+        }
+
+        let wire = InstrumentConfigWire::deserialize(deserializer)?;
+        let symbol = wire.symbol;
+        Ok(Self {
+            instrument_id: wire.instrument_id.unwrap_or_else(|| symbol.clone()),
+            venue_id: wire
+                .venue_id
+                .unwrap_or_else(|| DEFAULT_VENUE_ID.to_string()),
+            base_asset: wire
+                .base_asset
+                .unwrap_or_else(|| inferred_base_asset(&symbol)),
+            quote_asset: wire
+                .quote_asset
+                .unwrap_or_else(|| inferred_quote_asset(&symbol)),
+            symbol,
+            tick_size: wire.tick_size,
+            lot_size: wire.lot_size,
+        })
+    }
 }
 
 impl InstrumentConfig {
@@ -152,7 +192,11 @@ pub struct SpotMarketConfig {
 
 impl SpotMarketConfig {
     pub fn validate(&self) -> Result<(), MarketConfigError> {
-        self.instrument.validate()
+        self.instrument.validate()?;
+        if self.clearing.maker_fee_ppm > 1_000_000 || self.clearing.taker_fee_ppm > 1_000_000 {
+            return Err(MarketConfigError::Clearing(ClearingError::InvalidFeeRate));
+        }
+        Ok(())
     }
 
     pub fn build_engine(&self) -> Result<SpotTradingEngine, MarketConfigError> {
@@ -184,6 +228,17 @@ impl PerpMarketConfig {
         }
         if self.clearing.leverage == 0 {
             return Err(MarketConfigError::InvalidLeverage);
+        }
+        if self.clearing.maker_fee_ppm > 1_000_000
+            || self.clearing.taker_fee_ppm > 1_000_000
+            || self.clearing.liquidation_fee_ppm > 1_000_000
+        {
+            return Err(MarketConfigError::Clearing(ClearingError::InvalidFeeRate));
+        }
+        if self.clearing.maintenance_margin_ppm > 1_000_000 {
+            return Err(MarketConfigError::Clearing(
+                ClearingError::InvalidMarginRate,
+            ));
         }
         Ok(())
     }
@@ -676,6 +731,21 @@ mod tests {
     };
 
     #[test]
+    fn legacy_instrument_json_infers_new_identity_and_asset_fields() {
+        let instrument: InstrumentConfig = serde_json::from_value(serde_json::json!({
+            "symbol": "V-BTC-SPOT",
+            "tick_size": 1,
+            "lot_size": 1
+        }))
+        .unwrap();
+
+        assert_eq!(
+            instrument,
+            InstrumentConfig::new("V-BTC-SPOT", 1, 1).unwrap()
+        );
+    }
+
+    #[test]
     fn builds_spot_engine_from_market_config() {
         let config = MarketConfig::Spot(SpotMarketConfig {
             instrument: InstrumentConfig::new("V-BTC-SPOT", 1, 1).unwrap(),
@@ -705,6 +775,7 @@ mod tests {
                 maker_fee_ppm: 100,
                 taker_fee_ppm: 200,
                 leverage: 10,
+                ..PerpClearingConfig::default()
             },
             risk: PerpRiskConfig {
                 max_order_qty: Some(100),
@@ -719,6 +790,36 @@ mod tests {
         assert_eq!(config.symbol(), "V-BTC-PERP");
         let engine = config.build_engine().expect("perp engine should build");
         assert_eq!(engine.kind(), MarketKind::Perp);
+    }
+
+    #[test]
+    fn rejects_fee_rates_above_one_hundred_percent() {
+        let spot = SpotMarketConfig {
+            instrument: InstrumentConfig::new("V-BTC-SPOT", 1, 1).unwrap(),
+            clearing: SpotClearingConfig {
+                maker_fee_ppm: 1_000_001,
+                taker_fee_ppm: 0,
+            },
+            risk: SpotRiskConfig::default(),
+        };
+        assert_eq!(
+            spot.validate(),
+            Err(MarketConfigError::Clearing(ClearingError::InvalidFeeRate))
+        );
+
+        let perp = PerpMarketConfig {
+            instrument: InstrumentConfig::new("V-BTC-PERP", 1, 1).unwrap(),
+            clearing: PerpClearingConfig {
+                taker_fee_ppm: 1_000_001,
+                ..PerpClearingConfig::default()
+            },
+            risk: PerpRiskConfig::default(),
+            initial_mark_price_tick: 100,
+        };
+        assert_eq!(
+            perp.validate(),
+            Err(MarketConfigError::Clearing(ClearingError::InvalidFeeRate))
+        );
     }
 
     #[test]
@@ -846,6 +947,7 @@ mod tests {
                 side: Side::Buy,
                 kind: OrderKind::Limit { price_tick: 100 },
                 qty: 2,
+                reduce_only: false,
             }))
             .unwrap();
 
@@ -878,6 +980,7 @@ mod tests {
                 side: Side::Buy,
                 kind: OrderKind::Limit { price_tick: 102 },
                 qty: 1,
+                reduce_only: false,
             }))
             .unwrap();
 
@@ -914,6 +1017,7 @@ mod tests {
                 side: Side::Buy,
                 kind: OrderKind::Limit { price_tick: 100 },
                 qty: 7,
+                reduce_only: false,
             }))
             .unwrap();
 

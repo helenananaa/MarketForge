@@ -50,11 +50,12 @@ pub use market::{
 };
 pub use model::{
     BookLevel, BookSnapshot, CancelOrder, Command, Event, NewOrder, Order, OrderId, OrderKind,
-    PriceTick, Qty, RejectReason, Side, Trade,
+    PriceTick, Qty, RejectReason, SetMarkPrice, Side, Trade,
 };
 pub use participant::{Participant, ParticipantConfig, ParticipantKind, run_participant_once};
 pub use perp::{
     PerpAccount, PerpAccountSnapshot, PerpAccountStore, PerpClearingConfig, PerpClearingEvent,
+    PerpMarginStatus,
 };
 pub use portfolio::{
     PortfolioAccountSnapshot, PortfolioAssetBalance, PortfolioBalanceSnapshot, PortfolioError,

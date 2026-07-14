@@ -106,6 +106,7 @@ fn smoke_scenario() -> ScenarioConfig {
             side: Side::Sell,
             kind: OrderKind::Limit { price_tick: 105 },
             qty: 3,
+            reduce_only: false,
         })],
         routed_seed_orders: Vec::new(),
     }
