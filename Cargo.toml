@@ -1,5 +1,9 @@
 [workspace]
-members = ["exchange-core", "exchange-server"]
+members = [
+    "exchange-core",
+    "exchange-server",
+    "marketforge-candlescope-plugin",
+]
 resolver = "3"
 
 [workspace.package]

@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 3,
+  "plugin": {
+    "id": "marketforge.candlescope-adapter",
+    "name": "MarketForge",
+    "version": "0.1.0",
+    "publisher": "marketforge",
+    "license": "MIT",
+    "engines": {
+      "candlescope": ">=0.4.0 <0.5.0"
+    }
+  },
+  "backend": {
+    "entrypoints": [
+      {
+        "id": "main",
+        "runtime": {
+          "kind": "native-executable",
+          "artifact": "runtime/marketforge-candlescope-plugin.exe",
+          "operatingSystems": [
+            "windows"
+          ],
+          "architectures": [
+            "x86_64"
+          ],
+          "args": [
+            "--jsonl"
+          ]
+        },
+        "transport": "jsonl/1",
+        "resourceProfile": "service",
+        "activationEvents": [
+          "onCommand",
+          "onMarketSubscription"
+        ]
+      }
+    ]
+  },
+  "contributions": [
+    {
+      "id": "symbols",
+      "kind": "symbol-provider/1",
+      "title": "MarketForge Symbols",
+      "entrypoint": "main",
+      "configuration": {
+        "exchange": "marketforge",
+        "displayName": "MarketForge",
+        "marketTypes": [
+          {
+            "id": "spot",
+            "productType": "spot",
+            "label": "MarketForge Spot",
+            "calendarId": "crypto.24x7.utc",
+            "timezone": "UTC"
+          },
+          {
+            "id": "perp",
+            "productType": "perp",
+            "label": "MarketForge Perpetual",
+            "calendarId": "crypto.24x7.utc",
+            "timezone": "UTC"
+          }
+        ],
+        "maxPageSize": 100,
+        "cacheTtlSeconds": 1
+      }
+    },
+    {
+      "id": "market-data",
+      "kind": "market-data-provider/1",
+      "title": "MarketForge Market Data",
+      "entrypoint": "main",
+      "configuration": {
+        "exchange": "marketforge",
+        "dataPlane": "candlescope.stream/1",
+        "channels": [
+          {
+            "kind": "kline",
+            "marketTypes": [
+              "perp",
+              "spot"
+            ],
+            "history": true,
+            "realtime": true,
+            "intervals": [
+              "1s",
+              "1m",
+              "5m",
+              "15m",
+              "1h"
+            ],
+            "delivery": "append",
+            "finality": "explicit",
+            "corrections": false,
+            "maxPageSize": 500,
+            "maxBatch": 32,
+            "pollIntervalMs": 50,
+            "ratePerMinute": 1200,
+            "maxConcurrent": 8
+          },
+          {
+            "kind": "full_depth",
+            "marketTypes": [
+              "perp",
+              "spot"
+            ],
+            "history": false,
+            "realtime": true,
+            "intervals": [],
+            "delivery": "ordered_delta",
+            "finality": "explicit",
+            "corrections": false,
+            "snapshot": true,
+            "delta": true,
+            "sequence": "range",
+            "resync": "snapshot_replay",
+            "maxDepthLevels": 100,
+            "maxPageSize": 1,
+            "maxBatch": 32,
+            "pollIntervalMs": 50,
+            "ratePerMinute": 1200,
+            "maxConcurrent": 8
+          }
+        ],
+        "sourceQuality": {
+          "quality": "authoritative",
+          "finality": "explicit",
+          "timestamp": "exchange"
+        }
+      }
+    },
+    {
+      "id": "marketforge-control",
+      "kind": "command/1",
+      "title": "Control MarketForge Session",
+      "entrypoint": "main",
+      "configuration": {
+        "requiresUserAction": true,
+        "placements": [
+          "commandPalette"
+        ]
+      }
+    }
+  ],
+  "permissions": {
+    "required": [],
+    "optional": []
+  },
+  "probes": []
+}
