@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::{
-    account::{Money, VenueAccountStore},
+    account::{ClearingError, Money, VenueAccountStore},
     market::{
         AssetId, AssetKind, AssetSelector, InstrumentConfig, InstrumentId, MarketConfig,
         MarketKind, VenueAssetPolicyConfig,
@@ -356,7 +356,7 @@ impl VenueRuleEngine {
         context: VenueRuleOrderContext<'_>,
     ) -> Result<(), VenueRuleRejectReason> {
         let VenueRuleOrderContext {
-            command_seq,
+            market_step,
             market_time_ms,
             instrument_id,
             instrument,
@@ -364,12 +364,21 @@ impl VenueRuleEngine {
             command,
             venue_accounts,
         } = context;
-        if self.config.circuit_breaker.halted {
+        let may_increase_risk = match command {
+            Command::NewOrder(_) => true,
+            // The matching engine only accepts quantity reductions. Price
+            // changes can still increase a perp order's notional even when
+            // they make the order less aggressive, so keep those blocked
+            // while the venue is halted or outside its trading session.
+            Command::AmendOrder(amend) => amend.price_tick.is_some(),
+            Command::CancelOrder(_) | Command::SetMarkPrice(_) => false,
+        };
+        if may_increase_risk && self.config.circuit_breaker.halted {
             return Err(VenueRuleRejectReason::CircuitBreakerHalted {
                 reason: self.config.circuit_breaker.reason.clone(),
             });
         }
-        if !self.config.trading_session.is_open(market_time_ms) {
+        if may_increase_risk && !self.config.trading_session.is_open(market_time_ms) {
             return Err(VenueRuleRejectReason::TradingSessionClosed { market_time_ms });
         }
 
@@ -377,7 +386,7 @@ impl VenueRuleEngine {
             Command::NewOrder(order) => {
                 self.check_order_price_limit(instrument_id, order)?;
                 self.check_spot_settlement(
-                    command_seq,
+                    market_step,
                     instrument_id,
                     instrument,
                     market_kind,
@@ -392,7 +401,7 @@ impl VenueRuleEngine {
 
     pub fn record_spot_clearing(
         &mut self,
-        command_seq: u64,
+        market_step: u64,
         instrument_id: &str,
         clearing_events: &[SpotClearingEvent],
     ) {
@@ -400,8 +409,8 @@ impl VenueRuleEngine {
             return;
         }
 
-        let available_after_seq =
-            command_seq.saturating_add(self.config.settlement.spot_sell_delay_steps);
+        let available_after_step =
+            market_step.saturating_add(self.config.settlement.spot_sell_delay_steps);
         for event in clearing_events {
             let SpotClearingEvent::TradeSettled {
                 buyer_account_id,
@@ -415,9 +424,32 @@ impl VenueRuleEngine {
                 .or_default()
                 .push(PendingSpotBuy {
                     qty: *qty,
-                    available_after_seq,
+                    available_after_step,
+                    legacy_available_after_seq: None,
                 });
         }
+    }
+
+    pub(crate) fn normalize_after_restore(
+        &mut self,
+        next_command_seq: u64,
+        market_step: u64,
+    ) -> Result<(), ClearingError> {
+        for by_instrument in self.pending_spot_buys.values_mut() {
+            for pending_buys in by_instrument.values_mut() {
+                for pending_buy in pending_buys {
+                    let Some(legacy_deadline) = pending_buy.legacy_available_after_seq.take()
+                    else {
+                        continue;
+                    };
+                    let remaining_commands = legacy_deadline.saturating_sub(next_command_seq);
+                    pending_buy.available_after_step = market_step
+                        .checked_add(remaining_commands)
+                        .ok_or(ClearingError::BalanceOverflow)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn check_order_price_limit(
@@ -459,7 +491,7 @@ impl VenueRuleEngine {
 
     fn check_spot_settlement(
         &self,
-        command_seq: u64,
+        market_step: u64,
         instrument_id: &str,
         instrument: &InstrumentConfig,
         market_kind: MarketKind,
@@ -473,12 +505,12 @@ impl VenueRuleEngine {
             return Ok(());
         }
 
-        let total_base = venue_accounts
+        let available_base = venue_accounts
             .balance_snapshot(order.account_id, &instrument.base_asset)
-            .map(|balance| balance.total)
+            .map(|balance| balance.available)
             .unwrap_or(0);
-        let unsettled = self.unsettled_spot_buy_qty(order.account_id, instrument_id, command_seq);
-        let sellable = total_base - Money::from(unsettled);
+        let unsettled = self.unsettled_spot_buy_qty(order.account_id, instrument_id, market_step);
+        let sellable = available_base.saturating_sub(Money::from(unsettled));
 
         if sellable < Money::from(order.qty) {
             return Err(VenueRuleRejectReason::SpotPositionUnsettled {
@@ -497,7 +529,7 @@ impl VenueRuleEngine {
         &self,
         account_id: u64,
         instrument_id: &str,
-        command_seq: u64,
+        market_step: u64,
     ) -> Qty {
         self.pending_spot_buys
             .get(&account_id)
@@ -505,7 +537,7 @@ impl VenueRuleEngine {
             .map(|pending| {
                 pending
                     .iter()
-                    .filter(|buy| buy.available_after_seq > command_seq)
+                    .filter(|buy| buy.available_after_step > market_step)
                     .map(|buy| buy.qty)
                     .sum()
             })
@@ -514,7 +546,7 @@ impl VenueRuleEngine {
 }
 
 pub struct VenueRuleOrderContext<'a> {
-    pub command_seq: u64,
+    pub market_step: u64,
     pub market_time_ms: u64,
     pub instrument_id: &'a str,
     pub instrument: &'a InstrumentConfig,
@@ -523,10 +555,45 @@ pub struct VenueRuleOrderContext<'a> {
     pub venue_accounts: &'a VenueAccountStore,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PendingSpotBuy {
     pub qty: Qty,
-    pub available_after_seq: u64,
+    pub available_after_step: u64,
+    #[serde(skip)]
+    legacy_available_after_seq: Option<u64>,
+}
+
+impl<'de> Deserialize<'de> for PendingSpotBuy {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct PendingSpotBuyWire {
+            qty: Qty,
+            #[serde(default)]
+            available_after_step: Option<u64>,
+            #[serde(default)]
+            available_after_seq: Option<u64>,
+        }
+
+        let wire = PendingSpotBuyWire::deserialize(deserializer)?;
+        if let Some(available_after_step) = wire.available_after_step {
+            return Ok(Self {
+                qty: wire.qty,
+                available_after_step,
+                legacy_available_after_seq: None,
+            });
+        }
+        let available_after_seq = wire
+            .available_after_seq
+            .ok_or_else(|| serde::de::Error::missing_field("available_after_step"))?;
+        Ok(Self {
+            qty: wire.qty,
+            available_after_step: available_after_seq,
+            legacy_available_after_seq: Some(available_after_seq),
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -565,6 +632,129 @@ pub enum VenueRuleRejectReason {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{AmendOrder, CancelOrder, SetMarkPrice};
+
+    fn rule_context<'a>(
+        command: &'a Command,
+        instrument: &'a InstrumentConfig,
+        venue_accounts: &'a VenueAccountStore,
+        market_step: u64,
+        market_time_ms: u64,
+    ) -> VenueRuleOrderContext<'a> {
+        VenueRuleOrderContext {
+            market_step,
+            market_time_ms,
+            instrument_id: &instrument.instrument_id,
+            instrument,
+            market_kind: MarketKind::Spot,
+            command,
+            venue_accounts,
+        }
+    }
+
+    fn test_new_order() -> Command {
+        Command::NewOrder(NewOrder {
+            order_id: 1,
+            account_id: 20,
+            side: Side::Buy,
+            kind: crate::model::OrderKind::Limit { price_tick: 100 },
+            qty: 1,
+            reduce_only: false,
+        })
+    }
+
+    #[test]
+    fn circuit_breaker_blocks_new_risk_but_allows_risk_reducing_commands() {
+        let engine = VenueRuleEngine::new(VenueRuleConfig {
+            circuit_breaker: CircuitBreakerRuleConfig {
+                halted: true,
+                reason: Some("risk halt".to_string()),
+            },
+            ..VenueRuleConfig::default()
+        })
+        .unwrap();
+        let instrument = InstrumentConfig::new("V-BTC-SPOT", 1, 1).unwrap();
+        let accounts = VenueAccountStore::new();
+
+        assert!(matches!(
+            engine.check_order(rule_context(
+                &test_new_order(),
+                &instrument,
+                &accounts,
+                0,
+                0
+            )),
+            Err(VenueRuleRejectReason::CircuitBreakerHalted { .. })
+        ));
+        for command in [
+            Command::CancelOrder(CancelOrder { order_id: 1 }),
+            Command::AmendOrder(AmendOrder {
+                order_id: 1,
+                price_tick: None,
+                qty: Some(1),
+            }),
+            Command::SetMarkPrice(SetMarkPrice { price_tick: 100 }),
+        ] {
+            assert_eq!(
+                engine.check_order(rule_context(&command, &instrument, &accounts, 0, 0)),
+                Ok(())
+            );
+        }
+        let price_amend = Command::AmendOrder(AmendOrder {
+            order_id: 1,
+            price_tick: Some(101),
+            qty: None,
+        });
+        assert!(matches!(
+            engine.check_order(rule_context(&price_amend, &instrument, &accounts, 0, 0)),
+            Err(VenueRuleRejectReason::CircuitBreakerHalted { .. })
+        ));
+    }
+
+    #[test]
+    fn closed_session_blocks_new_orders_but_allows_cancel_and_mark_updates() {
+        let engine = VenueRuleEngine::new(VenueRuleConfig {
+            trading_session: TradingSessionRuleConfig {
+                sessions: vec![TradingSessionWindow {
+                    open_time_ms: 1_000,
+                    close_time_ms: 2_000,
+                }],
+            },
+            ..VenueRuleConfig::default()
+        })
+        .unwrap();
+        let instrument = InstrumentConfig::new("V-BTC-SPOT", 1, 1).unwrap();
+        let accounts = VenueAccountStore::new();
+
+        assert!(matches!(
+            engine.check_order(rule_context(
+                &test_new_order(),
+                &instrument,
+                &accounts,
+                0,
+                0
+            )),
+            Err(VenueRuleRejectReason::TradingSessionClosed { .. })
+        ));
+        for command in [
+            Command::CancelOrder(CancelOrder { order_id: 1 }),
+            Command::SetMarkPrice(SetMarkPrice { price_tick: 100 }),
+        ] {
+            assert_eq!(
+                engine.check_order(rule_context(&command, &instrument, &accounts, 0, 0)),
+                Ok(())
+            );
+        }
+        let price_amend = Command::AmendOrder(AmendOrder {
+            order_id: 1,
+            price_tick: Some(101),
+            qty: None,
+        });
+        assert!(matches!(
+            engine.check_order(rule_context(&price_amend, &instrument, &accounts, 0, 0)),
+            Err(VenueRuleRejectReason::TradingSessionClosed { .. })
+        ));
+    }
 
     #[test]
     fn validates_price_limit_config() {
@@ -579,6 +769,37 @@ mod tests {
         };
 
         assert_eq!(config.validate(), Ok(()));
+    }
+
+    #[test]
+    fn legacy_command_seq_settlement_deadline_normalizes_to_market_step() {
+        let legacy_buy: PendingSpotBuy = serde_json::from_value(serde_json::json!({
+            "qty": 5,
+            "available_after_seq": 12
+        }))
+        .unwrap();
+        let mut engine = VenueRuleEngine::new(VenueRuleConfig {
+            settlement: SettlementRuleConfig {
+                spot_sell_delay_steps: 2,
+            },
+            ..VenueRuleConfig::default()
+        })
+        .unwrap();
+        engine
+            .pending_spot_buys
+            .entry(20)
+            .or_default()
+            .entry("V-BTC-SPOT".to_string())
+            .or_default()
+            .push(legacy_buy);
+
+        engine.normalize_after_restore(10, 7).unwrap();
+
+        assert_eq!(engine.unsettled_spot_buy_qty(20, "V-BTC-SPOT", 8), 5);
+        assert_eq!(engine.unsettled_spot_buy_qty(20, "V-BTC-SPOT", 9), 0);
+        let serialized = serde_json::to_value(&engine).unwrap();
+        assert!(serialized.to_string().contains("available_after_step"));
+        assert!(!serialized.to_string().contains("available_after_seq"));
     }
 
     #[test]

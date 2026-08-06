@@ -1,0 +1,41 @@
+name: backend
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: marketforge
+          POSTGRES_USER: marketforge
+          POSTGRES_PASSWORD: marketforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U marketforge -d marketforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      MARKETFORGE_TEST_DATABASE_URL: postgres://marketforge:marketforge@127.0.0.1:5432/marketforge
+      MARKETFORGE_REQUIRE_POSTGRES_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Lint all targets
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test workspace, including PostgreSQL recovery
+        run: cargo test --workspace

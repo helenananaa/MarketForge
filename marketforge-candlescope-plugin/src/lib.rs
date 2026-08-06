@@ -11,8 +11,9 @@ mod platform;
 mod provider;
 
 pub use adapter::{
-    ApplyCommandResult, InstrumentBinding, MarketForgeAdapter, SessionDescription,
-    SessionLoadResult,
+    ApplyCommandResult, InstrumentBinding, MarketForgeAdapter, REMOTE_BACKEND_TOKEN_ENV,
+    REMOTE_BACKEND_URL_ENV, REMOTE_BACKEND_USER_ID_ENV, REMOTE_TRUSTED_OWNER_URLS_ENV,
+    RemoteBackendConfig, SessionDescription, SessionLoadResult,
 };
 pub use error::{AdapterError, ErrorKind};
 pub use platform::{JsonLineServer, PlatformRuntime, RuntimeState, descriptor};

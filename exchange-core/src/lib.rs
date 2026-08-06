@@ -63,7 +63,7 @@ pub use portfolio::{
 };
 pub use replay::{LoggedOrderBook, ReplayEngine, ReplayReport};
 pub use risk::{PerpRiskConfig, PerpRiskEngine, RiskContext, SpotRiskConfig, SpotRiskEngine};
-pub use room::{RoomBootstrap, RoomManager, RoomManagerError};
+pub use room::{PendingRoomLiquidation, RoomBootstrap, RoomManager, RoomManagerError};
 pub use scenario::{
     ScenarioAccount, ScenarioAllocation, ScenarioBootstrap, ScenarioConfig, ScenarioError,
     ScenarioPortfolio, ScenarioSeedOrder, ScenarioVenueAllocation,
@@ -77,7 +77,8 @@ pub use spot::{
     SpotAccount, SpotAccountSnapshot, SpotAccountStore, SpotClearingConfig, SpotClearingEvent,
 };
 pub use trading::{
-    PerpTradingEngine, PerpTradingExecution, SpotTradingEngine, SpotTradingExecution,
+    PendingLiquidation, PerpTradingEngine, PerpTradingExecution, SpotTradingEngine,
+    SpotTradingExecution,
 };
 pub use transfer::{
     TransferId, VenueTransfer, VenueTransferKind, VenueTransferRejectReason, VenueTransferStatus,

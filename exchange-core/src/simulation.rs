@@ -3,10 +3,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    account::{Money, VenueAccountSnapshot},
+    account::{ClearingError, Money, VenueAccountSnapshot},
     actor::{
-        AccountSnapshot, AccountSnapshots, ActorExecution, ActorRejectReason, ExchangeActor,
-        MarketStatus, RoomId,
+        AccountSnapshot, AccountSnapshots, ActorExecution, ActorRejectReason, ActorSeq,
+        ExchangeActor, MarketStatus, RoomId,
     },
     clock::SimulationClock,
     market::{
@@ -38,6 +38,8 @@ pub struct SimulationRoom {
     next_asset_ledger_seq: u64,
     #[serde(default)]
     pending_venue_transfers: Vec<PendingVenueTransfer>,
+    #[serde(default)]
+    next_command_seq: ActorSeq,
 }
 
 impl SimulationRoom {
@@ -80,6 +82,7 @@ impl SimulationRoom {
             asset_ledger: Vec::new(),
             next_asset_ledger_seq: 0,
             pending_venue_transfers: Vec::new(),
+            next_command_seq: 0,
         };
 
         for portfolio in &scenario.initial_portfolios {
@@ -121,6 +124,7 @@ impl SimulationRoom {
         let room_id = exchange.room_id().to_string();
         let primary_venue_id = exchange.venue_id().to_string();
         let portfolios = exchange.portfolio_store().clone();
+        let next_command_seq = exchange.next_command_seq();
         let mut exchanges = BTreeMap::new();
         exchanges.insert(primary_venue_id.clone(), exchange);
         Self {
@@ -132,6 +136,7 @@ impl SimulationRoom {
             asset_ledger: Vec::new(),
             next_asset_ledger_seq: 0,
             pending_venue_transfers: Vec::new(),
+            next_command_seq,
         }
     }
 
@@ -143,8 +148,8 @@ impl SimulationRoom {
         &self.primary_venue_id
     }
 
-    pub fn next_command_seq(&self) -> crate::actor::ActorSeq {
-        self.primary_exchange().next_command_seq()
+    pub fn next_command_seq(&self) -> ActorSeq {
+        self.next_command_seq
     }
 
     pub fn venue_ids(&self) -> Vec<&str> {
@@ -200,7 +205,10 @@ impl SimulationRoom {
     }
 
     pub fn apply(&mut self, command: Command) -> ActorExecution {
-        self.primary_exchange_mut().apply(command)
+        let command_seq = self.take_command_seq();
+        let mut execution = self.primary_exchange_mut().apply(command);
+        execution.command_seq = command_seq;
+        execution
     }
 
     pub fn apply_to_instrument(
@@ -213,10 +221,14 @@ impl SimulationRoom {
                 instrument_id: instrument_id.to_string(),
             }
         })?;
-        self.exchanges
+        let command_seq = self.take_command_seq();
+        let mut execution = self
+            .exchanges
             .get_mut(&venue_id)
             .expect("venue id was resolved from exchanges")
-            .apply_to_instrument(instrument_id, command)
+            .apply_to_instrument(instrument_id, command)?;
+        execution.command_seq = command_seq;
+        Ok(execution)
     }
 
     pub fn liquidate_account(
@@ -230,10 +242,14 @@ impl SimulationRoom {
                 instrument_id: instrument_id.to_string(),
             }
         })?;
-        self.exchanges
+        let command_seq = self.take_command_seq();
+        let mut execution = self
+            .exchanges
             .get_mut(&venue_id)
             .expect("venue id was resolved from exchanges")
-            .liquidate_account(instrument_id, account_id, order_id)
+            .liquidate_account(instrument_id, account_id, order_id)?;
+        execution.command_seq = command_seq;
+        Ok(execution)
     }
 
     pub fn book_snapshot(&self) -> BookSnapshot {
@@ -294,6 +310,37 @@ impl SimulationRoom {
             .account_snapshots_for(instrument_id)
     }
 
+    pub fn pending_liquidation_accounts_for(
+        &self,
+        instrument_id: &str,
+    ) -> Result<Vec<AccountId>, ActorRejectReason> {
+        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
+            ActorRejectReason::InstrumentNotFound {
+                instrument_id: instrument_id.to_string(),
+            }
+        })?;
+        self.exchanges
+            .get(&venue_id)
+            .expect("venue id was resolved from exchanges")
+            .pending_liquidation_accounts_for(instrument_id)
+    }
+
+    pub fn cross_margin_collateral_orders_for_liquidation(
+        &self,
+        instrument_id: &str,
+        account_id: AccountId,
+    ) -> Result<Vec<(String, OrderId)>, ActorRejectReason> {
+        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
+            ActorRejectReason::InstrumentNotFound {
+                instrument_id: instrument_id.to_string(),
+            }
+        })?;
+        self.exchanges
+            .get(&venue_id)
+            .expect("venue id was resolved from exchanges")
+            .cross_margin_collateral_orders_for_liquidation(instrument_id, account_id)
+    }
+
     pub fn order_owner_for(
         &self,
         instrument_id: &str,
@@ -346,23 +393,51 @@ impl SimulationRoom {
         self.primary_exchange().clock()
     }
 
-    pub fn advance_clock(&mut self, steps: u64) -> Vec<VenueTransfer> {
+    pub fn advance_clock(&mut self, steps: u64) -> Result<Vec<VenueTransfer>, SimulationRoomError> {
+        let mut staged = self.clone();
+        let completed = staged.advance_clock_inner(steps)?;
+        *self = staged;
+        Ok(completed)
+    }
+
+    fn advance_clock_inner(
+        &mut self,
+        steps: u64,
+    ) -> Result<Vec<VenueTransfer>, SimulationRoomError> {
         let mut completed = Vec::new();
         let venue_ids = self.exchanges.keys().cloned().collect::<Vec<_>>();
-        for venue_id in venue_ids {
-            let due = self
-                .exchanges
-                .get_mut(&venue_id)
-                .expect("venue id was collected from exchanges")
-                .advance_clock_venue_only(steps);
-            for transfer in &due {
-                self.apply_portfolio_effect_for_finished_transfer(&venue_id, transfer);
+        for _ in 0..steps {
+            // Advance every venue to the same global step before applying any
+            // cross-venue transfer links. Otherwise a deposit created by a
+            // completed withdrawal could be advanced again in this same step
+            // solely because its destination sorts after its source.
+            let mut due_by_venue = Vec::with_capacity(venue_ids.len());
+            for venue_id in &venue_ids {
+                let exchange = self
+                    .exchanges
+                    .get_mut(venue_id)
+                    .expect("venue id was collected from exchanges");
+                let due = exchange
+                    .advance_clock_venue_only(1)
+                    .map_err(SimulationRoomError::Clearing)?;
+                due_by_venue.push((venue_id.clone(), due));
             }
-            let triggered = self.process_completed_venue_transfer_links(&venue_id, &due);
-            completed.extend(due);
-            completed.extend(triggered);
+
+            // Make all venue completions visible before creating the linked
+            // deposits for this step. Linked deposits therefore begin at the
+            // synchronized destination clock and cannot complete until a
+            // later global step when their configured delay is non-zero.
+            for (venue_id, due) in &due_by_venue {
+                for transfer in due {
+                    self.apply_portfolio_effect_for_finished_transfer(venue_id, transfer);
+                }
+                completed.extend(due.iter().cloned());
+            }
+            for (venue_id, due) in due_by_venue {
+                completed.extend(self.process_completed_venue_transfer_links(&venue_id, &due)?);
+            }
         }
-        completed
+        Ok(completed)
     }
 
     pub fn submit_deposit(
@@ -372,8 +447,21 @@ impl SimulationRoom {
         asset_id: impl Into<String>,
         amount: Money,
     ) -> Result<VenueTransfer, SimulationRoomError> {
+        let mut staged = self.clone();
+        let transfer =
+            staged.submit_deposit_inner(venue_id, account_id, asset_id.into(), amount)?;
+        *self = staged;
+        Ok(transfer)
+    }
+
+    fn submit_deposit_inner(
+        &mut self,
+        venue_id: Option<&str>,
+        account_id: AccountId,
+        asset_id: String,
+        amount: Money,
+    ) -> Result<VenueTransfer, SimulationRoomError> {
         let venue_id = venue_id.unwrap_or(&self.primary_venue_id).to_string();
-        let asset_id = asset_id.into();
         if amount > 0
             && self
                 .portfolios
@@ -391,7 +479,8 @@ impl SimulationRoom {
 
         let transfer = self
             .exchange_mut(&venue_id)?
-            .submit_venue_deposit(account_id, asset_id, amount);
+            .submit_venue_deposit(account_id, asset_id, amount)
+            .map_err(SimulationRoomError::Clearing)?;
         if transfer.status != VenueTransferStatus::Pending {
             self.apply_portfolio_effect_for_finished_transfer(&venue_id, &transfer);
         }
@@ -405,10 +494,25 @@ impl SimulationRoom {
         asset_id: impl Into<String>,
         amount: Money,
     ) -> Result<VenueTransfer, SimulationRoomError> {
+        let mut staged = self.clone();
+        let transfer =
+            staged.submit_withdrawal_inner(venue_id, account_id, asset_id.into(), amount)?;
+        *self = staged;
+        Ok(transfer)
+    }
+
+    fn submit_withdrawal_inner(
+        &mut self,
+        venue_id: Option<&str>,
+        account_id: AccountId,
+        asset_id: String,
+        amount: Money,
+    ) -> Result<VenueTransfer, SimulationRoomError> {
         let venue_id = venue_id.unwrap_or(&self.primary_venue_id).to_string();
         let transfer = self
             .exchange_mut(&venue_id)?
-            .submit_venue_withdrawal(account_id, asset_id, amount);
+            .submit_venue_withdrawal(account_id, asset_id, amount)
+            .map_err(SimulationRoomError::Clearing)?;
         if transfer.status != VenueTransferStatus::Pending {
             self.apply_portfolio_effect_for_finished_transfer(&venue_id, &transfer);
         }
@@ -423,12 +527,31 @@ impl SimulationRoom {
         asset_id: impl Into<String>,
         amount: Money,
     ) -> Result<VenueToVenueTransfer, SimulationRoomError> {
+        let mut staged = self.clone();
+        let transfer = staged.submit_venue_to_venue_transfer_inner(
+            from_venue_id,
+            to_venue_id,
+            account_id,
+            asset_id.into(),
+            amount,
+        )?;
+        *self = staged;
+        Ok(transfer)
+    }
+
+    fn submit_venue_to_venue_transfer_inner(
+        &mut self,
+        from_venue_id: &str,
+        to_venue_id: &str,
+        account_id: AccountId,
+        asset_id: String,
+        amount: Money,
+    ) -> Result<VenueToVenueTransfer, SimulationRoomError> {
         if !self.exchanges.contains_key(to_venue_id) {
             return Err(SimulationRoomError::VenueNotFound {
                 venue_id: to_venue_id.to_string(),
             });
         }
-        let asset_id = asset_id.into();
         let withdrawal =
             self.submit_withdrawal(Some(from_venue_id), account_id, asset_id.clone(), amount)?;
         let mut deposit = None;
@@ -462,7 +585,23 @@ impl SimulationRoom {
                 .normalize_after_restore()
                 .map_err(ActorRejectReason::Clearing)?;
         }
+        if self.next_command_seq == 0 {
+            self.next_command_seq = self.exchanges.values().try_fold(0u64, |total, exchange| {
+                total
+                    .checked_add(exchange.next_command_seq())
+                    .ok_or(ActorRejectReason::Clearing(ClearingError::BalanceOverflow))
+            })?;
+        }
         Ok(())
+    }
+
+    fn take_command_seq(&mut self) -> ActorSeq {
+        let command_seq = self.next_command_seq;
+        self.next_command_seq = self
+            .next_command_seq
+            .checked_add(1)
+            .expect("simulation room command sequence overflow");
+        command_seq
     }
 
     pub fn asset_ledger(&self) -> &[AssetLedgerEntry] {
@@ -640,7 +779,7 @@ impl SimulationRoom {
         &mut self,
         venue_id: &str,
         completed: &[VenueTransfer],
-    ) -> Vec<VenueTransfer> {
+    ) -> Result<Vec<VenueTransfer>, SimulationRoomError> {
         let completed_withdrawals = completed
             .iter()
             .filter(|transfer| {
@@ -650,7 +789,7 @@ impl SimulationRoom {
             .map(|transfer| transfer.transfer_id)
             .collect::<BTreeSet<_>>();
         if completed_withdrawals.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         let mut ready = Vec::new();
@@ -665,18 +804,16 @@ impl SimulationRoom {
             }
         });
 
-        ready
-            .into_iter()
-            .filter_map(|pending| {
-                self.submit_deposit(
-                    Some(&pending.to_venue_id),
-                    pending.account_id,
-                    pending.asset_id,
-                    pending.amount,
-                )
-                .ok()
-            })
-            .collect()
+        let mut transfers = Vec::with_capacity(ready.len());
+        for pending in ready {
+            transfers.push(self.submit_deposit(
+                Some(&pending.to_venue_id),
+                pending.account_id,
+                pending.asset_id,
+                pending.amount,
+            )?);
+        }
+        Ok(transfers)
     }
 
     fn account_net_worth_snapshot(&self, account_id: AccountId) -> AccountNetWorthSnapshot {
@@ -830,6 +967,7 @@ pub struct AccountNetWorthAssetSnapshot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SimulationRoomError {
     VenueNotFound { venue_id: VenueId },
+    Clearing(ClearingError),
 }
 
 fn rules_for_exchange(

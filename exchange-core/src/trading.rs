@@ -1,13 +1,18 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
     OrderBook,
-    account::{ClearingError, Money, notional},
+    account::{ClearingError, Money, PositionQty, notional},
     log::{CommandRecord, EventLog, EventRecord},
-    model::{AccountId, BookSnapshot, Command, Event, NewOrder, OrderId, OrderKind, Side},
+    model::{
+        AccountId, BookSnapshot, Command, Event, NewOrder, OrderId, OrderKind, RiskRejectReason,
+        Side,
+    },
     perp::{
         PerpAccountSnapshot, PerpAccountStore, PerpClearingConfig, PerpClearingEvent,
-        PerpMarginStatus,
+        PerpCrossMarginContext, PerpMarginStatus,
     },
     risk::{PerpRiskConfig, PerpRiskEngine, RiskContext, SpotRiskConfig, SpotRiskEngine},
     spot::{SpotAccountSnapshot, SpotAccountStore, SpotClearingConfig, SpotClearingEvent},
@@ -67,6 +72,14 @@ impl SpotTradingEngine {
 
     pub fn order_owner(&self, order_id: OrderId) -> Option<AccountId> {
         self.book.order_owner(order_id)
+    }
+
+    pub fn resting_order_ids_for_account_on_side(
+        &self,
+        account_id: AccountId,
+        side: Side,
+    ) -> Vec<OrderId> {
+        self.book.order_ids_for_account_on_side(account_id, side)
     }
 
     pub fn apply(&mut self, command: Command) -> Result<SpotTradingExecution, ClearingError> {
@@ -201,6 +214,18 @@ pub struct PerpTradingEngine {
     risk: PerpRiskEngine,
     log: EventLog,
     clearing_events: Vec<PerpClearingEvent>,
+    #[serde(default)]
+    pending_liquidations: BTreeMap<AccountId, PendingLiquidation>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PendingLiquidation {
+    pub account_id: AccountId,
+    pub initial_position_qty: PositionQty,
+    pub remaining_position_qty: PositionQty,
+    pub accumulated_notional: Money,
+    pub attempt_count: u64,
+    pub initial_margin_status: PerpMarginStatus,
 }
 
 impl PerpTradingEngine {
@@ -222,6 +247,7 @@ impl PerpTradingEngine {
             risk: PerpRiskEngine::new(risk_config),
             log: EventLog::new(),
             clearing_events: Vec::new(),
+            pending_liquidations: BTreeMap::new(),
         })
     }
 
@@ -239,6 +265,16 @@ impl PerpTradingEngine {
         cash_balance: Money,
     ) -> Result<PerpAccountSnapshot, ClearingError> {
         self.accounts.sync_cash_balance(account_id, cash_balance)
+    }
+
+    pub fn sync_cross_margin_account(
+        &mut self,
+        account_id: AccountId,
+        cash_balance: Money,
+        context: PerpCrossMarginContext,
+    ) -> Result<PerpAccountSnapshot, ClearingError> {
+        self.accounts
+            .sync_cross_margin_account(account_id, cash_balance, context)
     }
 
     pub fn order_owner(&self, order_id: OrderId) -> Option<AccountId> {
@@ -263,6 +299,24 @@ impl PerpTradingEngine {
                 command: recorded.command,
                 events: recorded.events,
                 clearing_events,
+            });
+        }
+
+        if let Command::NewOrder(order) = &command
+            && self.pending_liquidations.contains_key(&order.account_id)
+        {
+            let order_id = order.order_id;
+            let recorded = self.log.record(
+                command,
+                vec![Event::RiskRejected {
+                    order_id,
+                    reason: RiskRejectReason::InsufficientMargin,
+                }],
+            );
+            return Ok(PerpTradingExecution {
+                command: recorded.command,
+                events: recorded.events,
+                clearing_events: Vec::new(),
             });
         }
 
@@ -305,22 +359,74 @@ impl PerpTradingEngine {
         account_id: AccountId,
         order_id: OrderId,
     ) -> Result<PerpTradingExecution, ClearingError> {
+        self.ensure_pending_liquidation(account_id)?;
         let mut staged = self.clone();
-        let execution = staged.liquidate_account_inner(account_id, order_id)?;
+        let execution = staged.advance_liquidation_inner(account_id, order_id)?;
         *self = staged;
         Ok(execution)
     }
 
-    fn liquidate_account_inner(
+    pub fn pending_liquidation(&self, account_id: AccountId) -> Option<&PendingLiquidation> {
+        self.pending_liquidations.get(&account_id)
+    }
+
+    pub fn pending_liquidation_accounts(&self) -> Vec<AccountId> {
+        self.pending_liquidations.keys().copied().collect()
+    }
+
+    pub fn resting_order_ids_for_account(&self, account_id: AccountId) -> Vec<OrderId> {
+        self.book.order_ids_for_account(account_id)
+    }
+
+    fn ensure_pending_liquidation(&mut self, account_id: AccountId) -> Result<(), ClearingError> {
+        if self.pending_liquidations.contains_key(&account_id) {
+            return Ok(());
+        }
+
+        let snapshot = self
+            .account_snapshot(account_id)
+            .ok_or(ClearingError::AccountNotFound)?;
+        if snapshot.margin_status != PerpMarginStatus::Liquidatable {
+            return Err(ClearingError::AccountNotLiquidatable);
+        }
+        if snapshot.position_qty == 0 {
+            return Err(ClearingError::InvalidLiquidationQuantity);
+        }
+
+        self.pending_liquidations.insert(
+            account_id,
+            PendingLiquidation {
+                account_id,
+                initial_position_qty: snapshot.position_qty,
+                remaining_position_qty: snapshot.position_qty,
+                accumulated_notional: 0,
+                attempt_count: 0,
+                initial_margin_status: snapshot.margin_status,
+            },
+        );
+        Ok(())
+    }
+
+    fn advance_liquidation_inner(
         &mut self,
         account_id: AccountId,
         order_id: OrderId,
     ) -> Result<PerpTradingExecution, ClearingError> {
+        let pending = self
+            .pending_liquidations
+            .get(&account_id)
+            .cloned()
+            .ok_or(ClearingError::AccountNotLiquidatable)?;
         let before = self
             .account_snapshot(account_id)
             .ok_or(ClearingError::AccountNotFound)?;
-        if before.margin_status != PerpMarginStatus::Liquidatable {
-            return Err(ClearingError::AccountNotLiquidatable);
+        if before.position_qty == 0 {
+            return self.finalize_externally_flattened_liquidation(order_id, pending);
+        }
+        if before.position_qty.signum() != pending.initial_position_qty.signum()
+            || before.position_qty.abs() > pending.remaining_position_qty.abs()
+        {
+            return Err(ClearingError::InvalidLiquidationQuantity);
         }
 
         let side = if before.position_qty > 0 {
@@ -337,30 +443,12 @@ impl PerpTradingEngine {
             order_id,
             account_id,
             side,
-            kind: OrderKind::FillOrKill { price_tick: None },
+            kind: OrderKind::ImmediateOrCancel { price_tick: None },
             qty,
             reduce_only: true,
         });
         let mut events = self.book.cancel_orders_for_account(account_id);
         let liquidation_events = self.book.apply(command.clone());
-        let fully_filled = liquidation_events.iter().any(
-            |event| matches!(event, Event::OrderFilled { order_id: filled } if *filled == order_id),
-        );
-        let filled_qty = liquidation_events
-            .iter()
-            .filter_map(|event| match event {
-                Event::TradePrinted(trade)
-                    if trade.taker_account_id == account_id && trade.taker_order_id == order_id =>
-                {
-                    Some(trade.qty)
-                }
-                _ => None,
-            })
-            .try_fold(0u64, |total, fill_qty| total.checked_add(fill_qty))
-            .ok_or(ClearingError::InvalidLiquidationQuantity)?;
-        if !fully_filled || filled_qty != qty {
-            return Err(ClearingError::LiquidationUnfilled);
-        }
         events.extend(liquidation_events);
 
         let recorded = self.log.record(command, events);
@@ -371,39 +459,151 @@ impl PerpTradingEngine {
             events: recorded.events,
             clearing_events,
         };
-        if self
-            .account_snapshot(account_id)
-            .is_none_or(|snapshot| snapshot.position_qty != 0)
-        {
-            return Err(ClearingError::LiquidationUnfilled);
-        }
-        let liquidation_notional =
+        let attempt_notional =
             liquidation_notional_from_events(&execution.events, account_id, order_id)?;
+        let after_trade = self
+            .account_snapshot(account_id)
+            .ok_or(ClearingError::AccountNotFound)?;
+        if after_trade.position_qty.signum() != 0
+            && after_trade.position_qty.signum() != pending.initial_position_qty.signum()
+        {
+            return Err(ClearingError::InvalidLiquidationQuantity);
+        }
+        if after_trade.position_qty.abs() > before.position_qty.abs() {
+            return Err(ClearingError::InvalidLiquidationQuantity);
+        }
+        let accumulated_notional = pending
+            .accumulated_notional
+            .checked_add(attempt_notional)
+            .ok_or(ClearingError::NotionalOverflow)?;
+        let attempt_count = pending
+            .attempt_count
+            .checked_add(1)
+            .ok_or(ClearingError::InvalidLiquidationQuantity)?;
+        if let Some(state) = self.pending_liquidations.get_mut(&account_id) {
+            state.remaining_position_qty = after_trade.position_qty;
+            state.accumulated_notional = accumulated_notional;
+            state.attempt_count = attempt_count;
+        }
+
+        if after_trade.position_qty != 0 {
+            self.append_liquidation_status_change_if_missing(
+                &mut execution,
+                account_id,
+                before.margin_status,
+                &after_trade,
+            );
+            return Ok(execution);
+        }
+
+        // Apply liquidation-level settlement once, after the position is flat.
+        // Every IOC leg remains auditable through its command/trade records,
+        // while cumulative fee rounding and the insurance/ADL/loss waterfall
+        // retain the same semantics as a one-shot liquidation.
+        self.pending_liquidations.remove(&account_id);
         let liquidation_events = self.accounts.apply_liquidation_settlement(
             account_id,
             order_id,
-            liquidation_notional,
-            before.position_qty,
+            accumulated_notional,
+            pending.initial_position_qty,
         )?;
         self.clearing_events
             .extend(liquidation_events.iter().cloned());
         execution.clearing_events.extend(liquidation_events);
-
-        if let Some(after) = self.account_snapshot(account_id)
-            && after.margin_status != before.margin_status
-        {
-            let event = PerpClearingEvent::MarginStatusChanged {
-                account_id,
-                previous_status: before.margin_status,
-                new_status: after.margin_status,
-                mark_price_tick: self.accounts.mark_price_tick(),
-                snapshot: after,
-            };
-            self.clearing_events.push(event.clone());
-            execution.clearing_events.push(event);
-        }
+        let after_settlement = self
+            .account_snapshot(account_id)
+            .ok_or(ClearingError::AccountNotFound)?;
+        self.append_liquidation_status_change_if_missing(
+            &mut execution,
+            account_id,
+            before.margin_status,
+            &after_settlement,
+        );
 
         Ok(execution)
+    }
+
+    fn append_liquidation_status_change_if_missing(
+        &mut self,
+        execution: &mut PerpTradingExecution,
+        account_id: AccountId,
+        previous_status: PerpMarginStatus,
+        snapshot: &PerpAccountSnapshot,
+    ) {
+        let already_recorded = execution.clearing_events.iter().any(|event| {
+            matches!(
+                event,
+                PerpClearingEvent::MarginStatusChanged {
+                    account_id: changed_account_id,
+                    new_status,
+                    ..
+                } if *changed_account_id == account_id
+                    && *new_status == snapshot.margin_status
+            )
+        });
+        if previous_status == snapshot.margin_status || already_recorded {
+            return;
+        }
+        let event = PerpClearingEvent::MarginStatusChanged {
+            account_id,
+            previous_status,
+            new_status: snapshot.margin_status,
+            mark_price_tick: self.accounts.mark_price_tick(),
+            snapshot: snapshot.clone(),
+        };
+        self.clearing_events.push(event.clone());
+        execution.clearing_events.push(event);
+    }
+
+    fn finalize_externally_flattened_liquidation(
+        &mut self,
+        order_id: OrderId,
+        pending: PendingLiquidation,
+    ) -> Result<PerpTradingExecution, ClearingError> {
+        let side = if pending.initial_position_qty > 0 {
+            Side::Sell
+        } else {
+            Side::Buy
+        };
+        let qty = u64::try_from(pending.remaining_position_qty.unsigned_abs())
+            .map_err(|_| ClearingError::InvalidLiquidationQuantity)?;
+        let command = Command::NewOrder(NewOrder {
+            order_id,
+            account_id: pending.account_id,
+            side,
+            kind: OrderKind::ImmediateOrCancel { price_tick: None },
+            qty,
+            reduce_only: true,
+        });
+        let recorded = self.log.record(
+            command,
+            vec![
+                Event::OrderAccepted { order_id },
+                Event::OrderExpired {
+                    order_id,
+                    unfilled_qty: qty,
+                },
+            ],
+        );
+        self.pending_liquidations.remove(&pending.account_id);
+
+        let liquidation_events = if pending.accumulated_notional == 0 {
+            Vec::new()
+        } else {
+            self.accounts.apply_liquidation_settlement(
+                pending.account_id,
+                order_id,
+                pending.accumulated_notional,
+                pending.initial_position_qty,
+            )?
+        };
+        self.clearing_events
+            .extend(liquidation_events.iter().cloned());
+        Ok(PerpTradingExecution {
+            command: recorded.command,
+            events: recorded.events,
+            clearing_events: liquidation_events,
+        })
     }
 
     pub fn snapshot(&self) -> BookSnapshot {
@@ -456,6 +656,7 @@ impl PerpTradingEngine {
                         self.accounts.reserve_resting_order(
                             *order_id,
                             order.account_id,
+                            order.side,
                             *price_tick,
                             *remaining_qty,
                         )?;
@@ -534,7 +735,7 @@ pub struct PerpTradingExecution {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{AmendOrder, CancelOrder, NewOrder, OrderKind, Side};
+    use crate::model::{AmendOrder, CancelOrder, NewOrder, OrderKind, Side, Trade};
 
     fn limit(order_id: u64, account_id: u64, side: Side, price_tick: i64, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
@@ -965,9 +1166,11 @@ mod tests {
                 equity: 10_000,
                 initial_margin: 40,
                 maintenance_margin: 20,
+                portfolio_initial_margin: 40,
+                portfolio_maintenance_margin: 20,
                 margin_status: crate::perp::PerpMarginStatus::Healthy,
                 reserved_margin: 0,
-                available_cash: 10_000,
+                available_cash: 9_960,
                 fees_paid: 0,
             })
         );
@@ -983,9 +1186,11 @@ mod tests {
                 equity: 10_000,
                 initial_margin: 40,
                 maintenance_margin: 20,
+                portfolio_initial_margin: 40,
+                portfolio_maintenance_margin: 20,
                 margin_status: crate::perp::PerpMarginStatus::Healthy,
                 reserved_margin: 60,
-                available_cash: 9_940,
+                available_cash: 9_900,
                 fees_paid: 0,
             })
         );
@@ -1018,6 +1223,8 @@ mod tests {
                 equity: 100,
                 initial_margin: 0,
                 maintenance_margin: 0,
+                portfolio_initial_margin: 0,
+                portfolio_maintenance_margin: 0,
                 margin_status: crate::perp::PerpMarginStatus::Flat,
                 reserved_margin: 100,
                 available_cash: 0,
@@ -1066,6 +1273,8 @@ mod tests {
                 equity: 100,
                 initial_margin: 0,
                 maintenance_margin: 0,
+                portfolio_initial_margin: 0,
+                portfolio_maintenance_margin: 0,
                 margin_status: crate::perp::PerpMarginStatus::Flat,
                 reserved_margin: 0,
                 available_cash: 100,
@@ -1103,6 +1312,8 @@ mod tests {
                 equity: 100,
                 initial_margin: 0,
                 maintenance_margin: 0,
+                portfolio_initial_margin: 0,
+                portfolio_maintenance_margin: 0,
                 margin_status: crate::perp::PerpMarginStatus::Flat,
                 reserved_margin: 40,
                 available_cash: 60,
@@ -1218,18 +1429,19 @@ mod tests {
     }
 
     #[test]
-    fn failed_liquidation_is_atomic_and_can_be_retried_after_full_depth_arrives() {
+    fn pending_liquidation_survives_no_depth_and_progresses_across_partial_fills() {
         let mut engine = PerpTradingEngine::new(
             PerpClearingConfig {
                 leverage: 10,
                 maintenance_margin_ppm: 50_000,
+                liquidation_fee_ppm: 10_000,
                 ..PerpClearingConfig::default()
             },
             100,
         )
         .unwrap();
         engine.create_account(10, 10_000);
-        engine.create_account(20, 200);
+        engine.create_account(20, 240);
         engine.create_account(30, 10_000);
         engine.apply(limit(1, 10, Side::Sell, 100, 10)).unwrap();
         engine.apply(market(2, 20, Side::Buy, 10)).unwrap();
@@ -1237,23 +1449,95 @@ mod tests {
         let command_count = engine.command_log().len();
         let event_count = engine.event_log().len();
 
-        assert_eq!(
-            engine.liquidate_account(20, 3),
-            Err(ClearingError::LiquidationUnfilled)
-        );
+        let empty_attempt = engine.liquidate_account(20, 3).unwrap();
+        assert!(matches!(
+            empty_attempt.command.command,
+            Command::NewOrder(NewOrder {
+                kind: OrderKind::ImmediateOrCancel { price_tick: None },
+                qty: 10,
+                reduce_only: true,
+                ..
+            })
+        ));
+        assert!(empty_attempt.events.iter().any(|event| matches!(
+            event.event,
+            Event::OrderExpired {
+                order_id: 3,
+                unfilled_qty: 10
+            }
+        )));
         assert_eq!(engine.account_snapshot(20).unwrap().position_qty, 10);
-        assert_eq!(engine.command_log().len(), command_count);
-        assert_eq!(engine.event_log().len(), event_count);
-
-        engine.apply(limit(4, 30, Side::Buy, 80, 5)).unwrap();
+        assert_eq!(engine.command_log().len(), command_count + 1);
+        assert_eq!(engine.event_log().len(), event_count + 2);
         assert_eq!(
-            engine.liquidate_account(20, 5),
-            Err(ClearingError::LiquidationUnfilled)
+            engine.pending_liquidation(20),
+            Some(&PendingLiquidation {
+                account_id: 20,
+                initial_position_qty: 10,
+                remaining_position_qty: 10,
+                accumulated_notional: 0,
+                attempt_count: 1,
+                initial_margin_status: PerpMarginStatus::Liquidatable,
+            })
         );
-        assert_eq!(engine.account_snapshot(20).unwrap().position_qty, 10);
-        assert_eq!(engine.snapshot().bids[0].qty, 5);
 
-        engine.apply(limit(6, 30, Side::Buy, 80, 5)).unwrap();
+        engine.apply(limit(4, 30, Side::Buy, 80, 7)).unwrap();
+        let partial = engine.liquidate_account(20, 5).unwrap();
+        assert!(
+            partial
+                .events
+                .iter()
+                .any(|event| matches!(event.event, Event::TradePrinted(_)))
+        );
+        assert!(
+            partial
+                .clearing_events
+                .iter()
+                .any(|event| matches!(event, PerpClearingEvent::TradeSettled { qty: 7, .. }))
+        );
+        assert!(
+            !partial
+                .clearing_events
+                .iter()
+                .any(|event| matches!(event, PerpClearingEvent::LiquidationSettled { .. }))
+        );
+        assert!(partial.clearing_events.iter().any(|event| matches!(
+            event,
+            PerpClearingEvent::MarginStatusChanged {
+                account_id: 20,
+                previous_status: PerpMarginStatus::Liquidatable,
+                new_status: PerpMarginStatus::Healthy,
+                ..
+            }
+        )));
+        let partially_liquidated = engine.account_snapshot(20).unwrap();
+        assert_eq!(partially_liquidated.position_qty, 3);
+        assert_eq!(
+            partially_liquidated.margin_status,
+            PerpMarginStatus::Healthy
+        );
+        let blocked_reentry = engine.apply(market(50, 20, Side::Buy, 1)).unwrap();
+        assert!(blocked_reentry.events.iter().any(|event| matches!(
+            event.event,
+            Event::RiskRejected {
+                order_id: 50,
+                reason: RiskRejectReason::InsufficientMargin,
+            }
+        )));
+        assert_eq!(engine.account_snapshot(20).unwrap().position_qty, 3);
+        assert_eq!(
+            engine.pending_liquidation(20),
+            Some(&PendingLiquidation {
+                account_id: 20,
+                initial_position_qty: 10,
+                remaining_position_qty: 3,
+                accumulated_notional: 560,
+                attempt_count: 2,
+                initial_margin_status: PerpMarginStatus::Liquidatable,
+            })
+        );
+
+        engine.apply(limit(6, 30, Side::Buy, 80, 3)).unwrap();
         let execution = engine.liquidate_account(20, 7).unwrap();
         assert!(
             execution
@@ -1261,12 +1545,125 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event.event, Event::TradePrinted(_)))
         );
+        assert!(execution.clearing_events.iter().any(|event| matches!(
+            event,
+            PerpClearingEvent::LiquidationSettled {
+                account_id: 20,
+                order_id: 7,
+                liquidation_notional: 800,
+                liquidation_fee: 8,
+                ..
+            }
+        )));
+        let status_changes = execution
+            .clearing_events
+            .iter()
+            .filter_map(|event| match event {
+                PerpClearingEvent::MarginStatusChanged {
+                    account_id: 20,
+                    previous_status,
+                    new_status,
+                    ..
+                } => Some((*previous_status, *new_status)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            status_changes,
+            vec![(PerpMarginStatus::Healthy, PerpMarginStatus::Flat)]
+        );
         assert_eq!(engine.account_snapshot(20).unwrap().position_qty, 0);
+        assert!(engine.pending_liquidation(20).is_none());
         assert!(engine.snapshot().bids.is_empty());
     }
 
     #[test]
-    fn perp_trading_engine_liquidates_account_with_atomic_reduce_only_fok_order() {
+    fn externally_flattened_pending_liquidation_finalizes_once() {
+        let mut engine = PerpTradingEngine::new(
+            PerpClearingConfig {
+                leverage: 10,
+                maintenance_margin_ppm: 50_000,
+                liquidation_fee_ppm: 10_000,
+                ..PerpClearingConfig::default()
+            },
+            100,
+        )
+        .unwrap();
+        engine.create_account(10, 10_000);
+        engine.create_account(20, 240);
+        engine.create_account(30, 10_000);
+        engine.apply(limit(1, 10, Side::Sell, 100, 10)).unwrap();
+        engine.apply(market(2, 20, Side::Buy, 10)).unwrap();
+        engine.set_mark_price_tick(80).unwrap();
+
+        engine.apply(limit(3, 30, Side::Buy, 80, 7)).unwrap();
+        engine.liquidate_account(20, 4).unwrap();
+        assert_eq!(engine.account_snapshot(20).unwrap().position_qty, 3);
+        assert_eq!(
+            engine.pending_liquidation(20).unwrap().accumulated_notional,
+            560
+        );
+
+        engine
+            .accounts
+            .settle_trade(&Trade {
+                trade_id: 999,
+                maker_order_id: 999,
+                maker_account_id: 20,
+                taker_order_id: 1_000,
+                taker_account_id: 30,
+                price_tick: 80,
+                qty: 3,
+                taker_side: Side::Buy,
+            })
+            .unwrap();
+        assert_eq!(engine.account_snapshot(20).unwrap().position_qty, 0);
+
+        let finalized = engine.liquidate_account(20, 5).unwrap();
+        assert!(matches!(
+            finalized.events[0].event,
+            Event::OrderAccepted { order_id: 5 }
+        ));
+        assert!(matches!(
+            finalized.events[1].event,
+            Event::OrderExpired {
+                order_id: 5,
+                unfilled_qty: 3,
+            }
+        ));
+        assert!(finalized.clearing_events.iter().any(|event| matches!(
+            event,
+            PerpClearingEvent::LiquidationSettled {
+                account_id: 20,
+                order_id: 5,
+                liquidation_notional: 560,
+                liquidation_fee: 5,
+                ..
+            }
+        )));
+        assert!(engine.pending_liquidation(20).is_none());
+        let settlement_count = engine
+            .clearing_log()
+            .iter()
+            .filter(|event| matches!(event, PerpClearingEvent::LiquidationSettled { .. }))
+            .count();
+
+        assert_eq!(
+            engine.liquidate_account(20, 6),
+            Err(ClearingError::AccountNotLiquidatable)
+        );
+        assert_eq!(
+            engine
+                .clearing_log()
+                .iter()
+                .filter(|event| matches!(event, PerpClearingEvent::LiquidationSettled { .. }))
+                .count(),
+            settlement_count
+        );
+    }
+
+    #[test]
+    fn perp_trading_engine_liquidates_account_with_reduce_only_ioc_order() {
         let mut engine = PerpTradingEngine::new(
             PerpClearingConfig {
                 leverage: 10,
@@ -1292,7 +1689,7 @@ mod tests {
                 order_id: 4,
                 account_id: 20,
                 side: Side::Sell,
-                kind: OrderKind::FillOrKill { price_tick: None },
+                kind: OrderKind::ImmediateOrCancel { price_tick: None },
                 qty: 10,
                 reduce_only: true,
             })

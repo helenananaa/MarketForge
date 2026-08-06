@@ -6,6 +6,7 @@ use serde_json::{Map, Value, json};
 use crate::{
     adapter::{
         BookSnapshotPayload, MarketForgeAdapter, ProjectedBar, ProjectionEvent, ProjectionPayload,
+        RemoteBackendConfig,
     },
     error::AdapterError,
 };
@@ -184,6 +185,13 @@ impl PluginService {
         Self::default()
     }
 
+    pub fn with_remote_backend(config: RemoteBackendConfig) -> Self {
+        Self {
+            adapter: MarketForgeAdapter::with_remote_backend(config),
+            ..Self::default()
+        }
+    }
+
     pub fn adapter(&self) -> &MarketForgeAdapter {
         &self.adapter
     }
@@ -211,6 +219,8 @@ impl PluginService {
             "status": "ready",
             "provider": EXCHANGE_ID,
             "sessionLoaded": self.adapter.has_session(),
+            "sessionMode": self.adapter.session_mode(),
+            "remoteBackendConfigured": self.adapter.remote_backend_configured(),
             "openStreams": self.streams.len(),
         })
     }
@@ -317,7 +327,7 @@ impl PluginService {
         }
     }
 
-    fn history(&self, input: &Value) -> Result<Value, AdapterError> {
+    fn history(&mut self, input: &Value) -> Result<Value, AdapterError> {
         let object = exact_object(
             input,
             "provider.history.input",
@@ -345,6 +355,7 @@ impl PluginService {
             ));
         }
         let limit = integer_field(object, "limit", 1, MAX_HISTORY_PAGE, "limit")? as usize;
+        self.adapter.refresh_remote(0)?;
         let mut eligible = self.adapter.final_bars(
             &descriptor.market_type,
             &descriptor.symbol,
@@ -391,6 +402,7 @@ impl PluginService {
             &[],
         )?;
         require_operation(object, "stream.open")?;
+        self.adapter.refresh_remote(0)?;
         if self.streams.len() >= MAX_STREAMS {
             return Err(AdapterError::invalid_state(
                 "STREAM_LIMIT_REACHED",
@@ -497,10 +509,9 @@ impl PluginService {
         )?;
         let requested_limit =
             integer_field(object, "batchLimit", 1, MAX_STREAM_BATCH, "batchLimit")? as usize;
-        let _wait_ms = integer_field(object, "waitMs", 0, 5_000, "waitMs")?;
+        let wait_ms = integer_field(object, "waitMs", 0, 5_000, "waitMs")?;
 
-        let adapter = &self.adapter;
-        let state = self.streams.get_mut(&provider_stream_id).ok_or_else(|| {
+        let state = self.streams.get(&provider_stream_id).ok_or_else(|| {
             AdapterError::not_found(
                 "STREAM_NOT_FOUND",
                 format!("provider stream {provider_stream_id} is not open"),
@@ -521,6 +532,17 @@ impl PluginService {
                 ),
             ));
         }
+        let has_buffered_events =
+            !state.pending.is_empty() || state.projection_cursor < self.adapter.projection_len();
+
+        self.adapter
+            .refresh_remote(if has_buffered_events { 0 } else { wait_ms })?;
+
+        let adapter = &self.adapter;
+        let state = self
+            .streams
+            .get_mut(&provider_stream_id)
+            .expect("provider stream existence was checked before remote polling");
         let limit = requested_limit.min(state.batch_limit);
         if state.next_sequence > crate::adapter::MAX_SAFE_INTEGER
             || limit as u64 > crate::adapter::MAX_SAFE_INTEGER.saturating_sub(state.next_sequence)
@@ -645,6 +667,43 @@ impl PluginService {
                 let loaded = self.adapter.load_session(scenario, epoch_ms)?;
                 self.streams.clear();
                 Ok(json!({"operation": operation, "loaded": loaded}))
+            }
+            "session.attach" => {
+                require_user_action(user_action)?;
+                exact_keys(
+                    object,
+                    "marketforge.control.input",
+                    &["operation", "scenario"],
+                    &["epochMs"],
+                )?;
+                let scenario: ScenarioConfig = serde_json::from_value(
+                    object
+                        .get("scenario")
+                        .expect("exact keys require scenario")
+                        .clone(),
+                )
+                .map_err(|error| {
+                    AdapterError::invalid_at(
+                        "scenario",
+                        format!("invalid MarketForge scenario: {error}"),
+                    )
+                })?;
+                let epoch_ms = object
+                    .get("epochMs")
+                    .map(|_| {
+                        integer_field(
+                            object,
+                            "epochMs",
+                            0,
+                            crate::adapter::MAX_SAFE_INTEGER,
+                            "epochMs",
+                        )
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                let attached = self.adapter.attach_remote_session(scenario, epoch_ms)?;
+                self.streams.clear();
+                Ok(json!({"operation": operation, "attached": attached}))
             }
             "session.unload" => {
                 require_user_action(user_action)?;

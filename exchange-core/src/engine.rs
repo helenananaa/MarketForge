@@ -287,6 +287,15 @@ impl OrderBook {
     }
 
     pub(crate) fn cancel_orders_for_account(&mut self, account_id: AccountId) -> Vec<Event> {
+        let order_ids = self.order_ids_for_account(account_id);
+
+        order_ids
+            .into_iter()
+            .flat_map(|order_id| self.cancel_order(CancelOrder { order_id }))
+            .collect()
+    }
+
+    pub(crate) fn order_ids_for_account(&self, account_id: AccountId) -> Vec<OrderId> {
         let mut order_ids = self
             .order_index
             .keys()
@@ -294,11 +303,23 @@ impl OrderBook {
             .filter(|order_id| self.order_owner(*order_id) == Some(account_id))
             .collect::<Vec<_>>();
         order_ids.sort_unstable();
-
         order_ids
-            .into_iter()
-            .flat_map(|order_id| self.cancel_order(CancelOrder { order_id }))
-            .collect()
+    }
+
+    pub(crate) fn order_ids_for_account_on_side(
+        &self,
+        account_id: AccountId,
+        side: Side,
+    ) -> Vec<OrderId> {
+        let mut order_ids = self
+            .order_index
+            .iter()
+            .filter(|(_, location)| location.side == side)
+            .map(|(order_id, _)| *order_id)
+            .filter(|order_id| self.order_owner(*order_id) == Some(account_id))
+            .collect::<Vec<_>>();
+        order_ids.sort_unstable();
+        order_ids
     }
 
     pub fn fill_quote(

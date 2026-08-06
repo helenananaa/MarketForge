@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{cmp::Reverse, collections::BTreeMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -54,6 +54,16 @@ pub enum PerpMarginStatus {
     Liquidatable,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PerpCrossMarginContext {
+    pub other_unrealized_pnl: Money,
+    pub other_required_margin: Money,
+    pub other_initial_margin: Money,
+    pub other_maintenance_margin: Money,
+    pub other_position_open: bool,
+    pub liquidation_pending: bool,
+}
+
 impl PerpMarginStatus {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -96,6 +106,8 @@ impl PerpAccount {
             equity,
             initial_margin,
             maintenance_margin,
+            portfolio_initial_margin: initial_margin,
+            portfolio_maintenance_margin: maintenance_margin,
             margin_status: margin_status(
                 self.position_qty,
                 equity,
@@ -132,6 +144,10 @@ pub struct PerpAccountSnapshot {
     pub initial_margin: Money,
     #[serde(default)]
     pub maintenance_margin: Money,
+    #[serde(default)]
+    pub portfolio_initial_margin: Money,
+    #[serde(default)]
+    pub portfolio_maintenance_margin: Money,
     #[serde(default = "default_perp_margin_status")]
     pub margin_status: PerpMarginStatus,
     #[serde(default)]
@@ -212,6 +228,8 @@ pub struct PerpAccountStore {
     margin_statuses: BTreeMap<AccountId, PerpMarginStatus>,
     #[serde(default)]
     insurance_fund_balance: Money,
+    #[serde(default)]
+    cross_margin_contexts: BTreeMap<AccountId, PerpCrossMarginContext>,
     config: PerpClearingConfig,
     mark_price_tick: PriceTick,
 }
@@ -219,9 +237,70 @@ pub struct PerpAccountStore {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct PerpOrderReservation {
     account_id: AccountId,
+    /// Legacy snapshots did not persist the order side. Treating a missing side
+    /// as both directions keeps restored state conservative until the order is
+    /// canceled or amended.
+    #[serde(default)]
+    side: Option<Side>,
     price_tick: PriceTick,
     qty: Qty,
     reserved_margin: Money,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PerpPendingOrderRisk {
+    pub side: Side,
+    pub price_tick: PriceTick,
+    pub qty: Qty,
+    pub fee: Money,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PerpRiskExposure {
+    pub equity: Money,
+    pub local_required_margin: Money,
+    pub required_margin: Money,
+    pub available_equity: Money,
+    pub max_abs_position_qty: PositionQty,
+    buy_notional: Money,
+    sell_notional: Money,
+    order_fees: Money,
+    pub margin_status: PerpMarginStatus,
+    pub liquidation_pending: bool,
+}
+
+impl PerpRiskExposure {
+    pub fn is_strict_reduction_from(self, previous: Self) -> bool {
+        let does_not_increase = self.required_margin <= previous.required_margin
+            && self.max_abs_position_qty <= previous.max_abs_position_qty
+            && self.buy_notional <= previous.buy_notional
+            && self.sell_notional <= previous.sell_notional
+            && self.order_fees <= previous.order_fees;
+        let reduces_something = self.required_margin < previous.required_margin
+            || self.max_abs_position_qty < previous.max_abs_position_qty
+            || self.buy_notional < previous.buy_notional
+            || self.sell_notional < previous.sell_notional
+            || self.order_fees < previous.order_fees;
+        does_not_increase && reduces_something
+    }
+
+    pub fn is_strict_position_reduction_from(self, previous: Self) -> bool {
+        let does_not_increase = self.max_abs_position_qty <= previous.max_abs_position_qty
+            && self.buy_notional <= previous.buy_notional
+            && self.sell_notional <= previous.sell_notional;
+        let reduces_something = self.max_abs_position_qty < previous.max_abs_position_qty
+            || self.buy_notional < previous.buy_notional
+            || self.sell_notional < previous.sell_notional;
+        does_not_increase && reduces_something
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PerpRiskOrderChunk {
+    side: Option<Side>,
+    price_tick: PriceTick,
+    qty: Qty,
+    fee: Money,
 }
 
 impl PerpAccountStore {
@@ -250,6 +329,7 @@ impl PerpAccountStore {
             order_reservations: BTreeMap::new(),
             margin_statuses: BTreeMap::new(),
             insurance_fund_balance: config.initial_insurance_fund,
+            cross_margin_contexts: BTreeMap::new(),
             config,
             mark_price_tick: initial_mark_price_tick,
         })
@@ -270,8 +350,9 @@ impl PerpAccountStore {
             reserved_margin: 0,
         });
         account.cash_balance = cash_balance;
-        account.reserved_margin = 0;
-        let snapshot = account.snapshot(self.config, self.mark_price_tick);
+        let snapshot = self
+            .account_snapshot(account_id)
+            .expect("newly created perp account should exist");
         self.margin_statuses
             .insert(account_id, snapshot.margin_status);
         snapshot
@@ -286,14 +367,28 @@ impl PerpAccountStore {
         account_id: AccountId,
         cash_balance: Money,
     ) -> Result<PerpAccountSnapshot, ClearingError> {
-        let config = self.config;
-        let mark_price_tick = self.mark_price_tick;
-        let account = self.account_mut(account_id);
-        if cash_balance < account.reserved_margin {
-            return Err(ClearingError::InsufficientAvailableBalance);
-        }
-        account.cash_balance = cash_balance;
-        Ok(account.snapshot(config, mark_price_tick))
+        self.sync_cross_margin_account(account_id, cash_balance, PerpCrossMarginContext::default())
+    }
+
+    pub fn sync_cross_margin_account(
+        &mut self,
+        account_id: AccountId,
+        cash_balance: Money,
+        context: PerpCrossMarginContext,
+    ) -> Result<PerpAccountSnapshot, ClearingError> {
+        let mut staged = self.clone();
+        staged.account_mut(account_id).cash_balance = cash_balance;
+        staged.cross_margin_contexts.insert(account_id, context);
+        staged.refresh_reserved_margin_for(account_id)?;
+        let account = staged
+            .account(account_id)
+            .ok_or(ClearingError::AccountNotFound)?;
+        let snapshot = staged.checked_snapshot_with_cross_margin(account)?;
+        staged
+            .margin_statuses
+            .insert(account_id, snapshot.margin_status);
+        *self = staged;
+        Ok(snapshot)
     }
 
     pub fn insurance_fund_balance(&self) -> Money {
@@ -308,6 +403,7 @@ impl PerpAccountStore {
             return Err(ClearingError::InvalidPrice);
         }
         self.mark_price_tick = mark_price_tick;
+        self.refresh_all_reserved_margins()?;
         Ok(self.refresh_all_margin_statuses())
     }
 
@@ -321,20 +417,100 @@ impl PerpAccountStore {
 
     pub fn account_snapshot(&self, account_id: AccountId) -> Option<PerpAccountSnapshot> {
         self.account(account_id)
-            .map(|account| account.snapshot(self.config, self.mark_price_tick))
+            .map(|account| self.snapshot_with_cross_margin(account))
     }
 
     pub fn snapshots(&self) -> Vec<PerpAccountSnapshot> {
         self.accounts
             .values()
-            .map(|account| account.snapshot(self.config, self.mark_price_tick))
+            .map(|account| self.snapshot_with_cross_margin(account))
             .collect()
+    }
+
+    pub fn cross_margin_context(&self, account_id: AccountId) -> PerpCrossMarginContext {
+        self.cross_margin_contexts
+            .get(&account_id)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn snapshot_with_cross_margin(&self, account: &PerpAccount) -> PerpAccountSnapshot {
+        let mut snapshot = account.snapshot(self.config, self.mark_price_tick);
+        let context = self.cross_margin_context(account.account_id);
+        // Snapshots are an infallible projection API. The mutation/risk paths
+        // use `checked_snapshot_with_cross_margin` and reject overflow; this
+        // fallback only keeps inspection of corrupt/extreme restored state
+        // total and visibly clamps at the numeric boundary.
+        let portfolio_equity = snapshot.equity.saturating_add(context.other_unrealized_pnl);
+        let portfolio_initial_margin = snapshot
+            .initial_margin
+            .saturating_add(context.other_initial_margin);
+        let portfolio_maintenance_margin = snapshot
+            .maintenance_margin
+            .saturating_add(context.other_maintenance_margin);
+        let local_required_margin = snapshot
+            .initial_margin
+            .saturating_add(snapshot.reserved_margin);
+        snapshot.equity = portfolio_equity;
+        snapshot.portfolio_initial_margin = portfolio_initial_margin;
+        snapshot.portfolio_maintenance_margin = portfolio_maintenance_margin;
+        snapshot.available_cash = portfolio_equity
+            .saturating_sub(local_required_margin)
+            .saturating_sub(context.other_required_margin);
+        snapshot.margin_status = margin_status_for_portfolio(
+            snapshot.position_qty != 0 || context.other_position_open,
+            portfolio_equity,
+            portfolio_initial_margin,
+            portfolio_maintenance_margin,
+        );
+        snapshot
+    }
+
+    fn checked_snapshot_with_cross_margin(
+        &self,
+        account: &PerpAccount,
+    ) -> Result<PerpAccountSnapshot, ClearingError> {
+        let mut snapshot = account.snapshot(self.config, self.mark_price_tick);
+        let context = self.cross_margin_context(account.account_id);
+        let portfolio_equity = snapshot
+            .equity
+            .checked_add(context.other_unrealized_pnl)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        let portfolio_initial_margin = snapshot
+            .initial_margin
+            .checked_add(context.other_initial_margin)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        let portfolio_maintenance_margin = snapshot
+            .maintenance_margin
+            .checked_add(context.other_maintenance_margin)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        let local_required_margin = snapshot
+            .initial_margin
+            .checked_add(snapshot.reserved_margin)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        let required_margin = local_required_margin
+            .checked_add(context.other_required_margin)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        snapshot.equity = portfolio_equity;
+        snapshot.portfolio_initial_margin = portfolio_initial_margin;
+        snapshot.portfolio_maintenance_margin = portfolio_maintenance_margin;
+        snapshot.available_cash = portfolio_equity
+            .checked_sub(required_margin)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        snapshot.margin_status = margin_status_for_portfolio(
+            snapshot.position_qty != 0 || context.other_position_open,
+            portfolio_equity,
+            portfolio_initial_margin,
+            portfolio_maintenance_margin,
+        );
+        Ok(snapshot)
     }
 
     pub fn reserve_resting_order(
         &mut self,
         order_id: OrderId,
         account_id: AccountId,
+        side: Side,
         price_tick: PriceTick,
         qty: Qty,
     ) -> Result<(), ClearingError> {
@@ -343,16 +519,9 @@ impl PerpAccountStore {
         }
         self.release_order_reservation(order_id)?;
 
-        let reservation = self.reservation_for_order(account_id, price_tick, qty)?;
-        let account = self.account_mut(account_id);
-        if account.available_cash() < reservation.reserved_margin {
-            return Err(ClearingError::InsufficientAvailableBalance);
-        }
-        account.reserved_margin = account
-            .reserved_margin
-            .checked_add(reservation.reserved_margin)
-            .ok_or(ClearingError::BalanceOverflow)?;
+        let reservation = self.reservation_for_order(account_id, Some(side), price_tick, qty)?;
         self.order_reservations.insert(order_id, reservation);
+        self.refresh_reserved_margin_for(account_id)?;
         Ok(())
     }
 
@@ -360,11 +529,7 @@ impl PerpAccountStore {
         let Some(reservation) = self.order_reservations.remove(&order_id) else {
             return Ok(());
         };
-        let account = self.account_mut(reservation.account_id);
-        account.reserved_margin = account
-            .reserved_margin
-            .checked_sub(reservation.reserved_margin)
-            .ok_or(ClearingError::ReservationUnderflow)?;
+        self.refresh_reserved_margin_for(reservation.account_id)?;
         Ok(())
     }
 
@@ -377,31 +542,15 @@ impl PerpAccountStore {
         let Some(existing) = self.order_reservations.get(&order_id).cloned() else {
             return Ok(());
         };
-        let next_reservation = self.reservation_for_order(existing.account_id, price_tick, qty)?;
-        let account = self.account_mut(existing.account_id);
-
-        if next_reservation.reserved_margin >= existing.reserved_margin {
-            let additional_margin = next_reservation.reserved_margin - existing.reserved_margin;
-            if account.available_cash() < additional_margin {
-                return Err(ClearingError::InsufficientAvailableBalance);
-            }
-            account.reserved_margin = account
-                .reserved_margin
-                .checked_add(additional_margin)
-                .ok_or(ClearingError::BalanceOverflow)?;
-        } else {
-            let release_margin = existing.reserved_margin - next_reservation.reserved_margin;
-            account.reserved_margin = account
-                .reserved_margin
-                .checked_sub(release_margin)
-                .ok_or(ClearingError::ReservationUnderflow)?;
-        }
+        let next_reservation =
+            self.reservation_for_order(existing.account_id, existing.side, price_tick, qty)?;
 
         if qty == 0 {
             self.order_reservations.remove(&order_id);
         } else {
             self.order_reservations.insert(order_id, next_reservation);
         }
+        self.refresh_reserved_margin_for(existing.account_id)?;
         Ok(())
     }
 
@@ -411,23 +560,79 @@ impl PerpAccountStore {
         price_tick: Option<PriceTick>,
         qty: Option<Qty>,
     ) -> Result<bool, ClearingError> {
-        let Some(existing) = self.order_reservations.get(&order_id) else {
+        let Some((before, after)) = self.amend_order_risk_exposures(order_id, price_tick, qty)?
+        else {
             return Ok(true);
         };
+        Ok(after.is_strict_reduction_from(before) || after.available_equity >= 0)
+    }
+
+    pub(crate) fn risk_exposure(
+        &self,
+        account_id: AccountId,
+    ) -> Result<PerpRiskExposure, ClearingError> {
+        self.risk_exposure_with(account_id, None, None)
+    }
+
+    pub(crate) fn projected_order_risk(
+        &self,
+        account_id: AccountId,
+        order: PerpPendingOrderRisk,
+    ) -> Result<PerpRiskExposure, ClearingError> {
+        self.risk_exposure_with(account_id, None, Some(order))
+    }
+
+    pub(crate) fn amend_order_risk_exposures(
+        &self,
+        order_id: OrderId,
+        price_tick: Option<PriceTick>,
+        qty: Option<Qty>,
+    ) -> Result<Option<(PerpRiskExposure, PerpRiskExposure)>, ClearingError> {
+        let Some(existing) = self.order_reservations.get(&order_id) else {
+            return Ok(None);
+        };
+        let before = self.risk_exposure(existing.account_id)?;
         let new_price_tick = price_tick.unwrap_or(existing.price_tick);
         let new_qty = qty.unwrap_or(existing.qty);
-        let next_reservation =
-            self.reservation_for_order(existing.account_id, new_price_tick, new_qty)?;
-
-        if next_reservation.reserved_margin <= existing.reserved_margin {
-            return Ok(true);
-        }
-
-        let additional_margin = next_reservation.reserved_margin - existing.reserved_margin;
-        let Some(account) = self.accounts.get(&existing.account_id) else {
-            return Ok(false);
+        let fee = if new_qty == 0 {
+            0
+        } else {
+            fee_for(
+                notional(new_price_tick, new_qty)?,
+                self.config.maker_fee_ppm,
+            )?
         };
-        Ok(account.available_cash() >= additional_margin)
+        let Some(side) = existing.side else {
+            // A legacy reservation without a side is already modeled in both
+            // directions. Preserve that conservative state during amendment.
+            let mut staged = self.clone();
+            if new_qty == 0 {
+                staged.order_reservations.remove(&order_id);
+            } else {
+                staged.order_reservations.insert(
+                    order_id,
+                    staged.reservation_for_order(
+                        existing.account_id,
+                        None,
+                        new_price_tick,
+                        new_qty,
+                    )?,
+                );
+            }
+            let after = staged.risk_exposure(existing.account_id)?;
+            return Ok(Some((before, after)));
+        };
+        let after = self.risk_exposure_with(
+            existing.account_id,
+            Some(order_id),
+            (new_qty > 0).then_some(PerpPendingOrderRisk {
+                side,
+                price_tick: new_price_tick,
+                qty: new_qty,
+                fee,
+            }),
+        )?;
+        Ok(Some((before, after)))
     }
 
     pub fn settle_trade(&mut self, trade: &Trade) -> Result<Vec<PerpClearingEvent>, ClearingError> {
@@ -448,18 +653,28 @@ impl PerpAccountStore {
 
         self.release_maker_fill_reservation(trade.maker_order_id, trade.qty)?;
 
-        let buyer_result = self.apply_fill(
+        let mut buyer_result = self.apply_fill(
             participants.buyer_account_id,
             PositionQty::from(trade.qty),
             trade.price_tick,
             participants.buyer_fee,
         )?;
-        let seller_result = self.apply_fill(
+        let mut seller_result = self.apply_fill(
             participants.seller_account_id,
             -PositionQty::from(trade.qty),
             trade.price_tick,
             participants.seller_fee,
         )?;
+        self.refresh_reserved_margin_for(participants.buyer_account_id)?;
+        if participants.seller_account_id != participants.buyer_account_id {
+            self.refresh_reserved_margin_for(participants.seller_account_id)?;
+        }
+        buyer_result.snapshot = self
+            .account_snapshot(participants.buyer_account_id)
+            .ok_or(ClearingError::AccountNotFound)?;
+        seller_result.snapshot = self
+            .account_snapshot(participants.seller_account_id)
+            .ok_or(ClearingError::AccountNotFound)?;
 
         let mut events = vec![PerpClearingEvent::TradeSettled {
             trade_id: trade.trade_id,
@@ -494,8 +709,6 @@ impl PerpAccountStore {
         }
 
         let liquidation_fee = fee_for(liquidation_notional, self.config.liquidation_fee_ppm)?;
-        let config = self.config;
-        let mark_price_tick = self.mark_price_tick;
         let mut insurance_fund_payment = 0;
         let mut auto_deleveraging_loss = 0;
         let mut auto_deleveraging_allocations = Vec::new();
@@ -552,10 +765,8 @@ impl PerpAccountStore {
         }
 
         let snapshot = self
-            .accounts
-            .get(&account_id)
-            .expect("liquidation settlement account should exist")
-            .snapshot(config, mark_price_tick);
+            .account_snapshot(account_id)
+            .expect("liquidation settlement account should exist");
         self.margin_statuses
             .insert(account_id, snapshot.margin_status);
 
@@ -608,7 +819,6 @@ impl PerpAccountStore {
             return Ok(Vec::new());
         }
 
-        let config = self.config;
         let mark_price_tick = self.mark_price_tick;
         let liquidated_side = liquidated_position_qty.signum();
         let mut remaining = remaining_shortfall;
@@ -694,11 +904,10 @@ impl PerpAccountStore {
                     .ok_or(ClearingError::BalanceOverflow)?;
                 realized_pnl
             };
+            self.refresh_reserved_margin_for(account_id)?;
             let snapshot = self
-                .accounts
-                .get(&account_id)
-                .ok_or(ClearingError::AccountNotFound)?
-                .snapshot(config, mark_price_tick);
+                .account_snapshot(account_id)
+                .ok_or(ClearingError::AccountNotFound)?;
             allocations.push(PerpAutoDeleveragingAllocation {
                 account_id,
                 position_delta,
@@ -723,11 +932,10 @@ impl PerpAccountStore {
                     .ok_or(ClearingError::BalanceOverflow)?;
                 realized_pnl
             };
+            self.refresh_reserved_margin_for(counterparty_id)?;
             let counterparty_snapshot = self
-                .accounts
-                .get(&counterparty_id)
-                .ok_or(ClearingError::AccountNotFound)?
-                .snapshot(config, mark_price_tick);
+                .account_snapshot(counterparty_id)
+                .ok_or(ClearingError::AccountNotFound)?;
             allocations.push(PerpAutoDeleveragingAllocation {
                 account_id: counterparty_id,
                 position_delta: counterparty_position_delta,
@@ -748,8 +956,6 @@ impl PerpAccountStore {
         liquidated_account_id: AccountId,
         remaining_shortfall: Money,
     ) -> Vec<PerpSocializedLossAllocation> {
-        let config = self.config;
-        let mark_price_tick = self.mark_price_tick;
         let mut remaining = remaining_shortfall;
         let mut contributors = self
             .accounts
@@ -758,8 +964,8 @@ impl PerpAccountStore {
                 if *account_id == liquidated_account_id {
                     return None;
                 }
-                let snapshot = account.snapshot(config, mark_price_tick);
-                let loss_capacity = account.available_cash().min(snapshot.equity).max(0);
+                let snapshot = self.snapshot_with_cross_margin(account);
+                let loss_capacity = snapshot.available_cash.min(snapshot.equity).max(0);
                 if loss_capacity == 0 {
                     return None;
                 }
@@ -781,10 +987,8 @@ impl PerpAccountStore {
             remaining -= loss;
 
             let snapshot = self
-                .accounts
-                .get(&account_id)
-                .expect("socialized loss contributor should exist")
-                .snapshot(config, mark_price_tick);
+                .account_snapshot(account_id)
+                .expect("socialized loss contributor should exist");
             allocations.push(PerpSocializedLossAllocation {
                 account_id,
                 loss,
@@ -842,35 +1046,28 @@ impl PerpAccountStore {
             .ok_or(ClearingError::ReservationUnderflow)?;
         let next_reservation = self.reservation_for_order(
             reservation.account_id,
+            reservation.side,
             reservation.price_tick,
             remaining_qty,
         )?;
-        let release_margin = reservation
-            .reserved_margin
-            .checked_sub(next_reservation.reserved_margin)
-            .ok_or(ClearingError::ReservationUnderflow)?;
-
-        {
-            let account = self.account_mut(reservation.account_id);
-            account.reserved_margin = account
-                .reserved_margin
-                .checked_sub(release_margin)
-                .ok_or(ClearingError::ReservationUnderflow)?;
-        }
 
         if remaining_qty == 0 {
+            self.refresh_reserved_margin_for(reservation.account_id)?;
             return Ok(());
         }
 
         reservation.qty = remaining_qty;
         reservation.reserved_margin = next_reservation.reserved_margin;
+        let account_id = next_reservation.account_id;
         self.order_reservations.insert(order_id, reservation);
+        self.refresh_reserved_margin_for(account_id)?;
         Ok(())
     }
 
     fn reservation_for_order(
         &self,
         account_id: AccountId,
+        side: Option<Side>,
         price_tick: PriceTick,
         qty: Qty,
     ) -> Result<PerpOrderReservation, ClearingError> {
@@ -884,10 +1081,161 @@ impl PerpAccountStore {
             .ok_or(ClearingError::BalanceOverflow)?;
         Ok(PerpOrderReservation {
             account_id,
+            side,
             price_tick,
             qty,
             reserved_margin,
         })
+    }
+
+    fn risk_exposure_with(
+        &self,
+        account_id: AccountId,
+        excluded_order_id: Option<OrderId>,
+        candidate: Option<PerpPendingOrderRisk>,
+    ) -> Result<PerpRiskExposure, ClearingError> {
+        let account = self
+            .accounts
+            .get(&account_id)
+            .ok_or(ClearingError::AccountNotFound)?;
+        let mut orders = Vec::new();
+        for (order_id, reservation) in &self.order_reservations {
+            if reservation.account_id != account_id || Some(*order_id) == excluded_order_id {
+                continue;
+            }
+            let order_notional = notional(reservation.price_tick, reservation.qty)?;
+            orders.push(PerpRiskOrderChunk {
+                side: reservation.side,
+                price_tick: reservation.price_tick,
+                qty: reservation.qty,
+                fee: fee_for(order_notional, self.config.maker_fee_ppm)?,
+            });
+        }
+        if let Some(candidate) = candidate
+            && candidate.qty > 0
+        {
+            if candidate.price_tick <= 0 || candidate.fee < 0 {
+                return Err(ClearingError::InvalidPrice);
+            }
+            orders.push(PerpRiskOrderChunk {
+                side: Some(candidate.side),
+                price_tick: candidate.price_tick,
+                qty: candidate.qty,
+                fee: candidate.fee,
+            });
+        }
+
+        let (buy_position_qty, buy_notional) = directional_risk_scenario(
+            account.position_qty,
+            self.mark_price_tick,
+            Side::Buy,
+            orders
+                .iter()
+                .copied()
+                .filter(|order| order.side.is_none_or(|side| side == Side::Buy)),
+        )?;
+        let (sell_position_qty, sell_notional) = directional_risk_scenario(
+            account.position_qty,
+            self.mark_price_tick,
+            Side::Sell,
+            orders
+                .iter()
+                .copied()
+                .filter(|order| order.side.is_none_or(|side| side == Side::Sell)),
+        )?;
+        let current_abs_position_qty = account
+            .position_qty
+            .checked_abs()
+            .ok_or(ClearingError::BalanceOverflow)?;
+        let current_notional = Money::from(self.mark_price_tick)
+            .checked_mul(current_abs_position_qty)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        let max_abs_position_qty = current_abs_position_qty
+            .max(
+                buy_position_qty
+                    .checked_abs()
+                    .ok_or(ClearingError::BalanceOverflow)?,
+            )
+            .max(
+                sell_position_qty
+                    .checked_abs()
+                    .ok_or(ClearingError::BalanceOverflow)?,
+            );
+        let worst_notional = current_notional.max(buy_notional).max(sell_notional);
+        let order_fees = orders.iter().try_fold(0i128, |total, order| {
+            total
+                .checked_add(order.fee)
+                .ok_or(ClearingError::BalanceOverflow)
+        })?;
+        let local_required_margin = (worst_notional / Money::from(self.config.leverage))
+            .checked_add(order_fees)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        let cross_margin_context = self.cross_margin_context(account_id);
+        let required_margin = local_required_margin
+            .checked_add(cross_margin_context.other_required_margin)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        let unrealized_pnl = account
+            .unrealized_pnl_at_mark(self.mark_price_tick)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        let equity = account
+            .cash_balance
+            .checked_add(unrealized_pnl)
+            .and_then(|equity| equity.checked_add(cross_margin_context.other_unrealized_pnl))
+            .ok_or(ClearingError::BalanceOverflow)?;
+        let available_equity = equity
+            .checked_sub(required_margin)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        let margin_status = self
+            .account_snapshot(account_id)
+            .ok_or(ClearingError::AccountNotFound)?
+            .margin_status;
+
+        Ok(PerpRiskExposure {
+            equity,
+            local_required_margin,
+            required_margin,
+            available_equity,
+            max_abs_position_qty,
+            buy_notional,
+            sell_notional,
+            order_fees,
+            margin_status,
+            liquidation_pending: cross_margin_context.liquidation_pending,
+        })
+    }
+
+    fn refresh_reserved_margin_for(&mut self, account_id: AccountId) -> Result<(), ClearingError> {
+        let exposure = self.risk_exposure(account_id)?;
+        let account = self
+            .accounts
+            .get(&account_id)
+            .ok_or(ClearingError::AccountNotFound)?;
+        let snapshot_initial_margin = initial_margin(
+            account.position_qty,
+            account.avg_entry_price_tick,
+            self.config,
+        );
+        // ExchangeActor reserves `initial_margin + reserved_margin`. Basing the
+        // top-up on the same snapshot initial margin keeps that aggregate at
+        // least as large as the mark-aware worst-case requirement.
+        let reserved_margin = exposure
+            .local_required_margin
+            .checked_sub(snapshot_initial_margin)
+            .ok_or(ClearingError::BalanceOverflow)?
+            .max(0);
+        self.accounts
+            .get_mut(&account_id)
+            .ok_or(ClearingError::AccountNotFound)?
+            .reserved_margin = reserved_margin;
+        Ok(())
+    }
+
+    fn refresh_all_reserved_margins(&mut self) -> Result<(), ClearingError> {
+        let account_ids = self.accounts.keys().copied().collect::<Vec<_>>();
+        for account_id in account_ids {
+            self.refresh_reserved_margin_for(account_id)?;
+        }
+        Ok(())
     }
 
     fn account_mut(&mut self, account_id: AccountId) -> &mut PerpAccount {
@@ -943,6 +1291,81 @@ impl PerpAccountStore {
 
         events
     }
+}
+
+fn directional_risk_scenario(
+    position_qty: PositionQty,
+    mark_price_tick: PriceTick,
+    side: Side,
+    orders: impl IntoIterator<Item = PerpRiskOrderChunk>,
+) -> Result<(PositionQty, Money), ClearingError> {
+    let mut orders = orders.into_iter().collect::<Vec<_>>();
+    let total_order_qty = orders.iter().try_fold(0i128, |total, order| {
+        total
+            .checked_add(PositionQty::from(order.qty))
+            .ok_or(ClearingError::BalanceOverflow)
+    })?;
+    let position_delta = match side {
+        Side::Buy => total_order_qty,
+        Side::Sell => total_order_qty
+            .checked_neg()
+            .ok_or(ClearingError::BalanceOverflow)?,
+    };
+    let final_position_qty = position_qty
+        .checked_add(position_delta)
+        .ok_or(ClearingError::BalanceOverflow)?;
+    let current_abs_qty = position_qty
+        .checked_abs()
+        .ok_or(ClearingError::BalanceOverflow)?;
+    let current_notional = Money::from(mark_price_tick)
+        .checked_mul(current_abs_qty)
+        .ok_or(ClearingError::BalanceOverflow)?;
+
+    if total_order_qty == 0 {
+        return Ok((position_qty, current_notional));
+    }
+
+    let order_direction = match side {
+        Side::Buy => 1,
+        Side::Sell => -1,
+    };
+    if position_qty == 0 || position_qty.signum() == order_direction {
+        let scenario_notional = orders.iter().try_fold(current_notional, |total, order| {
+            let order_notional = notional(order.price_tick, order.qty)?;
+            total
+                .checked_add(order_notional)
+                .ok_or(ClearingError::BalanceOverflow)
+        })?;
+        return Ok((final_position_qty, scenario_notional));
+    }
+
+    if total_order_qty <= current_abs_qty {
+        let remaining_qty = current_abs_qty - total_order_qty;
+        let scenario_notional = Money::from(mark_price_tick)
+            .checked_mul(remaining_qty)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        return Ok((final_position_qty, scenario_notional));
+    }
+
+    // The order in which same-side resting orders fill is not known. Allocate
+    // the closing quantity to the cheapest orders and the newly opened
+    // exposure to the most expensive orders to obtain the conservative path.
+    orders.sort_by_key(|order| Reverse(order.price_tick));
+    let mut opening_qty = total_order_qty - current_abs_qty;
+    let mut scenario_notional = 0i128;
+    for order in orders {
+        if opening_qty == 0 {
+            break;
+        }
+        let take_qty = opening_qty.min(PositionQty::from(order.qty));
+        let take_qty = Qty::try_from(take_qty).map_err(|_| ClearingError::BalanceOverflow)?;
+        scenario_notional = scenario_notional
+            .checked_add(notional(order.price_tick, take_qty)?)
+            .ok_or(ClearingError::BalanceOverflow)?;
+        opening_qty -= PositionQty::from(take_qty);
+    }
+
+    Ok((final_position_qty, scenario_notional))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1058,7 +1481,21 @@ fn margin_status(
     initial_margin: Money,
     maintenance_margin: Money,
 ) -> PerpMarginStatus {
-    if position_qty == 0 {
+    margin_status_for_portfolio(
+        position_qty != 0,
+        equity,
+        initial_margin,
+        maintenance_margin,
+    )
+}
+
+fn margin_status_for_portfolio(
+    has_open_position: bool,
+    equity: Money,
+    initial_margin: Money,
+    maintenance_margin: Money,
+) -> PerpMarginStatus {
+    if !has_open_position {
         return PerpMarginStatus::Flat;
     }
     if equity <= maintenance_margin {
@@ -1125,9 +1562,11 @@ mod tests {
                 equity: 9_999,
                 initial_margin: 100,
                 maintenance_margin: 50,
+                portfolio_initial_margin: 100,
+                portfolio_maintenance_margin: 50,
                 margin_status: PerpMarginStatus::Healthy,
                 reserved_margin: 0,
-                available_cash: 9_999,
+                available_cash: 9_899,
                 fees_paid: 1,
             })
         );
@@ -1143,9 +1582,11 @@ mod tests {
                 equity: 10_000,
                 initial_margin: 100,
                 maintenance_margin: 50,
+                portfolio_initial_margin: 100,
+                portfolio_maintenance_margin: 50,
                 margin_status: PerpMarginStatus::Healthy,
                 reserved_margin: 0,
-                available_cash: 10_000,
+                available_cash: 9_900,
                 fees_paid: 0,
             })
         );
@@ -1187,9 +1628,11 @@ mod tests {
                 equity: 200,
                 initial_margin: 600,
                 maintenance_margin: 36,
+                portfolio_initial_margin: 600,
+                portfolio_maintenance_margin: 36,
                 margin_status: PerpMarginStatus::MarginCall,
-                reserved_margin: 0,
-                available_cash: 80,
+                reserved_margin: 120,
+                available_cash: -520,
                 fees_paid: 0,
             })
         );
@@ -1218,9 +1661,11 @@ mod tests {
                 equity: -50,
                 initial_margin: 270,
                 maintenance_margin: 13,
+                portfolio_initial_margin: 270,
+                portfolio_maintenance_margin: 13,
                 margin_status: PerpMarginStatus::Liquidatable,
                 reserved_margin: 0,
-                available_cash: -50,
+                available_cash: -320,
                 fees_paid: 0,
             })
         );
@@ -1259,6 +1704,29 @@ mod tests {
         assert_eq!(liquidatable.equity, 0);
         assert_eq!(liquidatable.maintenance_margin, 40);
         assert_eq!(liquidatable.margin_status, PerpMarginStatus::Liquidatable);
+    }
+
+    #[test]
+    fn cross_margin_sync_rejects_overflow_without_mutating_account() {
+        let mut accounts = PerpAccountStore::new(PerpClearingConfig::default(), 100).unwrap();
+        accounts.create_account(20, 1);
+
+        assert_eq!(
+            accounts.sync_cross_margin_account(
+                20,
+                Money::MAX,
+                PerpCrossMarginContext {
+                    other_unrealized_pnl: 1,
+                    ..PerpCrossMarginContext::default()
+                },
+            ),
+            Err(ClearingError::BalanceOverflow)
+        );
+        assert_eq!(accounts.account_snapshot(20).unwrap().cash_balance, 1);
+        assert_eq!(
+            accounts.cross_margin_context(20),
+            PerpCrossMarginContext::default()
+        );
     }
 
     #[test]

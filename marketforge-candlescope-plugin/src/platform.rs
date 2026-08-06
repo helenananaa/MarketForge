@@ -103,6 +103,15 @@ impl PlatformRuntime {
         }
     }
 
+    pub fn with_service(service: PluginService) -> Self {
+        Self {
+            state: RuntimeState::Created,
+            generation: 0,
+            highest_generation: 0,
+            service,
+        }
+    }
+
     pub fn state(&self) -> RuntimeState {
         self.state
     }

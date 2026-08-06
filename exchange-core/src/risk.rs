@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    account::{Money, PositionQty, fee_for, notional},
+    account::{ClearingError, Money, PositionQty, fee_for, notional},
     engine::FillQuote,
     model::{Command, NewOrder, PriceTick, RiskRejectReason, Side},
-    perp::PerpAccountStore,
+    perp::{PerpAccountStore, PerpMarginStatus, PerpPendingOrderRisk},
     spot::SpotAccountStore,
 };
 
@@ -154,10 +154,30 @@ impl PerpRiskEngine {
             if amend.price_tick.is_some_and(|price_tick| price_tick <= 0) || amend.qty == Some(0) {
                 return Ok(());
             }
-            if !accounts
-                .amend_order_requires_available_margin(amend.order_id, amend.price_tick, amend.qty)
-                .map_err(|_| RiskRejectReason::InsufficientMargin)?
+            let Some((before, after)) = accounts
+                .amend_order_risk_exposures(amend.order_id, amend.price_tick, amend.qty)
+                .map_err(perp_risk_reject_reason)?
+            else {
+                return Ok(());
+            };
+            if self
+                .config
+                .max_abs_position_qty
+                .is_some_and(|max_qty| after.max_abs_position_qty > max_qty)
             {
+                return Err(RiskRejectReason::MaxPositionExceeded);
+            }
+            if before.liquidation_pending && !after.is_strict_reduction_from(before) {
+                return Err(RiskRejectReason::InsufficientMargin);
+            }
+            if matches!(
+                before.margin_status,
+                PerpMarginStatus::MarginCall | PerpMarginStatus::Liquidatable
+            ) && !after.is_strict_reduction_from(before)
+            {
+                return Err(RiskRejectReason::InsufficientMargin);
+            }
+            if !after.is_strict_reduction_from(before) && after.available_equity < 0 {
                 return Err(RiskRejectReason::InsufficientMargin);
             }
             return Ok(());
@@ -168,51 +188,54 @@ impl PerpRiskEngine {
         };
 
         self.check_order_limits(order, context)?;
+        let current = accounts
+            .risk_exposure(order.account_id)
+            .map_err(perp_risk_reject_reason)?;
         let account = accounts
             .account(order.account_id)
             .ok_or(RiskRejectReason::AccountNotFound)?;
 
-        if order.reduce_only {
-            self.check_reduce_only_order(order, account.position_qty)?;
-            return Ok(());
+        if current.liquidation_pending {
+            return Err(RiskRejectReason::InsufficientMargin);
         }
 
-        let fill_delta = order_position_delta(order);
-        let estimated_position = account
-            .position_qty
-            .checked_add(fill_delta)
-            .ok_or(RiskRejectReason::MaxPositionExceeded)?;
-        let estimated_abs_position = estimated_position
-            .checked_abs()
-            .ok_or(RiskRejectReason::MaxPositionExceeded)?;
+        if order.reduce_only {
+            self.check_reduce_only_order(order, account.position_qty)?;
+        }
+
+        if strictly_reduces_position(order, account.position_qty) {
+            let position_reduction = accounts
+                .projected_order_risk(
+                    order.account_id,
+                    pending_position_reduction_risk(order, accounts),
+                )
+                .map_err(perp_risk_reject_reason)?;
+            if position_reduction.is_strict_position_reduction_from(current) {
+                return Ok(());
+            }
+        }
+
+        if matches!(
+            current.margin_status,
+            PerpMarginStatus::MarginCall | PerpMarginStatus::Liquidatable
+        ) {
+            return Err(RiskRejectReason::InsufficientMargin);
+        }
+
+        let pending_order = pending_perp_order_risk(order, context, accounts)?;
+        let projected = accounts
+            .projected_order_risk(order.account_id, pending_order)
+            .map_err(perp_risk_reject_reason)?;
 
         if self
             .config
             .max_abs_position_qty
-            .is_some_and(|max_qty| estimated_abs_position > max_qty)
+            .is_some_and(|max_qty| projected.max_abs_position_qty > max_qty)
         {
             return Err(RiskRejectReason::MaxPositionExceeded);
         }
 
-        let existing_notional = Money::from(account.avg_entry_price_tick)
-            .checked_mul(
-                account
-                    .position_qty
-                    .checked_abs()
-                    .ok_or(RiskRejectReason::MaxPositionExceeded)?,
-            )
-            .ok_or(RiskRejectReason::MaxOrderNotionalExceeded)?
-            .checked_add(risk_notional(order, context)?)
-            .ok_or(RiskRejectReason::MaxOrderNotionalExceeded)?;
-        let estimated_margin = existing_notional / Money::from(accounts.config().leverage);
-        let estimated_fee = taker_fee_estimate(
-            risk_notional(order, context)?,
-            accounts.config().taker_fee_ppm,
-        )?;
-        let required_cash = estimated_margin
-            .checked_add(estimated_fee)
-            .ok_or(RiskRejectReason::MaxOrderNotionalExceeded)?;
-        if account.available_cash() < required_cash {
+        if projected.available_equity < 0 {
             return Err(RiskRejectReason::InsufficientMargin);
         }
 
@@ -317,6 +340,105 @@ fn risk_notional(order: &NewOrder, context: RiskContext) -> Result<Money, RiskRe
         return Err(RiskRejectReason::UnsupportedMarketOrder);
     }
     Ok(context.fill_quote.notional)
+}
+
+fn pending_perp_order_risk(
+    order: &NewOrder,
+    context: RiskContext,
+    accounts: &PerpAccountStore,
+) -> Result<PerpPendingOrderRisk, RiskRejectReason> {
+    let at_risk_qty = if order.kind.rests_remainder() {
+        order.qty
+    } else {
+        context.fill_quote.qty.min(order.qty)
+    };
+    if at_risk_qty == 0 && order.kind.limit_price_tick().is_none() {
+        return Err(RiskRejectReason::UnsupportedMarketOrder);
+    }
+
+    let mut risk_price_tick = order.kind.limit_price_tick().unwrap_or(0);
+    if context.fill_quote.qty > 0 {
+        let quote_qty = Money::from(context.fill_quote.qty);
+        let average_fill_price = context
+            .fill_quote
+            .notional
+            .checked_add(quote_qty - 1)
+            .ok_or(RiskRejectReason::MaxOrderNotionalExceeded)?
+            / quote_qty;
+        let average_fill_price = PriceTick::try_from(average_fill_price)
+            .map_err(|_| RiskRejectReason::MaxOrderNotionalExceeded)?;
+        risk_price_tick = risk_price_tick.max(average_fill_price);
+    }
+    if risk_price_tick <= 0 {
+        return Err(RiskRejectReason::UnsupportedMarketOrder);
+    }
+
+    let order_notional = if at_risk_qty == 0 {
+        0
+    } else {
+        notional(risk_price_tick, at_risk_qty)
+            .map_err(|_| RiskRejectReason::MaxOrderNotionalExceeded)?
+    };
+    let fee_rate = accounts
+        .config()
+        .maker_fee_ppm
+        .max(accounts.config().taker_fee_ppm);
+    let fee = fee_for(order_notional, fee_rate)
+        .map_err(|_| RiskRejectReason::MaxOrderNotionalExceeded)?;
+
+    Ok(PerpPendingOrderRisk {
+        side: order.side,
+        price_tick: risk_price_tick,
+        qty: at_risk_qty,
+        fee,
+    })
+}
+
+fn pending_position_reduction_risk(
+    order: &NewOrder,
+    accounts: &PerpAccountStore,
+) -> PerpPendingOrderRisk {
+    PerpPendingOrderRisk {
+        side: order.side,
+        price_tick: order
+            .kind
+            .limit_price_tick()
+            .unwrap_or(accounts.mark_price_tick())
+            .max(accounts.mark_price_tick()),
+        qty: order.qty,
+        // Fees can consume equity, but do not make an otherwise guaranteed
+        // position reduction increase directional exposure.
+        fee: 0,
+    }
+}
+
+fn strictly_reduces_position(order: &NewOrder, position_qty: PositionQty) -> bool {
+    if order.qty == 0 || order.kind.rests_remainder() || position_qty == 0 {
+        return false;
+    }
+    let is_opposite_side = matches!(
+        (position_qty.signum(), order.side),
+        (1, Side::Sell) | (-1, Side::Buy)
+    );
+    is_opposite_side && u128::from(order.qty) <= position_qty.unsigned_abs()
+}
+
+fn perp_risk_reject_reason(error: ClearingError) -> RiskRejectReason {
+    match error {
+        ClearingError::AccountNotFound => RiskRejectReason::AccountNotFound,
+        ClearingError::NotionalOverflow
+        | ClearingError::BalanceOverflow
+        | ClearingError::InvalidPrice => RiskRejectReason::MaxOrderNotionalExceeded,
+        ClearingError::InvalidLiquidationQuantity => RiskRejectReason::MaxPositionExceeded,
+        ClearingError::InvalidLeverage
+        | ClearingError::InvalidMarginRate
+        | ClearingError::InvalidFeeRate
+        | ClearingError::AccountNotLiquidatable
+        | ClearingError::LiquidationUnfilled
+        | ClearingError::WrongMarketKind
+        | ClearingError::InsufficientAvailableBalance
+        | ClearingError::ReservationUnderflow => RiskRejectReason::InsufficientMargin,
+    }
 }
 
 fn required_spot_buy_cash(
@@ -576,6 +698,299 @@ mod tests {
                 },
             ),
             Err(RiskRejectReason::ReduceOnlyUnsupported)
+        );
+    }
+
+    #[test]
+    fn perp_cross_direction_orders_use_worst_side_instead_of_summing_margin() {
+        let mut accounts = PerpAccountStore::new(
+            PerpClearingConfig {
+                leverage: 10,
+                ..PerpClearingConfig::default()
+            },
+            100,
+        )
+        .unwrap();
+        accounts.create_account(1, 100);
+        let risk = PerpRiskEngine::new(PerpRiskConfig::default());
+        let context = RiskContext {
+            best_bid: None,
+            best_ask: None,
+            fill_quote: FillQuote::default(),
+        };
+
+        assert_eq!(
+            risk.check(&limit(1, Side::Buy, 100, 10), &accounts, context),
+            Ok(())
+        );
+        accounts
+            .reserve_resting_order(1, 1, Side::Buy, 100, 10)
+            .unwrap();
+        assert_eq!(
+            risk.check(&limit(1, Side::Sell, 100, 10), &accounts, context),
+            Ok(())
+        );
+        accounts
+            .reserve_resting_order(2, 1, Side::Sell, 100, 10)
+            .unwrap();
+
+        assert_eq!(accounts.account_snapshot(1).unwrap().reserved_margin, 100);
+        assert_eq!(
+            risk.check(&limit(1, Side::Buy, 100, 1), &accounts, context),
+            Err(RiskRejectReason::InsufficientMargin)
+        );
+    }
+
+    #[test]
+    fn perp_max_position_limit_includes_existing_orders_on_each_direction() {
+        let mut accounts = PerpAccountStore::new(
+            PerpClearingConfig {
+                leverage: 10,
+                ..PerpClearingConfig::default()
+            },
+            100,
+        )
+        .unwrap();
+        accounts.create_account(1, 1_000);
+        accounts
+            .reserve_resting_order(1, 1, Side::Buy, 100, 10)
+            .unwrap();
+        accounts
+            .reserve_resting_order(2, 1, Side::Sell, 100, 10)
+            .unwrap();
+        let risk = PerpRiskEngine::new(PerpRiskConfig {
+            max_abs_position_qty: Some(10),
+            ..PerpRiskConfig::default()
+        });
+
+        assert_eq!(
+            risk.check(
+                &limit(1, Side::Buy, 100, 1),
+                &accounts,
+                RiskContext {
+                    best_bid: None,
+                    best_ask: None,
+                    fill_quote: FillQuote::default(),
+                },
+            ),
+            Err(RiskRejectReason::MaxPositionExceeded)
+        );
+    }
+
+    #[test]
+    fn margin_call_and_liquidatable_accounts_only_accept_strict_position_reductions() {
+        let mut accounts = PerpAccountStore::new(
+            PerpClearingConfig {
+                leverage: 10,
+                maintenance_margin_ppm: 50_000,
+                ..PerpClearingConfig::default()
+            },
+            100,
+        )
+        .unwrap();
+        accounts.create_account(1, 200);
+        accounts.create_account(99, 10_000);
+        accounts
+            .settle_trade(&Trade {
+                trade_id: 1,
+                maker_order_id: 10,
+                maker_account_id: 99,
+                taker_order_id: 11,
+                taker_account_id: 1,
+                price_tick: 100,
+                qty: 10,
+                taker_side: Side::Buy,
+            })
+            .unwrap();
+        accounts.set_mark_price_tick(90).unwrap();
+        assert_eq!(
+            accounts.account_snapshot(1).unwrap().margin_status,
+            PerpMarginStatus::MarginCall
+        );
+        let risk = PerpRiskEngine::new(PerpRiskConfig::default());
+        let context = RiskContext {
+            best_bid: None,
+            best_ask: None,
+            fill_quote: FillQuote::default(),
+        };
+
+        assert_eq!(
+            risk.check(&limit(1, Side::Sell, 90, 5), &accounts, context),
+            Err(RiskRejectReason::InsufficientMargin)
+        );
+        assert_eq!(
+            risk.check(
+                &Command::NewOrder(NewOrder {
+                    order_id: 2,
+                    account_id: 1,
+                    side: Side::Sell,
+                    kind: OrderKind::Market,
+                    qty: 5,
+                    reduce_only: false,
+                }),
+                &accounts,
+                context,
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            risk.check(
+                &Command::NewOrder(NewOrder {
+                    order_id: 3,
+                    account_id: 1,
+                    side: Side::Sell,
+                    kind: OrderKind::Market,
+                    qty: 11,
+                    reduce_only: false,
+                }),
+                &accounts,
+                context,
+            ),
+            Err(RiskRejectReason::InsufficientMargin)
+        );
+
+        accounts.set_mark_price_tick(80).unwrap();
+        assert_eq!(
+            accounts.account_snapshot(1).unwrap().margin_status,
+            PerpMarginStatus::Liquidatable
+        );
+        assert_eq!(
+            risk.check(
+                &reduce_only(1, Side::Sell, OrderKind::Market, 5),
+                &accounts,
+                context,
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn underwater_account_can_amend_an_order_only_when_portfolio_risk_falls() {
+        let mut accounts = PerpAccountStore::new(
+            PerpClearingConfig {
+                leverage: 10,
+                maintenance_margin_ppm: 50_000,
+                ..PerpClearingConfig::default()
+            },
+            100,
+        )
+        .unwrap();
+        accounts.create_account(1, 200);
+        accounts.create_account(99, 10_000);
+        accounts
+            .settle_trade(&Trade {
+                trade_id: 1,
+                maker_order_id: 10,
+                maker_account_id: 99,
+                taker_order_id: 11,
+                taker_account_id: 1,
+                price_tick: 100,
+                qty: 10,
+                taker_side: Side::Buy,
+            })
+            .unwrap();
+        accounts
+            .reserve_resting_order(20, 1, Side::Buy, 100, 5)
+            .unwrap();
+        accounts.set_mark_price_tick(90).unwrap();
+        let risk = PerpRiskEngine::new(PerpRiskConfig::default());
+        let context = RiskContext {
+            best_bid: None,
+            best_ask: None,
+            fill_quote: FillQuote::default(),
+        };
+
+        assert_eq!(
+            risk.check(
+                &Command::AmendOrder(crate::model::AmendOrder {
+                    order_id: 20,
+                    price_tick: None,
+                    qty: Some(2),
+                }),
+                &accounts,
+                context,
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            risk.check(
+                &Command::AmendOrder(crate::model::AmendOrder {
+                    order_id: 20,
+                    price_tick: None,
+                    qty: Some(6),
+                }),
+                &accounts,
+                context,
+            ),
+            Err(RiskRejectReason::InsufficientMargin)
+        );
+    }
+
+    #[test]
+    fn distressed_reduce_only_order_cannot_increase_worst_case_open_order_exposure() {
+        let mut accounts = PerpAccountStore::new(
+            PerpClearingConfig {
+                leverage: 10,
+                maintenance_margin_ppm: 50_000,
+                ..PerpClearingConfig::default()
+            },
+            100,
+        )
+        .unwrap();
+        accounts.create_account(1, 200);
+        accounts.create_account(99, 10_000);
+        accounts
+            .settle_trade(&Trade {
+                trade_id: 1,
+                maker_order_id: 10,
+                maker_account_id: 99,
+                taker_order_id: 11,
+                taker_account_id: 1,
+                price_tick: 100,
+                qty: 10,
+                taker_side: Side::Buy,
+            })
+            .unwrap();
+        accounts
+            .reserve_resting_order(20, 1, Side::Sell, 100, 20)
+            .unwrap();
+        accounts.set_mark_price_tick(90).unwrap();
+        let risk = PerpRiskEngine::new(PerpRiskConfig::default());
+
+        assert_eq!(
+            risk.check(
+                &reduce_only(1, Side::Sell, OrderKind::Market, 5),
+                &accounts,
+                RiskContext {
+                    best_bid: None,
+                    best_ask: None,
+                    fill_quote: FillQuote::default(),
+                },
+            ),
+            Err(RiskRejectReason::InsufficientMargin)
+        );
+    }
+
+    #[test]
+    fn perp_portfolio_projection_rejects_checked_arithmetic_overflow() {
+        let mut accounts = PerpAccountStore::new(PerpClearingConfig::default(), i64::MAX).unwrap();
+        accounts.create_account(1, i128::MAX);
+        accounts
+            .reserve_resting_order(1, 1, Side::Buy, i64::MAX, u64::MAX)
+            .unwrap();
+        let risk = PerpRiskEngine::new(PerpRiskConfig::default());
+
+        assert_eq!(
+            risk.check(
+                &limit(1, Side::Buy, i64::MAX, 4),
+                &accounts,
+                RiskContext {
+                    best_bid: None,
+                    best_ask: None,
+                    fill_quote: FillQuote::default(),
+                },
+            ),
+            Err(RiskRejectReason::MaxOrderNotionalExceeded)
         );
     }
 }

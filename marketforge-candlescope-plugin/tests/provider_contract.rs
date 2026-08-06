@@ -6,7 +6,7 @@ use exchange_core::{
 };
 use marketforge_candlescope_plugin::{
     MARKET_DATA_CONTRIBUTION_ID, MARKETFORGE_CONTROL_CONTRIBUTION_ID, PluginService,
-    SYMBOLS_CONTRIBUTION_ID,
+    RemoteBackendConfig, SYMBOLS_CONTRIBUTION_ID,
 };
 use serde_json::{Value, json};
 
@@ -150,6 +150,165 @@ fn apply_crossing_order(service: &mut PluginService) {
         .unwrap();
     assert!(result.accepted);
     assert_eq!(result.trade_count, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn attaches_to_remote_backend_and_projects_incremental_market_data() {
+    use exchange_core::OrderAction;
+    use exchange_server::{HttpTradingClient, SubmitOrderRequest};
+    use tokio::sync::oneshot;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let base_url = format!("http://{address}");
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let server = tokio::spawn(exchange_server::serve_listener_with_shutdown(
+        listener,
+        async move {
+            let _ = shutdown_rx.await;
+        },
+    ));
+    tokio::task::yield_now().await;
+
+    let result = tokio::task::spawn_blocking(move || {
+        let scenario = scenario();
+        let client = HttpTradingClient::new(&base_url);
+        client.create_room(&scenario).unwrap();
+
+        let config = RemoteBackendConfig::new(&base_url).unwrap();
+        let mut service = PluginService::with_remote_backend(config);
+        service.activate(7);
+        let attached = service
+            .invoke(
+                MARKETFORGE_CONTROL_CONTRIBUTION_ID,
+                &json!({
+                    "operation": "session.attach",
+                    "scenario": scenario,
+                    "epochMs": EPOCH_MS,
+                }),
+                true,
+            )
+            .unwrap();
+        assert_eq!(attached["attached"]["roomId"], "candlescope-room");
+        assert_eq!(attached["attached"]["seedExecutionCount"], 2);
+        assert_eq!(service.health_check()["sessionMode"], "remote");
+
+        let opened = service
+            .invoke(
+                MARKET_DATA_CONTRIBUTION_ID,
+                &json!({
+                    "operation": "stream.open",
+                    "hostStreamId": "remote-bars",
+                    "descriptor": descriptor("kline", Some("1m")),
+                    "batchLimit": 16,
+                    "resync": false,
+                }),
+                false,
+            )
+            .unwrap();
+        let stream_id = opened["providerStreamId"].as_str().unwrap();
+
+        client
+            .submit_order_for(
+                "candlescope-room",
+                "V-BTC-SPOT",
+                &SubmitOrderRequest {
+                    participant_id: "candlescope-test".to_string(),
+                    instrument_id: None,
+                    account_id: 20,
+                    action: OrderAction::PlaceLimit {
+                        side: Side::Buy,
+                        price_tick: 105,
+                        qty: 3,
+                    },
+                },
+            )
+            .unwrap();
+
+        let update = service
+            .invoke(
+                MARKET_DATA_CONTRIBUTION_ID,
+                &json!({
+                    "operation": "stream.poll",
+                    "providerStreamId": stream_id,
+                    "afterSequence": 0,
+                    "batchLimit": 16,
+                    "waitMs": 250,
+                }),
+                false,
+            )
+            .unwrap();
+        assert_eq!(update["events"][0]["eventType"], "bar.updated");
+        assert_eq!(update["events"][0]["payload"]["volume"], 3.0);
+        let after_update = update["nextSequence"].as_u64().unwrap() - 1;
+
+        service
+            .invoke(
+                MARKETFORGE_CONTROL_CONTRIBUTION_ID,
+                &json!({
+                    "operation": "clock.advance",
+                    "roomId": "candlescope-room",
+                    "steps": 60,
+                }),
+                true,
+            )
+            .unwrap();
+        let closed_bar = service
+            .invoke(
+                MARKET_DATA_CONTRIBUTION_ID,
+                &json!({
+                    "operation": "stream.poll",
+                    "providerStreamId": stream_id,
+                    "afterSequence": after_update,
+                    "batchLimit": 16,
+                    "waitMs": 0,
+                }),
+                false,
+            )
+            .unwrap();
+        assert!(
+            closed_bar["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|event| event["eventType"] == "bar.closed")
+        );
+
+        service
+            .invoke(
+                MARKETFORGE_CONTROL_CONTRIBUTION_ID,
+                &json!({"operation": "room.pause", "roomId": "candlescope-room"}),
+                true,
+            )
+            .unwrap();
+        service
+            .invoke(
+                MARKETFORGE_CONTROL_CONTRIBUTION_ID,
+                &json!({"operation": "room.resume", "roomId": "candlescope-room"}),
+                true,
+            )
+            .unwrap();
+        service
+            .invoke(
+                MARKETFORGE_CONTROL_CONTRIBUTION_ID,
+                &json!({"operation": "room.close", "roomId": "candlescope-room"}),
+                true,
+            )
+            .unwrap();
+        let described = service
+            .invoke(
+                MARKETFORGE_CONTROL_CONTRIBUTION_ID,
+                &json!({"operation": "session.describe"}),
+                false,
+            )
+            .unwrap();
+        assert_eq!(described["session"]["status"], "closed");
+    })
+    .await;
+
+    let _ = shutdown_tx.send(());
+    result.unwrap();
+    server.await.unwrap().unwrap();
 }
 
 #[test]

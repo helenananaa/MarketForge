@@ -11,8 +11,8 @@ use crate::{
     market::{
         ExchangeConfig, InstrumentId, MarketConfig, MarketConfigError, MarketEngine, MarketKind,
     },
-    model::{AccountId, BookSnapshot, Command, OrderId},
-    perp::{PerpAccountSnapshot, PerpClearingEvent},
+    model::{AccountId, BookSnapshot, Command, OrderId, Side},
+    perp::{PerpAccountSnapshot, PerpClearingEvent, PerpCrossMarginContext},
     portfolio::{PortfolioAccountSnapshot, PortfolioStore},
     spot::{SpotAccountSnapshot, SpotClearingEvent},
     trading::{PerpTradingExecution, SpotTradingExecution},
@@ -238,10 +238,16 @@ impl ExchangeActor {
         if amount > 0 && !self.config.accepts_deposit_asset(&asset_id) {
             return Err(VenueTransferRejectReason::AssetNotAcceptedByVenue);
         }
-        self.venue_accounts
+        let mut staged = self.clone();
+        staged
+            .venue_accounts
             .apply_delta(account_id, asset_id, amount)
-            .map(|_| ())
-            .map_err(reject_reason_from_venue_account_error)
+            .map_err(reject_reason_from_venue_account_error)?;
+        staged
+            .sync_all_accounts_after_external_balance_change_inner()
+            .map_err(|_| VenueTransferRejectReason::BalanceOverflow)?;
+        *self = staged;
+        Ok(())
     }
 
     pub fn venue_balance_snapshot(
@@ -256,31 +262,32 @@ impl ExchangeActor {
         self.clock
     }
 
-    pub fn advance_clock(&mut self, steps: u64) -> Vec<VenueTransfer> {
-        let mut completed = Vec::new();
-        for _ in 0..steps {
-            self.clock.advance_step();
-            let due = self
-                .transfers
-                .process_due(&mut self.venue_accounts, self.clock.step());
-            for transfer in &due {
-                self.apply_portfolio_effect_for_finished_transfer(transfer);
-            }
-            completed.extend(due);
+    pub fn advance_clock(&mut self, steps: u64) -> Result<Vec<VenueTransfer>, ClearingError> {
+        let mut staged = self.clone();
+        let completed = staged.advance_clock_venue_only(steps)?;
+        for transfer in &completed {
+            staged.apply_portfolio_effect_for_finished_transfer(transfer);
         }
-        completed
+        *self = staged;
+        Ok(completed)
     }
 
-    pub fn advance_clock_venue_only(&mut self, steps: u64) -> Vec<VenueTransfer> {
+    pub fn advance_clock_venue_only(
+        &mut self,
+        steps: u64,
+    ) -> Result<Vec<VenueTransfer>, ClearingError> {
+        let mut staged = self.clone();
         let mut completed = Vec::new();
         for _ in 0..steps {
-            self.clock.advance_step();
-            completed.extend(
-                self.transfers
-                    .process_due(&mut self.venue_accounts, self.clock.step()),
-            );
+            staged.clock.advance_step();
+            let due = staged
+                .transfers
+                .process_due(&mut staged.venue_accounts, staged.clock.step());
+            completed.extend(due);
         }
-        completed
+        staged.sync_all_accounts_after_external_balance_change_inner()?;
+        *self = staged;
+        Ok(completed)
     }
 
     pub fn submit_deposit(
@@ -288,8 +295,22 @@ impl ExchangeActor {
         account_id: AccountId,
         asset_id: impl Into<String>,
         amount: Money,
+    ) -> Result<VenueTransfer, ClearingError> {
+        let mut staged = self.clone();
+        let transfer = staged.submit_deposit_inner(account_id, asset_id.into(), amount);
+        if transfer.status != VenueTransferStatus::Rejected {
+            staged.sync_all_accounts_after_external_balance_change_inner()?;
+        }
+        *self = staged;
+        Ok(transfer)
+    }
+
+    fn submit_deposit_inner(
+        &mut self,
+        account_id: AccountId,
+        asset_id: String,
+        amount: Money,
     ) -> VenueTransfer {
-        let asset_id = asset_id.into();
         if amount <= 0 {
             return self.transfers.submit_deposit(
                 &mut self.venue_accounts,
@@ -342,8 +363,22 @@ impl ExchangeActor {
         account_id: AccountId,
         asset_id: impl Into<String>,
         amount: Money,
+    ) -> Result<VenueTransfer, ClearingError> {
+        let mut staged = self.clone();
+        let transfer = staged.submit_venue_deposit_inner(account_id, asset_id.into(), amount);
+        if transfer.status != VenueTransferStatus::Rejected {
+            staged.sync_all_accounts_after_external_balance_change_inner()?;
+        }
+        *self = staged;
+        Ok(transfer)
+    }
+
+    fn submit_venue_deposit_inner(
+        &mut self,
+        account_id: AccountId,
+        asset_id: String,
+        amount: Money,
     ) -> VenueTransfer {
-        let asset_id = asset_id.into();
         if amount > 0 && !self.config.accepts_deposit_asset(&asset_id) {
             return self.transfers.submit_rejected_deposit(
                 account_id,
@@ -384,8 +419,22 @@ impl ExchangeActor {
         account_id: AccountId,
         asset_id: impl Into<String>,
         amount: Money,
+    ) -> Result<VenueTransfer, ClearingError> {
+        let mut staged = self.clone();
+        let transfer = staged.submit_withdrawal_inner(account_id, asset_id.into(), amount);
+        if transfer.status != VenueTransferStatus::Rejected {
+            staged.sync_all_accounts_after_external_balance_change_inner()?;
+        }
+        *self = staged;
+        Ok(transfer)
+    }
+
+    fn submit_withdrawal_inner(
+        &mut self,
+        account_id: AccountId,
+        asset_id: String,
+        amount: Money,
     ) -> VenueTransfer {
-        let asset_id = asset_id.into();
         if amount > 0 && !self.config.accepts_withdrawal_asset(&asset_id) {
             return self.transfers.submit_rejected_withdrawal(
                 account_id,
@@ -425,8 +474,22 @@ impl ExchangeActor {
         account_id: AccountId,
         asset_id: impl Into<String>,
         amount: Money,
+    ) -> Result<VenueTransfer, ClearingError> {
+        let mut staged = self.clone();
+        let transfer = staged.submit_venue_withdrawal_inner(account_id, asset_id.into(), amount);
+        if transfer.status != VenueTransferStatus::Rejected {
+            staged.sync_all_accounts_after_external_balance_change_inner()?;
+        }
+        *self = staged;
+        Ok(transfer)
+    }
+
+    fn submit_venue_withdrawal_inner(
+        &mut self,
+        account_id: AccountId,
+        asset_id: String,
+        amount: Money,
     ) -> VenueTransfer {
-        let asset_id = asset_id.into();
         if amount > 0 && !self.config.accepts_withdrawal_asset(&asset_id) {
             return self.transfers.submit_rejected_withdrawal(
                 account_id,
@@ -513,9 +576,53 @@ impl ExchangeActor {
 
     pub(crate) fn normalize_after_restore(&mut self) -> Result<(), ClearingError> {
         let mut staged = self.clone();
+        staged
+            .venue_rules
+            .normalize_after_restore(staged.next_command_seq, staged.clock.step())?;
         staged.reconcile_market_reservations()?;
+        let perp_quote_assets = staged
+            .markets
+            .values()
+            .filter(|market| market.kind() == MarketKind::Perp)
+            .map(|market| market.config().instrument().quote_asset.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        for quote_asset in &perp_quote_assets {
+            staged.sync_perp_cross_margin_group(quote_asset)?;
+        }
+        staged.reconcile_market_reservations()?;
+        // The first pass may rebuild local reservations from a legacy
+        // snapshot. Refresh once more so every peer context observes those
+        // normalized values rather than the serialized stale values.
+        for quote_asset in &perp_quote_assets {
+            staged.sync_perp_cross_margin_group(quote_asset)?;
+        }
         *self = staged;
         Ok(())
+    }
+
+    fn sync_all_accounts_after_external_balance_change_inner(
+        &mut self,
+    ) -> Result<(), ClearingError> {
+        self.reconcile_market_reservations()?;
+        let spot_instrument_ids = self
+            .markets
+            .iter()
+            .filter(|(_, market)| market.kind() == MarketKind::Spot)
+            .map(|(instrument_id, _)| instrument_id.clone())
+            .collect::<Vec<_>>();
+        for instrument_id in spot_instrument_ids {
+            self.sync_market_accounts_from_venue(&instrument_id)?;
+        }
+        let perp_quote_assets = self
+            .markets
+            .values()
+            .filter(|market| market.kind() == MarketKind::Perp)
+            .map(|market| market.config().instrument().quote_asset.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        for quote_asset in perp_quote_assets {
+            self.sync_perp_cross_margin_group(&quote_asset)?;
+        }
+        self.reconcile_market_reservations()
     }
 
     pub fn primary_market(&self) -> &MarketActor {
@@ -647,11 +754,15 @@ impl ExchangeActor {
         }
 
         let command_seq = self.take_command_seq();
-        if let Some(rejection) = self.check_venue_rules(command_seq, instrument_id, &command)? {
+        let affected_perp_quote_assets = self
+            .perp_quote_assets_affected_by_instrument(instrument_id)
+            .expect("instrument existence was checked above");
+        if let Some(rejection) = self.check_venue_rules(instrument_id, &command)? {
             return Ok(ActorExecution {
                 room_id: self.room_id.clone(),
                 instrument_id: instrument_id.to_string(),
                 command_seq,
+                market_time_ms: self.clock.market_time_ms(),
                 status: self.status(),
                 result: ActorExecutionResult::Rejected(ActorRejectReason::VenueRule(rejection)),
             });
@@ -667,6 +778,7 @@ impl ExchangeActor {
         let mut execution = staged.market_mut(instrument_id)?.apply(command);
         execution.command_seq = command_seq;
         execution.instrument_id = instrument_id.to_string();
+        execution.market_time_ms = staged.clock.market_time_ms();
         if matches!(execution.result, ActorExecutionResult::Accepted(_)) {
             if let Err(error) = staged.reconcile_market_reservations() {
                 return Ok(self.clearing_rejection(instrument_id, command_seq, error));
@@ -674,6 +786,11 @@ impl ExchangeActor {
             if let Err(error) = staged.sync_venue_accounts_from_execution(instrument_id, &execution)
             {
                 return Ok(self.clearing_rejection(instrument_id, command_seq, error));
+            }
+            for quote_asset in &affected_perp_quote_assets {
+                if let Err(error) = staged.sync_perp_cross_margin_group(quote_asset) {
+                    return Ok(self.clearing_rejection(instrument_id, command_seq, error));
+                }
             }
         }
         *self = staged;
@@ -693,6 +810,11 @@ impl ExchangeActor {
         }
 
         let command_seq = self.take_command_seq();
+        let perp_quote_asset = self
+            .markets
+            .get(instrument_id)
+            .filter(|market| market.kind() == MarketKind::Perp)
+            .map(|market| market.config().instrument().quote_asset.clone());
         let mut staged = self.clone();
         if let Err(error) = staged.reconcile_market_reservations() {
             return Ok(self.clearing_rejection(instrument_id, command_seq, error));
@@ -705,11 +827,17 @@ impl ExchangeActor {
             .liquidate_account(account_id, order_id);
         execution.command_seq = command_seq;
         execution.instrument_id = instrument_id.to_string();
+        execution.market_time_ms = staged.clock.market_time_ms();
         if matches!(execution.result, ActorExecutionResult::Accepted(_)) {
             if let Err(error) = staged.reconcile_market_reservations() {
                 return Ok(self.clearing_rejection(instrument_id, command_seq, error));
             }
             if let Err(error) = staged.sync_venue_accounts_from_execution(instrument_id, &execution)
+            {
+                return Ok(self.clearing_rejection(instrument_id, command_seq, error));
+            }
+            if let Some(quote_asset) = &perp_quote_asset
+                && let Err(error) = staged.sync_perp_cross_margin_group(quote_asset)
             {
                 return Ok(self.clearing_rejection(instrument_id, command_seq, error));
             }
@@ -750,6 +878,78 @@ impl ExchangeActor {
         instrument_id: &str,
     ) -> Result<AccountSnapshots, ActorRejectReason> {
         Ok(self.market(instrument_id)?.account_snapshots())
+    }
+
+    pub fn pending_liquidation_accounts_for(
+        &self,
+        instrument_id: &str,
+    ) -> Result<Vec<AccountId>, ActorRejectReason> {
+        Ok(self.market(instrument_id)?.pending_liquidation_accounts())
+    }
+
+    fn perp_quote_assets_affected_by_instrument(
+        &self,
+        instrument_id: &str,
+    ) -> Option<std::collections::BTreeSet<String>> {
+        let market = self.markets.get(instrument_id)?;
+        let instrument = market.config().instrument();
+        let affected_assets = match market.kind() {
+            MarketKind::Spot => [
+                instrument.base_asset.as_str(),
+                instrument.quote_asset.as_str(),
+            ]
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+            MarketKind::Perp => [instrument.quote_asset.as_str()]
+                .into_iter()
+                .collect::<std::collections::BTreeSet<_>>(),
+        };
+        Some(
+            self.markets
+                .values()
+                .filter(|candidate| {
+                    candidate.kind() == MarketKind::Perp
+                        && affected_assets
+                            .contains(candidate.config().instrument().quote_asset.as_str())
+                })
+                .map(|candidate| candidate.config().instrument().quote_asset.clone())
+                .collect(),
+        )
+    }
+
+    pub fn cross_margin_collateral_orders_for_liquidation(
+        &self,
+        instrument_id: &str,
+        account_id: AccountId,
+    ) -> Result<Vec<(InstrumentId, OrderId)>, ActorRejectReason> {
+        let target = self.market(instrument_id)?;
+        if target.kind() != MarketKind::Perp {
+            return Err(ActorRejectReason::WrongMarketKind);
+        }
+        let quote_asset = &target.config().instrument().quote_asset;
+        Ok(self
+            .markets
+            .iter()
+            .filter(|(peer_instrument_id, market)| {
+                if peer_instrument_id.as_str() == instrument_id {
+                    return false;
+                }
+                let instrument = market.config().instrument();
+                match market.kind() {
+                    MarketKind::Perp => instrument.quote_asset == *quote_asset,
+                    MarketKind::Spot => {
+                        instrument.quote_asset == *quote_asset
+                            || instrument.base_asset == *quote_asset
+                    }
+                }
+            })
+            .flat_map(|(peer_instrument_id, market)| {
+                market
+                    .collateral_resting_order_ids_for_account(account_id, quote_asset)
+                    .into_iter()
+                    .map(|order_id| (peer_instrument_id.clone(), order_id))
+            })
+            .collect())
     }
 
     pub fn order_owner_for(
@@ -805,7 +1005,6 @@ impl ExchangeActor {
 
     fn check_venue_rules(
         &self,
-        command_seq: ActorSeq,
         instrument_id: &str,
         command: &Command,
     ) -> Result<Option<VenueRuleRejectReason>, ActorRejectReason> {
@@ -816,7 +1015,7 @@ impl ExchangeActor {
         Ok(self
             .venue_rules
             .check_order(VenueRuleOrderContext {
-                command_seq,
+                market_step: self.clock.step(),
                 market_time_ms: self.clock.market_time_ms(),
                 instrument_id,
                 instrument,
@@ -837,6 +1036,7 @@ impl ExchangeActor {
             room_id: self.room_id.clone(),
             instrument_id: instrument_id.to_string(),
             command_seq,
+            market_time_ms: self.clock.market_time_ms(),
             status: self.status(),
             result: ActorExecutionResult::Rejected(ActorRejectReason::Clearing(error)),
         }
@@ -851,28 +1051,22 @@ impl ExchangeActor {
             .get(instrument_id)
             .ok_or(ClearingError::AccountNotFound)?;
         let instrument = market.config().instrument().clone();
-        let account_reservations = match market.account_snapshots() {
-            AccountSnapshots::Spot(accounts) => accounts
-                .into_iter()
-                .map(|account| {
-                    (
-                        account.account_id,
-                        account.reserved_cash,
-                        account.reserved_position,
-                    )
-                })
-                .collect::<Vec<_>>(),
-            AccountSnapshots::Perp(accounts) => accounts
-                .into_iter()
-                .map(|account| {
-                    Ok((
-                        account.account_id,
-                        perp_collateral_reservation(&account)?,
-                        0,
-                    ))
-                })
-                .collect::<Result<Vec<_>, ClearingError>>()?,
+        if market.kind() == MarketKind::Perp {
+            return self.sync_perp_cross_margin_group(&instrument.quote_asset);
+        }
+        let AccountSnapshots::Spot(accounts) = market.account_snapshots() else {
+            return Err(ClearingError::WrongMarketKind);
         };
+        let account_reservations = accounts
+            .into_iter()
+            .map(|account| {
+                (
+                    account.account_id,
+                    account.reserved_cash,
+                    account.reserved_position,
+                )
+            })
+            .collect::<Vec<_>>();
 
         for (account_id, own_quote_reservation, own_base_reservation) in account_reservations {
             let quote_balance = self
@@ -902,6 +1096,95 @@ impl ExchangeActor {
                 .ok_or(ClearingError::AccountNotFound)?
                 .sync_venue_balances(account_id, quote_balance, base_balance)?;
         }
+        Ok(())
+    }
+
+    fn sync_perp_cross_margin_group(&mut self, quote_asset: &str) -> Result<(), ClearingError> {
+        let market_accounts = self
+            .markets
+            .iter()
+            .filter(|(_, market)| {
+                market.kind() == MarketKind::Perp
+                    && market.config().instrument().quote_asset == quote_asset
+            })
+            .map(|(instrument_id, market)| {
+                let AccountSnapshots::Perp(accounts) = market.account_snapshots() else {
+                    unreachable!("perp market must expose perp accounts");
+                };
+                (instrument_id.clone(), accounts)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let liquidation_pending_accounts = self
+            .markets
+            .iter()
+            .filter(|(_, market)| {
+                market.kind() == MarketKind::Perp
+                    && market.config().instrument().quote_asset == quote_asset
+            })
+            .flat_map(|(_, market)| market.pending_liquidation_accounts())
+            .collect::<std::collections::BTreeSet<_>>();
+
+        for (target_instrument_id, target_accounts) in &market_accounts {
+            for target_account in target_accounts {
+                let mut context = PerpCrossMarginContext {
+                    liquidation_pending: liquidation_pending_accounts
+                        .contains(&target_account.account_id),
+                    ..PerpCrossMarginContext::default()
+                };
+                for (other_instrument_id, other_accounts) in &market_accounts {
+                    if other_instrument_id == target_instrument_id {
+                        continue;
+                    }
+                    let Some(other_account) = other_accounts
+                        .iter()
+                        .find(|account| account.account_id == target_account.account_id)
+                    else {
+                        continue;
+                    };
+                    context.other_unrealized_pnl = context
+                        .other_unrealized_pnl
+                        .checked_add(other_account.unrealized_pnl)
+                        .ok_or(ClearingError::BalanceOverflow)?;
+                    context.other_required_margin = context
+                        .other_required_margin
+                        .checked_add(perp_collateral_reservation(other_account)?)
+                        .ok_or(ClearingError::BalanceOverflow)?;
+                    context.other_initial_margin = context
+                        .other_initial_margin
+                        .checked_add(other_account.initial_margin)
+                        .ok_or(ClearingError::BalanceOverflow)?;
+                    context.other_maintenance_margin = context
+                        .other_maintenance_margin
+                        .checked_add(other_account.maintenance_margin)
+                        .ok_or(ClearingError::BalanceOverflow)?;
+                    context.other_position_open |= other_account.position_qty != 0;
+                }
+
+                let cross_group_reservation = perp_collateral_reservation(target_account)?
+                    .checked_add(context.other_required_margin)
+                    .ok_or(ClearingError::BalanceOverflow)?;
+                let cash_balance = self
+                    .venue_accounts
+                    .balance_snapshot(target_account.account_id, quote_asset)
+                    .map(|balance| {
+                        balance
+                            .available
+                            .checked_add(cross_group_reservation)
+                            .ok_or(ClearingError::BalanceOverflow)
+                    })
+                    .transpose()?
+                    .unwrap_or(cross_group_reservation);
+                self.markets
+                    .get_mut(target_instrument_id)
+                    .ok_or(ClearingError::AccountNotFound)?
+                    .sync_perp_cross_margin_account(
+                        target_account.account_id,
+                        cash_balance,
+                        context,
+                    )?;
+            }
+        }
+
         Ok(())
     }
 
@@ -957,8 +1240,6 @@ impl ExchangeActor {
         let ActorExecutionResult::Accepted(market_execution) = &execution.result else {
             return Ok(());
         };
-        let command_seq = execution.command_seq;
-
         match market_execution {
             MarketExecution::Spot(spot_execution) => {
                 for event in &spot_execution.clearing_events {
@@ -969,7 +1250,7 @@ impl ExchangeActor {
                     )?;
                 }
                 self.venue_rules.record_spot_clearing(
-                    command_seq,
+                    self.clock.step(),
                     &instrument.instrument_id,
                     &spot_execution.clearing_events,
                 );
@@ -1306,6 +1587,21 @@ impl MarketActor {
         Ok(())
     }
 
+    fn sync_perp_cross_margin_account(
+        &mut self,
+        account_id: AccountId,
+        cash_balance: Money,
+        context: PerpCrossMarginContext,
+    ) -> Result<(), ClearingError> {
+        match &mut self.engine {
+            MarketEngine::Perp(engine) => {
+                engine.sync_cross_margin_account(account_id, cash_balance, context)?;
+                Ok(())
+            }
+            MarketEngine::Spot(_) => Err(ClearingError::WrongMarketKind),
+        }
+    }
+
     pub fn apply(&mut self, command: Command) -> ActorExecution {
         let seq = self.take_command_seq();
 
@@ -1314,6 +1610,7 @@ impl MarketActor {
                 room_id: self.room_id.clone(),
                 instrument_id: self.config.instrument_id().to_string(),
                 command_seq: seq,
+                market_time_ms: 0,
                 status: self.status,
                 result: ActorExecutionResult::Rejected(ActorRejectReason::MarketClosed),
             };
@@ -1324,6 +1621,7 @@ impl MarketActor {
                 room_id: self.room_id.clone(),
                 instrument_id: self.config.instrument_id().to_string(),
                 command_seq: seq,
+                market_time_ms: 0,
                 status: self.status,
                 result: ActorExecutionResult::Rejected(ActorRejectReason::MarketPaused),
             };
@@ -1338,6 +1636,7 @@ impl MarketActor {
             room_id: self.room_id.clone(),
             instrument_id: self.config.instrument_id().to_string(),
             command_seq: seq,
+            market_time_ms: 0,
             status: self.status,
             result,
         }
@@ -1355,6 +1654,7 @@ impl MarketActor {
                 room_id: self.room_id.clone(),
                 instrument_id: self.config.instrument_id().to_string(),
                 command_seq: seq,
+                market_time_ms: 0,
                 status: self.status,
                 result: ActorExecutionResult::Rejected(ActorRejectReason::MarketClosed),
             };
@@ -1374,6 +1674,7 @@ impl MarketActor {
             room_id: self.room_id.clone(),
             instrument_id: self.config.instrument_id().to_string(),
             command_seq: seq,
+            market_time_ms: 0,
             status: self.status,
             result,
         }
@@ -1389,6 +1690,37 @@ impl MarketActor {
 
     pub fn account_snapshots(&self) -> AccountSnapshots {
         self.engine.account_snapshots()
+    }
+
+    pub fn pending_liquidation_accounts(&self) -> Vec<AccountId> {
+        self.engine.pending_liquidation_accounts()
+    }
+
+    fn collateral_resting_order_ids_for_account(
+        &self,
+        account_id: AccountId,
+        collateral_asset: &str,
+    ) -> Vec<OrderId> {
+        match &self.engine {
+            MarketEngine::Perp(engine) => engine.resting_order_ids_for_account(account_id),
+            MarketEngine::Spot(engine) => {
+                let instrument = self.config.instrument();
+                let mut order_ids = Vec::new();
+                if instrument.quote_asset == collateral_asset {
+                    order_ids.extend(
+                        engine.resting_order_ids_for_account_on_side(account_id, Side::Buy),
+                    );
+                }
+                if instrument.base_asset == collateral_asset {
+                    order_ids.extend(
+                        engine.resting_order_ids_for_account_on_side(account_id, Side::Sell),
+                    );
+                }
+                order_ids.sort_unstable();
+                order_ids.dedup();
+                order_ids
+            }
+        }
     }
 
     pub fn order_owner(&self, order_id: OrderId) -> Option<AccountId> {
@@ -1407,6 +1739,8 @@ pub struct ActorExecution {
     pub room_id: RoomId,
     pub instrument_id: InstrumentId,
     pub command_seq: ActorSeq,
+    /// Authoritative simulation time when this command was evaluated.
+    pub market_time_ms: u64,
     pub status: MarketStatus,
     pub result: ActorExecutionResult,
 }
@@ -1490,6 +1824,13 @@ impl MarketEngine {
         match self {
             Self::Spot(engine) => AccountSnapshots::Spot(engine.account_snapshots()),
             Self::Perp(engine) => AccountSnapshots::Perp(engine.account_snapshots()),
+        }
+    }
+
+    pub fn pending_liquidation_accounts(&self) -> Vec<AccountId> {
+        match self {
+            Self::Spot(_) => Vec::new(),
+            Self::Perp(engine) => engine.pending_liquidation_accounts(),
         }
     }
 
@@ -1911,7 +2252,7 @@ mod tests {
                 .account_snapshot_for("binance:btc-usdt:perp", 20)
                 .unwrap(),
             Some(AccountSnapshot::Perp(PerpAccountSnapshot {
-                reserved_margin: 7,
+                reserved_margin: 0,
                 margin_status: PerpMarginStatus::Liquidatable,
                 ..
             }))
@@ -1921,7 +2262,7 @@ mod tests {
                 .venue_balance_snapshot(20, "USDT")
                 .unwrap()
                 .reserved,
-            107
+            100
         );
 
         let execution = exchange
@@ -2319,13 +2660,13 @@ mod tests {
         assert_eq!(open_balance.reserved, 100);
         assert_eq!(open_balance.available, 100);
 
-        let blocked = exchange.submit_withdrawal(20, "USDT", 200);
+        let blocked = exchange.submit_withdrawal(20, "USDT", 200).unwrap();
         assert_eq!(blocked.status, VenueTransferStatus::Rejected);
         assert_eq!(
             blocked.reject_reason,
             Some(VenueTransferRejectReason::InsufficientAvailableBalance)
         );
-        let allowed = exchange.submit_withdrawal(20, "USDT", 100);
+        let allowed = exchange.submit_withdrawal(20, "USDT", 100).unwrap();
         assert_eq!(allowed.status, VenueTransferStatus::Completed);
         let after_withdrawal = exchange.venue_balance_snapshot(20, "USDT").unwrap();
         assert_eq!(after_withdrawal.total, 100);
@@ -2400,13 +2741,13 @@ mod tests {
             }))
         ));
 
-        let blocked = exchange.submit_withdrawal(20, "USDT", 51);
+        let blocked = exchange.submit_withdrawal(20, "USDT", 51).unwrap();
         assert_eq!(blocked.status, VenueTransferStatus::Rejected);
         assert_eq!(
             blocked.reject_reason,
             Some(VenueTransferRejectReason::InsufficientAvailableBalance)
         );
-        let allowed = exchange.submit_withdrawal(20, "USDT", 50);
+        let allowed = exchange.submit_withdrawal(20, "USDT", 50).unwrap();
         assert_eq!(allowed.status, VenueTransferStatus::Completed);
         let balance = exchange.venue_balance_snapshot(20, "USDT").unwrap();
         assert_eq!(balance.total, 150);
@@ -2436,10 +2777,10 @@ mod tests {
             .apply_to_instrument("binance:btc-usdt:perp", market(2, 20, Side::Buy, 10))
             .unwrap();
         exchange
-            .apply_to_instrument("binance:eth-usdt:perp", limit(3, 11, Side::Sell, 200, 5))
+            .apply_to_instrument("binance:eth-usdt:perp", limit(3, 11, Side::Sell, 100, 10))
             .unwrap();
         exchange
-            .apply_to_instrument("binance:eth-usdt:perp", market(4, 20, Side::Buy, 5))
+            .apply_to_instrument("binance:eth-usdt:perp", market(4, 20, Side::Buy, 10))
             .unwrap();
 
         let two_positions = exchange.venue_balance_snapshot(20, "USDT").unwrap();
@@ -2467,6 +2808,322 @@ mod tests {
     }
 
     #[test]
+    fn perp_mark_move_keeps_venue_collateral_at_or_above_risk_requirement() {
+        let config = ExchangeConfig::new(
+            "binance",
+            vec![venue_perp_config("binance:btc-usdt:perp", "BTC", "USDT")],
+        )
+        .unwrap();
+        let mut exchange = ExchangeActor::new("room-1", config).unwrap();
+        exchange.create_account(10, 10_000);
+        exchange.create_account(20, 300);
+
+        exchange
+            .apply_to_instrument("binance:btc-usdt:perp", limit(1, 10, Side::Sell, 100, 10))
+            .unwrap();
+        exchange
+            .apply_to_instrument("binance:btc-usdt:perp", market(2, 20, Side::Buy, 10))
+            .unwrap();
+        exchange
+            .apply_to_instrument(
+                "binance:btc-usdt:perp",
+                Command::SetMarkPrice(SetMarkPrice { price_tick: 110 }),
+            )
+            .unwrap();
+
+        assert!(matches!(
+            exchange
+                .account_snapshot_for("binance:btc-usdt:perp", 20)
+                .unwrap(),
+            Some(AccountSnapshot::Perp(PerpAccountSnapshot {
+                initial_margin: 100,
+                reserved_margin: 10,
+                equity: 400,
+                ..
+            }))
+        ));
+        let marked_up = exchange.venue_balance_snapshot(20, "USDT").unwrap();
+        assert_eq!(marked_up.reserved, 110);
+        assert_eq!(marked_up.available, 190);
+
+        exchange
+            .apply_to_instrument(
+                "binance:btc-usdt:perp",
+                Command::SetMarkPrice(SetMarkPrice { price_tick: 90 }),
+            )
+            .unwrap();
+        assert!(matches!(
+            exchange
+                .account_snapshot_for("binance:btc-usdt:perp", 20)
+                .unwrap(),
+            Some(AccountSnapshot::Perp(PerpAccountSnapshot {
+                initial_margin: 100,
+                reserved_margin: 0,
+                equity: 200,
+                ..
+            }))
+        ));
+        let marked_down = exchange.venue_balance_snapshot(20, "USDT").unwrap();
+        assert_eq!(marked_down.reserved, 100);
+        assert_eq!(marked_down.available, 200);
+    }
+
+    #[test]
+    fn cross_margin_status_uses_portfolio_equity_and_aggregate_thresholds() {
+        let config = ExchangeConfig::new(
+            "binance",
+            vec![
+                venue_perp_config("binance:btc-usdt:perp", "BTC", "USDT"),
+                venue_perp_config("binance:eth-usdt:perp", "ETH", "USDT"),
+            ],
+        )
+        .unwrap();
+        let mut exchange = ExchangeActor::new("room-1", config).unwrap();
+        exchange.create_account(10, 10_000);
+        exchange.create_account(11, 10_000);
+        exchange.create_account(20, 300);
+
+        exchange
+            .apply_to_instrument("binance:btc-usdt:perp", limit(1, 10, Side::Sell, 100, 10))
+            .unwrap();
+        exchange
+            .apply_to_instrument("binance:btc-usdt:perp", market(2, 20, Side::Buy, 10))
+            .unwrap();
+        exchange
+            .apply_to_instrument("binance:eth-usdt:perp", limit(3, 11, Side::Sell, 100, 10))
+            .unwrap();
+        exchange
+            .apply_to_instrument("binance:eth-usdt:perp", market(4, 20, Side::Buy, 10))
+            .unwrap();
+
+        exchange
+            .apply_to_instrument(
+                "binance:btc-usdt:perp",
+                Command::SetMarkPrice(SetMarkPrice { price_tick: 80 }),
+            )
+            .unwrap();
+        for instrument_id in ["binance:btc-usdt:perp", "binance:eth-usdt:perp"] {
+            assert!(matches!(
+                exchange.account_snapshot_for(instrument_id, 20).unwrap(),
+                Some(AccountSnapshot::Perp(PerpAccountSnapshot {
+                    equity: 100,
+                    available_cash: -100,
+                    portfolio_initial_margin: 200,
+                    portfolio_maintenance_margin: 90,
+                    margin_status: PerpMarginStatus::MarginCall,
+                    ..
+                }))
+            ));
+        }
+
+        exchange
+            .apply_to_instrument(
+                "binance:btc-usdt:perp",
+                Command::SetMarkPrice(SetMarkPrice { price_tick: 78 }),
+            )
+            .unwrap();
+        for instrument_id in ["binance:btc-usdt:perp", "binance:eth-usdt:perp"] {
+            assert!(matches!(
+                exchange.account_snapshot_for(instrument_id, 20).unwrap(),
+                Some(AccountSnapshot::Perp(PerpAccountSnapshot {
+                    equity: 80,
+                    portfolio_initial_margin: 200,
+                    portfolio_maintenance_margin: 89,
+                    margin_status: PerpMarginStatus::Liquidatable,
+                    ..
+                }))
+            ));
+        }
+    }
+
+    #[test]
+    fn cross_market_unrealized_loss_and_open_orders_reduce_perp_buying_power() {
+        let config = ExchangeConfig::new(
+            "binance",
+            vec![
+                venue_perp_config("binance:btc-usdt:perp", "BTC", "USDT"),
+                venue_perp_config("binance:eth-usdt:perp", "ETH", "USDT"),
+            ],
+        )
+        .unwrap();
+        let mut exchange = ExchangeActor::new("room-1", config).unwrap();
+        exchange.create_account(10, 10_000);
+        exchange.create_account(11, 10_000);
+        exchange.create_account(20, 300);
+        exchange.create_account(30, 10_000);
+
+        exchange
+            .apply_to_instrument("binance:btc-usdt:perp", limit(1, 10, Side::Sell, 100, 10))
+            .unwrap();
+        exchange
+            .apply_to_instrument("binance:btc-usdt:perp", market(2, 20, Side::Buy, 10))
+            .unwrap();
+        exchange
+            .apply_to_instrument("binance:eth-usdt:perp", limit(3, 11, Side::Sell, 100, 10))
+            .unwrap();
+        exchange
+            .apply_to_instrument("binance:eth-usdt:perp", market(4, 20, Side::Buy, 10))
+            .unwrap();
+        exchange
+            .apply_to_instrument("binance:eth-usdt:perp", limit(5, 20, Side::Buy, 100, 5))
+            .unwrap();
+        assert_eq!(
+            exchange
+                .venue_balance_snapshot(20, "USDT")
+                .unwrap()
+                .reserved,
+            250
+        );
+
+        exchange
+            .apply_to_instrument(
+                "binance:btc-usdt:perp",
+                Command::SetMarkPrice(SetMarkPrice { price_tick: 90 }),
+            )
+            .unwrap();
+        let rejected = exchange
+            .apply_to_instrument("binance:eth-usdt:perp", limit(6, 20, Side::Buy, 100, 1))
+            .unwrap();
+        let ActorExecutionResult::Accepted(MarketExecution::Perp(rejected)) = rejected.result
+        else {
+            panic!("expected a recorded perp risk rejection");
+        };
+        assert!(matches!(
+            rejected.events[0].event,
+            Event::RiskRejected {
+                order_id: 6,
+                reason: crate::model::RiskRejectReason::InsufficientMargin,
+            }
+        ));
+
+        let canceled = exchange
+            .apply_to_instrument(
+                "binance:eth-usdt:perp",
+                Command::CancelOrder(CancelOrder { order_id: 5 }),
+            )
+            .unwrap();
+        assert!(matches!(
+            canceled.result,
+            ActorExecutionResult::Accepted(MarketExecution::Perp(_))
+        ));
+        exchange
+            .apply_to_instrument("binance:eth-usdt:perp", limit(7, 30, Side::Buy, 100, 1))
+            .unwrap();
+        let reduced = exchange
+            .apply_to_instrument("binance:eth-usdt:perp", market(8, 20, Side::Sell, 1))
+            .unwrap();
+        assert!(matches!(
+            reduced.result,
+            ActorExecutionResult::Accepted(MarketExecution::Perp(_))
+        ));
+        assert!(matches!(
+            exchange
+                .account_snapshot_for("binance:eth-usdt:perp", 20)
+                .unwrap(),
+            Some(AccountSnapshot::Perp(PerpAccountSnapshot {
+                position_qty: 9,
+                ..
+            }))
+        ));
+    }
+
+    #[test]
+    fn spot_reservations_reduce_same_quote_perp_buying_power() {
+        let config = ExchangeConfig::new(
+            "binance",
+            vec![
+                venue_spot_config("binance:btc-usdt:spot", "BTC", "USDT"),
+                venue_perp_config("binance:eth-usdt:perp", "ETH", "USDT"),
+            ],
+        )
+        .unwrap();
+        let mut exchange = ExchangeActor::new("room-1", config).unwrap();
+        exchange.create_account(20, 200);
+
+        exchange
+            .apply_to_instrument("binance:btc-usdt:spot", limit(1, 20, Side::Buy, 100, 1))
+            .unwrap();
+        assert_eq!(
+            exchange
+                .venue_balance_snapshot(20, "USDT")
+                .unwrap()
+                .reserved,
+            100
+        );
+
+        let rejected = exchange
+            .apply_to_instrument("binance:eth-usdt:perp", limit(2, 20, Side::Buy, 100, 11))
+            .unwrap();
+        let ActorExecutionResult::Accepted(MarketExecution::Perp(rejected)) = rejected.result
+        else {
+            panic!("expected an auditable perp risk rejection");
+        };
+        assert!(rejected.events.iter().any(|event| matches!(
+            event.event,
+            Event::RiskRejected {
+                order_id: 2,
+                reason: crate::model::RiskRejectReason::InsufficientMargin,
+            }
+        )));
+    }
+
+    #[test]
+    fn spot_reservation_immediately_refreshes_same_asset_perp_margin_status() {
+        let config = ExchangeConfig::new(
+            "binance",
+            vec![
+                venue_spot_config("binance:btc-usdt:spot", "BTC", "USDT"),
+                venue_perp_config("binance:eth-usdt:perp", "ETH", "USDT"),
+            ],
+        )
+        .unwrap();
+        let mut exchange = ExchangeActor::new("room-1", config).unwrap();
+        exchange.create_account(10, 10_000);
+        exchange.create_account(20, 200);
+
+        exchange
+            .apply_to_instrument("binance:eth-usdt:perp", limit(1, 10, Side::Sell, 100, 10))
+            .unwrap();
+        exchange
+            .apply_to_instrument("binance:eth-usdt:perp", market(2, 20, Side::Buy, 10))
+            .unwrap();
+        exchange
+            .apply_to_instrument(
+                "binance:eth-usdt:perp",
+                Command::SetMarkPrice(SetMarkPrice { price_tick: 94 }),
+            )
+            .unwrap();
+        assert!(matches!(
+            exchange
+                .account_snapshot_for("binance:eth-usdt:perp", 20)
+                .unwrap(),
+            Some(AccountSnapshot::Perp(PerpAccountSnapshot {
+                cash_balance: 200,
+                equity: 140,
+                margin_status: PerpMarginStatus::Healthy,
+                ..
+            }))
+        ));
+
+        exchange
+            .apply_to_instrument("binance:btc-usdt:spot", limit(3, 20, Side::Buy, 100, 1))
+            .unwrap();
+
+        assert!(matches!(
+            exchange
+                .account_snapshot_for("binance:eth-usdt:perp", 20)
+                .unwrap(),
+            Some(AccountSnapshot::Perp(PerpAccountSnapshot {
+                cash_balance: 100,
+                equity: 40,
+                portfolio_maintenance_margin: 47,
+                margin_status: PerpMarginStatus::Liquidatable,
+                ..
+            }))
+        ));
+    }
+
+    #[test]
     fn completed_withdrawal_is_visible_to_market_risk_and_reserved_orders_block_withdrawal() {
         let config = ExchangeConfig::new(
             "binance",
@@ -2476,7 +3133,7 @@ mod tests {
         let mut exchange = ExchangeActor::new("room-1", config).unwrap();
         exchange.create_account(20, 1_000);
 
-        let withdrawal = exchange.submit_withdrawal(20, "USDT", 1_000);
+        let withdrawal = exchange.submit_withdrawal(20, "USDT", 1_000).unwrap();
         assert_eq!(withdrawal.status, VenueTransferStatus::Completed);
         assert_eq!(
             exchange.venue_balance_snapshot(20, "USDT").unwrap().total,
@@ -2502,7 +3159,7 @@ mod tests {
         exchange
             .apply_to_instrument("binance:btc-usdt:spot", limit(2, 20, Side::Buy, 100, 10))
             .unwrap();
-        let blocked = exchange.submit_withdrawal(20, "USDT", 1);
+        let blocked = exchange.submit_withdrawal(20, "USDT", 1).unwrap();
         assert_eq!(blocked.status, VenueTransferStatus::Rejected);
         assert_eq!(
             blocked.reject_reason,
@@ -2569,6 +3226,78 @@ mod tests {
     }
 
     #[test]
+    fn t_plus_n_counts_existing_sell_reservations_against_settled_position() {
+        let mut config = ExchangeConfig::new("binance", vec![btc_usdt_spot_config()]).unwrap();
+        config.venue_rules = VenueRuleConfig {
+            settlement: SettlementRuleConfig {
+                spot_sell_delay_steps: 10,
+            },
+            ..VenueRuleConfig::default()
+        };
+        let mut exchange = ExchangeActor::new("room-1", config).unwrap();
+        exchange
+            .create_spot_account_with_position(10, 1_000, 10)
+            .unwrap();
+        exchange
+            .create_spot_account_with_position(20, 1_000, 10)
+            .unwrap();
+
+        exchange.apply(limit(1, 10, Side::Sell, 100, 5));
+        exchange.apply(limit(2, 20, Side::Buy, 100, 5));
+
+        let settled_sale = exchange.apply(limit(3, 20, Side::Sell, 110, 10));
+        assert!(matches!(
+            settled_sale.result,
+            ActorExecutionResult::Accepted(MarketExecution::Spot(_))
+        ));
+        let unsettled_sale = exchange.apply(limit(4, 20, Side::Sell, 110, 1));
+        assert!(matches!(
+            unsettled_sale.result,
+            ActorExecutionResult::Rejected(ActorRejectReason::VenueRule(
+                VenueRuleRejectReason::SpotPositionUnsettled { .. }
+            ))
+        ));
+        assert_eq!(exchange.book_snapshot().asks[0].qty, 10);
+    }
+
+    #[test]
+    fn rejected_or_cancel_commands_do_not_advance_spot_settlement_time() {
+        let mut config = ExchangeConfig::new("binance", vec![btc_usdt_spot_config()]).unwrap();
+        config.venue_rules = VenueRuleConfig {
+            settlement: SettlementRuleConfig {
+                spot_sell_delay_steps: 2,
+            },
+            ..VenueRuleConfig::default()
+        };
+        let mut exchange = ExchangeActor::new("room-1", config).unwrap();
+        exchange
+            .create_spot_account_with_position(10, 1_000, 10)
+            .unwrap();
+        exchange.create_account(20, 1_000);
+
+        exchange.apply(limit(1, 10, Side::Sell, 100, 5));
+        exchange.apply(limit(2, 20, Side::Buy, 100, 5));
+        for order_id in 100..120 {
+            exchange.apply(Command::CancelOrder(CancelOrder { order_id }));
+        }
+
+        let still_unsettled = exchange.apply(limit(3, 20, Side::Sell, 100, 5));
+        assert!(matches!(
+            still_unsettled.result,
+            ActorExecutionResult::Rejected(ActorRejectReason::VenueRule(
+                VenueRuleRejectReason::SpotPositionUnsettled { .. }
+            ))
+        ));
+
+        exchange.advance_clock(2).unwrap();
+        let settled = exchange.apply(limit(4, 20, Side::Sell, 100, 5));
+        assert!(matches!(
+            settled.result,
+            ActorExecutionResult::Accepted(MarketExecution::Spot(_))
+        ));
+    }
+
+    #[test]
     fn exchange_actor_enforces_trading_session_against_market_time() {
         let mut config = ExchangeConfig::new("binance", vec![btc_usdt_spot_config()]).unwrap();
         config.venue_rules = VenueRuleConfig {
@@ -2589,7 +3318,7 @@ mod tests {
             ActorExecutionResult::Rejected(ActorRejectReason::VenueRule(_))
         ));
 
-        let completed_transfers = exchange.advance_clock(1);
+        let completed_transfers = exchange.advance_clock(1).unwrap();
         assert!(completed_transfers.is_empty());
 
         let open = exchange.apply(limit(2, 20, Side::Buy, 100, 1));
@@ -2613,7 +3342,7 @@ mod tests {
         exchange.create_account(20, 1_000);
         exchange.set_portfolio_balance(20, "USDT", 2_000);
 
-        let deposit = exchange.submit_deposit(20, "USDT", 500);
+        let deposit = exchange.submit_deposit(20, "USDT", 500).unwrap();
         assert_eq!(deposit.status, VenueTransferStatus::Pending);
         let pending_wallet = exchange.portfolio_snapshot(20);
         let usdt_wallet = pending_wallet
@@ -2628,13 +3357,13 @@ mod tests {
             1_000
         );
 
-        assert!(exchange.advance_clock(1).is_empty());
+        assert!(exchange.advance_clock(1).unwrap().is_empty());
         assert_eq!(
             exchange.venue_balance_snapshot(20, "USDT").unwrap().total,
             1_000
         );
 
-        let completed = exchange.advance_clock(1);
+        let completed = exchange.advance_clock(1).unwrap();
         assert_eq!(completed.len(), 1);
         assert_eq!(completed[0].status, VenueTransferStatus::Completed);
         let wallet_after_deposit = exchange.portfolio_snapshot(20);
@@ -2650,13 +3379,13 @@ mod tests {
             1_500
         );
 
-        let withdrawal = exchange.submit_withdrawal(20, "USDT", 300);
+        let withdrawal = exchange.submit_withdrawal(20, "USDT", 300).unwrap();
         assert_eq!(withdrawal.status, VenueTransferStatus::Pending);
         let reserved = exchange.venue_balance_snapshot(20, "USDT").unwrap();
         assert_eq!(reserved.total, 1_500);
         assert_eq!(reserved.reserved, 300);
 
-        let completed = exchange.advance_clock(1);
+        let completed = exchange.advance_clock(1).unwrap();
         assert_eq!(completed.len(), 1);
         let debited = exchange.venue_balance_snapshot(20, "USDT").unwrap();
         assert_eq!(debited.total, 1_200);
@@ -2677,7 +3406,7 @@ mod tests {
         exchange.create_account(20, 1_000);
         exchange.set_portfolio_balance(20, "USDT", 100);
 
-        let transfer = exchange.submit_deposit(20, "USDT", 101);
+        let transfer = exchange.submit_deposit(20, "USDT", 101).unwrap();
 
         assert_eq!(transfer.status, VenueTransferStatus::Rejected);
         assert_eq!(
@@ -2712,14 +3441,14 @@ mod tests {
         exchange.create_account(20, 1_000);
         exchange.set_portfolio_balance(20, "USDT", 1_000);
 
-        let deposit = exchange.submit_deposit(20, "USDT", 100);
+        let deposit = exchange.submit_deposit(20, "USDT", 100).unwrap();
         assert_eq!(deposit.status, VenueTransferStatus::Rejected);
         assert_eq!(
             deposit.reject_reason,
             Some(VenueTransferRejectReason::AssetNotAcceptedByVenue)
         );
 
-        let withdrawal = exchange.submit_withdrawal(20, "USDT", 100);
+        let withdrawal = exchange.submit_withdrawal(20, "USDT", 100).unwrap();
         assert_eq!(withdrawal.status, VenueTransferStatus::Rejected);
         assert_eq!(
             withdrawal.reject_reason,
