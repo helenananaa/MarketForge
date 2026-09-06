@@ -57,6 +57,7 @@ The GitHub backend workflow also runs PostgreSQL recovery tests with
 ## Documentation
 
 - [Design](docs/DESIGN.md)
+- [Backend execution plan (Chinese)](docs/BACKEND_EXECUTION_PLAN.md)
 - [Backend storage and runtime configuration](docs/BACKEND_STORAGE.md)
 - [CandleScope adapter](marketforge-candlescope-plugin/README.md)
 
