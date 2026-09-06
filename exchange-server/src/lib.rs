@@ -1466,6 +1466,8 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
         .route("/training/runs/{run_id}", get(training_run_status))
         .route("/training/runs/{run_id}/abort", post(abort_training_run))
         .route("/training/runs/{run_id}/result", get(training_run_result))
+        .route("/training/runs/{run_id}/report", get(training_run_report))
+        .route("/rooms/{room_id}/replay", get(replay_room_isolated))
         .route("/rooms", post(create_room).get(list_rooms))
         .route(
             "/rooms/{room_id}/agents",
@@ -2958,6 +2960,85 @@ async fn training_run_result(
     Path(run_id): Path<String>,
 ) -> ApiResult<TrainingRunResponse> {
     training_run_status(State(state), headers, Path(run_id)).await
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TrainingReportResponse {
+    pub json: serde_json::Value,
+    pub markdown: String,
+}
+
+async fn training_run_report(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+) -> ApiResult<TrainingReportResponse> {
+    let app = lock_state(&state).await?;
+    current_user_id(&headers, &app.auth_policy)?;
+    let run = app.training_runs.get(&run_id).cloned().ok_or_else(|| {
+        api_error(
+            StatusCode::NOT_FOUND,
+            format!("training run {run_id} not found"),
+        )
+    })?;
+    Ok(Json(TrainingReportResponse {
+        json: exchange_core::training_report_json(&run),
+        markdown: exchange_core::training_report_markdown(&run),
+    }))
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct ReplayQuery {
+    pub at_command_seq: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct IsolatedReplayResponse {
+    pub room_id: String,
+    pub replayed_commands: usize,
+    pub live_room_untouched: bool,
+    pub book: BookSnapshot,
+}
+
+async fn replay_room_isolated(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Query(query): Query<ReplayQuery>,
+) -> ApiResult<IsolatedReplayResponse> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let journal = {
+        let app = lock_state(&state).await?;
+        app.journal.clone()
+    };
+    let mut recovery = journal
+        .load_room_recovery(&room_id)
+        .await
+        .map_err(api_error_from_journal)?;
+    if let Some(at) = query.at_command_seq {
+        recovery
+            .executions
+            .retain(|execution| execution.command_seq <= at);
+        recovery
+            .mutations
+            .retain(|mutation| mutation.command_cursor <= at.saturating_add(1));
+    }
+    let replayed_commands = recovery.executions.len();
+    let rooms = recover_rooms(&recovery).map_err(api_error_from_journal)?;
+    let instrument_id = rooms
+        .room(&room_id)
+        .map_err(api_error_from_room)?
+        .primary_instrument_id()
+        .to_string();
+    let book = rooms
+        .book_snapshot_for(&room_id, &instrument_id)
+        .map_err(api_error_from_room)?;
+    Ok(Json(IsolatedReplayResponse {
+        room_id,
+        replayed_commands,
+        live_room_untouched: true,
+        book,
+    }))
 }
 
 async fn cluster_rooms(
@@ -6848,6 +6929,24 @@ impl HttpTradingClient {
         self.get_json(&format!("/training/runs/{run_id}/result"))
     }
 
+    pub fn training_report(
+        &self,
+        run_id: &str,
+    ) -> Result<TrainingReportResponse, HttpTradingError> {
+        self.get_json(&format!("/training/runs/{run_id}/report"))
+    }
+
+    pub fn replay_room(
+        &self,
+        room_id: &str,
+        at_command_seq: Option<u64>,
+    ) -> Result<IsolatedReplayResponse, HttpTradingError> {
+        match at_command_seq {
+            Some(seq) => self.get_json(&format!("/rooms/{room_id}/replay?at_command_seq={seq}")),
+            None => self.get_json(&format!("/rooms/{room_id}/replay")),
+        }
+    }
+
     fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, HttpTradingError> {
         self.send_with_owner_retry(|base_url| {
             self.authenticated_request(self.client.get(format!("{base_url}{path}")))
@@ -10479,6 +10578,71 @@ mod tests {
         let parsed: TrainingRunResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(parsed.run.status, exchange_core::TrainingStatus::Aborted);
         assert!(parsed.score.incomplete);
+    }
+
+    #[tokio::test]
+    async fn isolated_replay_does_not_mutate_live_room() {
+        let app = new_app();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_string(&spot_scenario("replay-live")).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let book_before = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/replay-live/book")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let before = axum::body::to_bytes(book_before.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let replay = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/replay-live/replay")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(replay.status(), StatusCode::OK);
+        let replay_body = axum::body::to_bytes(replay.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: IsolatedReplayResponse = serde_json::from_slice(&replay_body).unwrap();
+        assert!(parsed.live_room_untouched);
+        let book_after = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/replay-live/book")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let after = axum::body::to_bytes(book_after.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(before, after);
     }
 
     #[tokio::test]

@@ -48,6 +48,12 @@ pub struct ReplayReport {
 pub struct ReplayEngine;
 
 impl ReplayEngine {
+    pub fn replay_count(command_log: &[CommandRecord]) -> (ReplayReport, usize) {
+        let report = Self::replay(command_log);
+        let n = report.commands.len();
+        (report, n)
+    }
+
     pub fn replay(command_log: &[CommandRecord]) -> ReplayReport {
         let mut book = OrderBook::new();
         let mut log = EventLog::new();

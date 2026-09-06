@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::{
     agents::AgentTemplate,
@@ -279,6 +280,44 @@ pub fn score_run(run: &TrainingRun) -> TrainingScore {
         incomplete,
         incomplete_penalty_ppm,
     }
+}
+
+pub fn training_report_json(run: &TrainingRun) -> serde_json::Value {
+    let score = run.score();
+    json!({
+        "api_version": "report.v1",
+        "spec_digest": run.spec.digest(),
+        "facts": {
+            "q": score.q,
+            "target_qty": score.target_qty,
+            "fills": run.fills,
+            "fees_paid": score.fees_paid,
+            "reference_price_tick": run.spec.reference_price_tick,
+            "steps_elapsed": score.steps_elapsed,
+        },
+        "metrics": score,
+        "inferences": [
+            "Incomplete runs receive incomplete_penalty_ppm; do not treat lower fill count as higher execution quality."
+        ],
+    })
+}
+
+pub fn training_report_markdown(run: &TrainingRun) -> String {
+    let score = run.score();
+    format!(
+        "# Training report {}\n\n- status: {:?}\n- q/Q: {}/{}\n- VWAP: {:?}/{:?}\n- buy slippage bp: {:?}\n- fees: {}\n- incomplete: {} (penalty {})\n\nFacts are fills and fees. Slippage is computed from VWAP vs P0={}.\n",
+        run.spec.run_id,
+        run.status,
+        score.q,
+        score.target_qty,
+        score.vwap_tick_num,
+        score.vwap_tick_den,
+        score.buy_slippage_bp,
+        score.fees_paid,
+        score.incomplete,
+        score.incomplete_penalty_ppm,
+        run.spec.reference_price_tick
+    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -179,6 +179,22 @@ fn run() -> Result<(), String> {
         ["training", "result", run_id] => {
             print_json(&client.training_result(run_id).map_err(|e| e.to_string())?)
         }
+        ["training", "report", run_id] => {
+            print_json(&client.training_report(run_id).map_err(|e| e.to_string())?)
+        }
+        ["replay", room_id] => print_json(
+            &client
+                .replay_room(room_id, None)
+                .map_err(|e| e.to_string())?,
+        ),
+        ["replay", room_id, seq] => {
+            let seq = seq.parse::<u64>().map_err(|e| e.to_string())?;
+            print_json(
+                &client
+                    .replay_room(room_id, Some(seq))
+                    .map_err(|e| e.to_string())?,
+            )
+        }
         ["order", "cancel", room_id, account_id, order_id] => {
             let account_id = account_id.parse::<u64>().map_err(|e| e.to_string())?;
             let order_id = order_id.parse::<u64>().map_err(|e| e.to_string())?;

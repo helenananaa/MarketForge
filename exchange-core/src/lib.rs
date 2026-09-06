@@ -99,6 +99,7 @@ pub use trading::{
 pub use training::{
     LOW_SLIPPAGE_BUY_TASK_VERSION, SCORING_RULE_VERSION, TRAINING_SPEC_VERSION, TrainingError,
     TrainingFill, TrainingRun, TrainingScore, TrainingSpec, TrainingStatus, score_run,
+    training_report_json, training_report_markdown,
 };
 pub use transfer::{
     TransferId, VenueTransfer, VenueTransferKind, VenueTransferRejectReason, VenueTransferStatus,
