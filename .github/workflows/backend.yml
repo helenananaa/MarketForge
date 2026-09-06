@@ -39,3 +39,7 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test workspace, including PostgreSQL recovery
         run: cargo test --workspace
+      - name: Python SDK syntax
+        run: python3 -m compileall -q python scripts/batch_runner.py python/examples/buy_remaining.py
+      - name: Training HTTP/CLI smoke
+        run: ./scripts/backend_training_smoke.sh

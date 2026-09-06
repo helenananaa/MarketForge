@@ -436,11 +436,12 @@ alias for readiness.
 `/metrics` uses the Prometheus text exposition format and sets `Cache-Control:
 no-store`. It reports process-local gauges and counters for durable writes, SSE
 connections and resyncs, loaded rooms, agent workers, bounded event-cache use,
-and aggregate journal queue/worker activity. The
-`marketforge_journal_write_workers` and `marketforge_journal_read_workers`
-gauges expose the active topology. Metrics contain no room, account, user, or
-instrument labels, avoiding unbounded label cardinality. Counters reset when
-the process restarts.
+aggregate journal queue/worker activity, scheduler steps and errors, agent
+errors, loaded training-run status, checkpoint write time, and isolated-replay
+command counts. The `marketforge_journal_write_workers` and
+`marketforge_journal_read_workers` gauges expose the active topology. Metrics
+contain no room, account, user, or instrument labels, avoiding unbounded label
+cardinality. Counters reset when the process restarts.
 
 When room lease enforcement is enabled,
 `marketforge_room_writer_leases_owned` must match `marketforge_rooms` for the
@@ -499,3 +500,32 @@ rooms concurrently:
 MARKETFORGE_DATABASE_URL='postgres://marketforge:marketforge@127.0.0.1:55432/marketforge' \
   ./scripts/postgres_multi_active_smoke.sh
 ```
+
+## Migrations, backup, and restore
+
+Schema changes are append-only files under `exchange-server/migrations`
+(`0001`–`0013`). On startup with `MARKETFORGE_DATABASE_URL` set, the writer
+applies any not-yet-recorded versions into `marketforge_schema_migrations`.
+Already-applied versions are immutable. There is no supported downgrade path;
+roll forward with a new migration if a repair is required.
+
+Backup (PostgreSQL logical dump of the journal database):
+
+```sh
+pg_dump --format=custom --file=marketforge.dump \
+  "$MARKETFORGE_DATABASE_URL"
+```
+
+Restore onto an empty database, then start a server so it can fail closed on
+divergent recovery rather than serving mixed state:
+
+```sh
+pg_restore --clean --if-exists --dbname="$MARKETFORGE_DATABASE_URL" marketforge.dump
+cargo run -p exchange-server
+```
+
+Do not copy `target/` or in-memory journals as a backup. In-memory mode has no
+durable restore. After restore, run `./scripts/postgres_smoke.sh` against a
+throwaway room before serving production traffic. Plugin contract tests remain
+the compatibility check for CandleScope; this storage layout does not change
+the plugin JSONL protocol.

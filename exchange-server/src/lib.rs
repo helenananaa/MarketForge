@@ -106,6 +106,12 @@ struct RuntimeLifecycleInner {
     active_sse_connections: AtomicUsize,
     sse_connections_started: AtomicU64,
     sse_resync_required: AtomicU64,
+    scheduler_steps_total: AtomicU64,
+    scheduler_step_errors_total: AtomicU64,
+    agent_errors_total: AtomicU64,
+    checkpoint_writes_total: AtomicU64,
+    checkpoint_duration_ms_total: AtomicU64,
+    replayed_commands_total: AtomicU64,
     drained: Notify,
     shutdown: watch::Sender<bool>,
 }
@@ -121,6 +127,12 @@ struct RuntimeLifecycleMetricsSnapshot {
     active_sse_connections: usize,
     sse_connections_started: u64,
     sse_resync_required: u64,
+    scheduler_steps_total: u64,
+    scheduler_step_errors_total: u64,
+    agent_errors_total: u64,
+    checkpoint_writes_total: u64,
+    checkpoint_duration_ms_total: u64,
+    replayed_commands_total: u64,
 }
 
 impl RuntimeLifecycle {
@@ -137,6 +149,12 @@ impl RuntimeLifecycle {
                 active_sse_connections: AtomicUsize::new(0),
                 sse_connections_started: AtomicU64::new(0),
                 sse_resync_required: AtomicU64::new(0),
+                scheduler_steps_total: AtomicU64::new(0),
+                scheduler_step_errors_total: AtomicU64::new(0),
+                agent_errors_total: AtomicU64::new(0),
+                checkpoint_writes_total: AtomicU64::new(0),
+                checkpoint_duration_ms_total: AtomicU64::new(0),
+                replayed_commands_total: AtomicU64::new(0),
                 drained: Notify::new(),
                 shutdown,
             }),
@@ -220,6 +238,38 @@ impl RuntimeLifecycle {
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    fn record_scheduler_step(&self, succeeded: bool) {
+        self.inner
+            .scheduler_steps_total
+            .fetch_add(1, Ordering::Relaxed);
+        if !succeeded {
+            self.inner
+                .scheduler_step_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn record_agent_error(&self) {
+        self.inner
+            .agent_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_checkpoint(&self, duration_ms: u64) {
+        self.inner
+            .checkpoint_writes_total
+            .fetch_add(1, Ordering::Relaxed);
+        self.inner
+            .checkpoint_duration_ms_total
+            .fetch_add(duration_ms, Ordering::Relaxed);
+    }
+
+    fn record_replayed_commands(&self, count: u64) {
+        self.inner
+            .replayed_commands_total
+            .fetch_add(count, Ordering::Relaxed);
+    }
+
     fn metrics_snapshot(&self) -> RuntimeLifecycleMetricsSnapshot {
         RuntimeLifecycleMetricsSnapshot {
             accepting_durable_writes: self.is_accepting_durable_writes(),
@@ -231,6 +281,18 @@ impl RuntimeLifecycle {
             active_sse_connections: self.inner.active_sse_connections.load(Ordering::Relaxed),
             sse_connections_started: self.inner.sse_connections_started.load(Ordering::Relaxed),
             sse_resync_required: self.inner.sse_resync_required.load(Ordering::Relaxed),
+            scheduler_steps_total: self.inner.scheduler_steps_total.load(Ordering::Relaxed),
+            scheduler_step_errors_total: self
+                .inner
+                .scheduler_step_errors_total
+                .load(Ordering::Relaxed),
+            agent_errors_total: self.inner.agent_errors_total.load(Ordering::Relaxed),
+            checkpoint_writes_total: self.inner.checkpoint_writes_total.load(Ordering::Relaxed),
+            checkpoint_duration_ms_total: self
+                .inner
+                .checkpoint_duration_ms_total
+                .load(Ordering::Relaxed),
+            replayed_commands_total: self.inner.replayed_commands_total.load(Ordering::Relaxed),
         }
     }
 
@@ -1624,10 +1686,29 @@ async fn metrics(State(state): State<SharedState>) -> Response {
         owned_room_leases,
         lost_room_leases,
         room_lease_renew_failures,
+        training_running,
+        training_completed,
+        training_failed,
+        agent_error_workers,
     ) = {
         let app = state.app.lock().await;
         let (owned_room_leases, lost_room_leases, room_lease_renew_failures) =
             app.room_lease_metrics();
+        let mut training_running = 0usize;
+        let mut training_completed = 0usize;
+        let mut training_failed = 0usize;
+        for run in app.training_runs.values() {
+            match run.status {
+                TrainingStatus::Completed => training_completed += 1,
+                TrainingStatus::Failed | TrainingStatus::Aborted => training_failed += 1,
+                TrainingStatus::Created | TrainingStatus::Running => training_running += 1,
+            }
+        }
+        let agent_error_workers = app
+            .agent_workers
+            .iter()
+            .filter(|(room_id, worker)| worker.status((*room_id).clone()).last_error.is_some())
+            .count();
         (
             app.rooms.room_ids().len(),
             app.agent_workers.len(),
@@ -1636,6 +1717,10 @@ async fn metrics(State(state): State<SharedState>) -> Response {
             owned_room_leases,
             lost_room_leases,
             room_lease_renew_failures,
+            training_running,
+            training_completed,
+            training_failed,
+            agent_error_workers,
         )
     };
 
@@ -1716,6 +1801,76 @@ async fn metrics(State(state): State<SharedState>) -> Response {
         "SSE streams closed with a resync_required event.",
         "counter",
         lifecycle.sse_resync_required,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_scheduler_steps_total",
+        "Scheduler steps attempted since process start.",
+        "counter",
+        lifecycle.scheduler_steps_total,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_scheduler_step_errors_total",
+        "Scheduler steps that failed since process start.",
+        "counter",
+        lifecycle.scheduler_step_errors_total,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_agent_errors_total",
+        "Background agent workers that recorded a last_error.",
+        "counter",
+        lifecycle.agent_errors_total,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_agent_error_workers",
+        "Currently registered agent workers with a last_error.",
+        "gauge",
+        agent_error_workers,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_training_runs_running",
+        "Loaded training runs in Created or Running.",
+        "gauge",
+        training_running,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_training_runs_completed",
+        "Loaded training runs in Completed.",
+        "gauge",
+        training_completed,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_training_runs_failed",
+        "Loaded training runs in Failed or Aborted.",
+        "gauge",
+        training_failed,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_checkpoint_writes_total",
+        "State checkpoints written since process start.",
+        "counter",
+        lifecycle.checkpoint_writes_total,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_checkpoint_duration_ms_total",
+        "Cumulative milliseconds spent building checkpoints.",
+        "counter",
+        lifecycle.checkpoint_duration_ms_total,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_replayed_commands_total",
+        "Commands replayed by isolated history replay since process start.",
+        "counter",
+        lifecycle.replayed_commands_total,
     );
     append_prometheus_metric(
         &mut body,
@@ -3194,6 +3349,9 @@ async fn replay_room_isolated(
             .retain(|mutation| mutation.command_cursor <= at.saturating_add(1));
     }
     let replayed_commands = recovery.executions.len();
+    state
+        .lifecycle
+        .record_replayed_commands(replayed_commands as u64);
     let rooms = recover_rooms(&recovery).map_err(api_error_from_journal)?;
     let instrument_id = rooms
         .room(&room_id)
@@ -7960,6 +8118,7 @@ impl AgentWorkerHandle {
                 while !worker_stop.load(Ordering::Relaxed) {
                     let room_id = room_id.clone();
                     let shared = shared.clone();
+                    let runtime_lifecycle = shared.lifecycle.clone();
                     let result = runtime.block_on(run_scheduler_catch_up(
                         shared,
                         room_id,
@@ -7967,6 +8126,7 @@ impl AgentWorkerHandle {
                         worker_lifecycle.clone(),
                     ));
                     if let Err(error) = result {
+                        runtime_lifecycle.record_agent_error();
                         if let Ok(mut last_error) = worker_last_error.lock() {
                             *last_error = Some(error);
                         }
@@ -8150,13 +8310,21 @@ async fn commit_scheduler_step(
             .clock(&room_id)
             .map_err(api_error_from_room)?;
         let mut next_order_id = state.next_order_id;
-        let outcome = exchange_core::run_scheduler_step(
+        let outcome = match exchange_core::run_scheduler_step(
             &mut candidate_rooms,
             &mut next_order_id,
             scheduler,
             exchange_core::CrashPoint::None,
-        )
-        .map_err(|error| api_error(StatusCode::BAD_REQUEST, format!("{error:?}")))?;
+        ) {
+            Ok(outcome) => {
+                shared.lifecycle.record_scheduler_step(true);
+                outcome
+            }
+            Err(error) => {
+                shared.lifecycle.record_scheduler_step(false);
+                return Err(api_error(StatusCode::BAD_REQUEST, format!("{error:?}")));
+            }
+        };
         let clock_after = candidate_rooms
             .clock(&room_id)
             .map_err(api_error_from_room)?;
@@ -8186,6 +8354,7 @@ async fn commit_scheduler_step(
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let checkpoint_started = Instant::now();
         let snapshot = current_room_snapshot(
             &candidate_rooms,
             &room_id,
@@ -8195,6 +8364,11 @@ async fn commit_scheduler_step(
                 .or_else(|| latest_persisted_command_seq(&state, &room_id))
                 .unwrap_or(0),
         );
+        if snapshot.is_some() {
+            shared.lifecycle.record_checkpoint(
+                u64::try_from(checkpoint_started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            );
+        }
         state
             .append_room_mutation(
                 &PendingJournalMutation::new(
@@ -11703,6 +11877,54 @@ mod tests {
         assert!(body.contains("marketforge_durable_writes_started_total 1\n"));
         assert!(body.contains("marketforge_durable_writes_completed_total 1\n"));
         assert!(body.contains("marketforge_durable_writes_failed_total 1\n"));
+        assert!(body.contains("marketforge_scheduler_steps_total 0\n"));
+        assert!(body.contains("marketforge_training_runs_running 0\n"));
+        assert!(body.contains("marketforge_replayed_commands_total 0\n"));
+    }
+
+    #[tokio::test]
+    async fn isolated_replay_increments_replayed_command_metric() {
+        let app = new_app();
+        let scenario = seeded_spot_scenario("metric-replay");
+        assert_eq!(
+            send_json(&app, Method::POST, "/rooms", None, scenario,)
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        let replay = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/metric-replay/replay")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(replay.status(), StatusCode::OK);
+        let metrics = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(metrics.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(
+            body.contains("marketforge_replayed_commands_total "),
+            "{body}"
+        );
+        assert!(
+            !body.contains("marketforge_replayed_commands_total 0\n"),
+            "{body}"
+        );
     }
 
     #[tokio::test]

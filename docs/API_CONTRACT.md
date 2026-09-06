@@ -80,3 +80,13 @@ Account assignment after a training run has started returns HTTP 409.
 `GET /rooms/{id}/observe` returns `{ "api_version": "strategy.v1", "observation": ParticipantObservation }`. Observation is public book/trades/sim time plus the caller's own orders and account. Place/cancel go through `POST /rooms/{id}/orders` with `Idempotency-Key`. External strategies do not access the database or internal actors.
 
 Non-admin actors are capped at 8 actions per simulation step (`429` when exceeded). Illegal `price_tick`/`qty` (`<= 0`) return `400`. Quota is per `(room, user, step)` and does not block other rooms.
+
+## Operations
+
+```
+GET /health/live
+GET /health/ready
+GET /metrics
+```
+
+Ready returns 503 when the journal is down or shutdown has started. Metrics are low-cardinality (no room/user labels). Faults fail closed: no infinite auto-retry. See `docs/BACKEND_STORAGE.md`.

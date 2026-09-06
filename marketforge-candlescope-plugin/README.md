@@ -48,6 +48,10 @@ contracts.
 MarketForge remains the source of truth. The adapter never writes a price,
 fabricates a trade, or advances the clock in response to a provider poll.
 
+Backend `http.v1` ticker/candles and `market_time_ms` aggregation stay the
+plugin's clock source. Contract tests in this crate must stay green; this
+adapter does not implement the training, member, or strategy.v1 HTTP surfaces.
+
 ## Control operations
 
 Mutating operations require `requestContext.userAction: true`.

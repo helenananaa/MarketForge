@@ -9,9 +9,10 @@ The backend supports PostgreSQL journal persistence and room writer leases.
 
 ## Components
 
-- `exchange-core`: matching, risk, simulation, and room state.
+- `exchange-core`: matching, risk, simulation, training, and room state.
 - `exchange-server`: HTTP API, authentication, and durable journals.
-- `marketforge-cli`: JSON CLI for rooms, orders, clock, and agents.
+- `marketforge-cli`: JSON CLI for rooms, orders, clock, agents, training, replay, and members.
+- `python/marketforge`: HTTP SDK (`strategy.v1`) for observe/place/cancel/training.
 - `marketforge-candlescope-plugin`: embedded and remote CandleScope integration.
 - `marketforge-web`: React/TypeScript interface.
 
@@ -40,25 +41,59 @@ For PostgreSQL configuration and deployment behavior, see
 [Backend storage](docs/BACKEND_STORAGE.md). Example settings are in
 [.env.example](.env.example); export the settings required by your deployment.
 
+## CLI
+
+```sh
+cargo run -p marketforge-cli -- --base-url http://127.0.0.1:57305 room list
+```
+
+Commands: `room`, `clock`, `ticker`, `candles`, `account`, `member`, `observe`,
+`agent`, `order`, `training`, `replay`. Bearer token, `x-user-id`, idempotency
+keys, and trusted owner URLs are flags. Credentials are not logged.
+
+## Python SDK and batch runner
+
+```sh
+PYTHONPATH=python python3 python/examples/buy_remaining.py http://127.0.0.1:57305 ROOM_ID 20 1
+python3 scripts/batch_runner.py http://127.0.0.1:57305 scripts/fixtures/p5_batch_spec.json 1 2 --state /tmp/batch-state.json
+```
+
+The SDK talks only to HTTP. It does not open the database or internal actors.
+
 ## Validation
 
 ```sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cd marketforge-web
-npm ci
-npm run build
+export MARKETFORGE_TEST_DATABASE_URL='postgres://marketforge:marketforge@127.0.0.1:55432/marketforge'
+export MARKETFORGE_REQUIRE_POSTGRES_TESTS=1
+cargo test --workspace
+MARKETFORGE_DATABASE_URL="$MARKETFORGE_TEST_DATABASE_URL" ./scripts/postgres_smoke.sh
+MARKETFORGE_DATABASE_URL="$MARKETFORGE_TEST_DATABASE_URL" ./scripts/postgres_multi_active_smoke.sh
+./scripts/backend_training_smoke.sh
+python3 -m compileall -q python
 ```
 
-The GitHub backend workflow also runs PostgreSQL recovery tests with
+Declared-load continuous run (override duration; default is 86400 seconds):
+
+```sh
+MARKETFORGE_SOAK_SECONDS=60 ./scripts/backend_soak.sh
+```
+
+The GitHub backend workflow runs PostgreSQL recovery tests with
 `MARKETFORGE_TEST_DATABASE_URL` configured and
-`MARKETFORGE_REQUIRE_POSTGRES_TESTS=1`.
+`MARKETFORGE_REQUIRE_POSTGRES_TESTS=1`, plus Python SDK compile and the
+training smoke.
+
+Frontend `npm` build is optional for backend work.
 
 ## Documentation
 
 - [Design](docs/DESIGN.md)
 - [Backend execution plan (Chinese)](docs/BACKEND_EXECUTION_PLAN.md)
+- [Runtime contract](docs/RUNTIME_CONTRACT.md)
+- [HTTP API contract](docs/API_CONTRACT.md)
 - [Backend storage and runtime configuration](docs/BACKEND_STORAGE.md)
 - [CandleScope adapter](marketforge-candlescope-plugin/README.md)
 
