@@ -21,6 +21,7 @@ pub mod scheduler;
 pub mod simulation;
 pub mod spot;
 pub mod trading;
+pub mod training;
 pub mod transfer;
 pub mod venue_rules;
 
@@ -94,6 +95,10 @@ pub use spot::{
 pub use trading::{
     PendingLiquidation, PerpTradingEngine, PerpTradingExecution, SpotTradingEngine,
     SpotTradingExecution,
+};
+pub use training::{
+    LOW_SLIPPAGE_BUY_TASK_VERSION, SCORING_RULE_VERSION, TRAINING_SPEC_VERSION, TrainingError,
+    TrainingFill, TrainingRun, TrainingScore, TrainingSpec, TrainingStatus, score_run,
 };
 pub use transfer::{
     TransferId, VenueTransfer, VenueTransferKind, VenueTransferRejectReason, VenueTransferStatus,

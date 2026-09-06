@@ -164,6 +164,21 @@ fn run() -> Result<(), String> {
             };
             print_json(&response)
         }
+        ["training", "start", path] => {
+            let body = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+            let request: exchange_server::StartTrainingRequest =
+                serde_json::from_str(&body).map_err(|e| e.to_string())?;
+            print_json(&client.start_training(&request).map_err(|e| e.to_string())?)
+        }
+        ["training", "status", run_id] => {
+            print_json(&client.training_status(run_id).map_err(|e| e.to_string())?)
+        }
+        ["training", "abort", run_id] => {
+            print_json(&client.abort_training(run_id).map_err(|e| e.to_string())?)
+        }
+        ["training", "result", run_id] => {
+            print_json(&client.training_result(run_id).map_err(|e| e.to_string())?)
+        }
         ["order", "cancel", room_id, account_id, order_id] => {
             let account_id = account_id.parse::<u64>().map_err(|e| e.to_string())?;
             let order_id = order_id.parse::<u64>().map_err(|e| e.to_string())?;

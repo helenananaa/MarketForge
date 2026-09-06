@@ -742,6 +742,9 @@ pub enum RoomMutation {
         clock_steps: u64,
         state: exchange_core::SchedulerState,
     },
+    TrainingProgress {
+        run: Box<exchange_core::TrainingRun>,
+    },
 }
 
 #[derive(Deserialize)]
@@ -785,6 +788,11 @@ struct StatusChangedMutationPayload {
 struct SchedulerProgressMutationPayload {
     clock_steps: u64,
     state: exchange_core::SchedulerState,
+}
+
+#[derive(Deserialize)]
+struct TrainingProgressMutationPayload {
+    run: exchange_core::TrainingRun,
 }
 
 impl<'de> Deserialize<'de> for RoomMutation {
@@ -863,6 +871,13 @@ impl<'de> Deserialize<'de> for RoomMutation {
                     state: payload.state,
                 })
             }
+            "training_progress" => {
+                let payload: TrainingProgressMutationPayload =
+                    serde_json::from_value(payload).map_err(D::Error::custom)?;
+                Ok(Self::TrainingProgress {
+                    run: Box::new(payload.run),
+                })
+            }
             other => Err(D::Error::custom(format!(
                 "unknown room mutation kind `{other}`"
             ))),
@@ -880,6 +895,7 @@ impl RoomMutation {
             Self::VenueToVenueTransferSubmitted { .. } => "venue_to_venue_transfer_submitted",
             Self::StatusChanged { .. } => "status_changed",
             Self::SchedulerProgress { .. } => "scheduler_progress",
+            Self::TrainingProgress { .. } => "training_progress",
         }
     }
 }
@@ -4937,6 +4953,14 @@ fn validate_pending_mutation(mutation: &PendingJournalMutation) -> Result<(), Jo
                 return Err(JournalError::Recovery(format!(
                     "scheduler progress room {} does not match mutation room {}",
                     state.room_id, mutation.room_id
+                )));
+            }
+        }
+        RoomMutation::TrainingProgress { run } => {
+            if run.spec.room_id != mutation.room_id {
+                return Err(JournalError::Recovery(format!(
+                    "training progress room {} does not match mutation room {}",
+                    run.spec.room_id, mutation.room_id
                 )));
             }
         }
