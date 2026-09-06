@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     clock::SimulationClock,
-    gateway::{GatewayError, GatewayExecution, MarketView, OrderAction, TradingApi},
+    gateway::{GatewayError, GatewayExecution, OrderAction, TradingApi},
     model::{PriceTick, Qty, Side},
+    observation::ParticipantObservation,
     participant::{Participant, ParticipantConfig, run_participant_once},
 };
 
@@ -137,10 +138,20 @@ pub struct GridTraderConfig {
     pub qty_per_level: Qty,
 }
 
+pub const AGENT_STATE_VERSION: u16 = 1;
+pub const AGENT_CONFIG_VERSION: u16 = 1;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum PersistedAgentKindState {
+    Noise { rng_state: u64 },
+    Dca { observed_steps: u64 },
+    Grid { has_seeded_grid: bool },
+}
+
 pub struct NoiseTrader {
     config: NoiseTraderConfig,
     rng: DeterministicRng,
-    last_view: Option<MarketView>,
+    last_view: Option<ParticipantObservation>,
 }
 
 impl NoiseTrader {
@@ -149,6 +160,22 @@ impl NoiseTrader {
             rng: DeterministicRng::new(config.seed),
             config,
             last_view: None,
+        }
+    }
+
+    pub fn persist_kind_state(&self) -> PersistedAgentKindState {
+        PersistedAgentKindState::Noise {
+            rng_state: self.rng.state(),
+        }
+    }
+
+    pub fn restore_kind_state(&mut self, state: &PersistedAgentKindState) -> bool {
+        match state {
+            PersistedAgentKindState::Noise { rng_state } => {
+                self.rng.set_state(*rng_state);
+                true
+            }
+            _ => false,
         }
     }
 
@@ -172,7 +199,7 @@ impl Participant for NoiseTrader {
         &self.config.participant
     }
 
-    fn observe(&mut self, view: &MarketView) {
+    fn observe(&mut self, view: &ParticipantObservation) {
         self.last_view = Some(view.clone());
     }
 
@@ -213,7 +240,7 @@ impl Participant for NoiseTrader {
 pub struct DcaTrader {
     config: DcaTraderConfig,
     observed_steps: u64,
-    last_view: Option<MarketView>,
+    last_view: Option<ParticipantObservation>,
 }
 
 impl DcaTrader {
@@ -222,6 +249,22 @@ impl DcaTrader {
             config,
             observed_steps: 0,
             last_view: None,
+        }
+    }
+
+    pub fn persist_kind_state(&self) -> PersistedAgentKindState {
+        PersistedAgentKindState::Dca {
+            observed_steps: self.observed_steps,
+        }
+    }
+
+    pub fn restore_kind_state(&mut self, state: &PersistedAgentKindState) -> bool {
+        match state {
+            PersistedAgentKindState::Dca { observed_steps } => {
+                self.observed_steps = *observed_steps;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -248,7 +291,7 @@ impl Participant for DcaTrader {
         &self.config.participant
     }
 
-    fn observe(&mut self, view: &MarketView) {
+    fn observe(&mut self, view: &ParticipantObservation) {
         self.observed_steps += 1;
         self.last_view = Some(view.clone());
     }
@@ -291,6 +334,22 @@ impl GridTrader {
             has_seeded_grid: false,
         }
     }
+
+    pub fn persist_kind_state(&self) -> PersistedAgentKindState {
+        PersistedAgentKindState::Grid {
+            has_seeded_grid: self.has_seeded_grid,
+        }
+    }
+
+    pub fn restore_kind_state(&mut self, state: &PersistedAgentKindState) -> bool {
+        match state {
+            PersistedAgentKindState::Grid { has_seeded_grid } => {
+                self.has_seeded_grid = *has_seeded_grid;
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 impl Participant for GridTrader {
@@ -298,7 +357,7 @@ impl Participant for GridTrader {
         &self.config.participant
     }
 
-    fn observe(&mut self, _view: &MarketView) {}
+    fn observe(&mut self, _view: &ParticipantObservation) {}
 
     fn decide(&mut self) -> Vec<OrderAction> {
         if self.has_seeded_grid
@@ -342,6 +401,14 @@ impl DeterministicRng {
         Self { state: seed.max(1) }
     }
 
+    fn state(&self) -> u64 {
+        self.state
+    }
+
+    fn set_state(&mut self, state: u64) {
+        self.state = state.max(1);
+    }
+
     fn next(&mut self) -> u64 {
         self.state = self
             .state
@@ -371,10 +438,11 @@ mod tests {
     use super::*;
     use crate::{
         SpotRiskConfig,
-        actor::{AccountSnapshots, ActorExecutionResult, MarketExecution, MarketStatus},
+        actor::{AccountSnapshot, ActorExecutionResult, MarketExecution, MarketStatus},
         gateway::{OrderGateway, TradingApi},
         market::{InstrumentConfig, MarketConfig, SpotMarketConfig},
         model::BookSnapshot,
+        observation::{PARTICIPANT_OBSERVATION_VERSION, ParticipantObservation},
         participant::{ParticipantKind, run_participant_once},
         room::RoomManager,
         scenario::{ScenarioAccount, ScenarioConfig},
@@ -387,6 +455,7 @@ mod tests {
             kind: ParticipantKind::RuleAgent,
             room_id: "room-1".to_string(),
             account_id,
+            instrument_id: Some("V-BTC-SPOT".to_string()),
         }
     }
 
@@ -491,16 +560,21 @@ mod tests {
         };
         let mut first = NoiseTrader::new(config.clone());
         let mut second = NoiseTrader::new(config);
-        let empty_view = MarketView {
+        let empty_view = ParticipantObservation {
+            version: PARTICIPANT_OBSERVATION_VERSION,
             room_id: "room-1".to_string(),
             venue_id: "default-venue".to_string(),
             instrument_id: "V-BTC-SPOT".to_string(),
             status: MarketStatus::Running,
+            step: 0,
+            market_time_ms: 0,
             book: BookSnapshot {
                 bids: Vec::new(),
                 asks: Vec::new(),
             },
-            accounts: AccountSnapshots::Spot(Vec::new()),
+            public_trades: Vec::new(),
+            own_orders: Vec::new(),
+            own_account: None::<AccountSnapshot>,
         };
 
         first.observe(&empty_view);

@@ -286,6 +286,16 @@ impl OrderBook {
             .map(|order| order.account_id)
     }
 
+    pub fn resting_orders_for_account(&self, account_id: AccountId) -> Vec<Order> {
+        self.order_ids_for_account(account_id)
+            .into_iter()
+            .filter_map(|order_id| {
+                let location = *self.order_index.get(&order_id)?;
+                self.resting_order(location, order_id).cloned()
+            })
+            .collect()
+    }
+
     pub(crate) fn cancel_orders_for_account(&mut self, account_id: AccountId) -> Vec<Event> {
         let order_ids = self.order_ids_for_account(account_id);
 

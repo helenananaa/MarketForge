@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actor::{AccountSnapshots, ActorExecution, MarketStatus, RoomId},
+    actor::{AccountSnapshots, ActorExecution, CommandOrigin, MarketStatus, RoomId},
     market::{InstrumentId, VenueId},
     model::{
         AccountId, AmendOrder, BookSnapshot, Command, NewOrder, OrderId, OrderKind, PriceTick, Qty,
         Side,
     },
+    observation::ParticipantObservation,
     room::{RoomManager, RoomManagerError},
 };
 
@@ -95,6 +96,7 @@ pub struct MarketView {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GatewayError {
     Room(RoomManagerError),
+    MissingInstrument,
 }
 
 pub trait TradingApi {
@@ -105,11 +107,18 @@ pub trait TradingApi {
         room_id: &str,
         instrument_id: &str,
     ) -> Result<MarketView, GatewayError>;
+    fn participant_observation(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+        account_id: AccountId,
+    ) -> Result<ParticipantObservation, GatewayError>;
 }
 
 pub struct OrderGateway<'a> {
     rooms: &'a mut RoomManager,
     next_order_id: OrderId,
+    origin: CommandOrigin,
 }
 
 impl<'a> OrderGateway<'a> {
@@ -117,6 +126,15 @@ impl<'a> OrderGateway<'a> {
         Self {
             rooms,
             next_order_id: first_order_id,
+            origin: CommandOrigin::External,
+        }
+    }
+
+    pub fn new_scheduler(rooms: &'a mut RoomManager, first_order_id: OrderId) -> Self {
+        Self {
+            rooms,
+            next_order_id: first_order_id,
+            origin: CommandOrigin::Scheduler,
         }
     }
 
@@ -277,7 +295,12 @@ impl TradingApi for OrderGateway<'_> {
         let command = self.action_to_command(request.account_id, &request.action);
         let execution = self
             .rooms
-            .apply_to_instrument(&request.room_id, &instrument_id, command.clone())
+            .apply_to_instrument_from(
+                &request.room_id,
+                &instrument_id,
+                command.clone(),
+                self.origin,
+            )
             .map_err(GatewayError::Room)?;
 
         Ok(GatewayExecution {
@@ -321,6 +344,17 @@ impl TradingApi for OrderGateway<'_> {
                 .account_snapshots_for(room_id, instrument_id)
                 .map_err(GatewayError::Room)?,
         })
+    }
+
+    fn participant_observation(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+        account_id: AccountId,
+    ) -> Result<ParticipantObservation, GatewayError> {
+        self.rooms
+            .participant_observation(room_id, instrument_id, account_id)
+            .map_err(GatewayError::Room)
     }
 }
 

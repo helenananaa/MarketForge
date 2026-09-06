@@ -118,6 +118,7 @@ fn participant(id: &str, account_id: u64) -> ParticipantConfig {
         kind: ParticipantKind::RuleAgent,
         room_id: "demo-spot".to_string(),
         account_id,
+        instrument_id: Some("V-BTC-SPOT".to_string()),
     }
 }
 

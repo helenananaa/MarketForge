@@ -2,10 +2,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     gateway::{
-        GatewayError, GatewayExecution, GatewayRequest, MarketView, OrderAction, ParticipantId,
-        TradingApi,
+        GatewayError, GatewayExecution, GatewayRequest, OrderAction, ParticipantId, TradingApi,
     },
+    market::InstrumentId,
     model::AccountId,
+    observation::ParticipantObservation,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -23,11 +24,13 @@ pub struct ParticipantConfig {
     pub kind: ParticipantKind,
     pub room_id: String,
     pub account_id: AccountId,
+    #[serde(default)]
+    pub instrument_id: Option<InstrumentId>,
 }
 
 pub trait Participant: Send {
     fn config(&self) -> &ParticipantConfig;
-    fn observe(&mut self, view: &MarketView);
+    fn observe(&mut self, view: &ParticipantObservation);
     fn decide(&mut self) -> Vec<OrderAction>;
 }
 
@@ -36,7 +39,11 @@ pub fn run_participant_once<T: TradingApi, P: Participant + ?Sized>(
     participant: &mut P,
 ) -> Result<Vec<GatewayExecution>, GatewayError> {
     let config = participant.config().clone();
-    let view = api.market_view(&config.room_id)?;
+    let instrument_id = config
+        .instrument_id
+        .clone()
+        .ok_or(GatewayError::MissingInstrument)?;
+    let view = api.participant_observation(&config.room_id, &instrument_id, config.account_id)?;
     participant.observe(&view);
 
     participant
@@ -46,7 +53,7 @@ pub fn run_participant_once<T: TradingApi, P: Participant + ?Sized>(
             api.submit_action(GatewayRequest {
                 participant_id: config.participant_id.clone(),
                 room_id: config.room_id.clone(),
-                instrument_id: None,
+                instrument_id: Some(instrument_id.clone()),
                 account_id: config.account_id,
                 action,
             })
@@ -78,7 +85,7 @@ mod tests {
             &self.config
         }
 
-        fn observe(&mut self, _view: &MarketView) {}
+        fn observe(&mut self, _view: &ParticipantObservation) {}
 
         fn decide(&mut self) -> Vec<OrderAction> {
             if self.has_acted {
@@ -129,6 +136,7 @@ mod tests {
                 kind: ParticipantKind::RuleAgent,
                 room_id: "room-1".to_string(),
                 account_id: 20,
+                instrument_id: Some("V-BTC-SPOT".to_string()),
             },
             has_acted: false,
         };

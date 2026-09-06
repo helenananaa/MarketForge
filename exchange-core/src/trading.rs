@@ -74,6 +74,10 @@ impl SpotTradingEngine {
         self.book.order_owner(order_id)
     }
 
+    pub fn resting_orders_for_account(&self, account_id: AccountId) -> Vec<crate::model::Order> {
+        self.book.resting_orders_for_account(account_id)
+    }
+
     pub fn resting_order_ids_for_account_on_side(
         &self,
         account_id: AccountId,
@@ -376,6 +380,10 @@ impl PerpTradingEngine {
 
     pub fn resting_order_ids_for_account(&self, account_id: AccountId) -> Vec<OrderId> {
         self.book.order_ids_for_account(account_id)
+    }
+
+    pub fn resting_orders_for_account(&self, account_id: AccountId) -> Vec<crate::model::Order> {
+        self.book.resting_orders_for_account(account_id)
     }
 
     fn ensure_pending_liquidation(&mut self, account_id: AccountId) -> Result<(), ClearingError> {

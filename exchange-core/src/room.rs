@@ -139,9 +139,24 @@ impl RoomManager {
         instrument_id: &str,
         command: Command,
     ) -> Result<ActorExecution, RoomManagerError> {
+        self.apply_to_instrument_from(
+            room_id,
+            instrument_id,
+            command,
+            crate::actor::CommandOrigin::External,
+        )
+    }
+
+    pub fn apply_to_instrument_from(
+        &mut self,
+        room_id: &str,
+        instrument_id: &str,
+        command: Command,
+        origin: crate::actor::CommandOrigin,
+    ) -> Result<ActorExecution, RoomManagerError> {
         let execution = self
             .simulation_room_mut(room_id)?
-            .apply_to_instrument(instrument_id, command)
+            .apply_to_instrument_from(instrument_id, command, origin)
             .map_err(RoomManagerError::Actor)?;
         self.record_execution_and_auto_liquidate(room_id, execution.clone(), true)?;
         Ok(execution)
@@ -549,6 +564,102 @@ impl RoomManager {
             .map_err(RoomManagerError::Actor)
     }
 
+    pub fn resting_orders_for_account(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+        account_id: AccountId,
+    ) -> Result<Vec<crate::model::Order>, RoomManagerError> {
+        self.simulation_room(room_id)?
+            .resting_orders_for_account(instrument_id, account_id)
+            .map_err(RoomManagerError::Actor)
+    }
+
+    pub fn participant_observation(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+        account_id: AccountId,
+    ) -> Result<crate::observation::ParticipantObservation, RoomManagerError> {
+        use crate::model::Event;
+        use crate::observation::{
+            MAX_PUBLIC_TRADES_IN_OBSERVATION, PARTICIPANT_OBSERVATION_VERSION,
+        };
+
+        let room = self.simulation_room(room_id)?;
+        if room.status() == crate::actor::MarketStatus::Closed {
+            // Observation is still allowed; closed rooms remain inspectable.
+        }
+        let venue_id = room
+            .venue_id_for_instrument(instrument_id)
+            .ok_or_else(|| {
+                RoomManagerError::Actor(ActorRejectReason::InstrumentNotFound {
+                    instrument_id: instrument_id.to_string(),
+                })
+            })?
+            .to_string();
+        let clock = room.clock();
+        let book = self.book_snapshot_for(room_id, instrument_id)?;
+        let own_account = self
+            .account_snapshot_for(room_id, instrument_id, account_id)?
+            .filter(|snapshot| match snapshot {
+                crate::actor::AccountSnapshot::Spot(account) => account.account_id == account_id,
+                crate::actor::AccountSnapshot::Perp(account) => account.account_id == account_id,
+            });
+        let own_orders = self.resting_orders_for_account(room_id, instrument_id, account_id)?;
+        let mut public_trades = Vec::new();
+        if let Ok(history) = self.execution_history(room_id) {
+            for execution in history.iter().rev() {
+                if execution.instrument_id != instrument_id {
+                    continue;
+                }
+                let trades = match &execution.result {
+                    ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => result
+                        .events
+                        .iter()
+                        .filter_map(|record| match &record.event {
+                            Event::TradePrinted(trade) => Some(trade.clone()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>(),
+                    ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => result
+                        .events
+                        .iter()
+                        .filter_map(|record| match &record.event {
+                            Event::TradePrinted(trade) => Some(trade.clone()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>(),
+                    ActorExecutionResult::Rejected(_) => Vec::new(),
+                };
+                for trade in trades.into_iter().rev() {
+                    public_trades.push(trade);
+                    if public_trades.len() == MAX_PUBLIC_TRADES_IN_OBSERVATION {
+                        break;
+                    }
+                }
+                if public_trades.len() == MAX_PUBLIC_TRADES_IN_OBSERVATION {
+                    break;
+                }
+            }
+        }
+        public_trades.reverse();
+
+        Ok(crate::observation::ParticipantObservation {
+            version: PARTICIPANT_OBSERVATION_VERSION,
+            room_id: room_id.to_string(),
+            venue_id,
+            instrument_id: instrument_id.to_string(),
+            status: room.status(),
+            step: clock.step(),
+            market_time_ms: clock.market_time_ms(),
+            book,
+            public_trades,
+            own_orders,
+            own_account,
+        })
+    }
+
     pub fn venue_account_snapshot(
         &self,
         room_id: &str,
@@ -613,6 +724,9 @@ impl RoomManager {
         room_id: &str,
         steps: u64,
     ) -> Result<Vec<VenueTransfer>, RoomManagerError> {
+        if self.status(room_id)? == crate::actor::MarketStatus::Closed {
+            return Err(RoomManagerError::Simulation(SimulationRoomError::Closed));
+        }
         let transfers = self
             .simulation_room_mut(room_id)
             .map(|room| room.advance_clock(steps))?

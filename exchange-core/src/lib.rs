@@ -8,6 +8,7 @@ pub mod jsonl;
 pub mod log;
 pub mod market;
 pub mod model;
+pub mod observation;
 pub mod participant;
 pub mod perp;
 pub mod portfolio;
@@ -15,6 +16,7 @@ pub mod replay;
 pub mod risk;
 pub mod room;
 pub mod scenario;
+pub mod scheduler;
 pub mod simulation;
 pub mod spot;
 pub mod trading;
@@ -27,13 +29,14 @@ pub use account::{
 };
 pub use actor::{
     AccountSnapshot, AccountSnapshots, ActorExecution, ActorExecutionResult, ActorRejectReason,
-    ActorSeq, ExchangeActor, MarketActor, MarketExecution, MarketStatus, RoomId,
+    ActorSeq, CommandOrigin, ExchangeActor, MarketActor, MarketExecution, MarketStatus, RoomId,
 };
 pub use agents::{
-    AgentParticipantStep, AgentRuntime, AgentStep, AgentTemplate, DcaTrader, DcaTraderConfig,
-    GridTrader, GridTraderConfig, NoiseTrader, NoiseTraderConfig,
+    AGENT_CONFIG_VERSION, AGENT_STATE_VERSION, AgentParticipantStep, AgentRuntime, AgentStep,
+    AgentTemplate, DcaTrader, DcaTraderConfig, GridTrader, GridTraderConfig, NoiseTrader,
+    NoiseTraderConfig, PersistedAgentKindState,
 };
-pub use clock::SimulationClock;
+pub use clock::{ClockError, MAX_CLOCK_ADVANCE_STEPS, SimulationClock};
 pub use engine::OrderBook;
 pub use gateway::{
     GatewayError, GatewayExecution, GatewayRequest, MarketView, OrderAction, OrderGateway,
@@ -52,6 +55,9 @@ pub use model::{
     BookLevel, BookSnapshot, CancelOrder, Command, Event, NewOrder, Order, OrderId, OrderKind,
     PriceTick, Qty, RejectReason, SetMarkPrice, Side, Trade,
 };
+pub use observation::{
+    MAX_PUBLIC_TRADES_IN_OBSERVATION, PARTICIPANT_OBSERVATION_VERSION, ParticipantObservation,
+};
 pub use participant::{Participant, ParticipantConfig, ParticipantKind, run_participant_once};
 pub use perp::{
     PerpAccount, PerpAccountSnapshot, PerpAccountStore, PerpClearingConfig, PerpClearingEvent,
@@ -67,6 +73,11 @@ pub use room::{PendingRoomLiquidation, RoomBootstrap, RoomManager, RoomManagerEr
 pub use scenario::{
     ScenarioAccount, ScenarioAllocation, ScenarioBootstrap, ScenarioConfig, ScenarioError,
     ScenarioPortfolio, ScenarioSeedOrder, ScenarioVenueAllocation,
+};
+pub use scheduler::{
+    AgentContinuity, CrashPoint, DEFAULT_CATCH_UP_LIMIT, PersistedAgent, SCHEDULER_STATE_VERSION,
+    SchedulerError, SchedulerMode, SchedulerPhase, SchedulerState, SchedulerStepOutcome,
+    run_scheduler_step,
 };
 pub use simulation::{
     AccountNetWorthAssetSnapshot, AccountNetWorthSnapshot, AssetLedgerEntry, AssetLedgerKind,

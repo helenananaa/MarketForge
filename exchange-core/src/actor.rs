@@ -34,6 +34,12 @@ pub enum MarketStatus {
     Closed,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommandOrigin {
+    External,
+    Scheduler,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MarketActor {
     room_id: RoomId,
@@ -747,6 +753,15 @@ impl ExchangeActor {
         instrument_id: &str,
         command: Command,
     ) -> Result<ActorExecution, ActorRejectReason> {
+        self.apply_to_instrument_from(instrument_id, command, CommandOrigin::External)
+    }
+
+    pub fn apply_to_instrument_from(
+        &mut self,
+        instrument_id: &str,
+        command: Command,
+        origin: CommandOrigin,
+    ) -> Result<ActorExecution, ActorRejectReason> {
         if !self.markets.contains_key(instrument_id) {
             return Err(ActorRejectReason::InstrumentNotFound {
                 instrument_id: instrument_id.to_string(),
@@ -775,7 +790,9 @@ impl ExchangeActor {
         if let Err(error) = staged.sync_market_accounts_from_venue(instrument_id) {
             return Ok(self.clearing_rejection(instrument_id, command_seq, error));
         }
-        let mut execution = staged.market_mut(instrument_id)?.apply(command);
+        let mut execution = staged
+            .market_mut(instrument_id)?
+            .apply_from(command, origin);
         execution.command_seq = command_seq;
         execution.instrument_id = instrument_id.to_string();
         execution.market_time_ms = staged.clock.market_time_ms();
@@ -958,6 +975,16 @@ impl ExchangeActor {
         order_id: OrderId,
     ) -> Result<Option<AccountId>, ActorRejectReason> {
         Ok(self.market(instrument_id)?.order_owner(order_id))
+    }
+
+    pub fn resting_orders_for_account(
+        &self,
+        instrument_id: &str,
+        account_id: AccountId,
+    ) -> Result<Vec<crate::model::Order>, ActorRejectReason> {
+        Ok(self
+            .market(instrument_id)?
+            .resting_orders_for_account(account_id))
     }
 
     fn take_command_seq(&mut self) -> ActorSeq {
@@ -1603,6 +1630,10 @@ impl MarketActor {
     }
 
     pub fn apply(&mut self, command: Command) -> ActorExecution {
+        self.apply_from(command, CommandOrigin::External)
+    }
+
+    pub fn apply_from(&mut self, command: Command, origin: CommandOrigin) -> ActorExecution {
         let seq = self.take_command_seq();
 
         if self.status == MarketStatus::Closed {
@@ -1616,7 +1647,10 @@ impl MarketActor {
             };
         }
 
-        if self.status == MarketStatus::Paused && matches!(command, Command::NewOrder(_)) {
+        if self.status == MarketStatus::Paused
+            && matches!(command, Command::NewOrder(_))
+            && origin != CommandOrigin::Scheduler
+        {
             return ActorExecution {
                 room_id: self.room_id.clone(),
                 instrument_id: self.config.instrument_id().to_string(),
@@ -1725,6 +1759,10 @@ impl MarketActor {
 
     pub fn order_owner(&self, order_id: OrderId) -> Option<AccountId> {
         self.engine.order_owner(order_id)
+    }
+
+    pub fn resting_orders_for_account(&self, account_id: AccountId) -> Vec<crate::model::Order> {
+        self.engine.resting_orders_for_account(account_id)
     }
 
     fn take_command_seq(&mut self) -> ActorSeq {
@@ -1838,6 +1876,13 @@ impl MarketEngine {
         match self {
             Self::Spot(engine) => engine.order_owner(order_id),
             Self::Perp(engine) => engine.order_owner(order_id),
+        }
+    }
+
+    pub fn resting_orders_for_account(&self, account_id: AccountId) -> Vec<crate::model::Order> {
+        match self {
+            Self::Spot(engine) => engine.resting_orders_for_account(account_id),
+            Self::Perp(engine) => engine.resting_orders_for_account(account_id),
         }
     }
 }

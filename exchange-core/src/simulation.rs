@@ -216,6 +216,19 @@ impl SimulationRoom {
         instrument_id: &str,
         command: Command,
     ) -> Result<ActorExecution, ActorRejectReason> {
+        self.apply_to_instrument_from(
+            instrument_id,
+            command,
+            crate::actor::CommandOrigin::External,
+        )
+    }
+
+    pub fn apply_to_instrument_from(
+        &mut self,
+        instrument_id: &str,
+        command: Command,
+        origin: crate::actor::CommandOrigin,
+    ) -> Result<ActorExecution, ActorRejectReason> {
         let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
             ActorRejectReason::InstrumentNotFound {
                 instrument_id: instrument_id.to_string(),
@@ -226,7 +239,7 @@ impl SimulationRoom {
             .exchanges
             .get_mut(&venue_id)
             .expect("venue id was resolved from exchanges")
-            .apply_to_instrument(instrument_id, command)?;
+            .apply_to_instrument_from(instrument_id, command, origin)?;
         execution.command_seq = command_seq;
         Ok(execution)
     }
@@ -357,6 +370,22 @@ impl SimulationRoom {
             .order_owner_for(instrument_id, order_id)
     }
 
+    pub fn resting_orders_for_account(
+        &self,
+        instrument_id: &str,
+        account_id: AccountId,
+    ) -> Result<Vec<crate::model::Order>, ActorRejectReason> {
+        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
+            ActorRejectReason::InstrumentNotFound {
+                instrument_id: instrument_id.to_string(),
+            }
+        })?;
+        self.exchanges
+            .get(&venue_id)
+            .expect("venue id was resolved from exchanges")
+            .resting_orders_for_account(instrument_id, account_id)
+    }
+
     pub fn venue_account_snapshot(&self, account_id: AccountId) -> VenueAccountSnapshot {
         self.primary_exchange().venue_account_snapshot(account_id)
     }
@@ -394,6 +423,9 @@ impl SimulationRoom {
     }
 
     pub fn advance_clock(&mut self, steps: u64) -> Result<Vec<VenueTransfer>, SimulationRoomError> {
+        self.clock()
+            .checked_time_after(steps)
+            .map_err(SimulationRoomError::Clock)?;
         let mut staged = self.clone();
         let completed = staged.advance_clock_inner(steps)?;
         *self = staged;
@@ -650,7 +682,7 @@ impl SimulationRoom {
             })
     }
 
-    fn venue_id_for_instrument(&self, instrument_id: &str) -> Option<VenueId> {
+    pub fn venue_id_for_instrument(&self, instrument_id: &str) -> Option<VenueId> {
         self.exchanges.iter().find_map(|(venue_id, exchange)| {
             exchange
                 .instrument_ids()
@@ -968,6 +1000,8 @@ pub struct AccountNetWorthAssetSnapshot {
 pub enum SimulationRoomError {
     VenueNotFound { venue_id: VenueId },
     Clearing(ClearingError),
+    Clock(crate::clock::ClockError),
+    Closed,
 }
 
 fn rules_for_exchange(

@@ -93,6 +93,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         name: "room_writer_owner_url",
         sql: include_str!("../migrations/0012_room_writer_owner_url.sql"),
     },
+    SchemaMigration {
+        version: 13,
+        name: "scheduler_and_control_idempotency",
+        sql: include_str!("../migrations/0013_scheduler_and_control_idempotency.sql"),
+    },
 ];
 
 pub const ROOM_MUTATION_SCHEMA_VERSION: u16 = 1;
@@ -733,6 +738,10 @@ pub enum RoomMutation {
     StatusChanged {
         status: MarketStatus,
     },
+    SchedulerProgress {
+        clock_steps: u64,
+        state: exchange_core::SchedulerState,
+    },
 }
 
 #[derive(Deserialize)]
@@ -770,6 +779,12 @@ struct VenueToVenueTransferSubmittedMutationPayload {
 #[derive(Deserialize)]
 struct StatusChangedMutationPayload {
     status: MarketStatus,
+}
+
+#[derive(Deserialize)]
+struct SchedulerProgressMutationPayload {
+    clock_steps: u64,
+    state: exchange_core::SchedulerState,
 }
 
 impl<'de> Deserialize<'de> for RoomMutation {
@@ -840,6 +855,14 @@ impl<'de> Deserialize<'de> for RoomMutation {
                     status: payload.status,
                 })
             }
+            "scheduler_progress" => {
+                let payload: SchedulerProgressMutationPayload =
+                    serde_json::from_value(payload).map_err(D::Error::custom)?;
+                Ok(Self::SchedulerProgress {
+                    clock_steps: payload.clock_steps,
+                    state: payload.state,
+                })
+            }
             other => Err(D::Error::custom(format!(
                 "unknown room mutation kind `{other}`"
             ))),
@@ -856,6 +879,7 @@ impl RoomMutation {
             Self::WithdrawalSubmitted { .. } => "withdrawal_submitted",
             Self::VenueToVenueTransferSubmitted { .. } => "venue_to_venue_transfer_submitted",
             Self::StatusChanged { .. } => "status_changed",
+            Self::SchedulerProgress { .. } => "scheduler_progress",
         }
     }
 }
@@ -4908,6 +4932,14 @@ fn validate_pending_mutation(mutation: &PendingJournalMutation) -> Result<(), Jo
             }
         }
         RoomMutation::StatusChanged { .. } => {}
+        RoomMutation::SchedulerProgress { state, .. } => {
+            if state.room_id != mutation.room_id {
+                return Err(JournalError::Recovery(format!(
+                    "scheduler progress room {} does not match mutation room {}",
+                    state.room_id, mutation.room_id
+                )));
+            }
+        }
     }
     Ok(())
 }
@@ -6106,6 +6138,8 @@ mod tests {
             include_str!("../migrations/0010_order_request_idempotency.sql");
         let room_writer_leases = include_str!("../migrations/0011_room_writer_leases.sql");
         let room_writer_owner_url = include_str!("../migrations/0012_room_writer_owner_url.sql");
+        let scheduler_and_control =
+            include_str!("../migrations/0013_scheduler_and_control_idempotency.sql");
 
         assert!(!initial.contains("maintenance_margin"));
         assert!(!initial.contains("margin_status"));
@@ -6123,9 +6157,10 @@ mod tests {
         assert!(room_writer_leases.contains("marketforge_room_writer_leases"));
         assert!(room_writer_leases.contains("fencing_token"));
         assert!(room_writer_owner_url.contains("owner_url"));
+        assert!(scheduler_and_control.contains("marketforge_control_idempotency"));
         assert_eq!(
             MIGRATIONS.last().map(|migration| migration.version),
-            Some(12)
+            Some(13)
         );
     }
 
