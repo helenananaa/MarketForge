@@ -61,7 +61,8 @@ pub use model::{
     PriceTick, Qty, RejectReason, SetMarkPrice, Side, Trade,
 };
 pub use observation::{
-    MAX_PUBLIC_TRADES_IN_OBSERVATION, PARTICIPANT_OBSERVATION_VERSION, ParticipantObservation,
+    EXTERNAL_ACTIONS_PER_STEP, MAX_PUBLIC_TRADES_IN_OBSERVATION, PARTICIPANT_OBSERVATION_VERSION,
+    ParticipantObservation, STRATEGY_PROTOCOL_VERSION,
 };
 pub use participant::{Participant, ParticipantConfig, ParticipantKind, run_participant_once};
 pub use perp::{

@@ -37,6 +37,10 @@ GET  /rooms/{id}/candles?interval_ms=
 GET  /rooms/{id}/stream/public
 GET  /rooms/{id}/stream/private
 GET  /rooms/{id}/events/stream          admin audit (contiguous command_seq)
+POST /rooms/{id}/members                owner/admin; roles owner|admin|instructor|trader|spectator
+POST /rooms/{id}/members/{user_id}      remove member and account assignments
+POST /rooms/{id}/accounts/{account_id}/owners   assign instructor/trader; frozen after training start
+GET  /rooms/{id}/observe?account_id=    strategy.v1 ParticipantObservation
 ```
 
 ## Error codes
@@ -55,3 +59,24 @@ See `docs/RUNTIME_CONTRACT.md` §7. Bodies are `{ "error": "...", "code"?: "..."
 ## Candles
 
 Integer OHLCV from trades and `market_time_ms`. Interval `[floor(t/interval)*interval, next)`. Empty intervals omitted. Query does not advance the clock.
+
+## Members and roles
+
+Write enforcement, not hidden fields:
+
+| Role | Public data | Private stream | Trade assigned account | Trade any account | Member admin |
+| --- | --- | --- | --- | --- | --- |
+| owner / admin | yes | yes | yes | yes | yes |
+| instructor | yes | own assigned | yes, after assign | no | no |
+| trader | yes | own assigned | yes | no | no |
+| spectator | yes | no | no | no | no |
+
+Removing a member deletes that user's `account_owners` rows. Subsequent writes, history queries, and live private subscriptions fail closed.
+
+Account assignment after a training run has started returns HTTP 409.
+
+## External strategy protocol (`strategy.v1`)
+
+`GET /rooms/{id}/observe` returns `{ "api_version": "strategy.v1", "observation": ParticipantObservation }`. Observation is public book/trades/sim time plus the caller's own orders and account. Place/cancel go through `POST /rooms/{id}/orders` with `Idempotency-Key`. External strategies do not access the database or internal actors.
+
+Non-admin actors are capped at 8 actions per simulation step (`429` when exceeded). Illegal `price_tick`/`qty` (`<= 0`) return `400`. Quota is per `(room, user, step)` and does not block other rooms.

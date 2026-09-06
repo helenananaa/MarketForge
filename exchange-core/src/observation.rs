@@ -9,6 +9,8 @@ use crate::{
 
 pub const PARTICIPANT_OBSERVATION_VERSION: u16 = 1;
 pub const MAX_PUBLIC_TRADES_IN_OBSERVATION: usize = 32;
+pub const STRATEGY_PROTOCOL_VERSION: &str = "strategy.v1";
+pub const EXTERNAL_ACTIONS_PER_STEP: u32 = 8;
 
 /// Restricted view a participant may use to decide. Version 1 exposes public
 /// book, recent public trades, simulation time, and the caller's own orders

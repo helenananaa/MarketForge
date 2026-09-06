@@ -477,6 +477,53 @@ impl JournalCoordinator {
         .await
     }
 
+    pub(crate) async fn upsert_room_member(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        role: &str,
+    ) -> Result<(), JournalError> {
+        let room_id = room_id.to_string();
+        let user_id = user_id.to_string();
+        let role = role.to_string();
+        self.execute(move |store| store.upsert_room_member(&room_id, &user_id, &role))
+            .await
+    }
+
+    pub(crate) async fn remove_room_member(
+        &self,
+        room_id: &str,
+        user_id: &str,
+    ) -> Result<(), JournalError> {
+        let room_id = room_id.to_string();
+        let user_id = user_id.to_string();
+        self.execute(move |store| store.remove_room_member(&room_id, &user_id))
+            .await
+    }
+
+    pub(crate) async fn assign_account_owner(
+        &self,
+        room_id: &str,
+        account_id: AccountId,
+        user_id: &str,
+    ) -> Result<(), JournalError> {
+        let room_id = room_id.to_string();
+        let user_id = user_id.to_string();
+        self.execute(move |store| store.assign_account_owner(&room_id, account_id, &user_id))
+            .await
+    }
+
+    pub(crate) async fn user_room_role(
+        &self,
+        user_id: &str,
+        room_id: &str,
+    ) -> Result<Option<String>, JournalError> {
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        self.execute_read(move |store| store.user_room_role(&user_id, &room_id))
+            .await
+    }
+
     pub(crate) async fn user_can_access_room(
         &self,
         user_id: &str,

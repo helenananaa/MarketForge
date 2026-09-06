@@ -102,6 +102,21 @@ const MIGRATIONS: &[SchemaMigration] = &[
 
 pub const ROOM_MUTATION_SCHEMA_VERSION: u16 = 1;
 
+fn is_admin_role(role: &str) -> bool {
+    matches!(role, "owner" | "admin")
+}
+
+fn is_account_holder_role(role: &str) -> bool {
+    matches!(role, "instructor" | "trader")
+}
+
+fn is_known_member_role(role: &str) -> bool {
+    matches!(
+        role,
+        "owner" | "admin" | "instructor" | "trader" | "spectator"
+    )
+}
+
 /// Identity and monotonic token that a room writer must present on every write.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoomLeaseClaim {
@@ -319,6 +334,36 @@ pub trait JournalStore: Send {
         room_id: &str,
         status: MarketStatus,
     ) -> Result<(), JournalError>;
+
+    fn upsert_room_member(
+        &mut self,
+        _room_id: &str,
+        _user_id: &str,
+        _role: &str,
+    ) -> Result<(), JournalError> {
+        Err(JournalError::UnsupportedOperation("upsert_room_member"))
+    }
+
+    fn remove_room_member(&mut self, _room_id: &str, _user_id: &str) -> Result<(), JournalError> {
+        Err(JournalError::UnsupportedOperation("remove_room_member"))
+    }
+
+    fn assign_account_owner(
+        &mut self,
+        _room_id: &str,
+        _account_id: AccountId,
+        _user_id: &str,
+    ) -> Result<(), JournalError> {
+        Err(JournalError::UnsupportedOperation("assign_account_owner"))
+    }
+
+    fn user_room_role(
+        &mut self,
+        _user_id: &str,
+        _room_id: &str,
+    ) -> Result<Option<String>, JournalError> {
+        Ok(None)
+    }
 
     fn user_can_access_room(
         &mut self,
@@ -1081,7 +1126,7 @@ pub struct InMemoryJournalStore {
     transfers: BTreeMap<(String, u64), VenueTransfer>,
     snapshots: Vec<JournalSnapshot>,
     room_members: BTreeMap<(String, String), String>,
-    account_owners: BTreeMap<(String, AccountId), String>,
+    account_owners: BTreeSet<(String, AccountId, String)>,
     room_writer_leases: BTreeMap<String, InMemoryRoomWriterLease>,
 }
 
@@ -1104,19 +1149,31 @@ impl InMemoryJournalStore {
         user_id: &str,
     ) {
         self.account_owners
-            .insert((room_id.to_string(), account_id), user_id.to_string());
+            .insert((room_id.to_string(), account_id, user_id.to_string()));
     }
 
     fn user_is_room_admin(&self, user_id: &str, room_id: &str) -> bool {
         self.room_members
             .get(&(room_id.to_string(), user_id.to_string()))
-            .is_some_and(|role| role == "owner" || role == "admin")
+            .is_some_and(|role| is_admin_role(role))
     }
 
     fn user_owns_account(&self, user_id: &str, room_id: &str, account_id: AccountId) -> bool {
         self.account_owners
-            .get(&(room_id.to_string(), account_id))
-            .is_some_and(|owner| owner == user_id)
+            .contains(&(room_id.to_string(), account_id, user_id.to_string()))
+    }
+
+    fn user_may_access_account(&self, user_id: &str, room_id: &str, account_id: AccountId) -> bool {
+        let Some(role) = self
+            .room_members
+            .get(&(room_id.to_string(), user_id.to_string()))
+        else {
+            return false;
+        };
+        if is_admin_role(role) {
+            return true;
+        }
+        is_account_holder_role(role) && self.user_owns_account(user_id, room_id, account_id)
     }
 
     fn store_mutation(&mut self, mutation: &PendingJournalMutation) -> Result<(), JournalError> {
@@ -1409,10 +1466,11 @@ impl JournalStore for InMemoryJournalStore {
             "owner".to_string(),
         );
         for account_id in account_ids {
-            self.account_owners.insert(
-                (bootstrap.room_id.clone(), *account_id),
+            self.account_owners.insert((
+                bootstrap.room_id.clone(),
+                *account_id,
                 owner_user_id.to_string(),
-            );
+            ));
         }
         Ok(())
     }
@@ -1596,6 +1654,65 @@ impl JournalStore for InMemoryJournalStore {
         self.append_room_mutation(mutation, execution_records, transfer_records, snapshot)
     }
 
+    fn upsert_room_member(
+        &mut self,
+        room_id: &str,
+        user_id: &str,
+        role: &str,
+    ) -> Result<(), JournalError> {
+        if !is_known_member_role(role) {
+            return Err(JournalError::Recovery(format!("invalid role {role}")));
+        }
+        self.room_members
+            .insert((room_id.to_string(), user_id.to_string()), role.to_string());
+        Ok(())
+    }
+
+    fn remove_room_member(&mut self, room_id: &str, user_id: &str) -> Result<(), JournalError> {
+        self.account_owners.retain(|(member_room, _, member_user)| {
+            !(member_room == room_id && member_user == user_id)
+        });
+        self.room_members
+            .remove(&(room_id.to_string(), user_id.to_string()));
+        Ok(())
+    }
+
+    fn assign_account_owner(
+        &mut self,
+        room_id: &str,
+        account_id: AccountId,
+        user_id: &str,
+    ) -> Result<(), JournalError> {
+        let role = self
+            .room_members
+            .get(&(room_id.to_string(), user_id.to_string()))
+            .cloned();
+        match role.as_deref() {
+            Some(role) if is_account_holder_role(role) => {
+                self.account_owners
+                    .insert((room_id.to_string(), account_id, user_id.to_string()));
+                Ok(())
+            }
+            Some(role) => Err(JournalError::Recovery(format!(
+                "role {role} cannot be assigned an account"
+            ))),
+            None => Err(JournalError::Recovery(format!(
+                "user {user_id} is not a member of {room_id}"
+            ))),
+        }
+    }
+
+    fn user_room_role(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+    ) -> Result<Option<String>, JournalError> {
+        Ok(self
+            .room_members
+            .get(&(room_id.to_string(), user_id.to_string()))
+            .cloned())
+    }
+
     fn user_can_access_room(&mut self, user_id: &str, room_id: &str) -> Result<bool, JournalError> {
         Ok(self
             .room_members
@@ -1616,11 +1733,7 @@ impl JournalStore for InMemoryJournalStore {
         room_id: &str,
         account_id: AccountId,
     ) -> Result<bool, JournalError> {
-        if self.user_is_room_admin(user_id, room_id) {
-            return Ok(true);
-        }
-
-        Ok(self.user_owns_account(user_id, room_id, account_id))
+        Ok(self.user_may_access_account(user_id, room_id, account_id))
     }
 
     fn update_room_status(
@@ -1643,7 +1756,6 @@ impl JournalStore for InMemoryJournalStore {
         limit: usize,
     ) -> Result<Vec<OrderProjection>, JournalError> {
         let projections = MemoryProjections::from_executions(&self.executions)?;
-        let is_admin = self.user_is_room_admin(user_id, room_id);
         let mut orders = projections
             .orders
             .into_values()
@@ -1651,9 +1763,8 @@ impl JournalStore for InMemoryJournalStore {
                 order.room_id == room_id
                     && instrument_id.is_none_or(|id| order.instrument_id == id)
                     && account_id.is_none_or(|id| u64::try_from(order.account_id) == Ok(id))
-                    && (is_admin
-                        || u64::try_from(order.account_id)
-                            .is_ok_and(|id| self.user_owns_account(user_id, room_id, id)))
+                    && u64::try_from(order.account_id)
+                        .is_ok_and(|id| self.user_may_access_account(user_id, room_id, id))
             })
             .collect::<Vec<_>>();
         orders.sort_by_key(|order| Reverse((order.updated_command_seq, order.order_id)));
@@ -1670,7 +1781,6 @@ impl JournalStore for InMemoryJournalStore {
         limit: usize,
     ) -> Result<Vec<TradeProjection>, JournalError> {
         let projections = MemoryProjections::from_executions(&self.executions)?;
-        let is_admin = self.user_is_room_admin(user_id, room_id);
         let mut trades = projections
             .trades
             .into_values()
@@ -1682,11 +1792,10 @@ impl JournalStore for InMemoryJournalStore {
                     && account_id.is_none_or(|id| {
                         maker_account_id == Some(id) || taker_account_id == Some(id)
                     })
-                    && (is_admin
-                        || maker_account_id
-                            .is_some_and(|id| self.user_owns_account(user_id, room_id, id))
+                    && (maker_account_id
+                        .is_some_and(|id| self.user_may_access_account(user_id, room_id, id))
                         || taker_account_id
-                            .is_some_and(|id| self.user_owns_account(user_id, room_id, id)))
+                            .is_some_and(|id| self.user_may_access_account(user_id, room_id, id)))
             })
             .collect::<Vec<_>>();
         trades.sort_by_key(|trade| Reverse((trade.command_seq, trade.event_seq)));
@@ -1729,7 +1838,6 @@ impl JournalStore for InMemoryJournalStore {
         limit: usize,
     ) -> Result<Vec<AccountLedgerProjection>, JournalError> {
         let projections = MemoryProjections::from_executions(&self.executions)?;
-        let is_admin = self.user_is_room_admin(user_id, room_id);
         let mut ledger = projections
             .account_ledger
             .into_iter()
@@ -1738,9 +1846,8 @@ impl JournalStore for InMemoryJournalStore {
                 row.room_id == room_id
                     && instrument_id.is_none_or(|id| row.instrument_id == id)
                     && account_id.is_none_or(|id| row_account_id == Some(id))
-                    && (is_admin
-                        || row_account_id
-                            .is_some_and(|id| self.user_owns_account(user_id, room_id, id)))
+                    && row_account_id
+                        .is_some_and(|id| self.user_may_access_account(user_id, room_id, id))
             })
             .collect::<Vec<_>>();
         ledger.sort_by_key(|row| Reverse((row.command_seq, row.ledger_seq)));
@@ -1757,7 +1864,6 @@ impl JournalStore for InMemoryJournalStore {
         limit: usize,
     ) -> Result<Vec<PositionSnapshotProjection>, JournalError> {
         let projections = MemoryProjections::from_executions(&self.executions)?;
-        let is_admin = self.user_is_room_admin(user_id, room_id);
         let mut positions = projections
             .position_snapshots
             .into_iter()
@@ -1766,9 +1872,8 @@ impl JournalStore for InMemoryJournalStore {
                 row.room_id == room_id
                     && instrument_id.is_none_or(|id| row.instrument_id == id)
                     && account_id.is_none_or(|id| row_account_id == Some(id))
-                    && (is_admin
-                        || row_account_id
-                            .is_some_and(|id| self.user_owns_account(user_id, room_id, id)))
+                    && row_account_id
+                        .is_some_and(|id| self.user_may_access_account(user_id, room_id, id))
             })
             .collect::<Vec<_>>();
         positions.sort_by_key(|row| Reverse((row.command_seq, row.ledger_seq)));
@@ -1783,14 +1888,13 @@ impl JournalStore for InMemoryJournalStore {
         account_id: Option<AccountId>,
         limit: usize,
     ) -> Result<Vec<VenueTransfer>, JournalError> {
-        let is_admin = self.user_is_room_admin(user_id, room_id);
         let mut transfers = self
             .transfers
             .iter()
             .filter(|((transfer_room_id, _), transfer)| {
                 transfer_room_id == room_id
                     && account_id.is_none_or(|account_id| transfer.account_id == account_id)
-                    && (is_admin || self.user_owns_account(user_id, room_id, transfer.account_id))
+                    && self.user_may_access_account(user_id, room_id, transfer.account_id)
             })
             .map(|(_, transfer)| transfer.clone())
             .collect::<Vec<_>>();
@@ -3679,6 +3783,140 @@ impl JournalStore for PostgresJournalStore {
         })
     }
 
+    fn upsert_room_member(
+        &mut self,
+        room_id: &str,
+        user_id: &str,
+        role: &str,
+    ) -> Result<(), JournalError> {
+        if !is_known_member_role(role) {
+            return Err(JournalError::Recovery(format!("invalid role {role}")));
+        }
+        let room_id = room_id.to_string();
+        let user_id = user_id.to_string();
+        let role = role.to_string();
+        run_postgres(&mut self.client, move |client| {
+            client
+                .execute(
+                    r#"
+                    INSERT INTO marketforge_users (user_id)
+                    VALUES ($1)
+                    ON CONFLICT (user_id) DO NOTHING
+                    "#,
+                    &[&user_id],
+                )
+                .map_err(JournalError::Postgres)?;
+            client
+                .execute(
+                    r#"
+                    INSERT INTO marketforge_room_members (room_id, user_id, role)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (room_id, user_id)
+                    DO UPDATE SET role = EXCLUDED.role
+                    "#,
+                    &[&room_id, &user_id, &role],
+                )
+                .map_err(JournalError::Postgres)?;
+            Ok(())
+        })
+    }
+
+    fn remove_room_member(&mut self, room_id: &str, user_id: &str) -> Result<(), JournalError> {
+        let room_id = room_id.to_string();
+        let user_id = user_id.to_string();
+        run_postgres(&mut self.client, move |client| {
+            client
+                .execute(
+                    r#"
+                    DELETE FROM marketforge_account_owners
+                    WHERE room_id = $1 AND user_id = $2
+                    "#,
+                    &[&room_id, &user_id],
+                )
+                .map_err(JournalError::Postgres)?;
+            client
+                .execute(
+                    r#"
+                    DELETE FROM marketforge_room_members
+                    WHERE room_id = $1 AND user_id = $2
+                    "#,
+                    &[&room_id, &user_id],
+                )
+                .map_err(JournalError::Postgres)?;
+            Ok(())
+        })
+    }
+
+    fn assign_account_owner(
+        &mut self,
+        room_id: &str,
+        account_id: AccountId,
+        user_id: &str,
+    ) -> Result<(), JournalError> {
+        let room_id = room_id.to_string();
+        let user_id = user_id.to_string();
+        let account_id = i64_from_u64(account_id, "account_id")?;
+        run_postgres(&mut self.client, move |client| {
+            let role: Option<String> = client
+                .query_opt(
+                    r#"
+                    SELECT role
+                    FROM marketforge_room_members
+                    WHERE room_id = $1 AND user_id = $2
+                    "#,
+                    &[&room_id, &user_id],
+                )
+                .map_err(JournalError::Postgres)?
+                .map(|row| row.get(0));
+            match role.as_deref() {
+                Some(role) if is_account_holder_role(role) => {}
+                Some(role) => {
+                    return Err(JournalError::Recovery(format!(
+                        "role {role} cannot be assigned an account"
+                    )));
+                }
+                None => {
+                    return Err(JournalError::Recovery(format!(
+                        "user {user_id} is not a member of {room_id}"
+                    )));
+                }
+            }
+            client
+                .execute(
+                    r#"
+                    INSERT INTO marketforge_account_owners (room_id, account_id, user_id)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (room_id, account_id, user_id) DO NOTHING
+                    "#,
+                    &[&room_id, &account_id, &user_id],
+                )
+                .map_err(JournalError::Postgres)?;
+            Ok(())
+        })
+    }
+
+    fn user_room_role(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+    ) -> Result<Option<String>, JournalError> {
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        run_postgres(&mut self.client, move |client| {
+            Ok(client
+                .query_opt(
+                    r#"
+                    SELECT role
+                    FROM marketforge_room_members
+                    WHERE room_id = $1 AND user_id = $2
+                    "#,
+                    &[&room_id, &user_id],
+                )
+                .map_err(JournalError::Postgres)?
+                .map(|row| row.get(0)))
+        })
+    }
+
     fn user_can_access_room(&mut self, user_id: &str, room_id: &str) -> Result<bool, JournalError> {
         let user_id = user_id.to_string();
         let room_id = room_id.to_string();
@@ -3742,12 +3980,15 @@ impl JournalStore for PostgresJournalStore {
                       AND member.user_id = $2
                       AND (
                           member.role IN ('owner', 'admin')
-                          OR EXISTS (
-                              SELECT 1
-                              FROM marketforge_account_owners owner
-                              WHERE owner.room_id = $1
-                                AND owner.account_id = $3
-                                AND owner.user_id = $2
+                          OR (
+                              member.role IN ('instructor', 'trader')
+                              AND EXISTS (
+                                  SELECT 1
+                                  FROM marketforge_account_owners owner
+                                  WHERE owner.room_id = $1
+                                    AND owner.account_id = $3
+                                    AND owner.user_id = $2
+                              )
                           )
                       )
                     "#,
@@ -3792,12 +4033,21 @@ impl JournalStore for PostgresJournalStore {
                                 AND member.user_id = $5
                                 AND member.role IN ('owner', 'admin')
                           )
-                          OR EXISTS (
-                              SELECT 1
-                              FROM marketforge_account_owners owner
-                              WHERE owner.room_id = marketforge_orders.room_id
-                                AND owner.account_id = marketforge_orders.account_id
-                                AND owner.user_id = $5
+                          OR (
+                              EXISTS (
+                                  SELECT 1
+                                  FROM marketforge_account_owners owner
+                                  WHERE owner.room_id = marketforge_orders.room_id
+                                    AND owner.account_id = marketforge_orders.account_id
+                                    AND owner.user_id = $5
+                              )
+                              AND EXISTS (
+                                  SELECT 1
+                                  FROM marketforge_room_members member
+                                  WHERE member.room_id = marketforge_orders.room_id
+                                    AND member.user_id = $5
+                                    AND member.role IN ('instructor', 'trader')
+                              )
                           )
                       )
                     ORDER BY updated_command_seq DESC, order_id DESC
@@ -3862,12 +4112,21 @@ impl JournalStore for PostgresJournalStore {
                                 AND member.user_id = $5
                                 AND member.role IN ('owner', 'admin')
                           )
-                          OR EXISTS (
-                              SELECT 1
-                              FROM marketforge_account_owners owner
-                              WHERE owner.room_id = marketforge_trades.room_id
-                                AND owner.user_id = $5
-                                AND owner.account_id IN (maker_account_id, taker_account_id)
+                          OR (
+                              EXISTS (
+                                  SELECT 1
+                                  FROM marketforge_account_owners owner
+                                  WHERE owner.room_id = marketforge_trades.room_id
+                                    AND owner.user_id = $5
+                                    AND owner.account_id IN (maker_account_id, taker_account_id)
+                              )
+                              AND EXISTS (
+                                  SELECT 1
+                                  FROM marketforge_room_members member
+                                  WHERE member.room_id = marketforge_trades.room_id
+                                    AND member.user_id = $5
+                                    AND member.role IN ('instructor', 'trader')
+                              )
                           )
                       )
                     ORDER BY command_seq DESC, event_seq DESC
@@ -3984,12 +4243,21 @@ impl JournalStore for PostgresJournalStore {
                                 AND member.user_id = $5
                                 AND member.role IN ('owner', 'admin')
                           )
-                          OR EXISTS (
-                              SELECT 1
-                              FROM marketforge_account_owners owner
-                              WHERE owner.room_id = marketforge_account_ledger.room_id
-                                AND owner.account_id = marketforge_account_ledger.account_id
-                                AND owner.user_id = $5
+                          OR (
+                              EXISTS (
+                                  SELECT 1
+                                  FROM marketforge_account_owners owner
+                                  WHERE owner.room_id = marketforge_account_ledger.room_id
+                                    AND owner.account_id = marketforge_account_ledger.account_id
+                                    AND owner.user_id = $5
+                              )
+                              AND EXISTS (
+                                  SELECT 1
+                                  FROM marketforge_room_members member
+                                  WHERE member.room_id = marketforge_account_ledger.room_id
+                                    AND member.user_id = $5
+                                    AND member.role IN ('instructor', 'trader')
+                              )
                           )
                       )
                     ORDER BY command_seq DESC, ledger_seq DESC
@@ -4068,12 +4336,21 @@ impl JournalStore for PostgresJournalStore {
                                 AND member.user_id = $5
                                 AND member.role IN ('owner', 'admin')
                           )
-                          OR EXISTS (
-                              SELECT 1
-                              FROM marketforge_account_owners owner
-                              WHERE owner.room_id = marketforge_position_snapshots.room_id
-                                AND owner.account_id = marketforge_position_snapshots.account_id
-                                AND owner.user_id = $5
+                          OR (
+                              EXISTS (
+                                  SELECT 1
+                                  FROM marketforge_account_owners owner
+                                  WHERE owner.room_id = marketforge_position_snapshots.room_id
+                                    AND owner.account_id = marketforge_position_snapshots.account_id
+                                    AND owner.user_id = $5
+                              )
+                              AND EXISTS (
+                                  SELECT 1
+                                  FROM marketforge_room_members member
+                                  WHERE member.room_id = marketforge_position_snapshots.room_id
+                                    AND member.user_id = $5
+                                    AND member.role IN ('instructor', 'trader')
+                              )
                           )
                       )
                     ORDER BY command_seq DESC, ledger_seq DESC
@@ -4137,12 +4414,21 @@ impl JournalStore for PostgresJournalStore {
                                 AND member.user_id = $4
                                 AND member.role IN ('owner', 'admin')
                           )
-                          OR EXISTS (
-                              SELECT 1
-                              FROM marketforge_account_owners owner
-                              WHERE owner.room_id = marketforge_transfers.room_id
-                                AND owner.account_id = marketforge_transfers.account_id
-                                AND owner.user_id = $4
+                          OR (
+                              EXISTS (
+                                  SELECT 1
+                                  FROM marketforge_account_owners owner
+                                  WHERE owner.room_id = marketforge_transfers.room_id
+                                    AND owner.account_id = marketforge_transfers.account_id
+                                    AND owner.user_id = $4
+                              )
+                              AND EXISTS (
+                                  SELECT 1
+                                  FROM marketforge_room_members member
+                                  WHERE member.room_id = marketforge_transfers.room_id
+                                    AND member.user_id = $4
+                                    AND member.role IN ('instructor', 'trader')
+                              )
                           )
                       )
                     ORDER BY transfer_id DESC
@@ -6192,8 +6478,8 @@ mod tests {
     fn in_memory_projection_queries_match_role_and_account_visibility() {
         let mut store = InMemoryJournalStore::new();
         store.set_room_member_for_test("room-1", "admin", "admin");
-        store.set_room_member_for_test("room-1", "trader", "member");
-        store.set_room_member_for_test("room-1", "viewer", "member");
+        store.set_room_member_for_test("room-1", "trader", "trader");
+        store.set_room_member_for_test("room-1", "viewer", "spectator");
         store.set_account_owner_for_test("room-1", 20, "trader");
 
         let maker = new_order_record(
@@ -6658,5 +6944,87 @@ mod tests {
             );
         }
         assert!(parse_runtime_lock_wait_ms(&(MAX_RUNTIME_LOCK_WAIT_MS + 1).to_string()).is_err());
+    }
+
+    #[test]
+    fn role_matrix_gates_account_access_and_assignment() {
+        let mut store = InMemoryJournalStore::new();
+        store
+            .upsert_room_member("room-a", "owner", "owner")
+            .unwrap();
+        store
+            .upsert_room_member("room-a", "instructor", "instructor")
+            .unwrap();
+        store
+            .upsert_room_member("room-a", "trader-a", "trader")
+            .unwrap();
+        store
+            .upsert_room_member("room-a", "trader-b", "trader")
+            .unwrap();
+        store
+            .upsert_room_member("room-a", "spectator", "spectator")
+            .unwrap();
+        store
+            .assign_account_owner("room-a", 10, "trader-a")
+            .unwrap();
+        store
+            .assign_account_owner("room-a", 20, "trader-b")
+            .unwrap();
+        assert!(
+            store
+                .user_can_access_account("owner", "room-a", 10)
+                .unwrap()
+        );
+        assert!(
+            !store
+                .user_can_access_account("instructor", "room-a", 10)
+                .unwrap()
+        );
+        store
+            .assign_account_owner("room-a", 10, "instructor")
+            .unwrap();
+        assert!(
+            store
+                .user_can_access_account("instructor", "room-a", 10)
+                .unwrap()
+        );
+        assert!(
+            store
+                .user_can_access_account("trader-a", "room-a", 10)
+                .unwrap()
+        );
+        assert!(
+            !store
+                .user_can_access_account("trader-a", "room-a", 20)
+                .unwrap()
+        );
+        assert!(
+            !store
+                .user_can_access_account("trader-b", "room-a", 10)
+                .unwrap()
+        );
+        assert!(
+            store
+                .assign_account_owner("room-a", 10, "spectator")
+                .is_err()
+        );
+        assert!(
+            !store
+                .user_can_access_account("spectator", "room-a", 10)
+                .unwrap()
+        );
+        store.remove_room_member("room-a", "trader-a").unwrap();
+        assert!(
+            !store
+                .user_can_access_account("trader-a", "room-a", 10)
+                .unwrap()
+        );
+        assert_eq!(
+            store
+                .user_room_role("spectator", "room-a")
+                .unwrap()
+                .as_deref(),
+            Some("spectator")
+        );
     }
 }

@@ -256,11 +256,13 @@ idempotency for those.
   without bearer tokens is refused at startup.
 - Bearer mode: `Authorization: Bearer …` maps to a configured user id.
   `x-user-id` is ignored.
-- Room membership (`owner` / `admin` / member) and `account_owners` gate
-  reads and writes. Ordinary members cannot use admin surfaces (events stream,
-  clock advance, pause/close, mark price, agent start). Account owners may
-  trade only their accounts. Cross-account cancel/amend is forbidden in the
-  gateway even if the caller is otherwise a member.
+- Room membership roles are `owner` / `admin` / `instructor` / `trader` /
+  `spectator`. Owner and admin administer the room and may trade any account.
+  Instructor is **not** trade-any-account; instructor and trader may trade only
+  assigned accounts. Spectators see public data only and cannot open private
+  streams or submit orders. `account_owners` is the assignment table.
+  Cross-account cancel/amend is forbidden in the gateway even if the caller is
+  otherwise a member.
 - Current HTTP agent worker uses `HttpTradingClient::with_user_id` and is
   **disabled in Bearer mode**. P1 replaces the callback with an internal
   application path bound to server-assigned participant/account identities.
@@ -309,7 +311,7 @@ them. Existing `room_owned_by_other_instance`, `room_lease_lost`, and
 | `StateCheckpoint` actor JSON | implicit serde of `SimulationRoom` | Unknown/legacy shapes either normalize (tested) or fail closed. Periodic snapshot table rows are not this schema. |
 | Scenario config | serde of `ScenarioConfig` | Stored on the room row. Breaking field changes need a version field before use as a training product (P3). |
 | Agent template JSON | `AgentTemplate` serde | Config only; **not** recoverable strategy state. P1 introduces versioned agent state blobs. |
-| Strategy protocol | not published | P5 adds an explicit protocol version. |
+| Strategy protocol | `strategy.v1` | Observation + HTTP place/cancel. Breaking observation fields require a new version string. |
 | Scoring | not published | P3 adds a scoring-rule version; reports must record it. |
 | HTTP API | unversioned paths | Additive fields with defaults. Breaking response changes require a versioned path or an explicit compat window documented in the validation record. |
 | CandleScope plugin | contract tests in `marketforge-candlescope-plugin/tests` | Plugin tests must stay green. Aggregation uses `market_time_ms` and refuses integers above `MAX_SAFE_INTEGER` (`2^53-1`) in JS-facing JSON. |

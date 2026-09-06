@@ -31,12 +31,12 @@ use axum::{
 };
 use exchange_core::{
     AccountSnapshots, ActorExecution, ActorExecutionResult, ActorRejectReason, AgentTemplate,
-    AssetLedgerEntry, BookSnapshot, Event, GatewayRequest, InstrumentId, MarketExecution,
-    MarketStatus, MarketView, Money, OrderAction, OrderGateway, OrderId, Participant,
-    ParticipantId, PortfolioAccountSnapshot, RoomId, RoomManager, RoomManagerError,
-    RoomNetWorthSnapshot, ScenarioConfig, SimulationClock, SpotAccountSnapshot, SpotClearingEvent,
-    TradingApi, VenueAccountSnapshot, VenueAccountVenueSnapshot, VenueToVenueTransfer,
-    VenueTransfer,
+    AssetLedgerEntry, BookSnapshot, EXTERNAL_ACTIONS_PER_STEP, Event, GatewayRequest, InstrumentId,
+    MarketExecution, MarketStatus, MarketView, Money, OrderAction, OrderGateway, OrderId,
+    Participant, ParticipantId, ParticipantObservation, PortfolioAccountSnapshot, RoomId,
+    RoomManager, RoomManagerError, RoomNetWorthSnapshot, STRATEGY_PROTOCOL_VERSION, ScenarioConfig,
+    SimulationClock, SpotAccountSnapshot, SpotClearingEvent, TradingApi, TrainingStatus,
+    VenueAccountSnapshot, VenueAccountVenueSnapshot, VenueToVenueTransfer, VenueTransfer,
     model::{AccountId, Command, OrderKind, SetMarkPrice},
     perp::{PerpAccountSnapshot, PerpClearingEvent},
 };
@@ -430,6 +430,7 @@ struct AppState {
     schedulers: BTreeMap<RoomId, exchange_core::SchedulerState>,
     training_runs: BTreeMap<String, exchange_core::TrainingRun>,
     control_idempotency: BTreeMap<(String, String, String), (String, serde_json::Value)>,
+    external_action_counts: BTreeMap<(String, String, u64), u32>,
     journal: JournalCoordinator,
     auth_policy: AuthPolicy,
     room_lease_runtime: Option<RoomLeaseRuntimeState>,
@@ -503,6 +504,7 @@ impl AppState {
             schedulers: BTreeMap::new(),
             training_runs: BTreeMap::new(),
             control_idempotency: BTreeMap::new(),
+            external_action_counts: BTreeMap::new(),
             journal,
             auth_policy,
             room_lease_runtime: None,
@@ -546,6 +548,7 @@ impl AppState {
             schedulers,
             training_runs: training_runs_from_recovery(&recovery),
             control_idempotency: BTreeMap::new(),
+            external_action_counts: BTreeMap::new(),
             journal,
             auth_policy,
             room_lease_runtime,
@@ -1468,6 +1471,16 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
         .route("/training/runs/{run_id}/result", get(training_run_result))
         .route("/training/runs/{run_id}/report", get(training_run_report))
         .route("/rooms/{room_id}/replay", get(replay_room_isolated))
+        .route("/rooms/{room_id}/members", post(upsert_room_member))
+        .route(
+            "/rooms/{room_id}/members/{user_id}",
+            post(remove_room_member),
+        )
+        .route(
+            "/rooms/{room_id}/accounts/{account_id}/owners",
+            post(assign_account_owner),
+        )
+        .route("/rooms/{room_id}/observe", get(observe_room))
         .route("/rooms", post(create_room).get(list_rooms))
         .route(
             "/rooms/{room_id}/agents",
@@ -2825,9 +2838,9 @@ async fn start_training_run(
         run.start()
             .map_err(|error| api_error(StatusCode::CONFLICT, format!("{error:?}")))?;
         let account_ids = scenario_account_ids(&request.scenario);
-        let seed_records = request
-            .scenario
-            .seed_commands()
+        let seed_commands = request.scenario.seed_commands();
+        let next_order_id = next_api_order_id_after_commands(app.next_order_id, &seed_commands)?;
+        let seed_records = seed_commands
             .into_iter()
             .zip(bootstrap.seed_executions.iter().cloned())
             .map(|(command, execution)| JournalExecution::seed(command, execution))
@@ -2859,6 +2872,7 @@ async fn start_training_run(
         .await
         .map_err(api_error_from_journal)?;
         app.rooms = candidate;
+        app.next_order_id = next_order_id;
         if !request.agents.is_empty() {
             let _ = start_agent_worker_for_room(
                 &shared,
@@ -2998,6 +3012,162 @@ pub struct IsolatedReplayResponse {
     pub replayed_commands: usize,
     pub live_room_untouched: bool,
     pub book: BookSnapshot,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomMemberRequest {
+    pub user_id: String,
+    pub role: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomMemberResponse {
+    pub room_id: String,
+    pub user_id: String,
+    pub role: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AssignAccountRequest {
+    pub user_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AssignAccountResponse {
+    pub room_id: String,
+    pub account_id: AccountId,
+    pub user_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ObserveQuery {
+    pub account_id: AccountId,
+    pub instrument_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ObservationResponse {
+    pub api_version: String,
+    pub observation: ParticipantObservation,
+}
+
+fn journal_write_error(error: JournalError) -> ApiError {
+    if let JournalError::Recovery(message) = &error
+        && (message.contains("invalid role")
+            || message.contains("cannot be assigned")
+            || message.contains("is not a member"))
+    {
+        return api_error(StatusCode::BAD_REQUEST, message.clone());
+    }
+    api_error_from_journal(error)
+}
+
+fn training_assignment_frozen(app: &AppState, room_id: &str) -> bool {
+    app.training_runs
+        .values()
+        .any(|run| run.spec.room_id == room_id && !matches!(run.status, TrainingStatus::Created))
+}
+
+async fn upsert_room_member(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Json(request): Json<RoomMemberRequest>,
+) -> ApiResult<RoomMemberResponse> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let journal = {
+        let app = lock_state(&state).await?;
+        app.journal.clone()
+    };
+    journal
+        .upsert_room_member(&room_id, &request.user_id, &request.role)
+        .await
+        .map_err(journal_write_error)?;
+    Ok(Json(RoomMemberResponse {
+        room_id,
+        user_id: request.user_id,
+        role: request.role,
+    }))
+}
+
+async fn remove_room_member(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, user_id)): Path<(String, String)>,
+    Json(_): Json<serde_json::Value>,
+) -> ApiResult<RoomMemberResponse> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let journal = {
+        let app = lock_state(&state).await?;
+        app.journal.clone()
+    };
+    journal
+        .remove_room_member(&room_id, &user_id)
+        .await
+        .map_err(journal_write_error)?;
+    Ok(Json(RoomMemberResponse {
+        room_id,
+        user_id,
+        role: "removed".to_string(),
+    }))
+}
+
+async fn assign_account_owner(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, account_id)): Path<(String, AccountId)>,
+    Json(request): Json<AssignAccountRequest>,
+) -> ApiResult<AssignAccountResponse> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let journal = {
+        let app = lock_state(&state).await?;
+        if training_assignment_frozen(&app, &room_id) {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                format!("account assignment is frozen after training start in room {room_id}"),
+            ));
+        }
+        app.journal.clone()
+    };
+    journal
+        .assign_account_owner(&room_id, account_id, &request.user_id)
+        .await
+        .map_err(journal_write_error)?;
+    Ok(Json(AssignAccountResponse {
+        room_id,
+        account_id,
+        user_id: request.user_id,
+    }))
+}
+
+async fn observe_room(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Query(query): Query<ObserveQuery>,
+) -> ApiResult<ObservationResponse> {
+    authorize_room_read(
+        &state,
+        &headers,
+        &room_id,
+        RoomReadAccess::Account(query.account_id),
+    )
+    .await?;
+    let app = lock_state(&state).await?;
+    let instrument_id = query.instrument_id.unwrap_or_else(|| {
+        app.rooms
+            .room(&room_id)
+            .map(|room| room.primary_instrument_id().to_string())
+            .unwrap_or_default()
+    });
+    let observation = app
+        .rooms
+        .participant_observation(&room_id, &instrument_id, query.account_id)
+        .map_err(api_error_from_room)?;
+    Ok(Json(ObservationResponse {
+        api_version: STRATEGY_PROTOCOL_VERSION.to_string(),
+        observation,
+    }))
 }
 
 async fn replay_room_isolated(
@@ -4262,6 +4432,23 @@ async fn scoped_room_stream(
         StreamScope::Private => RoomReadAccess::Room,
     };
     let authorization = authorize_room_read(&state, &headers, &room_id, access).await?;
+    if matches!(scope, StreamScope::Private)
+        && authorization
+            .journal
+            .user_room_role(&authorization.user_id, &room_id)
+            .await
+            .map_err(api_error_from_journal)?
+            .as_deref()
+            == Some("spectator")
+    {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            format!(
+                "user {} cannot subscribe to private streams in room {room_id}",
+                authorization.user_id
+            ),
+        ));
+    }
     let user_id = authorization.user_id.clone();
     let journal = authorization.journal.clone();
     let lifecycle = state.lifecycle.clone();
@@ -5111,9 +5298,33 @@ async fn submit_order_response(
         RoomReadAccess::Account(request.account_id),
     )
     .await?;
+    if let Some(reason) = order_action_precision_error(&request.action) {
+        return Err(api_error(StatusCode::BAD_REQUEST, reason));
+    }
     run_durable_state_transaction(state.clone(), async move {
         let mut state = lock_state(&state).await?;
         let user_id = authorization.user_id;
+        let is_admin = state
+            .journal
+            .user_can_administer_room(&user_id, &room_id)
+            .await
+            .map_err(api_error_from_journal)?;
+        if !is_admin {
+            let step = state
+                .rooms
+                .clock(&room_id)
+                .map_err(api_error_from_room)?
+                .step();
+            let key = (room_id.clone(), user_id.clone(), step);
+            let count = state.external_action_counts.entry(key).or_insert(0);
+            if *count >= EXTERNAL_ACTIONS_PER_STEP {
+                return Err(api_error(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "external action quota exceeded for this simulation step",
+                ));
+            }
+            *count += 1;
+        }
         let idempotency_key = request_idempotency_key(&headers)?;
         let instrument_id = instrument_id.or_else(|| request.instrument_id.clone());
         let request_fingerprint = serde_json::to_string(&(instrument_id.as_deref(), &request))
@@ -5257,6 +5468,36 @@ fn order_action_qty(action: &OrderAction) -> Option<u64> {
         | OrderAction::PlaceReduceOnlyFillOrKill { qty, .. } => Some(*qty),
         OrderAction::Cancel { .. } | OrderAction::Amend { .. } => None,
     }
+}
+
+fn order_action_precision_error(action: &OrderAction) -> Option<String> {
+    let qty = order_action_qty(action);
+    if qty == Some(0) {
+        return Some("qty must be a positive integer".to_string());
+    }
+    let price_tick = match action {
+        OrderAction::PlaceLimit { price_tick, .. }
+        | OrderAction::PlacePostOnly { price_tick, .. } => Some(*price_tick),
+        OrderAction::PlaceImmediateOrCancel { price_tick, .. }
+        | OrderAction::PlaceFillOrKill { price_tick, .. }
+        | OrderAction::PlaceReduceOnlyImmediateOrCancel { price_tick, .. }
+        | OrderAction::PlaceReduceOnlyFillOrKill { price_tick, .. } => *price_tick,
+        OrderAction::Amend {
+            price_tick, qty, ..
+        } => {
+            if *qty == Some(0) {
+                return Some("qty must be a positive integer".to_string());
+            }
+            *price_tick
+        }
+        OrderAction::PlaceMarket { .. }
+        | OrderAction::PlaceReduceOnlyMarket { .. }
+        | OrderAction::Cancel { .. } => None,
+    };
+    if price_tick.is_some_and(|tick| tick <= 0) {
+        return Some("price_tick must be a positive integer".to_string());
+    }
+    None
 }
 
 fn apply_training_execution(
@@ -6934,6 +7175,59 @@ impl HttpTradingClient {
         run_id: &str,
     ) -> Result<TrainingReportResponse, HttpTradingError> {
         self.get_json(&format!("/training/runs/{run_id}/report"))
+    }
+
+    pub fn upsert_room_member(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        role: &str,
+    ) -> Result<RoomMemberResponse, HttpTradingError> {
+        self.post_json(
+            &format!("/rooms/{room_id}/members"),
+            &RoomMemberRequest {
+                user_id: user_id.to_string(),
+                role: role.to_string(),
+            },
+        )
+    }
+
+    pub fn remove_room_member(
+        &self,
+        room_id: &str,
+        user_id: &str,
+    ) -> Result<RoomMemberResponse, HttpTradingError> {
+        self.post_json(
+            &format!("/rooms/{room_id}/members/{user_id}"),
+            &serde_json::json!({}),
+        )
+    }
+
+    pub fn assign_account_owner(
+        &self,
+        room_id: &str,
+        account_id: AccountId,
+        user_id: &str,
+    ) -> Result<AssignAccountResponse, HttpTradingError> {
+        self.post_json(
+            &format!("/rooms/{room_id}/accounts/{account_id}/owners"),
+            &AssignAccountRequest {
+                user_id: user_id.to_string(),
+            },
+        )
+    }
+
+    pub fn observe_room(
+        &self,
+        room_id: &str,
+        account_id: AccountId,
+        instrument_id: Option<&str>,
+    ) -> Result<ObservationResponse, HttpTradingError> {
+        let mut path = format!("/rooms/{room_id}/observe?account_id={account_id}");
+        if let Some(instrument_id) = instrument_id {
+            path.push_str(&format!("&instrument_id={instrument_id}"));
+        }
+        self.get_json(&path)
     }
 
     pub fn replay_room(
@@ -10643,6 +10937,488 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(before, after);
+    }
+
+    async fn send_json(
+        app: &axum::Router,
+        method: Method,
+        uri: &str,
+        user: Option<&str>,
+        body: impl Serialize,
+    ) -> axum::http::Response<Body> {
+        let mut builder = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json");
+        if let Some(user) = user {
+            builder = builder.header(USER_ID_HEADER, user);
+        }
+        app.clone()
+            .oneshot(
+                builder
+                    .body(Body::from(serde_json::to_string(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
+    fn limit_buy(account_id: AccountId, price_tick: i64, qty: u64) -> SubmitOrderRequest {
+        SubmitOrderRequest {
+            participant_id: "p5".to_string(),
+            instrument_id: None,
+            account_id,
+            action: OrderAction::PlaceLimit {
+                side: Side::Buy,
+                price_tick,
+                qty,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn owner_can_add_spectator_who_cannot_trade() {
+        let app = new_app();
+        let response = send_json(
+            &app,
+            Method::POST,
+            "/rooms",
+            None,
+            spot_scenario("member-room"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let add = send_json(
+            &app,
+            Method::POST,
+            "/rooms/member-room/members",
+            None,
+            serde_json::json!({"user_id":"spectator","role":"spectator"}),
+        )
+        .await;
+        assert_eq!(add.status(), StatusCode::OK);
+        let trade = send_json(
+            &app,
+            Method::POST,
+            "/rooms/member-room/orders",
+            Some("spectator"),
+            limit_buy(20, 100, 1),
+        )
+        .await;
+        assert_eq!(trade.status(), StatusCode::FORBIDDEN);
+        let private = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/member-room/stream/private")
+                    .header(USER_ID_HEADER, "spectator")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(private.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn traders_are_isolated_and_instructor_is_not_trade_any_account() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("role-matrix")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        for (user, role) in [
+            ("trader-a", "trader"),
+            ("trader-b", "trader"),
+            ("coach", "instructor"),
+        ] {
+            let add = send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/members",
+                None,
+                serde_json::json!({"user_id": user, "role": role}),
+            )
+            .await;
+            assert_eq!(add.status(), StatusCode::OK);
+        }
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/accounts/10/owners",
+                None,
+                serde_json::json!({"user_id":"trader-a"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/accounts/20/owners",
+                None,
+                serde_json::json!({"user_id":"trader-b"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/orders",
+                Some("trader-a"),
+                limit_buy(10, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/orders",
+                Some("trader-a"),
+                limit_buy(20, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/orders",
+                Some("trader-b"),
+                limit_buy(10, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/orders",
+                Some("coach"),
+                limit_buy(10, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/accounts/10/owners",
+                None,
+                serde_json::json!({"user_id":"coach"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/orders",
+                Some("coach"),
+                limit_buy(10, 89, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let observe = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/role-matrix/observe?account_id=10")
+                    .header(USER_ID_HEADER, "trader-a")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(observe.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(observe.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: ObservationResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed.api_version, "strategy.v1");
+        assert_eq!(parsed.observation.version, 1);
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/members/trader-a",
+                None,
+                serde_json::json!({}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/orders",
+                Some("trader-a"),
+                limit_buy(10, 88, 1),
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn forged_account_illegal_precision_and_quota_are_rejected() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("quota-room")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-room/members",
+                None,
+                serde_json::json!({"user_id":"ext","role":"trader"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-room/accounts/20/owners",
+                None,
+                serde_json::json!({"user_id":"ext"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-room/orders",
+                Some("ext"),
+                limit_buy(20, 0, 1),
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-room/orders",
+                Some("ext"),
+                limit_buy(20, 80, 0),
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
+        for i in 0..EXTERNAL_ACTIONS_PER_STEP {
+            let status = send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-room/orders",
+                Some("ext"),
+                limit_buy(20, 70 + i64::from(i), 1),
+            )
+            .await
+            .status();
+            assert_eq!(status, StatusCode::OK, "action {i}");
+        }
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-room/orders",
+                Some("ext"),
+                limit_buy(20, 50, 1),
+            )
+            .await
+            .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/other-quota/orders",
+                Some("ext"),
+                limit_buy(20, 50, 1),
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("other-quota")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/other-quota/members",
+                None,
+                serde_json::json!({"user_id":"ext","role":"trader"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/other-quota/accounts/20/owners",
+                None,
+                serde_json::json!({"user_id":"ext"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/other-quota/orders",
+                Some("ext"),
+                limit_buy(20, 50, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn training_start_freezes_account_assignment() {
+        let mut scenario = spot_scenario("freeze-room");
+        scenario.seed_orders = vec![
+            Command::NewOrder(NewOrder {
+                order_id: 1,
+                account_id: 10,
+                side: Side::Buy,
+                kind: OrderKind::Limit { price_tick: 99 },
+                qty: 1,
+                reduce_only: false,
+            }),
+            Command::NewOrder(NewOrder {
+                order_id: 2,
+                account_id: 10,
+                side: Side::Sell,
+                kind: OrderKind::Limit { price_tick: 101 },
+                qty: 1,
+                reduce_only: false,
+            }),
+        ];
+        let app = new_app();
+        let start = send_json(
+            &app,
+            Method::POST,
+            "/training/runs",
+            None,
+            StartTrainingRequest {
+                run_id: "freeze-run".to_string(),
+                scenario,
+                agents: Vec::new(),
+                trainee_account_id: 20,
+                target_qty: 4,
+                horizon_steps: 8,
+            },
+        )
+        .await;
+        assert_eq!(start.status(), StatusCode::OK);
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/freeze-room/members",
+                None,
+                serde_json::json!({"user_id":"trader-z","role":"trader"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/freeze-room/accounts/20/owners",
+                None,
+                serde_json::json!({"user_id":"trader-z"}),
+            )
+            .await
+            .status(),
+            StatusCode::CONFLICT
+        );
+        let trainee = send_json(
+            &app,
+            Method::POST,
+            "/rooms/freeze-room/orders",
+            None,
+            limit_buy(20, 101, 1),
+        )
+        .await;
+        assert_eq!(trainee.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(trainee.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+        assert!(!text.contains("DuplicateOrderId"), "{text}");
+        assert!(text.contains("\"accepted\":true"), "{text}");
+        assert!(text.contains("TradePrinted"), "{text}");
     }
 
     #[tokio::test]

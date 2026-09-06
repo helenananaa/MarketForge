@@ -210,6 +210,32 @@ fn run() -> Result<(), String> {
                     .map_err(|e| e.to_string())?,
             )
         }
+        ["member", "add", room_id, user_id, role] => print_json(
+            &client
+                .upsert_room_member(room_id, user_id, role)
+                .map_err(|e| e.to_string())?,
+        ),
+        ["member", "remove", room_id, user_id] => print_json(
+            &client
+                .remove_room_member(room_id, user_id)
+                .map_err(|e| e.to_string())?,
+        ),
+        ["account", "assign", room_id, account_id, user_id] => {
+            let account_id = account_id.parse::<u64>().map_err(|e| e.to_string())?;
+            print_json(
+                &client
+                    .assign_account_owner(room_id, account_id, user_id)
+                    .map_err(|e| e.to_string())?,
+            )
+        }
+        ["observe", room_id, account_id] => {
+            let account_id = account_id.parse::<u64>().map_err(|e| e.to_string())?;
+            print_json(
+                &client
+                    .observe_room(room_id, account_id, None)
+                    .map_err(|e| e.to_string())?,
+            )
+        }
         _ => {
             eprintln!(
                 "usage: marketforge [--base-url URL] [--bearer TOKEN] [--user-id ID] [--idempotency-key KEY] [--trust-owner URL]
@@ -217,10 +243,14 @@ fn run() -> Result<(), String> {
   clock get ID|advance ID STEPS
   ticker ID
   candles ID INTERVAL_MS
-  account list ID
+  account list ID|assign ROOM ACCOUNT USER
+  member add ROOM USER ROLE|remove ROOM USER
+  observe ROOM ACCOUNT
   agent status ID|start ID FILE|stop ID
   order submit ID ACCOUNT buy|sell PRICE QTY
-  order cancel ID ACCOUNT ORDER_ID"
+  order cancel ID ACCOUNT ORDER_ID
+  training start FILE|status ID|abort ID|result ID|report ID
+  replay ROOM [SEQ]"
             );
             Err("invalid command".to_string())
         }
