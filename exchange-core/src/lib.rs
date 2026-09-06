@@ -1,6 +1,7 @@
 pub mod account;
 pub mod actor;
 pub mod agents;
+pub mod candles;
 pub mod clock;
 pub mod engine;
 pub mod gateway;
@@ -35,6 +36,9 @@ pub use agents::{
     AGENT_CONFIG_VERSION, AGENT_STATE_VERSION, AgentParticipantStep, AgentRuntime, AgentStep,
     AgentTemplate, DcaTrader, DcaTraderConfig, GridTrader, GridTraderConfig, NoiseTrader,
     NoiseTraderConfig, PersistedAgentKindState,
+};
+pub use candles::{
+    CANDLE_SCHEMA_VERSION, Candle, CandleError, Ticker, TimedTrade, aggregate_candles,
 };
 pub use clock::{ClockError, MAX_CLOCK_ADVANCE_STEPS, SimulationClock};
 pub use engine::OrderBook;

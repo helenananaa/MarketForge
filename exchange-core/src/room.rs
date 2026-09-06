@@ -719,6 +719,67 @@ impl RoomManager {
         self.simulation_room(room_id).map(SimulationRoom::clock)
     }
 
+    pub fn ticker(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+    ) -> Result<crate::candles::Ticker, RoomManagerError> {
+        let book = self.book_snapshot_for(room_id, instrument_id)?;
+        let last = self
+            .timed_trades(room_id, instrument_id)?
+            .last()
+            .map(|trade| trade.price_tick);
+        Ok(crate::candles::Ticker::from_book_and_last(
+            book.bids.first().map(|level| level.price_tick),
+            book.asks.first().map(|level| level.price_tick),
+            last,
+        ))
+    }
+
+    pub fn timed_trades(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+    ) -> Result<Vec<crate::candles::TimedTrade>, RoomManagerError> {
+        use crate::model::Event;
+        let mut trades = Vec::new();
+        for execution in self.execution_history(room_id)? {
+            if execution.instrument_id != instrument_id {
+                continue;
+            }
+            let events = match &execution.result {
+                ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
+                    result.events.as_slice()
+                }
+                ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
+                    result.events.as_slice()
+                }
+                ActorExecutionResult::Rejected(_) => continue,
+            };
+            for record in events {
+                if let Event::TradePrinted(trade) = &record.event {
+                    trades.push(crate::candles::TimedTrade::from_trade(
+                        execution.market_time_ms,
+                        trade,
+                    ));
+                }
+            }
+        }
+        Ok(trades)
+    }
+
+    pub fn candles(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+        interval_ms: u64,
+    ) -> Result<Vec<crate::candles::Candle>, RoomManagerError> {
+        let now = self.clock(room_id)?.market_time_ms();
+        let trades = self.timed_trades(room_id, instrument_id)?;
+        crate::candles::aggregate_candles(&trades, interval_ms, now)
+            .map_err(RoomManagerError::Candle)
+    }
+
     pub fn advance_clock(
         &mut self,
         room_id: &str,
@@ -819,6 +880,7 @@ pub enum RoomManagerError {
     Actor(ActorRejectReason),
     Scenario(ScenarioError),
     Simulation(SimulationRoomError),
+    Candle(crate::candles::CandleError),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

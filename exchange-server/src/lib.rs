@@ -1470,6 +1470,10 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
         .route("/rooms/{room_id}/owner", get(room_owner))
         .route("/rooms/{room_id}/view", get(market_view))
         .route("/rooms/{room_id}/book", get(book_snapshot))
+        .route("/rooms/{room_id}/ticker", get(room_ticker))
+        .route("/rooms/{room_id}/candles", get(room_candles))
+        .route("/rooms/{room_id}/stream/public", get(public_room_stream))
+        .route("/rooms/{room_id}/stream/private", get(private_room_stream))
         .route("/rooms/{room_id}/accounts", get(account_snapshots))
         .route(
             "/rooms/{room_id}/venue/accounts",
@@ -1506,6 +1510,14 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
         .route(
             "/rooms/{room_id}/instruments/{instrument_id}/book",
             get(book_snapshot_for_instrument),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/ticker",
+            get(room_ticker_for_instrument),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/candles",
+            get(room_candles_for_instrument),
         )
         .route(
             "/rooms/{room_id}/instruments/{instrument_id}/accounts",
@@ -3751,6 +3763,441 @@ async fn book_snapshot_response(
         .map_err(api_error_from_room)
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TickerResponse {
+    pub api_version: String,
+    pub room_id: String,
+    pub instrument_id: InstrumentId,
+    pub market_time_ms: u64,
+    pub ticker: exchange_core::Ticker,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct CandleQuery {
+    pub interval_ms: Option<u64>,
+    pub after_open_time_ms: Option<u64>,
+    pub instrument_id: Option<InstrumentId>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CandleResponse {
+    pub api_version: String,
+    pub room_id: String,
+    pub instrument_id: InstrumentId,
+    pub interval_ms: u64,
+    pub market_time_ms: u64,
+    pub candles: Vec<exchange_core::Candle>,
+    pub next_after_open_time_ms: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct UserStreamEvent {
+    pub api_version: String,
+    pub stream: String,
+    pub stream_seq: u64,
+    pub command_seq: Option<u64>,
+    pub kind: String,
+    pub payload: serde_json::Value,
+}
+
+async fn room_ticker(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+) -> ApiResult<TickerResponse> {
+    ticker_response(state, headers, room_id, None).await
+}
+
+async fn room_ticker_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+) -> ApiResult<TickerResponse> {
+    ticker_response(state, headers, room_id, Some(instrument_id)).await
+}
+
+async fn ticker_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+) -> ApiResult<TickerResponse> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Room).await?;
+    let state = lock_state(&state).await?;
+    let instrument_id = match instrument_id {
+        Some(instrument_id) => instrument_id,
+        None => state
+            .rooms
+            .room(&room_id)
+            .map(|room| room.primary_instrument_id().to_string())
+            .map_err(api_error_from_room)?,
+    };
+    let clock = state.rooms.clock(&room_id).map_err(api_error_from_room)?;
+    let ticker = state
+        .rooms
+        .ticker(&room_id, &instrument_id)
+        .map_err(api_error_from_room)?;
+    Ok(Json(TickerResponse {
+        api_version: "http.v1".to_string(),
+        room_id,
+        instrument_id,
+        market_time_ms: clock.market_time_ms(),
+        ticker,
+    }))
+}
+
+async fn room_candles(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Query(query): Query<CandleQuery>,
+) -> ApiResult<CandleResponse> {
+    candles_response(state, headers, room_id, query.instrument_id.clone(), query).await
+}
+
+async fn room_candles_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+    Query(query): Query<CandleQuery>,
+) -> ApiResult<CandleResponse> {
+    candles_response(state, headers, room_id, Some(instrument_id), query).await
+}
+
+async fn candles_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+    query: CandleQuery,
+) -> ApiResult<CandleResponse> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Room).await?;
+    let interval_ms = query.interval_ms.unwrap_or(1_000);
+    if interval_ms == 0 {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "interval_ms must be greater than zero".to_string(),
+        ));
+    }
+    let state = lock_state(&state).await?;
+    let instrument_id = match instrument_id {
+        Some(instrument_id) => instrument_id,
+        None => state
+            .rooms
+            .room(&room_id)
+            .map(|room| room.primary_instrument_id().to_string())
+            .map_err(api_error_from_room)?,
+    };
+    let clock = state.rooms.clock(&room_id).map_err(api_error_from_room)?;
+    let mut candles = state
+        .rooms
+        .candles(&room_id, &instrument_id, interval_ms)
+        .map_err(api_error_from_room)?;
+    if let Some(after) = query.after_open_time_ms {
+        candles.retain(|candle| candle.open_time_ms > after);
+    }
+    let next_after_open_time_ms = candles.last().map(|candle| candle.open_time_ms);
+    Ok(Json(CandleResponse {
+        api_version: "http.v1".to_string(),
+        room_id,
+        instrument_id,
+        interval_ms,
+        market_time_ms: clock.market_time_ms(),
+        candles,
+        next_after_open_time_ms,
+    }))
+}
+
+async fn public_room_stream(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Query(query): Query<RoomEventStreamQuery>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<SseEvent, Infallible>>>, ApiError> {
+    scoped_room_stream(state, headers, room_id, query, StreamScope::Public).await
+}
+
+async fn private_room_stream(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Query(query): Query<RoomEventStreamQuery>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<SseEvent, Infallible>>>, ApiError> {
+    scoped_room_stream(state, headers, room_id, query, StreamScope::Private).await
+}
+
+#[derive(Clone, Copy)]
+enum StreamScope {
+    Public,
+    Private,
+}
+
+async fn scoped_room_stream(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    query: RoomEventStreamQuery,
+    scope: StreamScope,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<SseEvent, Infallible>>>, ApiError> {
+    let access = match scope {
+        StreamScope::Public => RoomReadAccess::Room,
+        StreamScope::Private => RoomReadAccess::Room,
+    };
+    let authorization = authorize_room_read(&state, &headers, &room_id, access).await?;
+    let user_id = authorization.user_id.clone();
+    let journal = authorization.journal.clone();
+    let lifecycle = state.lifecycle.clone();
+    let shutdown = lifecycle.subscribe_shutdown();
+    let mut app = lock_state(&state).await?;
+    let receiver = app.room_event_receiver(&room_id);
+    let history = app.executions.get(&room_id).cloned().unwrap_or_default();
+    let snapshot = public_stream_snapshot(&app, &room_id)?;
+    drop(app);
+    let connection = lifecycle.open_sse_connection();
+    let stream_name = match scope {
+        StreamScope::Public => "public",
+        StreamScope::Private => "private",
+    };
+    let after = query.after_command_seq;
+    let mut seq = 0_u64;
+    let mut initial = VecDeque::new();
+    initial.push_back(UserStreamEvent {
+        api_version: "http.v1".to_string(),
+        stream: stream_name.to_string(),
+        stream_seq: {
+            seq += 1;
+            seq
+        },
+        command_seq: None,
+        kind: "snapshot".to_string(),
+        payload: snapshot,
+    });
+    for execution in history {
+        if after.is_some_and(|cursor| execution.command_seq <= cursor) {
+            continue;
+        }
+        if let Some(event) =
+            scoped_event_from_execution(&execution, scope, &user_id, &journal, seq + 1).await
+        {
+            seq = event.stream_seq;
+            initial.push_back(event);
+        }
+    }
+    let stream_state = ScopedStreamState {
+        room_id,
+        scope,
+        user_id,
+        journal,
+        stream_seq: seq,
+        backlog: initial,
+        receiver,
+        shutdown,
+        connection,
+        terminate: false,
+    };
+    let stream = futures_util::stream::unfold(stream_state, |mut state| async move {
+        if state.terminate || *state.shutdown.borrow() {
+            return None;
+        }
+        loop {
+            if let Some(event) = state.backlog.pop_front() {
+                let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string());
+                let sse = SseEvent::default()
+                    .id(event.stream_seq.to_string())
+                    .event(event.kind.clone())
+                    .data(data);
+                return Some((Ok(sse), state));
+            }
+            match state.receiver.recv().await {
+                Ok(execution) => {
+                    if let Some(event) = scoped_event_from_execution(
+                        &execution,
+                        state.scope,
+                        &state.user_id,
+                        &state.journal,
+                        state.stream_seq + 1,
+                    )
+                    .await
+                    {
+                        if matches!(state.scope, StreamScope::Private)
+                            && !state
+                                .journal
+                                .user_can_access_room(&state.user_id, &state.room_id)
+                                .await
+                                .unwrap_or(false)
+                        {
+                            state.terminate = true;
+                            let event = SseEvent::default().event("resync_required").data(
+                                "{\"code\":\"unauthorized\",\"error\":\"permission revoked\"}",
+                            );
+                            return Some((Ok(event), state));
+                        }
+                        state.stream_seq = event.stream_seq;
+                        state.backlog.push_back(event);
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    state.connection.record_resync_required();
+                    state.terminate = true;
+                    let event = SseEvent::default()
+                        .event("resync_required")
+                        .data("{\"code\":\"resync_required\"}");
+                    return Some((Ok(event), state));
+                }
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+struct ScopedStreamState {
+    room_id: RoomId,
+    scope: StreamScope,
+    user_id: String,
+    journal: JournalCoordinator,
+    stream_seq: u64,
+    backlog: VecDeque<UserStreamEvent>,
+    receiver: broadcast::Receiver<RoomExecutionSummary>,
+    shutdown: watch::Receiver<bool>,
+    connection: SseConnectionGuard,
+    terminate: bool,
+}
+
+fn public_stream_snapshot(app: &AppState, room_id: &str) -> Result<serde_json::Value, ApiError> {
+    let instrument_id = app
+        .rooms
+        .room(room_id)
+        .map(|room| room.primary_instrument_id().to_string())
+        .map_err(api_error_from_room)?;
+    let book = app
+        .rooms
+        .book_snapshot_for(room_id, &instrument_id)
+        .map_err(api_error_from_room)?;
+    let ticker = app
+        .rooms
+        .ticker(room_id, &instrument_id)
+        .map_err(api_error_from_room)?;
+    let clock = app.rooms.clock(room_id).map_err(api_error_from_room)?;
+    Ok(serde_json::json!({
+        "instrument_id": instrument_id,
+        "book": book,
+        "ticker": ticker,
+        "market_time_ms": clock.market_time_ms(),
+        "status": clock_status_name(app.rooms.status(room_id).map_err(api_error_from_room)?),
+    }))
+}
+
+fn clock_status_name(status: MarketStatus) -> &'static str {
+    match status {
+        MarketStatus::Running => "running",
+        MarketStatus::Paused => "paused",
+        MarketStatus::Closed => "closed",
+    }
+}
+
+async fn scoped_event_from_execution(
+    execution: &RoomExecutionSummary,
+    scope: StreamScope,
+    user_id: &str,
+    journal: &JournalCoordinator,
+    stream_seq: u64,
+) -> Option<UserStreamEvent> {
+    let kinds = execution
+        .events
+        .iter()
+        .map(event_kind_name)
+        .collect::<Vec<_>>();
+    let is_public = kinds.iter().any(|kind| {
+        matches!(
+            *kind,
+            "trade_printed" | "order_canceled" | "order_rested" | "order_accepted"
+        )
+    });
+    match scope {
+        StreamScope::Public if is_public || kinds.is_empty() => Some(UserStreamEvent {
+            api_version: "http.v1".to_string(),
+            stream: "public".to_string(),
+            stream_seq,
+            command_seq: Some(execution.command_seq),
+            kind: "execution".to_string(),
+            payload: serde_json::json!({
+                "command_seq": execution.command_seq,
+                "instrument_id": execution.instrument_id,
+                "events": kinds,
+                "accepted": execution.accepted,
+            }),
+        }),
+        StreamScope::Private => {
+            if !user_can_see_private_execution(execution, user_id, journal).await {
+                return None;
+            }
+            Some(UserStreamEvent {
+                api_version: "http.v1".to_string(),
+                stream: "private".to_string(),
+                stream_seq,
+                command_seq: Some(execution.command_seq),
+                kind: "execution".to_string(),
+                payload: serde_json::to_value(execution).unwrap_or_else(|_| serde_json::json!({})),
+            })
+        }
+        StreamScope::Public => None,
+    }
+}
+
+fn event_kind_name(event: &EventSummary) -> &'static str {
+    match event {
+        EventSummary::OrderAccepted { .. } => "order_accepted",
+        EventSummary::OrderRejected { .. } => "order_rejected",
+        EventSummary::RiskRejected { .. } => "risk_rejected",
+        EventSummary::TradePrinted { .. } => "trade_printed",
+        EventSummary::OrderPartiallyFilled { .. } => "order_partially_filled",
+        EventSummary::OrderFilled { .. } => "order_filled",
+        EventSummary::OrderRested { .. } => "order_rested",
+        EventSummary::OrderExpired { .. } => "order_expired",
+        EventSummary::OrderCanceled { .. } => "order_canceled",
+        EventSummary::CancelRejected { .. } => "cancel_rejected",
+        EventSummary::OrderAmended { .. } => "order_amended",
+        EventSummary::AmendRejected { .. } => "amend_rejected",
+    }
+}
+
+async fn user_can_see_private_execution(
+    execution: &RoomExecutionSummary,
+    user_id: &str,
+    journal: &JournalCoordinator,
+) -> bool {
+    if journal
+        .user_can_administer_room(user_id, &execution.room_id)
+        .await
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    for event in &execution.events {
+        let EventSummary::TradePrinted {
+            maker_account_id,
+            taker_account_id,
+            ..
+        } = event
+        else {
+            continue;
+        };
+        if journal
+            .user_can_access_account(user_id, &execution.room_id, *maker_account_id)
+            .await
+            .unwrap_or(false)
+            || journal
+                .user_can_access_account(user_id, &execution.room_id, *taker_account_id)
+                .await
+                .unwrap_or(false)
+        {
+            return true;
+        }
+    }
+    false
+}
+
 async fn account_snapshots(
     State(state): State<SharedState>,
     headers: HeaderMap,
@@ -4778,6 +5225,7 @@ fn api_error_from_room(error: RoomManagerError) -> (StatusCode, Json<ErrorRespon
         | RoomManagerError::Actor(_)
         | RoomManagerError::Scenario(_)
         | RoomManagerError::Simulation(_)
+        | RoomManagerError::Candle(_)
         | RoomManagerError::SystemOrderIdOverflow => StatusCode::BAD_REQUEST,
     };
 
@@ -5924,6 +6372,24 @@ impl HttpTradingClient {
         room_id: &str,
     ) -> Result<HttpRoomEventStream, HttpTradingError> {
         HttpRoomEventStream::connect(self.clone(), room_id, None, true)
+    }
+
+    pub fn room_accounts(&self, room_id: &str) -> Result<AccountSnapshots, HttpTradingError> {
+        self.get_json(&format!("/rooms/{room_id}/accounts"))
+    }
+
+    pub fn room_ticker(&self, room_id: &str) -> Result<TickerResponse, HttpTradingError> {
+        self.get_json(&format!("/rooms/{room_id}/ticker"))
+    }
+
+    pub fn room_candles(
+        &self,
+        room_id: &str,
+        interval_ms: u64,
+    ) -> Result<CandleResponse, HttpTradingError> {
+        self.get_json(&format!(
+            "/rooms/{room_id}/candles?interval_ms={interval_ms}"
+        ))
     }
 
     pub fn room_clock(&self, room_id: &str) -> Result<RoomClockResponse, HttpTradingError> {
@@ -9474,6 +9940,119 @@ mod tests {
             )
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn candle_query_matches_fixture_and_does_not_advance_clock() {
+        let app = new_app();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_string(&spot_scenario("candle-room")).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let buy = |price, qty| {
+            Request::builder()
+                .method(Method::POST)
+                .uri("/rooms/candle-room/orders")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_string(&SubmitOrderRequest {
+                        participant_id: "maker".to_string(),
+                        instrument_id: None,
+                        account_id: 10,
+                        action: OrderAction::PlaceLimit {
+                            side: Side::Sell,
+                            price_tick: price,
+                            qty,
+                        },
+                    })
+                    .unwrap(),
+                ))
+                .unwrap()
+        };
+        let _ = app.clone().oneshot(buy(100, 1)).await.unwrap();
+        let _ = app.clone().oneshot(buy(110, 2)).await.unwrap();
+        let take = Request::builder()
+            .method(Method::POST)
+            .uri("/rooms/candle-room/orders")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::to_string(&SubmitOrderRequest {
+                    participant_id: "taker".to_string(),
+                    instrument_id: None,
+                    account_id: 20,
+                    action: OrderAction::PlaceLimit {
+                        side: Side::Buy,
+                        price_tick: 110,
+                        qty: 3,
+                    },
+                })
+                .unwrap(),
+            ))
+            .unwrap();
+        let response = app.clone().oneshot(take).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let clock_before = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/candle-room/clock")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let before = axum::body::to_bytes(clock_before.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let candles = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/candle-room/candles?interval_ms=1000")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(candles.status(), StatusCode::OK);
+        let candle_body = axum::body::to_bytes(candles.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: CandleResponse = serde_json::from_slice(&candle_body).unwrap();
+        assert_eq!(parsed.api_version, "http.v1");
+        assert_eq!(parsed.candles.len(), 1);
+        assert_eq!(parsed.candles[0].volume, 3);
+        assert_eq!(parsed.candles[0].open_tick, 100);
+        assert_eq!(parsed.candles[0].high_tick, 110);
+        let clock_after = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/candle-room/clock")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let after = axum::body::to_bytes(clock_after.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(before, after);
     }
 
     #[tokio::test]

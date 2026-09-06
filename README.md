@@ -11,6 +11,7 @@ The backend supports PostgreSQL journal persistence and room writer leases.
 
 - `exchange-core`: matching, risk, simulation, and room state.
 - `exchange-server`: HTTP API, authentication, and durable journals.
+- `marketforge-cli`: JSON CLI for rooms, orders, clock, and agents.
 - `marketforge-candlescope-plugin`: embedded and remote CandleScope integration.
 - `marketforge-web`: React/TypeScript interface.
 

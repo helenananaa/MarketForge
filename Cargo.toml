@@ -2,6 +2,7 @@
 members = [
     "exchange-core",
     "exchange-server",
+    "marketforge-cli",
     "marketforge-candlescope-plugin",
 ]
 resolver = "3"
