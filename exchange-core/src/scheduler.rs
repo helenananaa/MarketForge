@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     agents::{
-        AGENT_CONFIG_VERSION, AGENT_STATE_VERSION, AgentTemplate, DcaTrader, GridTrader,
-        NoiseTrader, PersistedAgentKindState,
+        AGENT_CONFIG_VERSION, AGENT_STATE_VERSION, AgentTemplate, CancelAtStepTrader,
+        ContinuousMarketMaker, DcaTrader, GridTrader, NoiseTrader, PersistedAgentKindState,
     },
     gateway::{GatewayError, GatewayRequest, OrderAction, OrderGateway, TradingApi},
     model::AccountId,
@@ -153,6 +153,16 @@ impl PersistedAgent {
             AgentTemplate::GridTrader(_) => PersistedAgentKindState::Grid {
                 has_seeded_grid: false,
             },
+            AgentTemplate::ContinuousMarketMaker(config) => PersistedAgentKindState::ContinuousMm {
+                rng_state: config.seed.max(1),
+                last_mid: None,
+                steps_since_quote: 0,
+                inventory: 0,
+            },
+            AgentTemplate::CancelAtStep(_) => PersistedAgentKindState::CancelAtStep {
+                canceled: false,
+                observed_steps: 0,
+            },
         };
         Self {
             version: AGENT_STATE_VERSION,
@@ -168,6 +178,10 @@ impl PersistedAgent {
             AgentTemplate::NoiseTrader(config) => config.participant.instrument_id.as_deref(),
             AgentTemplate::DcaTrader(config) => config.participant.instrument_id.as_deref(),
             AgentTemplate::GridTrader(config) => config.participant.instrument_id.as_deref(),
+            AgentTemplate::ContinuousMarketMaker(config) => {
+                config.participant.instrument_id.as_deref()
+            }
+            AgentTemplate::CancelAtStep(config) => config.participant.instrument_id.as_deref(),
         };
         instrument.ok_or_else(|| SchedulerError::MissingInstrument {
             participant_id: self.template.participant_id().to_string(),
@@ -179,6 +193,8 @@ impl PersistedAgent {
             AgentTemplate::NoiseTrader(config) => config.participant.account_id,
             AgentTemplate::DcaTrader(config) => config.participant.account_id,
             AgentTemplate::GridTrader(config) => config.participant.account_id,
+            AgentTemplate::ContinuousMarketMaker(config) => config.participant.account_id,
+            AgentTemplate::CancelAtStep(config) => config.participant.account_id,
         }
     }
 
@@ -187,6 +203,8 @@ impl PersistedAgent {
             AgentTemplate::NoiseTrader(config) => &config.participant,
             AgentTemplate::DcaTrader(config) => &config.participant,
             AgentTemplate::GridTrader(config) => &config.participant,
+            AgentTemplate::ContinuousMarketMaker(config) => &config.participant,
+            AgentTemplate::CancelAtStep(config) => &config.participant,
         }
     }
 }
@@ -220,6 +238,8 @@ enum RuntimeAgent {
     Noise(NoiseTrader),
     Dca(DcaTrader),
     Grid(GridTrader),
+    ContinuousMm(ContinuousMarketMaker),
+    CancelAtStep(CancelAtStepTrader),
 }
 
 impl RuntimeAgent {
@@ -228,6 +248,12 @@ impl RuntimeAgent {
             AgentTemplate::NoiseTrader(config) => Self::Noise(NoiseTrader::new(config)),
             AgentTemplate::DcaTrader(config) => Self::Dca(DcaTrader::new(config)),
             AgentTemplate::GridTrader(config) => Self::Grid(GridTrader::new(config)),
+            AgentTemplate::ContinuousMarketMaker(config) => {
+                Self::ContinuousMm(ContinuousMarketMaker::new(config))
+            }
+            AgentTemplate::CancelAtStep(config) => {
+                Self::CancelAtStep(CancelAtStepTrader::new(config))
+            }
         };
         if !runtime.restore(&agent.kind_state) {
             return Err(SchedulerError::UnknownCrashRestore);
@@ -240,6 +266,8 @@ impl RuntimeAgent {
             Self::Noise(agent) => agent.restore_kind_state(state),
             Self::Dca(agent) => agent.restore_kind_state(state),
             Self::Grid(agent) => agent.restore_kind_state(state),
+            Self::ContinuousMm(agent) => agent.restore_kind_state(state),
+            Self::CancelAtStep(agent) => agent.restore_kind_state(state),
         }
     }
 
@@ -248,6 +276,8 @@ impl RuntimeAgent {
             Self::Noise(agent) => agent.persist_kind_state(),
             Self::Dca(agent) => agent.persist_kind_state(),
             Self::Grid(agent) => agent.persist_kind_state(),
+            Self::ContinuousMm(agent) => agent.persist_kind_state(),
+            Self::CancelAtStep(agent) => agent.persist_kind_state(),
         }
     }
 
@@ -256,6 +286,8 @@ impl RuntimeAgent {
             Self::Noise(agent) => agent.observe(view),
             Self::Dca(agent) => agent.observe(view),
             Self::Grid(agent) => agent.observe(view),
+            Self::ContinuousMm(agent) => agent.observe(view),
+            Self::CancelAtStep(agent) => agent.observe(view),
         }
     }
 
@@ -264,6 +296,8 @@ impl RuntimeAgent {
             Self::Noise(agent) => agent.decide(),
             Self::Dca(agent) => agent.decide(),
             Self::Grid(agent) => agent.decide(),
+            Self::ContinuousMm(agent) => agent.decide(),
+            Self::CancelAtStep(agent) => agent.decide(),
         }
     }
 
@@ -272,6 +306,8 @@ impl RuntimeAgent {
             Self::Noise(agent) => agent,
             Self::Dca(agent) => agent,
             Self::Grid(agent) => agent,
+            Self::ContinuousMm(agent) => agent,
+            Self::CancelAtStep(agent) => agent,
         }
     }
 }

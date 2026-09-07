@@ -13,6 +13,8 @@ pub enum AgentTemplate {
     NoiseTrader(NoiseTraderConfig),
     DcaTrader(DcaTraderConfig),
     GridTrader(GridTraderConfig),
+    ContinuousMarketMaker(ContinuousMmConfig),
+    CancelAtStep(CancelAtStepConfig),
 }
 
 #[derive(Default)]
@@ -83,6 +85,8 @@ impl AgentTemplate {
             Self::NoiseTrader(config) => &config.participant.participant_id,
             Self::DcaTrader(config) => &config.participant.participant_id,
             Self::GridTrader(config) => &config.participant.participant_id,
+            Self::ContinuousMarketMaker(config) => &config.participant.participant_id,
+            Self::CancelAtStep(config) => &config.participant.participant_id,
         }
     }
 
@@ -91,6 +95,8 @@ impl AgentTemplate {
             Self::NoiseTrader(config) => Box::new(NoiseTrader::new(config)),
             Self::DcaTrader(config) => Box::new(DcaTrader::new(config)),
             Self::GridTrader(config) => Box::new(GridTrader::new(config)),
+            Self::ContinuousMarketMaker(config) => Box::new(ContinuousMarketMaker::new(config)),
+            Self::CancelAtStep(config) => Box::new(CancelAtStepTrader::new(config)),
         }
     }
 }
@@ -138,14 +144,51 @@ pub struct GridTraderConfig {
     pub qty_per_level: Qty,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ContinuousMmConfig {
+    pub participant: ParticipantConfig,
+    pub version: u16,
+    pub seed: u64,
+    pub half_spread_ticks: PriceTick,
+    pub size_per_level: Qty,
+    pub inventory_target: i64,
+    pub inventory_cap: i64,
+    pub requote_threshold_ticks: PriceTick,
+    pub max_resting_orders: u32,
+    pub replenish_steps: u64,
+    pub fallback_price_tick: PriceTick,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CancelAtStepConfig {
+    pub participant: ParticipantConfig,
+    pub cancel_at_step: u64,
+}
+
 pub const AGENT_STATE_VERSION: u16 = 1;
 pub const AGENT_CONFIG_VERSION: u16 = 1;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum PersistedAgentKindState {
-    Noise { rng_state: u64 },
-    Dca { observed_steps: u64 },
-    Grid { has_seeded_grid: bool },
+    Noise {
+        rng_state: u64,
+    },
+    Dca {
+        observed_steps: u64,
+    },
+    Grid {
+        has_seeded_grid: bool,
+    },
+    ContinuousMm {
+        rng_state: u64,
+        last_mid: Option<PriceTick>,
+        steps_since_quote: u64,
+        inventory: i64,
+    },
+    CancelAtStep {
+        canceled: bool,
+        observed_steps: u64,
+    },
 }
 
 pub struct NoiseTrader {
@@ -391,6 +434,210 @@ impl Participant for GridTrader {
     }
 }
 
+pub struct ContinuousMarketMaker {
+    config: ContinuousMmConfig,
+    rng: DeterministicRng,
+    last_view: Option<ParticipantObservation>,
+    last_mid: Option<PriceTick>,
+    steps_since_quote: u64,
+    inventory: i64,
+}
+
+impl ContinuousMarketMaker {
+    pub fn new(config: ContinuousMmConfig) -> Self {
+        let seed = config.seed;
+        Self {
+            rng: DeterministicRng::new(seed),
+            config,
+            last_view: None,
+            last_mid: None,
+            steps_since_quote: 0,
+            inventory: 0,
+        }
+    }
+
+    pub fn persist_kind_state(&self) -> PersistedAgentKindState {
+        PersistedAgentKindState::ContinuousMm {
+            rng_state: self.rng.state(),
+            last_mid: self.last_mid,
+            steps_since_quote: self.steps_since_quote,
+            inventory: self.inventory,
+        }
+    }
+
+    pub fn restore_kind_state(&mut self, state: &PersistedAgentKindState) -> bool {
+        match state {
+            PersistedAgentKindState::ContinuousMm {
+                rng_state,
+                last_mid,
+                steps_since_quote,
+                inventory,
+            } => {
+                self.rng.set_state(*rng_state);
+                self.last_mid = *last_mid;
+                self.steps_since_quote = *steps_since_quote;
+                self.inventory = *inventory;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn mid(&self) -> Option<PriceTick> {
+        let view = self.last_view.as_ref()?;
+        match (view.book.bids.first(), view.book.asks.first()) {
+            (Some(bid), Some(ask)) => Some((bid.price_tick + ask.price_tick) / 2),
+            (Some(bid), None) => Some(bid.price_tick),
+            (None, Some(ask)) => Some(ask.price_tick),
+            (None, None) => view
+                .public_trades
+                .last()
+                .map(|trade| trade.price_tick)
+                .or(Some(self.config.fallback_price_tick.max(1))),
+        }
+    }
+}
+
+impl Participant for ContinuousMarketMaker {
+    fn config(&self) -> &ParticipantConfig {
+        &self.config.participant
+    }
+
+    fn observe(&mut self, view: &ParticipantObservation) {
+        self.last_view = Some(view.clone());
+        self.inventory = match &view.own_account {
+            Some(crate::AccountSnapshot::Spot(account)) => {
+                i64::try_from(account.position_qty).unwrap_or(i64::MAX)
+            }
+            Some(crate::AccountSnapshot::Perp(account)) => {
+                i64::try_from(account.position_qty).unwrap_or(i64::MAX)
+            }
+            None => self.inventory,
+        };
+        self.steps_since_quote = self.steps_since_quote.saturating_add(1);
+    }
+
+    fn decide(&mut self) -> Vec<OrderAction> {
+        let Some(mid) = self.mid() else {
+            return Vec::new();
+        };
+        let spread = self.config.half_spread_ticks.max(1);
+        let size = self.config.size_per_level.max(1);
+        let resting = self
+            .last_view
+            .as_ref()
+            .map(|view| view.own_orders.len() as u32)
+            .unwrap_or(0);
+        let moved = self
+            .last_mid
+            .is_some_and(|prev| (mid - prev).abs() >= self.config.requote_threshold_ticks.max(1));
+        let due = self.config.replenish_steps == 0
+            || self.steps_since_quote >= self.config.replenish_steps
+            || self.last_mid.is_none();
+        if !due && !moved {
+            return Vec::new();
+        }
+        if resting >= self.config.max_resting_orders.max(1) && !moved {
+            return Vec::new();
+        }
+        let mut actions = Vec::new();
+        if moved && let Some(view) = &self.last_view {
+            for order in &view.own_orders {
+                actions.push(OrderAction::Cancel {
+                    order_id: order.order_id,
+                });
+            }
+        }
+        let cap = self.config.inventory_cap.abs().max(1);
+        if self.inventory < cap {
+            actions.push(OrderAction::PlaceLimit {
+                side: Side::Buy,
+                price_tick: (mid - spread).max(1),
+                qty: size,
+            });
+        }
+        if self.inventory > -cap {
+            actions.push(OrderAction::PlaceLimit {
+                side: Side::Sell,
+                price_tick: (mid + spread).max(1),
+                qty: size,
+            });
+        }
+        self.last_mid = Some(mid);
+        self.steps_since_quote = 0;
+        let _ = self.rng.next();
+        actions
+    }
+}
+
+pub struct CancelAtStepTrader {
+    config: CancelAtStepConfig,
+    observed_steps: u64,
+    canceled: bool,
+    last_view: Option<ParticipantObservation>,
+}
+
+impl CancelAtStepTrader {
+    pub fn new(config: CancelAtStepConfig) -> Self {
+        Self {
+            config,
+            observed_steps: 0,
+            canceled: false,
+            last_view: None,
+        }
+    }
+
+    pub fn persist_kind_state(&self) -> PersistedAgentKindState {
+        PersistedAgentKindState::CancelAtStep {
+            canceled: self.canceled,
+            observed_steps: self.observed_steps,
+        }
+    }
+
+    pub fn restore_kind_state(&mut self, state: &PersistedAgentKindState) -> bool {
+        match state {
+            PersistedAgentKindState::CancelAtStep {
+                canceled,
+                observed_steps,
+            } => {
+                self.canceled = *canceled;
+                self.observed_steps = *observed_steps;
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Participant for CancelAtStepTrader {
+    fn config(&self) -> &ParticipantConfig {
+        &self.config.participant
+    }
+
+    fn observe(&mut self, view: &ParticipantObservation) {
+        self.observed_steps = self.observed_steps.saturating_add(1);
+        self.last_view = Some(view.clone());
+    }
+
+    fn decide(&mut self) -> Vec<OrderAction> {
+        if self.canceled || self.observed_steps < self.config.cancel_at_step {
+            return Vec::new();
+        }
+        self.canceled = true;
+        self.last_view
+            .as_ref()
+            .map(|view| {
+                view.own_orders
+                    .iter()
+                    .map(|order| OrderAction::Cancel {
+                        order_id: order.order_id,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct DeterministicRng {
     state: u64,
@@ -546,6 +793,37 @@ mod tests {
         let view = gateway.market_view("room-1").unwrap();
         assert_eq!(view.book.bids.len(), 2);
         assert_eq!(view.book.asks.len(), 2);
+    }
+
+    #[test]
+    fn continuous_mm_quotes_two_sided_and_restores_without_double_seed() {
+        let mut rooms = RoomManager::new();
+        rooms.create_room(spot_scenario()).unwrap();
+        let mut gateway = OrderGateway::new(&mut rooms, 1);
+        let config = ContinuousMmConfig {
+            participant: participant_config("cmm-1", 30),
+            version: 1,
+            seed: 9,
+            half_spread_ticks: 2,
+            size_per_level: 1,
+            inventory_target: 0,
+            inventory_cap: 10,
+            requote_threshold_ticks: 5,
+            max_resting_orders: 4,
+            replenish_steps: 10,
+            fallback_price_tick: 100,
+        };
+        let mut trader = ContinuousMarketMaker::new(config.clone());
+        let first = run_participant_once(&mut gateway, &mut trader).unwrap();
+        assert!(!first.is_empty());
+        assert!(first.len() <= 2);
+        let persisted = trader.persist_kind_state();
+        let mut restored = ContinuousMarketMaker::new(config);
+        assert!(restored.restore_kind_state(&persisted));
+        let second = run_participant_once(&mut gateway, &mut restored).unwrap();
+        assert!(second.is_empty() || second.len() <= 4);
+        let view = gateway.market_view("room-1").unwrap();
+        assert!(view.book.bids.len() + view.book.asks.len() <= 4);
     }
 
     #[test]

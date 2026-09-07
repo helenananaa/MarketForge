@@ -22,6 +22,7 @@ pub mod simulation;
 pub mod spot;
 pub mod trading;
 pub mod training;
+pub mod training_scenarios;
 pub mod transfer;
 pub mod venue_rules;
 
@@ -35,7 +36,8 @@ pub use actor::{
 };
 pub use agents::{
     AGENT_CONFIG_VERSION, AGENT_STATE_VERSION, AgentParticipantStep, AgentRuntime, AgentStep,
-    AgentTemplate, DcaTrader, DcaTraderConfig, GridTrader, GridTraderConfig, NoiseTrader,
+    AgentTemplate, CancelAtStepConfig, CancelAtStepTrader, ContinuousMarketMaker,
+    ContinuousMmConfig, DcaTrader, DcaTraderConfig, GridTrader, GridTraderConfig, NoiseTrader,
     NoiseTraderConfig, PersistedAgentKindState,
 };
 pub use candles::{
@@ -101,6 +103,10 @@ pub use training::{
     LOW_SLIPPAGE_BUY_TASK_VERSION, SCORING_RULE_VERSION, TRAINING_SPEC_VERSION, TrainingError,
     TrainingFill, TrainingRun, TrainingScore, TrainingSpec, TrainingStatus, score_run,
     training_report_json, training_report_markdown,
+};
+pub use training_scenarios::{
+    BASIC_EXECUTION_ID, INVENTORY_STRESS_ID, LIQUIDITY_WITHDRAWAL_ID, SCENARIO_SPEC_VERSION,
+    TrainingScenario, basic_execution, child_seed, inventory_stress, liquidity_withdrawal,
 };
 pub use transfer::{
     TransferId, VenueTransfer, VenueTransferKind, VenueTransferRejectReason, VenueTransferStatus,

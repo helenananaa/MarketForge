@@ -6538,6 +6538,8 @@ fn validate_agent_templates(
             AgentTemplate::NoiseTrader(config) => &config.participant.room_id,
             AgentTemplate::DcaTrader(config) => &config.participant.room_id,
             AgentTemplate::GridTrader(config) => &config.participant.room_id,
+            AgentTemplate::ContinuousMarketMaker(config) => &config.participant.room_id,
+            AgentTemplate::CancelAtStep(config) => &config.participant.room_id,
         };
         if configured_room_id != room_id {
             return Err(api_error(
@@ -6553,6 +6555,10 @@ fn validate_agent_templates(
             AgentTemplate::NoiseTrader(config) => config.participant.instrument_id.as_deref(),
             AgentTemplate::DcaTrader(config) => config.participant.instrument_id.as_deref(),
             AgentTemplate::GridTrader(config) => config.participant.instrument_id.as_deref(),
+            AgentTemplate::ContinuousMarketMaker(config) => {
+                config.participant.instrument_id.as_deref()
+            }
+            AgentTemplate::CancelAtStep(config) => config.participant.instrument_id.as_deref(),
         };
         if instrument_id.is_none() {
             return Err(api_error(
