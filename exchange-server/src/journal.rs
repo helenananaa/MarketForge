@@ -11,8 +11,8 @@ use std::{
 use std::sync::{Arc, Mutex};
 
 use exchange_core::{
-    ActorExecution, Command, MarketStatus, RoomBootstrap, ScenarioConfig, SimulationRoom,
-    VenueToVenueTransfer,
+    ActorExecution, Command, EXTERNAL_ACTIONS_PER_STEP, MarketStatus, RoomBootstrap,
+    ScenarioConfig, SimulationRoom, VenueToVenueTransfer,
     model::{AccountId, OrderKind, Side},
     transfer::{VenueTransfer, VenueTransferKind, VenueTransferRejectReason, VenueTransferStatus},
 };
@@ -100,6 +100,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         version: 13,
         name: "scheduler_and_control_idempotency",
         sql: include_str!("../migrations/0013_scheduler_and_control_idempotency.sql"),
+    },
+    SchemaMigration {
+        version: 14,
+        name: "external_action_quota",
+        sql: include_str!("../migrations/0014_external_action_quota.sql"),
     },
 ];
 
@@ -226,6 +231,15 @@ pub trait JournalStore: Send {
         _idempotency_key: &str,
     ) -> Result<Option<ControlIdempotencyRecord>, JournalError> {
         Ok(None)
+    }
+
+    fn external_action_count(
+        &mut self,
+        _user_id: &str,
+        _room_id: &str,
+        _step: u64,
+    ) -> Result<u32, JournalError> {
+        Ok(0)
     }
 
     fn query_executions(
@@ -641,6 +655,8 @@ pub struct JournalExecution {
     pub request_fingerprint: Option<String>,
     pub command: Command,
     pub execution: RoomExecutionSummary,
+    #[serde(default, skip)]
+    pub quota_user_step: Option<(String, u64)>,
 }
 
 impl JournalExecution {
@@ -656,6 +672,7 @@ impl JournalExecution {
             request_fingerprint: None,
             command,
             execution,
+            quota_user_step: None,
         }
     }
 
@@ -676,6 +693,7 @@ impl JournalExecution {
             request_fingerprint: None,
             command,
             execution,
+            quota_user_step: None,
         }
     }
 
@@ -691,6 +709,7 @@ impl JournalExecution {
             request_fingerprint: None,
             command,
             execution,
+            quota_user_step: None,
         }
     }
 
@@ -703,6 +722,11 @@ impl JournalExecution {
         self.request_user_id = Some(request_user_id.into());
         self.idempotency_key = Some(idempotency_key.into());
         self.request_fingerprint = Some(request_fingerprint.into());
+        self
+    }
+
+    pub fn with_quota(mut self, user_id: impl Into<String>, step: u64) -> Self {
+        self.quota_user_step = Some((user_id.into(), step));
         self
     }
 
@@ -1191,6 +1215,7 @@ pub struct InMemoryJournalStore {
     account_owners: BTreeSet<(String, AccountId, String)>,
     room_writer_leases: BTreeMap<String, InMemoryRoomWriterLease>,
     control_idempotency: BTreeMap<(String, String, String), ControlIdempotencyRecord>,
+    external_action_counts: BTreeMap<(String, String, u64), u32>,
 }
 
 impl InMemoryJournalStore {
@@ -1279,6 +1304,32 @@ impl InMemoryJournalStore {
                 idempotency_key.to_string(),
             ))
             .cloned()
+    }
+
+    fn ensure_execution_quotas(&self, records: &[JournalExecution]) -> Result<(), JournalError> {
+        for record in records {
+            if let Some((user_id, step)) = &record.quota_user_step {
+                let key = (record.room_id.clone(), user_id.clone(), *step);
+                let count = self.external_action_counts.get(&key).copied().unwrap_or(0);
+                if count >= EXTERNAL_ACTIONS_PER_STEP {
+                    return Err(JournalError::ExternalActionQuotaExceeded {
+                        user_id: user_id.clone(),
+                        room_id: record.room_id.clone(),
+                        step: *step,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_execution_quotas(&mut self, records: &[JournalExecution]) {
+        for record in records {
+            if let Some((user_id, step)) = &record.quota_user_step {
+                let key = (record.room_id.clone(), user_id.clone(), *step);
+                *self.external_action_counts.entry(key).or_insert(0) += 1;
+            }
+        }
     }
 
     fn ensure_room_write_fence(&self, claim: &RoomLeaseClaim) -> Result<(), JournalError> {
@@ -1502,6 +1553,19 @@ impl JournalStore for InMemoryJournalStore {
         Ok(self.lookup_control_idempotency(user_id, room_id, idempotency_key))
     }
 
+    fn external_action_count(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        step: u64,
+    ) -> Result<u32, JournalError> {
+        Ok(self
+            .external_action_counts
+            .get(&(room_id.to_string(), user_id.to_string(), step))
+            .copied()
+            .unwrap_or(0))
+    }
+
     fn query_executions(
         &mut self,
         room_id: &str,
@@ -1629,8 +1693,10 @@ impl JournalStore for InMemoryJournalStore {
         if let Some(snapshot) = snapshot {
             validate_snapshot(snapshot)?;
         }
+        self.ensure_execution_quotas(records)?;
 
         self.executions.extend(records.iter().cloned());
+        self.apply_execution_quotas(records);
         if let Some(snapshot) = snapshot {
             self.snapshots.push(snapshot.clone());
         }
@@ -1716,8 +1782,10 @@ impl JournalStore for InMemoryJournalStore {
             }
         }
 
+        self.ensure_execution_quotas(execution_records)?;
         self.store_mutation(mutation)?;
         self.executions.extend(execution_records.iter().cloned());
+        self.apply_execution_quotas(execution_records);
         for record in transfer_records {
             self.transfers.insert(
                 (record.room_id.clone(), record.transfer.transfer_id),
@@ -2107,6 +2175,15 @@ impl JournalStore for SharedInMemoryJournalStore {
     ) -> Result<Option<ControlIdempotencyRecord>, JournalError> {
         self.lock()?
             .find_control_idempotency(user_id, room_id, idempotency_key)
+    }
+
+    fn external_action_count(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        step: u64,
+    ) -> Result<u32, JournalError> {
+        self.lock()?.external_action_count(user_id, room_id, step)
     }
 
     fn query_executions(
@@ -2566,7 +2643,42 @@ impl PostgresJournalStore {
         .map_err(JournalError::Postgres)?;
 
         Self::insert_projected_execution(tx, record)?;
+        if let Some((user_id, step)) = &record.quota_user_step {
+            Self::consume_external_action(tx, &record.room_id, user_id, *step)?;
+        }
 
+        Ok(())
+    }
+
+    fn consume_external_action(
+        tx: &mut postgres::Transaction<'_>,
+        room_id: &str,
+        user_id: &str,
+        step: u64,
+    ) -> Result<(), JournalError> {
+        let step = i64_from_u64(step, "sim_step")?;
+        let limit = i32::try_from(EXTERNAL_ACTIONS_PER_STEP)
+            .map_err(|_| JournalError::CountOutOfRange(EXTERNAL_ACTIONS_PER_STEP as usize))?;
+        let updated = tx
+            .query_opt(
+                r#"
+                INSERT INTO marketforge_external_action_counts (room_id, user_id, step, count)
+                VALUES ($1, $2, $3, 1)
+                ON CONFLICT (room_id, user_id, step)
+                DO UPDATE SET count = marketforge_external_action_counts.count + 1
+                WHERE marketforge_external_action_counts.count < $4
+                RETURNING count
+                "#,
+                &[&room_id, &user_id, &step, &limit],
+            )
+            .map_err(JournalError::Postgres)?;
+        if updated.is_none() {
+            return Err(JournalError::ExternalActionQuotaExceeded {
+                user_id: user_id.to_string(),
+                room_id: room_id.to_string(),
+                step: u64::try_from(step).unwrap_or(0),
+            });
+        }
         Ok(())
     }
 
@@ -3485,6 +3597,7 @@ fn load_postgres_recovery(
             request_fingerprint: row.get("request_fingerprint"),
             command: serde_json::from_value(command_json).map_err(JournalError::Serialize)?,
             execution: serde_json::from_value(execution_json).map_err(JournalError::Serialize)?,
+            quota_user_step: None,
         })
     })
     .collect::<Result<Vec<_>, JournalError>>()?;
@@ -3956,6 +4069,7 @@ impl JournalStore for PostgresJournalStore {
                 command: serde_json::from_value(command_json).map_err(JournalError::Serialize)?,
                 execution: serde_json::from_value(execution_json)
                     .map_err(JournalError::Serialize)?,
+                quota_user_step: None,
             }))
         })
     }
@@ -3992,6 +4106,32 @@ impl JournalStore for PostgresJournalStore {
                 request_fingerprint: row.get("request_fingerprint"),
                 response_json: row.get("response_json"),
             }))
+        })
+    }
+
+    fn external_action_count(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        step: u64,
+    ) -> Result<u32, JournalError> {
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        let step = i64_from_u64(step, "sim_step")?;
+        run_postgres(&mut self.client, move |client| {
+            let count: i32 = client
+                .query_opt(
+                    r#"
+                    SELECT count
+                    FROM marketforge_external_action_counts
+                    WHERE room_id = $1 AND user_id = $2 AND step = $3
+                    "#,
+                    &[&room_id, &user_id, &step],
+                )
+                .map_err(JournalError::Postgres)?
+                .map(|row| row.get("count"))
+                .unwrap_or(0);
+            u32::try_from(count).map_err(|_| JournalError::CountOutOfRange(count.max(0) as usize))
         })
     }
 
@@ -5513,6 +5653,11 @@ pub enum JournalError {
         room_id: String,
         idempotency_key: String,
     },
+    ExternalActionQuotaExceeded {
+        user_id: String,
+        room_id: String,
+        step: u64,
+    },
 }
 
 impl fmt::Display for JournalError {
@@ -5603,6 +5748,14 @@ impl fmt::Display for JournalError {
             } => write!(
                 f,
                 "control idempotency key {idempotency_key:?} already exists for user {user_id} in room {room_id}"
+            ),
+            Self::ExternalActionQuotaExceeded {
+                user_id,
+                room_id,
+                step,
+            } => write!(
+                f,
+                "external action quota exceeded for user {user_id} in room {room_id} at step {step}"
             ),
         }
     }
@@ -6592,6 +6745,7 @@ mod tests {
             request_user_id: None,
             idempotency_key: None,
             request_fingerprint: None,
+            quota_user_step: None,
             command,
             execution: RoomExecutionSummary {
                 room_id: "room-1".to_string(),
@@ -6963,6 +7117,7 @@ mod tests {
         let room_writer_owner_url = include_str!("../migrations/0012_room_writer_owner_url.sql");
         let scheduler_and_control =
             include_str!("../migrations/0013_scheduler_and_control_idempotency.sql");
+        let external_action_quota = include_str!("../migrations/0014_external_action_quota.sql");
 
         assert!(!initial.contains("maintenance_margin"));
         assert!(!initial.contains("margin_status"));
@@ -6981,9 +7136,10 @@ mod tests {
         assert!(room_writer_leases.contains("fencing_token"));
         assert!(room_writer_owner_url.contains("owner_url"));
         assert!(scheduler_and_control.contains("marketforge_control_idempotency"));
+        assert!(external_action_quota.contains("marketforge_external_action_counts"));
         assert_eq!(
             MIGRATIONS.last().map(|migration| migration.version),
-            Some(13)
+            Some(14)
         );
     }
 
@@ -7215,6 +7371,7 @@ mod tests {
             request_user_id: None,
             idempotency_key: None,
             request_fingerprint: None,
+            quota_user_step: None,
             command,
             execution: RoomExecutionSummary {
                 room_id: "room-1".to_string(),

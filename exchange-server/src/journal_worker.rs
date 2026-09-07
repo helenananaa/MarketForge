@@ -405,6 +405,18 @@ impl JournalCoordinator {
         .await
     }
 
+    pub(crate) async fn external_action_count(
+        &self,
+        user_id: &str,
+        room_id: &str,
+        step: u64,
+    ) -> Result<u32, JournalError> {
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        self.execute(move |store| store.external_action_count(&user_id, &room_id, step))
+            .await
+    }
+
     pub(crate) async fn query_executions(
         &self,
         room_id: &str,

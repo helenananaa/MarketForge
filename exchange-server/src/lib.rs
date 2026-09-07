@@ -492,7 +492,6 @@ struct AppState {
     agent_workers: BTreeMap<RoomId, AgentWorkerHandle>,
     schedulers: BTreeMap<RoomId, exchange_core::SchedulerState>,
     training_runs: BTreeMap<String, exchange_core::TrainingRun>,
-    external_action_counts: BTreeMap<(String, String, u64), u32>,
     journal: JournalCoordinator,
     auth_policy: AuthPolicy,
     room_lease_runtime: Option<RoomLeaseRuntimeState>,
@@ -565,7 +564,6 @@ impl AppState {
             agent_workers: BTreeMap::new(),
             schedulers: BTreeMap::new(),
             training_runs: BTreeMap::new(),
-            external_action_counts: BTreeMap::new(),
             journal,
             auth_policy,
             room_lease_runtime: None,
@@ -608,7 +606,6 @@ impl AppState {
             agent_workers: BTreeMap::new(),
             schedulers,
             training_runs: training_runs_from_recovery(&recovery),
-            external_action_counts: BTreeMap::new(),
             journal,
             auth_policy,
             room_lease_runtime,
@@ -3150,7 +3147,8 @@ async fn abort_training_run(
         })?;
         run.abort()
             .map_err(|error| api_error(StatusCode::CONFLICT, format!("{error:?}")))?;
-        let settle = settle_training_residuals(&mut app.rooms, &mut run)?;
+        let mut candidate_rooms = app.rooms.clone();
+        let settle = settle_training_residuals(&mut candidate_rooms, &mut run)?;
         let records = settle
             .into_iter()
             .filter_map(|execution| {
@@ -3172,6 +3170,7 @@ async fn abort_training_run(
             );
         }
         persist_training_progress(&mut app, &run, &[]).await?;
+        app.rooms = candidate_rooms;
         Ok(Json(TrainingRunResponse {
             api_version: "training.v1".to_string(),
             score: run.score(),
@@ -5650,22 +5649,6 @@ async fn submit_order_response(
             .user_can_administer_room(&user_id, &room_id)
             .await
             .map_err(api_error_from_journal)?;
-        if !is_admin {
-            let step = state
-                .rooms
-                .clock(&room_id)
-                .map_err(api_error_from_room)?
-                .step();
-            let key = (room_id.clone(), user_id.clone(), step);
-            let count = state.external_action_counts.entry(key).or_insert(0);
-            if *count >= EXTERNAL_ACTIONS_PER_STEP {
-                return Err(api_error(
-                    StatusCode::TOO_MANY_REQUESTS,
-                    "external action quota exceeded for this simulation step",
-                ));
-            }
-            *count += 1;
-        }
         let idempotency_key = request_idempotency_key(&headers)?;
         let instrument_id = instrument_id.or_else(|| request.instrument_id.clone());
         let request_fingerprint = serde_json::to_string(&(instrument_id.as_deref(), &request))
@@ -5697,6 +5680,27 @@ async fn submit_order_response(
                 existing.execution,
             )));
         }
+        let quota_step = if is_admin {
+            None
+        } else {
+            let step = state
+                .rooms
+                .clock(&room_id)
+                .map_err(api_error_from_room)?
+                .step();
+            let count = state
+                .journal
+                .external_action_count(&user_id, &room_id, step)
+                .await
+                .map_err(api_error_from_journal)?;
+            if count >= EXTERNAL_ACTIONS_PER_STEP {
+                return Err(api_error(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "external action quota exceeded for this simulation step",
+                ));
+            }
+            Some(step)
+        };
         let first_order_id = state.next_order_id;
         if order_action_allocates_id(&request.action)
             && first_order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE
@@ -5784,10 +5788,13 @@ async fn submit_order_response(
         );
         if let Some(idempotency_key) = idempotency_key {
             journal_record = journal_record.with_idempotency(
-                user_id,
+                user_id.clone(),
                 idempotency_key,
                 request_fingerprint,
             );
+        }
+        if let Some(step) = quota_step {
+            journal_record = journal_record.with_quota(user_id.clone(), step);
         }
         let journal_room_id = journal_record.room_id.clone();
         let training_run_id = state
@@ -5795,11 +5802,12 @@ async fn submit_order_response(
             .values()
             .find(|run| run.spec.room_id == room_id)
             .map(|run| run.spec.run_id.clone());
+        let mut settled_run = None;
         if let Some(run_id) = training_run_id.as_ref()
             && let Some(mut run) = state.training_runs.get(run_id).cloned()
         {
             settle_training_residuals(&mut candidate_rooms, &mut run)?;
-            state.training_runs.insert(run_id.clone(), run);
+            settled_run = Some((run_id.clone(), run));
         }
         journal_new_executions(
             &mut state,
@@ -5810,9 +5818,7 @@ async fn submit_order_response(
         )
         .await
         .map_err(api_error_from_journal)?;
-        if let Some(run_id) = training_run_id
-            && let Some(run) = state.training_runs.get(&run_id).cloned()
-        {
+        if let Some((_, run)) = settled_run {
             persist_training_progress(&mut state, &run, &[]).await?;
         }
         state.rooms = candidate_rooms;
@@ -6182,6 +6188,28 @@ async fn apply_room_status_control(
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
         let mut candidate_rooms = state.rooms.clone();
+        let mut settle_records = Vec::new();
+        let mut settled_runs = Vec::new();
+        if operation == "close" {
+            let run_ids = state
+                .training_runs
+                .values()
+                .filter(|run| run.spec.room_id == room_id)
+                .map(|run| run.spec.run_id.clone())
+                .collect::<Vec<_>>();
+            for run_id in run_ids {
+                let Some(mut run) = state.training_runs.get(&run_id).cloned() else {
+                    continue;
+                };
+                let _ = run.abort();
+                let cancels = settle_training_residuals(&mut candidate_rooms, &mut run)?;
+                settle_records.extend(cancels.into_iter().filter_map(|execution| {
+                    command_from_actor_execution(&execution)
+                        .map(|command| JournalExecution::system(command, execution))
+                }));
+                settled_runs.push(run);
+            }
+        }
         apply(&mut candidate_rooms, &room_id).map_err(api_error_from_room)?;
         let status = candidate_rooms
             .status(&room_id)
@@ -6212,10 +6240,22 @@ async fn apply_room_status_control(
             None => pending,
         };
         if let Some(replay_json) =
-            append_control_mutation(&mut state, pending, &[], &[], None).await?
+            append_control_mutation(&mut state, pending, &settle_records, &[], None).await?
         {
             let replayed = serde_json::from_value(replay_json).map_err(api_error_from_json)?;
             return Ok(Json(replayed));
+        }
+        if !settle_records.is_empty() {
+            state.append_room_executions(
+                &room_id,
+                settle_records
+                    .iter()
+                    .map(|record| record.execution.clone())
+                    .collect(),
+            );
+        }
+        for run in settled_runs {
+            persist_training_progress(&mut state, &run, &[]).await?;
         }
         state.rooms = candidate_rooms;
         Ok(Json(response))
@@ -6443,6 +6483,7 @@ fn api_error_from_journal(error: JournalError) -> (StatusCode, Json<ErrorRespons
         JournalError::RoomLeaseLost { .. } | JournalError::RoomLeaseNotOwned { .. } => {
             StatusCode::SERVICE_UNAVAILABLE
         }
+        JournalError::ExternalActionQuotaExceeded { .. } => StatusCode::TOO_MANY_REQUESTS,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     };
     let (code, room_owner) = match &error {
@@ -9395,6 +9436,7 @@ mod tests {
                     request_user_id: None,
                     idempotency_key: None,
                     request_fingerprint: None,
+                    quota_user_step: None,
                     command: Command::SetMarkPrice(SetMarkPrice {
                         price_tick: command_seq as i64,
                     }),
@@ -13297,6 +13339,525 @@ mod tests {
         assert!(!text.contains("DuplicateOrderId"), "{text}");
         assert!(text.contains("\"accepted\":true"), "{text}");
         assert!(text.contains("TradePrinted"), "{text}");
+    }
+
+    async fn assign_trader(app: &axum::Router, room_id: &str, user: &str, account_id: AccountId) {
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                &format!("/rooms/{room_id}/members"),
+                None,
+                serde_json::json!({"user_id": user, "role": "trader"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                &format!("/rooms/{room_id}/accounts/{account_id}/owners"),
+                None,
+                serde_json::json!({"user_id": user}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    async fn exhaust_external_quota(app: &axum::Router, room_id: &str, user: &str) {
+        for i in 0..EXTERNAL_ACTIONS_PER_STEP {
+            assert_eq!(
+                send_json(
+                    app,
+                    Method::POST,
+                    &format!("/rooms/{room_id}/orders"),
+                    Some(user),
+                    limit_buy(20, 70 + i64::from(i), 1),
+                )
+                .await
+                .status(),
+                StatusCode::OK,
+                "quota fill {i}"
+            );
+        }
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                &format!("/rooms/{room_id}/orders"),
+                Some(user),
+                limit_buy(20, 50, 1),
+            )
+            .await
+            .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+    }
+
+    #[tokio::test]
+    async fn training_freeze_survives_restart_and_takeover_for_terminal_states() {
+        async fn assert_assignment_frozen(app: &axum::Router, room_id: &str) {
+            assert_eq!(
+                send_json(
+                    app,
+                    Method::POST,
+                    &format!("/rooms/{room_id}/accounts/20/owners"),
+                    None,
+                    serde_json::json!({"user_id":"late-trader"}),
+                )
+                .await
+                .status(),
+                StatusCode::CONFLICT
+            );
+        }
+
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let live = recovering_app(Box::new(journal.clone()));
+        let start = send_json(
+            &live,
+            Method::POST,
+            "/training/runs",
+            None,
+            two_sided_training("freeze-restart", "freeze-restart-room", 2),
+        )
+        .await;
+        assert_eq!(start.status(), StatusCode::OK);
+        assert_assignment_frozen(&live, "freeze-restart-room").await;
+        drop(live);
+        let recovered = recovering_app(Box::new(journal.clone()));
+        assert_assignment_frozen(&recovered, "freeze-restart-room").await;
+        assert_eq!(
+            send_json(
+                &recovered,
+                Method::POST,
+                "/training/runs/freeze-restart/abort",
+                None,
+                serde_json::json!({}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_assignment_frozen(&recovered, "freeze-restart-room").await;
+        drop(recovered);
+
+        let lease_journal = journal::SharedInMemoryJournalStore::new();
+        let first_state = shared_state(
+            AppState::recover_with_journal_bundle_and_auth_policy(
+                "http://127.0.0.1:57305",
+                JournalStoreBundle::single(Box::new(lease_journal.clone())),
+                AuthPolicy::local_development(),
+                Some(training_lease_config("freeze-a", "http://127.0.0.1:57305")),
+            )
+            .unwrap(),
+        );
+        let first = app(first_state.clone());
+        assert_eq!(
+            send_json(
+                &first,
+                Method::POST,
+                "/training/runs",
+                None,
+                two_sided_training("freeze-lease", "freeze-lease-room", 2),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        release_owned_room_writer_leases(&first_state)
+            .await
+            .unwrap();
+        drop(first);
+        drop(first_state);
+        let taken = leased_recovering_app(lease_journal, "freeze-b", "http://127.0.0.1:57306");
+        assert_assignment_frozen(&taken, "freeze-lease-room").await;
+    }
+
+    #[tokio::test]
+    async fn external_action_quota_survives_restart_and_resets_on_step() {
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let app = recovering_app(Box::new(journal.clone()));
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("quota-persist")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, "quota-persist", "ext", 20).await;
+        exhaust_external_quota(&app, "quota-persist", "ext").await;
+        let replay_ok = send_json_with_key(
+            &app,
+            "/rooms/quota-persist/orders",
+            Some("ext"),
+            Some("quota-retry"),
+            limit_buy(20, 40, 1),
+        )
+        .await;
+        assert_eq!(replay_ok.status(), StatusCode::TOO_MANY_REQUESTS);
+        drop(app);
+
+        let recovered = recovering_app(Box::new(journal));
+        assert_eq!(
+            send_json(
+                &recovered,
+                Method::POST,
+                "/rooms/quota-persist/orders",
+                Some("ext"),
+                limit_buy(20, 41, 1),
+            )
+            .await
+            .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
+            send_json(
+                &recovered,
+                Method::POST,
+                "/rooms/quota-persist/clock/advance",
+                None,
+                AdvanceClockRequest { steps: 1 },
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &recovered,
+                Method::POST,
+                "/rooms/quota-persist/orders",
+                Some("ext"),
+                limit_buy(20, 42, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    async fn send_json_with_key(
+        app: &axum::Router,
+        uri: &str,
+        user: Option<&str>,
+        key: Option<&str>,
+        body: impl Serialize,
+    ) -> axum::http::Response<Body> {
+        control_request(
+            app,
+            uri,
+            user,
+            key,
+            Some(serde_json::to_value(body).unwrap()),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn external_action_quota_idempotent_retry_does_not_double_count() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("quota-idem")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, "quota-idem", "ext", 20).await;
+        for i in 0..(EXTERNAL_ACTIONS_PER_STEP - 1) {
+            assert_eq!(
+                send_json(
+                    &app,
+                    Method::POST,
+                    "/rooms/quota-idem/orders",
+                    Some("ext"),
+                    limit_buy(20, 60 + i64::from(i), 1),
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+        }
+        let first = send_json_with_key(
+            &app,
+            "/rooms/quota-idem/orders",
+            Some("ext"),
+            Some("last-slot"),
+            limit_buy(20, 90, 1),
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let replay = send_json_with_key(
+            &app,
+            "/rooms/quota-idem/orders",
+            Some("ext"),
+            Some("last-slot"),
+            limit_buy(20, 90, 1),
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-idem/orders",
+                Some("ext"),
+                limit_buy(20, 91, 1),
+            )
+            .await
+            .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+    }
+
+    #[tokio::test]
+    async fn training_settle_failure_does_not_install_live_state() {
+        struct FailTrainingPersist {
+            inner: journal::InMemoryJournalStore,
+            fail_training: bool,
+        }
+
+        impl JournalStore for FailTrainingPersist {
+            fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
+                self.inner.load_recovery()
+            }
+
+            fn create_room(
+                &mut self,
+                owner_user_id: &str,
+                scenario: &ScenarioConfig,
+                bootstrap: &RoomBootstrap,
+                account_ids: &[AccountId],
+                seed_records: &[JournalExecution],
+                initial_snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                self.inner.create_room(
+                    owner_user_id,
+                    scenario,
+                    bootstrap,
+                    account_ids,
+                    seed_records,
+                    initial_snapshot,
+                )
+            }
+
+            fn append_executions(
+                &mut self,
+                records: &[JournalExecution],
+                snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                self.inner.append_executions(records, snapshot)
+            }
+
+            fn append_room_mutation(
+                &mut self,
+                mutation: &PendingJournalMutation,
+                execution_records: &[JournalExecution],
+                transfer_records: &[JournalTransfer],
+                snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                if self.fail_training
+                    && matches!(mutation.mutation, RoomMutation::TrainingProgress { .. })
+                {
+                    return Err(JournalError::Recovery(
+                        "injected training persist failure".into(),
+                    ));
+                }
+                self.inner.append_room_mutation(
+                    mutation,
+                    execution_records,
+                    transfer_records,
+                    snapshot,
+                )
+            }
+
+            fn user_can_administer_room(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+            ) -> Result<bool, JournalError> {
+                self.inner.user_can_administer_room(user_id, room_id)
+            }
+
+            fn user_can_access_room(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+            ) -> Result<bool, JournalError> {
+                self.inner.user_can_access_room(user_id, room_id)
+            }
+
+            fn update_room_status(
+                &mut self,
+                room_id: &str,
+                status: MarketStatus,
+            ) -> Result<(), JournalError> {
+                self.inner.update_room_status(room_id, status)
+            }
+
+            fn find_control_idempotency(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+                idempotency_key: &str,
+            ) -> Result<Option<journal::ControlIdempotencyRecord>, JournalError> {
+                self.inner
+                    .find_control_idempotency(user_id, room_id, idempotency_key)
+            }
+        }
+
+        let app = new_app_with_journal(
+            "http://127.0.0.1:57305",
+            Box::new(FailTrainingPersist {
+                inner: journal::InMemoryJournalStore::new(),
+                fail_training: true,
+            }),
+        );
+        let start = send_json(
+            &app,
+            Method::POST,
+            "/training/runs",
+            None,
+            two_sided_training("settle-fail", "settle-fail-room", 1),
+        )
+        .await;
+        assert_eq!(start.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let missing = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/training/runs/settle-fail")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn close_room_settles_training_residuals() {
+        let app = new_app();
+        let start = send_json(
+            &app,
+            Method::POST,
+            "/training/runs",
+            None,
+            two_sided_training("close-settle", "close-settle-room", 8),
+        )
+        .await;
+        assert_eq!(start.status(), StatusCode::OK);
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/close-settle-room/orders",
+                None,
+                limit_buy(20, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            control_request(&app, "/rooms/close-settle-room/close", None, None, None)
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        let orders = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/close-settle-room/orders")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(orders.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(orders.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let trainee = payload["orders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|order| order["account_id"] == 20)
+            .expect("trainee order");
+        assert_eq!(trainee["status"], "canceled", "{payload}");
+    }
+
+    #[tokio::test]
+    async fn external_action_quota_postgres_survives_restart() {
+        let Some(database_url) = postgres_test_database_url() else {
+            return;
+        };
+        let room_id = format!(
+            "quota-pg-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        cleanup_postgres_room(&database_url, &room_id);
+        let live_url = database_url.clone();
+        let store =
+            tokio::task::spawn_blocking(move || PostgresJournalStore::connect_migrated(&live_url))
+                .await
+                .unwrap()
+                .unwrap();
+        let app = recovering_app(Box::new(store));
+        let scenario = spot_scenario(&room_id);
+        assert_eq!(
+            send_json(&app, Method::POST, "/rooms", None, scenario.clone())
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, &room_id, "ext", 20).await;
+        exhaust_external_quota(&app, &room_id, "ext").await;
+        drop(app);
+        let recover_url = database_url.clone();
+        let recovered_store = tokio::task::spawn_blocking(move || {
+            PostgresJournalStore::connect_migrated(&recover_url)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        let recovered = recovering_app(Box::new(recovered_store));
+        assert_eq!(
+            send_json(
+                &recovered,
+                Method::POST,
+                &format!("/rooms/{room_id}/orders"),
+                Some("ext"),
+                limit_buy(20, 33, 1),
+            )
+            .await
+            .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        cleanup_postgres_room(&database_url, &room_id);
+        let _ = scenario;
     }
 
     #[tokio::test]

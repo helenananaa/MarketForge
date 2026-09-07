@@ -264,6 +264,17 @@ A manual step that also writes `TrainingProgress` still records the control
 result on the `SchedulerProgress` mutation (the first durable substep), not
 after later training side effects.
 
+External action quota is `(room_id, authenticated user_id, simulation step)`
+with limit `EXTERNAL_ACTIONS_PER_STEP` (8). Auth and precision failures do not
+count. Idempotent order replay does not count again. Business rejects that
+never journal an execution do not count. A journaled non-admin order consumes
+one unit in the same transaction as the execution (`marketforge_external_action_counts`,
+migration 0014). Exhausted quota survives restart and takeover; the next
+simulation step restores the budget. Training freeze is derived from the
+authoritative `TrainingRun` status (no independent boolean). All training end
+paths call `settle_training_residuals`; abort and close apply residuals to a
+candidate room and install only after journal success.
+
 ## 6. Identity, lease, and fencing
 
 - Loopback local-dev: `x-user-id` or default `local-user`. Non-loopback bind
