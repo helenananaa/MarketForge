@@ -59,7 +59,14 @@ class Client:
         query: Optional[dict[str, Any]] = None,
     ) -> Any:
         if query:
-            filtered = {key: value for key, value in query.items() if value is not None}
+            filtered = {}
+            for key, value in query.items():
+                if value is None:
+                    continue
+                if isinstance(value, bool):
+                    filtered[key] = "true" if value else "false"
+                else:
+                    filtered[key] = value
             path = path + "?" + urllib.parse.urlencode(filtered)
         data = None if body is None else json.dumps(body).encode("utf-8")
         req = urllib.request.Request(
@@ -148,6 +155,47 @@ class Client:
 
     def training_result(self, run_id: str) -> Any:
         return self._request("GET", f"/training/runs/{run_id}/result")
+
+    def training_report(self, run_id: str) -> Any:
+        return self._request("GET", f"/training/runs/{run_id}/report")
+
+    def clock(self, room_id: str) -> Any:
+        return self._request("GET", f"/rooms/{room_id}/clock")
+
+    def advance_clock(
+        self,
+        room_id: str,
+        steps: int,
+        idempotency_key: Optional[str] = None,
+    ) -> Any:
+        return self._request(
+            "POST",
+            f"/rooms/{room_id}/clock/advance",
+            {"steps": steps},
+            idempotency_key=idempotency_key,
+        )
+
+    def events(
+        self,
+        room_id: str,
+        limit: Optional[int] = None,
+        from_start: bool = True,
+    ) -> Any:
+        return self._request(
+            "GET",
+            f"/rooms/{room_id}/events",
+            query={"limit": limit, "from_start": from_start},
+        )
+
+    def trades(self, room_id: str, limit: Optional[int] = None) -> Any:
+        return self._request(
+            "GET",
+            f"/rooms/{room_id}/trades",
+            query={"limit": limit},
+        )
+
+    def health_ready(self) -> Any:
+        return self._request("GET", "/health/ready")
 
     def add_member(self, room_id: str, user_id: str, role: str) -> Any:
         return self._request(
