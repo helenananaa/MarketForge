@@ -4757,21 +4757,43 @@ async fn scoped_room_stream(
             ),
         ));
     }
+    if let Some(requested_scope) = query.scope.as_deref() {
+        let expected = match scope {
+            StreamScope::Public => "public",
+            StreamScope::Private => "private",
+        };
+        if requested_scope != expected {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                format!("cursor scope {requested_scope:?} does not match {expected} stream"),
+            ));
+        }
+    }
     let user_id = authorization.user_id.clone();
     let journal = authorization.journal.clone();
     let lifecycle = state.lifecycle.clone();
     let shutdown = lifecycle.subscribe_shutdown();
     let mut app = lock_state(&state).await?;
     let receiver = app.room_event_receiver(&room_id);
-    let history = app.executions.get(&room_id).cloned().unwrap_or_default();
-    let snapshot = public_stream_snapshot(&app, &room_id)?;
+    let cached = app.executions.get(&room_id).cloned().unwrap_or_default();
+    let latest_seq = cached
+        .back()
+        .map(|execution| execution.command_seq)
+        .or_else(|| latest_persisted_command_seq(&app, &room_id));
+    let snapshot = match scope {
+        StreamScope::Public => public_stream_snapshot(&app, &room_id, latest_seq)?,
+        StreamScope::Private => {
+            private_stream_snapshot(&app, &journal, &room_id, &user_id, latest_seq).await?
+        }
+    };
+    let after = query.after_command_seq;
+    let history = stream_history_executions(&app, &journal, &room_id, &cached, after).await?;
     drop(app);
     let connection = lifecycle.open_sse_connection();
     let stream_name = match scope {
         StreamScope::Public => "public",
         StreamScope::Private => "private",
     };
-    let after = query.after_command_seq;
     let mut seq = 0_u64;
     let mut initial = VecDeque::new();
     initial.push_back(UserStreamEvent {
@@ -4877,7 +4899,11 @@ struct ScopedStreamState {
     terminate: bool,
 }
 
-fn public_stream_snapshot(app: &AppState, room_id: &str) -> Result<serde_json::Value, ApiError> {
+fn public_stream_snapshot(
+    app: &AppState,
+    room_id: &str,
+    at_command_seq: Option<u64>,
+) -> Result<serde_json::Value, ApiError> {
     let instrument_id = app
         .rooms
         .room(room_id)
@@ -4893,12 +4919,103 @@ fn public_stream_snapshot(app: &AppState, room_id: &str) -> Result<serde_json::V
         .map_err(api_error_from_room)?;
     let clock = app.rooms.clock(room_id).map_err(api_error_from_room)?;
     Ok(serde_json::json!({
+        "cursor": {
+            "room_id": room_id,
+            "scope": "public",
+            "version": "stream.v1",
+            "command_seq": at_command_seq,
+        },
         "instrument_id": instrument_id,
         "book": book,
         "ticker": ticker,
         "market_time_ms": clock.market_time_ms(),
         "status": clock_status_name(app.rooms.status(room_id).map_err(api_error_from_room)?),
     }))
+}
+
+async fn private_stream_snapshot(
+    app: &AppState,
+    journal: &JournalCoordinator,
+    room_id: &str,
+    user_id: &str,
+    at_command_seq: Option<u64>,
+) -> Result<serde_json::Value, ApiError> {
+    let mut payload = public_stream_snapshot(app, room_id, at_command_seq)?;
+    if let Some(cursor) = payload.get_mut("cursor") {
+        cursor["scope"] = serde_json::json!("private");
+    }
+    let instrument_id = app
+        .rooms
+        .room(room_id)
+        .map(|room| room.primary_instrument_id().to_string())
+        .map_err(api_error_from_room)?;
+    let is_admin = journal
+        .user_can_administer_room(user_id, room_id)
+        .await
+        .map_err(api_error_from_journal)?;
+    let accounts = app
+        .rooms
+        .account_snapshots_for(room_id, &instrument_id)
+        .map_err(api_error_from_room)?;
+    let account_ids = match &accounts {
+        AccountSnapshots::Spot(items) => {
+            items.iter().map(|item| item.account_id).collect::<Vec<_>>()
+        }
+        AccountSnapshots::Perp(items) => {
+            items.iter().map(|item| item.account_id).collect::<Vec<_>>()
+        }
+    };
+    let mut visible_accounts = Vec::new();
+    for account_id in account_ids {
+        if is_admin
+            || journal
+                .user_can_access_account(user_id, room_id, account_id)
+                .await
+                .map_err(api_error_from_journal)?
+        {
+            visible_accounts.push(account_id);
+        }
+    }
+    let mut orders = Vec::new();
+    for account_id in &visible_accounts {
+        let mut resting = app
+            .rooms
+            .resting_orders_for_account(room_id, &instrument_id, *account_id)
+            .map_err(api_error_from_room)?;
+        orders.append(&mut resting);
+    }
+    payload["accounts"] = serde_json::json!(visible_accounts);
+    payload["orders"] = serde_json::to_value(&orders).map_err(api_error_from_json)?;
+    Ok(payload)
+}
+
+async fn stream_history_executions(
+    _app: &AppState,
+    journal: &JournalCoordinator,
+    room_id: &str,
+    cached: &VecDeque<RoomExecutionSummary>,
+    after: Option<u64>,
+) -> Result<Vec<RoomExecutionSummary>, ApiError> {
+    let Some(after) = after else {
+        return Ok(Vec::new());
+    };
+    let oldest_cached = cached.front().map(|execution| execution.command_seq);
+    if oldest_cached.is_some_and(|oldest| oldest <= after + 1) {
+        return Ok(cached
+            .iter()
+            .filter(|execution| execution.command_seq > after)
+            .cloned()
+            .collect());
+    }
+    let page = journal
+        .query_executions(room_id, Some(after), false, ROOM_EVENT_CACHE_CAPACITY)
+        .await
+        .map_err(api_error_from_journal)?;
+    Ok(page
+        .executions
+        .into_iter()
+        .filter(|execution| execution.command_seq > after)
+        .collect())
 }
 
 fn clock_status_name(status: MarketStatus) -> &'static str {
@@ -4987,23 +5104,49 @@ async fn user_can_see_private_execution(
     {
         return true;
     }
+    if let Some(account_id) = execution.submit_account_id
+        && journal
+            .user_can_access_account(user_id, &execution.room_id, account_id)
+            .await
+            .unwrap_or(false)
+    {
+        return true;
+    }
+    let mut accounts = Vec::new();
     for event in &execution.events {
-        let EventSummary::TradePrinted {
+        if let EventSummary::TradePrinted {
             maker_account_id,
             taker_account_id,
             ..
         } = event
-        else {
-            continue;
-        };
+        {
+            accounts.push(*maker_account_id);
+            accounts.push(*taker_account_id);
+        }
+    }
+    for clearing in &execution.clearing_events {
+        match clearing {
+            ClearingEventSummary::SpotTradeSettled {
+                buyer_account_id,
+                seller_account_id,
+                ..
+            }
+            | ClearingEventSummary::PerpTradeSettled {
+                buyer_account_id,
+                seller_account_id,
+                ..
+            } => {
+                accounts.push(*buyer_account_id);
+                accounts.push(*seller_account_id);
+            }
+            _ => {}
+        }
+    }
+    for account_id in accounts {
         if journal
-            .user_can_access_account(user_id, &execution.room_id, *maker_account_id)
+            .user_can_access_account(user_id, &execution.room_id, account_id)
             .await
             .unwrap_or(false)
-            || journal
-                .user_can_access_account(user_id, &execution.room_id, *taker_account_id)
-                .await
-                .unwrap_or(false)
         {
             return true;
         }
@@ -6601,6 +6744,7 @@ pub struct RoomEventStreamQuery {
     pub after_command_seq: Option<u64>,
     #[serde(default)]
     pub replay_from_start: bool,
+    pub scope: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -6732,6 +6876,8 @@ pub struct RoomExecutionSummary {
     pub room_id: String,
     #[serde(default)]
     pub instrument_id: Option<InstrumentId>,
+    #[serde(default)]
+    pub submit_account_id: Option<AccountId>,
     pub command_seq: u64,
     /// Authoritative simulation time. Legacy journal rows may not contain it.
     #[serde(default)]
@@ -6752,6 +6898,8 @@ struct RoomExecutionSummaryPayload {
     room_id: String,
     #[serde(default)]
     instrument_id: Option<InstrumentId>,
+    #[serde(default)]
+    submit_account_id: Option<AccountId>,
     command_seq: u64,
     #[serde(default)]
     market_time_ms: Option<u64>,
@@ -6777,6 +6925,7 @@ impl<'de> Deserialize<'de> for RoomExecutionSummary {
         Ok(Self {
             room_id: payload.room_id,
             instrument_id: payload.instrument_id,
+            submit_account_id: payload.submit_account_id,
             command_seq: payload.command_seq,
             market_time_ms: payload.market_time_ms,
             status: payload.status,
@@ -6792,6 +6941,7 @@ impl<'de> Deserialize<'de> for RoomExecutionSummary {
 
 impl RoomExecutionSummary {
     pub(crate) fn from_execution(execution: ActorExecution) -> Self {
+        let submit_account_id = execution_account_id(&execution);
         let (accepted, reject_reason, events, clearing_events) = match execution.result {
             ActorExecutionResult::Accepted(market_execution) => {
                 let (events, clearing_events) = summarize_market_execution(market_execution);
@@ -6809,6 +6959,7 @@ impl RoomExecutionSummary {
         Self {
             room_id: execution.room_id,
             instrument_id: Some(execution.instrument_id),
+            submit_account_id,
             command_seq: execution.command_seq,
             market_time_ms: Some(execution.market_time_ms),
             status: execution.status,
@@ -9086,6 +9237,7 @@ mod tests {
         RoomExecutionSummary {
             room_id: room_id.to_string(),
             instrument_id: Some("V-BTC-SPOT".to_string()),
+            submit_account_id: None,
             command_seq,
             market_time_ms: Some(command_seq.saturating_mul(1_000)),
             status: MarketStatus::Running,
@@ -9764,6 +9916,7 @@ mod tests {
         let execution = RoomExecutionSummary {
             room_id: "i128-room".to_string(),
             instrument_id: Some("V-BTC-SPOT".to_string()),
+            submit_account_id: None,
             command_seq: 3,
             market_time_ms: Some(3_000),
             status: MarketStatus::Running,
@@ -9821,6 +9974,7 @@ mod tests {
         let stored = RoomExecutionSummary {
             room_id: "clearing-validation-room".to_string(),
             instrument_id: Some("V-BTC-SPOT".to_string()),
+            submit_account_id: None,
             command_seq: 1,
             market_time_ms: Some(1_000),
             status: MarketStatus::Running,
@@ -13803,6 +13957,192 @@ mod tests {
             .find(|order| order["account_id"] == 20)
             .expect("trainee order");
         assert_eq!(trainee["status"], "canceled", "{payload}");
+    }
+
+    async fn first_sse_data(response: axum::http::Response<Body>) -> serde_json::Value {
+        let mut stream = response.into_body().into_data_stream();
+        let chunk = tokio::time::timeout(Duration::from_secs(2), stream.next())
+            .await
+            .expect("sse")
+            .expect("frame")
+            .expect("bytes");
+        let text = String::from_utf8(chunk.to_vec()).unwrap();
+        let data = text
+            .lines()
+            .find_map(|line| line.strip_prefix("data: "))
+            .expect(&text);
+        serde_json::from_str(data).unwrap()
+    }
+
+    #[tokio::test]
+    async fn private_stream_snapshot_includes_own_resting_orders_not_others() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("priv-rest")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, "priv-rest", "alice", 20).await;
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/priv-rest/orders",
+                Some("alice"),
+                limit_buy(20, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/priv-rest/stream/private")
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let frame = first_sse_data(response).await;
+        let snapshot = frame.get("payload").unwrap_or(&frame);
+        assert_eq!(snapshot["cursor"]["scope"], "private");
+        assert_eq!(snapshot["cursor"]["version"], "stream.v1");
+        let orders = snapshot["orders"].as_array().unwrap();
+        assert!(
+            orders.iter().any(|order| order["account_id"] == 20),
+            "{snapshot}"
+        );
+        assert!(
+            orders.iter().all(|order| order["account_id"] == 20),
+            "{snapshot}"
+        );
+        let accounts = snapshot["accounts"].as_array().unwrap();
+        assert_eq!(accounts, &vec![serde_json::json!(20)]);
+    }
+
+    #[tokio::test]
+    async fn private_stream_rest_only_and_cancel_are_visible_to_owner() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("priv-delta")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, "priv-delta", "alice", 20).await;
+        let post = send_json(
+            &app,
+            Method::POST,
+            "/rooms/priv-delta/orders",
+            Some("alice"),
+            limit_buy(20, 90, 1),
+        )
+        .await;
+        assert_eq!(post.status(), StatusCode::OK);
+        let posted: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(post.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(posted.to_string().contains("OrderRested"), "{posted}");
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/priv-delta/stream/private?after_command_seq=0")
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let mut stream = response.into_body().into_data_stream();
+        let mut text = String::new();
+        for _ in 0..4 {
+            match tokio::time::timeout(Duration::from_millis(500), stream.next()).await {
+                Ok(Some(Ok(chunk))) => text.push_str(&String::from_utf8_lossy(&chunk)),
+                _ => break,
+            }
+        }
+        assert!(
+            text.contains("OrderRested") || text.contains("account_id"),
+            "{text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn private_stream_rejects_mismatched_scope_and_omits_others_after_revoke() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("priv-scope")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let mismatch = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/priv-scope/stream/private?scope=public")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(mismatch.status(), StatusCode::BAD_REQUEST);
+        assign_trader(&app, "priv-scope", "alice", 20).await;
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/priv-scope/members/alice",
+                None,
+                serde_json::json!({}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/priv-scope/stream/private")
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

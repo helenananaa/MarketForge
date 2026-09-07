@@ -65,7 +65,10 @@ See `docs/RUNTIME_CONTRACT.md` §7. Bodies are `{ "error": "...", "code"?: "..."
 ## Streams
 
 - Admin `/events/stream`: contiguous `command_seq`.
-- `/stream/public` and `/stream/private`: independent `stream_seq`. `command_seq` on payloads is **not** contiguous after filtering. Reconnect with `after_command_seq` as a lower bound, then apply by `stream_seq`. Overrun emits `resync_required`. Private streams stop after membership revocation.
+- `/stream/public` and `/stream/private`: connection-local `stream_seq` is **not** a cross-connection resume key. Resume with `after_command_seq` (durable room position). Holes after private filtering are expected; do not treat them as loss.
+- Snapshot payload includes `cursor: { room_id, scope, version: stream.v1, command_seq }`. Apply later `execution` events only when `command_seq` is greater than that boundary. Mixing a later snapshot with older deltas is invalid.
+- Public stream: book, trades, and allowed room status. Private stream: the viewer's current orders/accounts plus rest-only post, partial fill remainder, cancel, amend, and reject for accounts they can access. Access is by membership/assignment, not “this execution ever touched the account”.
+- If the in-memory 1024-event cache does not contain `after_command_seq + 1`, the server fills from the durable journal. Live lag still emits `resync_required`. `scope` query that disagrees with the path returns 400. Private streams close after membership revocation; private snapshots omit other accounts.
 
 ## Ticker
 

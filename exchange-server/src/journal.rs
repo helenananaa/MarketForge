@@ -6750,6 +6750,7 @@ mod tests {
             execution: RoomExecutionSummary {
                 room_id: "room-1".to_string(),
                 instrument_id: Some("V-BTC-SPOT".to_string()),
+                submit_account_id: None,
                 command_seq,
                 market_time_ms: Some(command_seq * 1_000),
                 status: MarketStatus::Running,
@@ -7376,6 +7377,7 @@ mod tests {
             execution: RoomExecutionSummary {
                 room_id: "room-1".to_string(),
                 instrument_id: Some("V-BTC-PERP".to_string()),
+                submit_account_id: None,
                 command_seq: 1,
                 market_time_ms: Some(1_000),
                 status: MarketStatus::Running,
