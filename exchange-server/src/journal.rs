@@ -16,7 +16,7 @@ use exchange_core::{
     model::{AccountId, OrderKind, Side},
     transfer::{VenueTransfer, VenueTransferKind, VenueTransferRejectReason, VenueTransferStatus},
 };
-use postgres::{Client, NoTls};
+use postgres::{Client, NoTls, error::SqlState};
 use serde::{Deserialize, Serialize, de::Error as _};
 use serde_json::Value;
 
@@ -216,6 +216,15 @@ pub trait JournalStore: Send {
         _room_id: &str,
         _idempotency_key: &str,
     ) -> Result<Option<JournalExecution>, JournalError> {
+        Ok(None)
+    }
+
+    fn find_control_idempotency(
+        &mut self,
+        _user_id: &str,
+        _room_id: &str,
+        _idempotency_key: &str,
+    ) -> Result<Option<ControlIdempotencyRecord>, JournalError> {
         Ok(None)
     }
 
@@ -721,12 +730,56 @@ impl JournalTransfer {
     }
 }
 
+pub const CONTROL_IDEMPOTENCY_PROTOCOL: &str = "control.v1";
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ControlIdempotencyRecord {
+    pub user_id: String,
+    pub room_id: String,
+    pub idempotency_key: String,
+    pub request_fingerprint: String,
+    pub response_json: Value,
+}
+
+pub fn control_request_fingerprint(operation: &str, params: Value) -> String {
+    serde_json::to_string(&serde_json::json!({
+        "operation": operation,
+        "params": params,
+        "protocol": CONTROL_IDEMPOTENCY_PROTOCOL,
+    }))
+    .expect("control fingerprint is valid JSON")
+}
+
+fn control_idempotency_map_key(record: &ControlIdempotencyRecord) -> (String, String, String) {
+    (
+        record.user_id.clone(),
+        record.room_id.clone(),
+        record.idempotency_key.clone(),
+    )
+}
+
+fn control_idempotency_conflict(record: &ControlIdempotencyRecord) -> JournalError {
+    JournalError::ControlIdempotencyConflict {
+        user_id: record.user_id.clone(),
+        room_id: record.room_id.clone(),
+        idempotency_key: record.idempotency_key.clone(),
+    }
+}
+
+fn is_unique_violation(error: &postgres::Error) -> bool {
+    error
+        .code()
+        .is_some_and(|code| *code == SqlState::UNIQUE_VIOLATION)
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PendingJournalMutation {
     pub room_id: String,
     /// Sequence number of the next command after this mutation's replay point.
     pub command_cursor: u64,
     pub mutation: RoomMutation,
+    #[serde(default, skip_serializing)]
+    pub control_idempotency: Option<ControlIdempotencyRecord>,
 }
 
 impl PendingJournalMutation {
@@ -735,7 +788,13 @@ impl PendingJournalMutation {
             room_id: room_id.into(),
             command_cursor,
             mutation,
+            control_idempotency: None,
         }
+    }
+
+    pub fn with_control_idempotency(mut self, record: ControlIdempotencyRecord) -> Self {
+        self.control_idempotency = Some(record);
+        self
     }
 }
 
@@ -1131,6 +1190,7 @@ pub struct InMemoryJournalStore {
     room_members: BTreeMap<(String, String), String>,
     account_owners: BTreeSet<(String, AccountId, String)>,
     room_writer_leases: BTreeMap<String, InMemoryRoomWriterLease>,
+    control_idempotency: BTreeMap<(String, String, String), ControlIdempotencyRecord>,
 }
 
 impl InMemoryJournalStore {
@@ -1181,6 +1241,12 @@ impl InMemoryJournalStore {
 
     fn store_mutation(&mut self, mutation: &PendingJournalMutation) -> Result<(), JournalError> {
         validate_pending_mutation(mutation)?;
+        if let Some(record) = &mutation.control_idempotency {
+            let key = control_idempotency_map_key(record);
+            if self.control_idempotency.contains_key(&key) {
+                return Err(control_idempotency_conflict(record));
+            }
+        }
         let mutation_seq = self
             .next_mutation_seq
             .checked_add(1)
@@ -1193,7 +1259,26 @@ impl InMemoryJournalStore {
             schema_version: ROOM_MUTATION_SCHEMA_VERSION,
             mutation: mutation.mutation.clone(),
         });
+        if let Some(record) = &mutation.control_idempotency {
+            self.control_idempotency
+                .insert(control_idempotency_map_key(record), record.clone());
+        }
         Ok(())
+    }
+
+    fn lookup_control_idempotency(
+        &self,
+        user_id: &str,
+        room_id: &str,
+        idempotency_key: &str,
+    ) -> Option<ControlIdempotencyRecord> {
+        self.control_idempotency
+            .get(&(
+                user_id.to_string(),
+                room_id.to_string(),
+                idempotency_key.to_string(),
+            ))
+            .cloned()
     }
 
     fn ensure_room_write_fence(&self, claim: &RoomLeaseClaim) -> Result<(), JournalError> {
@@ -1406,6 +1491,15 @@ impl JournalStore for InMemoryJournalStore {
                     && record.idempotency_key.as_deref() == Some(idempotency_key)
             })
             .cloned())
+    }
+
+    fn find_control_idempotency(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<ControlIdempotencyRecord>, JournalError> {
+        Ok(self.lookup_control_idempotency(user_id, room_id, idempotency_key))
     }
 
     fn query_executions(
@@ -2003,6 +2097,16 @@ impl JournalStore for SharedInMemoryJournalStore {
     ) -> Result<Option<JournalExecution>, JournalError> {
         self.lock()?
             .find_idempotent_execution(user_id, room_id, idempotency_key)
+    }
+
+    fn find_control_idempotency(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<ControlIdempotencyRecord>, JournalError> {
+        self.lock()?
+            .find_control_idempotency(user_id, room_id, idempotency_key)
     }
 
     fn query_executions(
@@ -3029,6 +3133,31 @@ impl PostgresJournalStore {
         u64::try_from(mutation_seq).map_err(|_| JournalError::InvalidSequence(mutation_seq))
     }
 
+    fn insert_control_idempotency(
+        tx: &mut postgres::Transaction<'_>,
+        record: &ControlIdempotencyRecord,
+    ) -> Result<(), JournalError> {
+        match tx.execute(
+            r#"
+            INSERT INTO marketforge_control_idempotency (
+                user_id, room_id, idempotency_key, request_fingerprint, response_json
+            )
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+            &[
+                &record.user_id,
+                &record.room_id,
+                &record.idempotency_key,
+                &record.request_fingerprint,
+                &record.response_json,
+            ],
+        ) {
+            Ok(_) => Ok(()),
+            Err(error) if is_unique_violation(&error) => Err(control_idempotency_conflict(record)),
+            Err(error) => Err(JournalError::Postgres(error)),
+        }
+    }
+
     fn insert_transfer(
         tx: &mut postgres::Transaction<'_>,
         record: &JournalTransfer,
@@ -3831,6 +3960,41 @@ impl JournalStore for PostgresJournalStore {
         })
     }
 
+    fn find_control_idempotency(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<ControlIdempotencyRecord>, JournalError> {
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        let idempotency_key = idempotency_key.to_string();
+        run_postgres(&mut self.client, move |client| {
+            let Some(row) = client
+                .query_opt(
+                    r#"
+                    SELECT user_id, room_id, idempotency_key, request_fingerprint, response_json
+                    FROM marketforge_control_idempotency
+                    WHERE user_id = $1
+                      AND room_id = $2
+                      AND idempotency_key = $3
+                    "#,
+                    &[&user_id, &room_id, &idempotency_key],
+                )
+                .map_err(JournalError::Postgres)?
+            else {
+                return Ok(None);
+            };
+            Ok(Some(ControlIdempotencyRecord {
+                user_id: row.get("user_id"),
+                room_id: row.get("room_id"),
+                idempotency_key: row.get("idempotency_key"),
+                request_fingerprint: row.get("request_fingerprint"),
+                response_json: row.get("response_json"),
+            }))
+        })
+    }
+
     fn create_room(
         &mut self,
         owner_user_id: &str,
@@ -4017,6 +4181,9 @@ impl JournalStore for PostgresJournalStore {
                 )
                 .map_err(JournalError::Postgres)?;
             }
+            if let Some(record) = &mutation.control_idempotency {
+                Self::insert_control_idempotency(&mut tx, record)?;
+            }
             tx.commit().map_err(JournalError::Postgres)
         })
     }
@@ -4087,6 +4254,9 @@ impl JournalStore for PostgresJournalStore {
                     &[&mutation.room_id, &status_name(*status)],
                 )
                 .map_err(JournalError::Postgres)?;
+            }
+            if let Some(record) = &mutation.control_idempotency {
+                Self::insert_control_idempotency(&mut tx, record)?;
             }
             tx.commit().map_err(JournalError::Postgres)
         })
@@ -5338,6 +5508,11 @@ pub enum JournalError {
         expected: String,
         found: String,
     },
+    ControlIdempotencyConflict {
+        user_id: String,
+        room_id: String,
+        idempotency_key: String,
+    },
 }
 
 impl fmt::Display for JournalError {
@@ -5420,6 +5595,14 @@ impl fmt::Display for JournalError {
             } => write!(
                 f,
                 "schema migration version {version} name mismatch: expected {expected}, found {found}"
+            ),
+            Self::ControlIdempotencyConflict {
+                user_id,
+                room_id,
+                idempotency_key,
+            } => write!(
+                f,
+                "control idempotency key {idempotency_key:?} already exists for user {user_id} in room {room_id}"
             ),
         }
     }
@@ -6801,6 +6984,80 @@ mod tests {
         assert_eq!(
             MIGRATIONS.last().map(|migration| migration.version),
             Some(13)
+        );
+    }
+
+    #[test]
+    fn in_memory_control_idempotency_is_unique_and_replayable() {
+        let mut store = InMemoryJournalStore::new();
+        store.rooms.push(StoredRoom {
+            room_id: "ctrl-room".to_string(),
+            scenario: spot_scenario("ctrl-room"),
+            status: MarketStatus::Running,
+        });
+        let fingerprint = control_request_fingerprint("pause", serde_json::json!({}));
+        let record = ControlIdempotencyRecord {
+            user_id: "alice".to_string(),
+            room_id: "ctrl-room".to_string(),
+            idempotency_key: "pause-1".to_string(),
+            request_fingerprint: fingerprint.clone(),
+            response_json: serde_json::json!({"room_id":"ctrl-room","status":"Paused"}),
+        };
+        store
+            .append_room_mutation(
+                &PendingJournalMutation::new(
+                    "ctrl-room",
+                    0,
+                    RoomMutation::StatusChanged {
+                        status: MarketStatus::Paused,
+                    },
+                )
+                .with_control_idempotency(record.clone()),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let found = store
+            .find_control_idempotency("alice", "ctrl-room", "pause-1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(found.request_fingerprint, fingerprint);
+        let conflict = store.append_room_mutation(
+            &PendingJournalMutation::new(
+                "ctrl-room",
+                0,
+                RoomMutation::StatusChanged {
+                    status: MarketStatus::Running,
+                },
+            )
+            .with_control_idempotency(ControlIdempotencyRecord {
+                request_fingerprint: control_request_fingerprint("resume", serde_json::json!({})),
+                response_json: serde_json::json!({"room_id":"ctrl-room","status":"Running"}),
+                ..record
+            }),
+            &[],
+            &[],
+            None,
+        );
+        assert!(matches!(
+            conflict,
+            Err(JournalError::ControlIdempotencyConflict { .. })
+        ));
+        assert_eq!(
+            store
+                .load_recovery()
+                .unwrap()
+                .mutations
+                .iter()
+                .filter(|mutation| matches!(
+                    mutation.mutation,
+                    RoomMutation::StatusChanged {
+                        status: MarketStatus::Running
+                    }
+                ))
+                .count(),
+            0
         );
     }
 

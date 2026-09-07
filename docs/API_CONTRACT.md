@@ -7,7 +7,8 @@ Breaking changes require a new version string on ticker/candles/user streams.
 
 - Loopback: optional `x-user-id` (default `local-user`).
 - Bearer: `Authorization: Bearer <token>`. `x-user-id` is ignored.
-- Writes that allocate an order id accept `Idempotency-Key` (1–128 visible ASCII), scoped to `(user, room)`.
+- Writes that allocate an order id accept `Idempotency-Key` (1–128 visible ASCII), scoped to `(user, room)` in the **order** key space.
+- Control writes (`POST /rooms/{id}/pause|resume|close`, `/clock/step`, `/clock/advance`) accept the same header in a **separate control** key space, scoped to `(authenticated subject, room, key)`. Order keys and control keys never collide.
 
 ## Integer encoding
 
@@ -29,9 +30,9 @@ POST /rooms/{id}/orders                 Idempotency-Key optional
 POST /rooms/{id}/orders                 action Cancel / Amend
 GET  /rooms/{id}/accounts
 GET  /rooms/{id}/clock
-POST /rooms/{id}/clock/advance
-POST /rooms/{id}/clock/step             paused admin manual step
-POST /rooms/{id}/pause|resume|close
+POST /rooms/{id}/clock/advance          Idempotency-Key optional (control space)
+POST /rooms/{id}/clock/step             paused admin manual step; Idempotency-Key optional
+POST /rooms/{id}/pause|resume|close     Idempotency-Key optional (control space)
 GET  /rooms/{id}/ticker
 GET  /rooms/{id}/candles?interval_ms=
 GET  /rooms/{id}/stream/public
@@ -42,6 +43,20 @@ POST /rooms/{id}/members/{user_id}      remove member and account assignments
 POST /rooms/{id}/accounts/{account_id}/owners   assign instructor/trader; frozen after training start
 GET  /rooms/{id}/observe?account_id=    strategy.v1 ParticipantObservation
 ```
+
+## Control idempotency (`control.v1`)
+
+Fingerprint is canonical JSON `{ "operation", "params", "protocol": "control.v1" }`, not the raw URL or request body text.
+
+| Operation | Params |
+| --- | --- |
+| `pause` / `resume` / `close` / `clock/step` | `{}` |
+| `clock/advance` | `{ "steps": N }` |
+
+- Same key + same fingerprint returns the original success body **after a live permission check**.
+- Same key + different operation or params returns HTTP 409 and does not mutate.
+- Success is saved in the same journal transaction as the mutation (`marketforge_control_idempotency`, migration 0013). Business rejects (no mutation) and infrastructure failures are **not** stored, so they cannot be replayed as success. Keys do not auto-expire.
+- HTTP clients: `HttpTradingClient` pause/resume/close/advance do not send a key unless the caller uses the generic idempotent POST. CLI sends `Idempotency-Key` only when `--idempotency-key` is set. Python SDK currently exposes the header on order APIs.
 
 ## Error codes
 

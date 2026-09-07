@@ -195,6 +195,9 @@ The client also exposes the room lifecycle calls used by trusted integrations:
 `close_room`, plus instrument-scoped `set_mark_price_for`. The corresponding
 close mutation is `POST /rooms/{room_id}/close`; like pause and resume, it is
 durably journaled as a room status change before the response is returned.
+When `Idempotency-Key` is present, the control result is inserted into
+`marketforge_control_idempotency` in that same transaction (protocol
+`control.v1`). Order request keys remain on `marketforge_executions`.
 
 An authenticated client can discover ownership without triggering takeover:
 

@@ -243,12 +243,26 @@ commit/install interval. Shutdown stops accepting new durable writes, waits for
 in-flight ones, then joins agent workers.
 
 Idempotent order POST: `Idempotency-Key` (1–128 visible ASCII), scoped to
-`(user_id, room_id)`. Same key + same fingerprint returns the original
-execution without a new order id. Same key + different payload or instrument
-is 冲突 / HTTP 409.
+`(user_id, room_id)` in the **order** key space. Same key + same fingerprint
+returns the original execution without a new order id. Same key + different
+payload or instrument is 冲突 / HTTP 409.
 
-Control writes (pause/resume/close/clock) are not yet idempotent; P1 adds
-idempotency for those.
+Control writes (`pause` / `resume` / `close` / `clock/step` / `clock/advance`)
+use the same header in a **separate control** key space
+`(user_id, room_id, key)`. Fingerprint is `control.v1` + operation name +
+normalized params (advance includes `steps`). Lookup, lease/auth, candidate
+computation, result save, and mutation share one journal transaction. Unique
+`(user_id, room_id, idempotency_key)` on `marketforge_control_idempotency` is
+the last guard: a conflict rolls back the mutation and returns the stored
+success body after a live permission check. Success is persisted; business
+rejects and infrastructure failures are not. Keys do not auto-expire. The
+in-process memory journal matches this protocol in one process and does **not**
+claim durability across process restart. PostgreSQL is the cross-process
+source of truth; `AppState` does not keep a control-idempotency map.
+
+A manual step that also writes `TrainingProgress` still records the control
+result on the `SchedulerProgress` mutation (the first durable substep), not
+after later training side effects.
 
 ## 6. Identity, lease, and fencing
 
@@ -339,7 +353,8 @@ not assume they are already solved.
    accelerate recovery of newly persisted rooms.
 6. User-visible public/private streams do not exist; the execution SSE is an
    admin audit surface.
-7. Pause/resume/close/clock writes are not idempotent.
+7. Control writes are durable-idempotent under `control.v1` (see §5). In-memory
+   journal replay matches in-process only.
 8. Error bodies are mostly uncoded strings.
 
 Matching, journal-then-install, fencing tokens, command/mutation interleaving,

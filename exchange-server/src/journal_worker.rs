@@ -12,10 +12,10 @@ use tokio::sync::{mpsc, oneshot};
 use exchange_core::{RoomBootstrap, ScenarioConfig, VenueTransfer, model::AccountId};
 
 use crate::journal::{
-    AccountLedgerProjection, ExecutionPage, JournalError, JournalExecution, JournalSnapshot,
-    JournalStore, JournalTransfer, MarketTickProjection, OrderProjection, PendingJournalMutation,
-    PositionSnapshotProjection, RoomLeaseClaim, RoomRoutingRecord, RoomWriterLease,
-    TradeProjection,
+    AccountLedgerProjection, ControlIdempotencyRecord, ExecutionPage, JournalError,
+    JournalExecution, JournalSnapshot, JournalStore, JournalTransfer, MarketTickProjection,
+    OrderProjection, PendingJournalMutation, PositionSnapshotProjection, RoomLeaseClaim,
+    RoomRoutingRecord, RoomWriterLease, TradeProjection,
 };
 
 pub const DEFAULT_JOURNAL_QUEUE_CAPACITY: usize = 64;
@@ -386,6 +386,21 @@ impl JournalCoordinator {
         let idempotency_key = idempotency_key.to_string();
         self.execute(move |store| {
             store.find_idempotent_execution(&user_id, &room_id, &idempotency_key)
+        })
+        .await
+    }
+
+    pub(crate) async fn find_control_idempotency(
+        &self,
+        user_id: &str,
+        room_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<ControlIdempotencyRecord>, JournalError> {
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        let idempotency_key = idempotency_key.to_string();
+        self.execute(move |store| {
+            store.find_control_idempotency(&user_id, &room_id, &idempotency_key)
         })
         .await
     }

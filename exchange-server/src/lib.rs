@@ -46,11 +46,12 @@ use tower_http::cors::CorsLayer;
 
 use crate::auth::{AuthError, AuthPolicy, USER_ID_HEADER};
 use crate::journal::{
-    AccountLedgerProjection, ExecutionPage, JournalError, JournalExecution, JournalMutation,
-    JournalRecovery, JournalSnapshot, JournalStore, JournalStoreBundle, JournalTransfer,
-    MAX_ROOM_LEASE_DURATION_MS, MarketTickProjection, OrderProjection, PendingJournalMutation,
-    PositionSnapshotProjection, RoomLeaseClaim, RoomMutation, RoomRoutingRecord, RoomWriterLease,
-    TradeProjection, journal_stores_from_env,
+    AccountLedgerProjection, ControlIdempotencyRecord, ExecutionPage, JournalError,
+    JournalExecution, JournalMutation, JournalRecovery, JournalSnapshot, JournalStore,
+    JournalStoreBundle, JournalTransfer, MAX_ROOM_LEASE_DURATION_MS, MarketTickProjection,
+    OrderProjection, PendingJournalMutation, PositionSnapshotProjection, RoomLeaseClaim,
+    RoomMutation, RoomRoutingRecord, RoomWriterLease, TradeProjection, control_request_fingerprint,
+    journal_stores_from_env,
 };
 use crate::journal_worker::JournalCoordinator;
 
@@ -491,7 +492,6 @@ struct AppState {
     agent_workers: BTreeMap<RoomId, AgentWorkerHandle>,
     schedulers: BTreeMap<RoomId, exchange_core::SchedulerState>,
     training_runs: BTreeMap<String, exchange_core::TrainingRun>,
-    control_idempotency: BTreeMap<(String, String, String), (String, serde_json::Value)>,
     external_action_counts: BTreeMap<(String, String, u64), u32>,
     journal: JournalCoordinator,
     auth_policy: AuthPolicy,
@@ -565,7 +565,6 @@ impl AppState {
             agent_workers: BTreeMap::new(),
             schedulers: BTreeMap::new(),
             training_runs: BTreeMap::new(),
-            control_idempotency: BTreeMap::new(),
             external_action_counts: BTreeMap::new(),
             journal,
             auth_policy,
@@ -609,7 +608,6 @@ impl AppState {
             agent_workers: BTreeMap::new(),
             schedulers,
             training_runs: training_runs_from_recovery(&recovery),
-            control_idempotency: BTreeMap::new(),
             external_action_counts: BTreeMap::new(),
             journal,
             auth_policy,
@@ -2311,6 +2309,16 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
                     .restore_room_status(&room.room_id, record.execution.status)
                     .map_err(|error| JournalError::Recovery(format!("{error:?}")))?;
             }
+            let paused_for_scheduler_replay = record.execution.accepted
+                && rooms
+                    .status(&room.room_id)
+                    .map_err(|error| JournalError::Recovery(format!("{error:?}")))?
+                    == MarketStatus::Paused;
+            if paused_for_scheduler_replay {
+                rooms
+                    .restore_room_status(&room.room_id, MarketStatus::Running)
+                    .map_err(|error| JournalError::Recovery(format!("{error:?}")))?;
+            }
             let replayed = match record.execution.instrument_id.as_deref() {
                 Some(instrument_id) => {
                     rooms.apply_to_instrument(&room.room_id, instrument_id, record.command.clone())
@@ -2318,7 +2326,15 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
                 None => rooms.apply(&room.room_id, record.command.clone()),
             }
             .map_err(|error| JournalError::Recovery(format!("{error:?}")))?;
-            let replayed_summary = RoomExecutionSummary::from_execution(replayed);
+            if paused_for_scheduler_replay {
+                rooms
+                    .restore_room_status(&room.room_id, MarketStatus::Paused)
+                    .map_err(|error| JournalError::Recovery(format!("{error:?}")))?;
+            }
+            let mut replayed_summary = RoomExecutionSummary::from_execution(replayed);
+            if paused_for_scheduler_replay {
+                replayed_summary.status = record.execution.status;
+            }
             if !execution_summary_matches(&record.execution, &replayed_summary) {
                 return Err(JournalError::Recovery(format!(
                     "replayed execution diverged for room {} command_seq {}",
@@ -3862,6 +3878,99 @@ fn request_idempotency_key(headers: &HeaderMap) -> Result<Option<String>, ApiErr
     Ok(Some(value.to_string()))
 }
 
+fn control_conflict_error(key: &str) -> ApiError {
+    api_error(
+        StatusCode::CONFLICT,
+        format!("idempotency key {key:?} was already used for a different control request"),
+    )
+}
+
+fn control_fingerprint(operation: &str, params: serde_json::Value) -> String {
+    control_request_fingerprint(operation, params)
+}
+
+fn control_record(
+    user_id: impl Into<String>,
+    room_id: impl Into<String>,
+    key: impl Into<String>,
+    fingerprint: impl Into<String>,
+    response: &impl Serialize,
+) -> Result<ControlIdempotencyRecord, ApiError> {
+    Ok(ControlIdempotencyRecord {
+        user_id: user_id.into(),
+        room_id: room_id.into(),
+        idempotency_key: key.into(),
+        request_fingerprint: fingerprint.into(),
+        response_json: serde_json::to_value(response).map_err(api_error_from_json)?,
+    })
+}
+
+async fn load_control_replay<T: DeserializeOwned>(
+    state: &AppState,
+    user_id: &str,
+    room_id: &str,
+    key: &str,
+    fingerprint: &str,
+) -> Result<Option<T>, ApiError> {
+    let Some(existing) = state
+        .journal
+        .find_control_idempotency(user_id, room_id, key)
+        .await
+        .map_err(api_error_from_journal)?
+    else {
+        return Ok(None);
+    };
+    if existing.request_fingerprint != fingerprint {
+        return Err(control_conflict_error(key));
+    }
+    serde_json::from_value(existing.response_json)
+        .map(Some)
+        .map_err(api_error_from_json)
+}
+
+async fn append_control_mutation(
+    state: &mut AppState,
+    pending: PendingJournalMutation,
+    execution_records: &[JournalExecution],
+    transfer_records: &[JournalTransfer],
+    snapshot: Option<&JournalSnapshot>,
+) -> Result<Option<serde_json::Value>, ApiError> {
+    match state
+        .append_room_mutation(&pending, execution_records, transfer_records, snapshot)
+        .await
+    {
+        Ok(()) => Ok(None),
+        Err(JournalError::ControlIdempotencyConflict {
+            user_id,
+            room_id,
+            idempotency_key,
+        }) => {
+            let existing = state
+                .journal
+                .find_control_idempotency(&user_id, &room_id, &idempotency_key)
+                .await
+                .map_err(api_error_from_journal)?
+                .ok_or_else(|| {
+                    api_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!(
+                            "control idempotency key {idempotency_key:?} conflicted but was not found"
+                        ),
+                    )
+                })?;
+            if pending
+                .control_idempotency
+                .as_ref()
+                .is_some_and(|record| record.request_fingerprint != existing.request_fingerprint)
+            {
+                return Err(control_conflict_error(&idempotency_key));
+            }
+            Ok(Some(existing.response_json))
+        }
+        Err(error) => Err(api_error_from_journal(error)),
+    }
+}
+
 async fn room_orders(
     State(state): State<SharedState>,
     headers: HeaderMap,
@@ -5058,8 +5167,23 @@ async fn advance_room_clock(
     Json(request): Json<AdvanceClockRequest>,
 ) -> ApiResult<AdvanceClockResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let user_id = {
+        let app = lock_state(&state).await?;
+        current_user_id(&headers, &app.auth_policy)?
+    };
+    let idempotency_key = request_idempotency_key(&headers)?;
+    let fingerprint = control_fingerprint(
+        "clock/advance",
+        serde_json::json!({ "steps": request.steps }),
+    );
     run_durable_state_transaction(state.clone(), async move {
     let mut state = lock_state(&state).await?;
+    if let Some(key) = idempotency_key.as_deref()
+        && let Some(replayed) =
+            load_control_replay(&state, &user_id, &room_id, key, &fingerprint).await?
+    {
+        return Ok(Json(replayed));
+    }
     let command_cursor = next_persisted_command_cursor(&state, &room_id)
         .map_err(api_error_from_journal)?;
     let mut candidate_rooms = state.rooms.clone();
@@ -5135,22 +5259,42 @@ async fn advance_room_clock(
                 format!("room {room_id} disappeared while advancing its clock"),
             )
         })?;
-    state
-        .append_room_mutation(
-            &PendingJournalMutation::new(
+    let response = AdvanceClockResponse {
+        room_id: room_id.clone(),
+        clock,
+        completed_transfers: completed_transfers.clone(),
+    };
+    let record = idempotency_key
+        .as_ref()
+        .map(|key| {
+            control_record(
+                user_id.clone(),
                 room_id.clone(),
-                command_cursor,
-                RoomMutation::ClockAdvanced {
-                    steps: request.steps,
-                    completed_transfers: completed_transfers.clone(),
-                },
-            ),
-            &execution_records,
-            &records,
-            Some(&snapshot),
-        )
-        .await
-        .map_err(api_error_from_journal)?;
+                key.clone(),
+                fingerprint.clone(),
+                &response,
+            )
+        })
+        .transpose()?;
+    let pending = PendingJournalMutation::new(
+        room_id.clone(),
+        command_cursor,
+        RoomMutation::ClockAdvanced {
+            steps: request.steps,
+            completed_transfers: completed_transfers.clone(),
+        },
+    );
+    let pending = match record {
+        Some(record) => pending.with_control_idempotency(record),
+        None => pending,
+    };
+    if let Some(replay_json) =
+        append_control_mutation(&mut state, pending, &execution_records, &records, Some(&snapshot))
+            .await?
+    {
+        let replayed = serde_json::from_value(replay_json).map_err(api_error_from_json)?;
+        return Ok(Json(replayed));
+    }
     if let Some(run_id) = training_run_id
         && let Some(run) = state.training_runs.get(&run_id).cloned()
     {
@@ -5165,11 +5309,7 @@ async fn advance_room_clock(
     );
     state.rooms = candidate_rooms;
 
-    Ok(Json(AdvanceClockResponse {
-        room_id,
-        clock,
-        completed_transfers,
-    }))
+    Ok(Json(response))
     })
     .await
 }
@@ -5185,47 +5325,13 @@ async fn manual_room_step(
         current_user_id(&headers, &app.auth_policy)?
     };
     let idempotency_key = request_idempotency_key(&headers)?;
-    if let Some(key) = idempotency_key.as_deref() {
-        let app = lock_state(&state).await?;
-        if let Some((fingerprint, response)) =
-            app.control_idempotency
-                .get(&(user_id.clone(), room_id.clone(), key.to_string()))
-        {
-            if fingerprint != "clock/step" {
-                return Err(api_error(
-                    StatusCode::CONFLICT,
-                    format!(
-                        "idempotency key {key:?} was already used for a different control request"
-                    ),
-                ));
-            }
-            let replayed: exchange_core::SchedulerState =
-                serde_json::from_value(response.clone()).map_err(api_error_from_json)?;
-            return Ok(Json(replayed));
-        }
-    }
-    let scheduler = {
-        let app = lock_state(&state).await?;
-        if app.rooms.status(&room_id).map_err(api_error_from_room)? != MarketStatus::Paused {
-            return Err(api_error(
-                StatusCode::CONFLICT,
-                format!("manual step requires room {room_id} to be paused"),
-            ));
-        }
-        app.schedulers.get(&room_id).cloned().ok_or_else(|| {
-            api_error(
-                StatusCode::CONFLICT,
-                format!("room {room_id} has no scheduler to step"),
-            )
-        })?
-    };
-    let stepped = commit_scheduler_step(state.clone(), room_id.clone(), scheduler).await?;
-    if let Some(key) = idempotency_key {
-        let mut app = lock_state(&state).await?;
-        let value = serde_json::to_value(&stepped).map_err(api_error_from_json)?;
-        app.control_idempotency
-            .insert((user_id, room_id, key), ("clock/step".to_string(), value));
-    }
+    let fingerprint = control_fingerprint("clock/step", serde_json::json!({}));
+    let control = idempotency_key.map(|key| ControlIdempotencyIntent {
+        user_id,
+        key,
+        fingerprint,
+    });
+    let stepped = commit_scheduler_step(state, room_id, None, true, control).await?;
     Ok(Json(stepped))
 }
 
@@ -6021,64 +6127,8 @@ async fn pause_room(
     headers: HeaderMap,
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomStatusResponse> {
-    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let user_id = {
-        let app = lock_state(&state).await?;
-        current_user_id(&headers, &app.auth_policy)?
-    };
-    if let Some(key) = request_idempotency_key(&headers)? {
-        let app = lock_state(&state).await?;
-        if let Some((fingerprint, response)) =
-            app.control_idempotency
-                .get(&(user_id.clone(), room_id.clone(), key.clone()))
-        {
-            if fingerprint != "pause" {
-                return Err(api_error(
-                    StatusCode::CONFLICT,
-                    format!(
-                        "idempotency key {key:?} was already used for a different control request"
-                    ),
-                ));
-            }
-            let replayed: RoomStatusResponse =
-                serde_json::from_value(response.clone()).map_err(api_error_from_json)?;
-            return Ok(Json(replayed));
-        }
-    }
-    run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
-        let command_cursor =
-            next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
-        let mut candidate_rooms = state.rooms.clone();
-        candidate_rooms
-            .pause_room(&room_id)
-            .map_err(api_error_from_room)?;
-        let status = candidate_rooms
-            .status(&room_id)
-            .map_err(api_error_from_room)?;
-        state
-            .append_room_mutation(
-                &PendingJournalMutation::new(
-                    room_id.clone(),
-                    command_cursor,
-                    RoomMutation::StatusChanged { status },
-                ),
-                &[],
-                &[],
-                None,
-            )
-            .await
-            .map_err(api_error_from_journal)?;
-        state.rooms = candidate_rooms;
-        let response = RoomStatusResponse { room_id, status };
-        if let Some(key) = request_idempotency_key(&headers)? {
-            let value = serde_json::to_value(&response).map_err(api_error_from_json)?;
-            state.control_idempotency.insert(
-                (user_id.clone(), response.room_id.clone(), key),
-                ("pause".to_string(), value),
-            );
-        }
-        Ok(Json(response))
+    apply_room_status_control(state, headers, room_id, "pause", |rooms, room_id| {
+        rooms.pause_room(room_id)
     })
     .await
 }
@@ -6088,33 +6138,8 @@ async fn resume_room(
     headers: HeaderMap,
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomStatusResponse> {
-    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
-        let command_cursor =
-            next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
-        let mut candidate_rooms = state.rooms.clone();
-        candidate_rooms
-            .resume_room(&room_id)
-            .map_err(api_error_from_room)?;
-        let status = candidate_rooms
-            .status(&room_id)
-            .map_err(api_error_from_room)?;
-        state
-            .append_room_mutation(
-                &PendingJournalMutation::new(
-                    room_id.clone(),
-                    command_cursor,
-                    RoomMutation::StatusChanged { status },
-                ),
-                &[],
-                &[],
-                None,
-            )
-            .await
-            .map_err(api_error_from_journal)?;
-        state.rooms = candidate_rooms;
-        Ok(Json(RoomStatusResponse { room_id, status }))
+    apply_room_status_control(state, headers, room_id, "resume", |rooms, room_id| {
+        rooms.resume_room(room_id)
     })
     .await
 }
@@ -6124,33 +6149,76 @@ async fn close_room(
     headers: HeaderMap,
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomStatusResponse> {
+    apply_room_status_control(state, headers, room_id, "close", |rooms, room_id| {
+        rooms.close_room(room_id)
+    })
+    .await
+}
+
+async fn apply_room_status_control(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    operation: &'static str,
+    apply: impl Fn(&mut exchange_core::RoomManager, &str) -> Result<(), RoomManagerError>
+    + Send
+    + 'static,
+) -> ApiResult<RoomStatusResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let user_id = {
+        let app = lock_state(&state).await?;
+        current_user_id(&headers, &app.auth_policy)?
+    };
+    let idempotency_key = request_idempotency_key(&headers)?;
+    let fingerprint = control_fingerprint(operation, serde_json::json!({}));
     run_durable_state_transaction(state.clone(), async move {
         let mut state = lock_state(&state).await?;
+        if let Some(key) = idempotency_key.as_deref()
+            && let Some(replayed) =
+                load_control_replay(&state, &user_id, &room_id, key, &fingerprint).await?
+        {
+            return Ok(Json(replayed));
+        }
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
         let mut candidate_rooms = state.rooms.clone();
-        candidate_rooms
-            .close_room(&room_id)
-            .map_err(api_error_from_room)?;
+        apply(&mut candidate_rooms, &room_id).map_err(api_error_from_room)?;
         let status = candidate_rooms
             .status(&room_id)
             .map_err(api_error_from_room)?;
-        state
-            .append_room_mutation(
-                &PendingJournalMutation::new(
+        let response = RoomStatusResponse {
+            room_id: room_id.clone(),
+            status,
+        };
+        let record = idempotency_key
+            .as_ref()
+            .map(|key| {
+                control_record(
+                    user_id.clone(),
                     room_id.clone(),
-                    command_cursor,
-                    RoomMutation::StatusChanged { status },
-                ),
-                &[],
-                &[],
-                None,
-            )
-            .await
-            .map_err(api_error_from_journal)?;
+                    key.clone(),
+                    fingerprint.clone(),
+                    &response,
+                )
+            })
+            .transpose()?;
+        let pending = PendingJournalMutation::new(
+            room_id.clone(),
+            command_cursor,
+            RoomMutation::StatusChanged { status },
+        );
+        let pending = match record {
+            Some(record) => pending.with_control_idempotency(record),
+            None => pending,
+        };
+        if let Some(replay_json) =
+            append_control_mutation(&mut state, pending, &[], &[], None).await?
+        {
+            let replayed = serde_json::from_value(replay_json).map_err(api_error_from_json)?;
+            return Ok(Json(replayed));
+        }
         state.rooms = candidate_rooms;
-        Ok(Json(RoomStatusResponse { room_id, status }))
+        Ok(Json(response))
     })
     .await
 }
@@ -8567,9 +8635,15 @@ async fn run_scheduler_catch_up(
         if let Ok(mut lifecycle) = lifecycle.lock() {
             *lifecycle = AgentWorkerLifecycle::Running;
         }
-        commit_scheduler_step(shared.clone(), room_id.clone(), scheduler)
-            .await
-            .map_err(|(_, body)| body.0.error)?;
+        commit_scheduler_step(
+            shared.clone(),
+            room_id.clone(),
+            Some(scheduler),
+            false,
+            None,
+        )
+        .await
+        .map_err(|(_, body)| body.0.error)?;
         steps_run = steps_run.saturating_add(1);
         if steps_run >= 1 {
             // Auto-step runs one simulation step per wake; catch-up repeats
@@ -8587,13 +8661,33 @@ async fn run_scheduler_catch_up(
     }
 }
 
+struct ControlIdempotencyIntent {
+    user_id: String,
+    key: String,
+    fingerprint: String,
+}
+
 async fn commit_scheduler_step(
     shared: SharedState,
     room_id: RoomId,
-    scheduler: exchange_core::SchedulerState,
+    scheduler: Option<exchange_core::SchedulerState>,
+    require_paused: bool,
+    control: Option<ControlIdempotencyIntent>,
 ) -> Result<exchange_core::SchedulerState, (StatusCode, Json<ErrorResponse>)> {
     run_durable_state_transaction(shared.clone(), async move {
         let mut state = lock_state(&shared).await?;
+        if let Some(intent) = &control
+            && let Some(replayed) = load_control_replay(
+                &state,
+                &intent.user_id,
+                &room_id,
+                &intent.key,
+                &intent.fingerprint,
+            )
+            .await?
+        {
+            return Ok(Json(replayed));
+        }
         state
             .room_lease_claim(&room_id)
             .map_err(api_error_from_journal)?;
@@ -8603,6 +8697,25 @@ async fn commit_scheduler_step(
                 format!("room {room_id} is closed"),
             ));
         }
+        if require_paused
+            && state.rooms.status(&room_id).map_err(api_error_from_room)? != MarketStatus::Paused
+        {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                format!("manual step requires room {room_id} to be paused"),
+            ));
+        }
+        let scheduler = state
+            .schedulers
+            .get(&room_id)
+            .cloned()
+            .or(scheduler)
+            .ok_or_else(|| {
+                api_error(
+                    StatusCode::CONFLICT,
+                    format!("room {room_id} has no scheduler to step"),
+                )
+            })?;
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
         let mut candidate_rooms = state.rooms.clone();
@@ -8638,6 +8751,7 @@ async fn commit_scheduler_step(
             .values()
             .find(|run| run.spec.room_id == room_id)
             .map(|run| run.spec.run_id.clone());
+        let mut updated_training = None;
         if let Some(run_id) = training_run_id.as_ref()
             && let Some(mut run) = state.training_runs.get(run_id).cloned()
         {
@@ -8663,7 +8777,7 @@ async fn commit_scheduler_step(
                 }
             }
             settle_training_residuals(&mut candidate_rooms, &mut run)?;
-            state.training_runs.insert(run_id.clone(), run);
+            updated_training = Some((run_id.clone(), run));
         }
         let execution_records = candidate_rooms
             .execution_history(&room_id)
@@ -8705,25 +8819,43 @@ async fn commit_scheduler_step(
                 u64::try_from(checkpoint_started.elapsed().as_millis()).unwrap_or(u64::MAX),
             );
         }
-        state
-            .append_room_mutation(
-                &PendingJournalMutation::new(
+        let record = control
+            .as_ref()
+            .map(|intent| {
+                control_record(
+                    intent.user_id.clone(),
                     room_id.clone(),
-                    command_cursor,
-                    RoomMutation::SchedulerProgress {
-                        clock_steps,
-                        state: outcome.state.clone(),
-                    },
-                ),
-                &execution_records,
-                &[],
-                snapshot.as_ref(),
-            )
-            .await
-            .map_err(api_error_from_journal)?;
-        if let Some(run_id) = training_run_id
-            && let Some(run) = state.training_runs.get(&run_id).cloned()
+                    intent.key.clone(),
+                    intent.fingerprint.clone(),
+                    &outcome.state,
+                )
+            })
+            .transpose()?;
+        let pending = PendingJournalMutation::new(
+            room_id.clone(),
+            command_cursor,
+            RoomMutation::SchedulerProgress {
+                clock_steps,
+                state: outcome.state.clone(),
+            },
+        );
+        let pending = match record {
+            Some(record) => pending.with_control_idempotency(record),
+            None => pending,
+        };
+        if let Some(replay_json) = append_control_mutation(
+            &mut state,
+            pending,
+            &execution_records,
+            &[],
+            snapshot.as_ref(),
+        )
+        .await?
         {
+            let replayed = serde_json::from_value(replay_json).map_err(api_error_from_json)?;
+            return Ok(Json(replayed));
+        }
+        if let Some((_, run)) = updated_training {
             persist_training_progress(&mut state, &run, &[]).await?;
         }
         state.append_room_executions(
@@ -11202,6 +11334,622 @@ mod tests {
             )
             .await
             .unwrap();
+    }
+
+    async fn control_request(
+        app: &axum::Router,
+        uri: &str,
+        user: Option<&str>,
+        key: Option<&str>,
+        json_body: Option<serde_json::Value>,
+    ) -> axum::http::Response<Body> {
+        let mut builder = Request::builder().method(Method::POST).uri(uri);
+        if json_body.is_some() {
+            builder = builder.header("content-type", "application/json");
+        }
+        if let Some(user) = user {
+            builder = builder.header(USER_ID_HEADER, user);
+        }
+        if let Some(key) = key {
+            builder = builder.header(IDEMPOTENCY_KEY_HEADER, key);
+        }
+        let body = json_body
+            .map(|value| Body::from(value.to_string()))
+            .unwrap_or_else(Body::empty);
+        app.clone()
+            .oneshot(builder.body(body).unwrap())
+            .await
+            .unwrap()
+    }
+
+    async fn response_json<T: DeserializeOwned>(response: axum::http::Response<Body>) -> T {
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    async fn room_clock_step(app: &axum::Router, room_id: &str) -> u64 {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!("/rooms/{room_id}/clock"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let clock: RoomClockResponse = response_json(response).await;
+        clock.clock.step()
+    }
+
+    async fn create_paused_step_room(app: &axum::Router, room_id: &str) {
+        let create = CreateRoomRequest {
+            scenario: spot_scenario(room_id),
+            agents: vec![dca_template(room_id, "step-dca", 20)],
+            agent_interval_ms: Some(10_000),
+            autostart_agents: Some(false),
+        };
+        assert_eq!(
+            send_json(app, Method::POST, "/rooms", None, create)
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        let start = StartAgentsRequest {
+            agents: vec![dca_template(room_id, "step-dca", 20)],
+            interval_ms: Some(10_000),
+        };
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                &format!("/rooms/{room_id}/agents"),
+                None,
+                start,
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            control_request(app, &format!("/rooms/{room_id}/pause"), None, None, None)
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            control_request(
+                app,
+                &format!("/rooms/{room_id}/agents/stop"),
+                None,
+                None,
+                None,
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_serial_replay_returns_original_body() {
+        let app = new_app();
+        create_paused_step_room(&app, "ctrl-serial-room").await;
+        let first = control_request(
+            &app,
+            "/rooms/ctrl-serial-room/clock/step",
+            None,
+            Some("step-serial"),
+            None,
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let first_body = axum::body::to_bytes(first.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let step_after_first = room_clock_step(&app, "ctrl-serial-room").await;
+        let second = control_request(
+            &app,
+            "/rooms/ctrl-serial-room/clock/step",
+            None,
+            Some("step-serial"),
+            None,
+        )
+        .await;
+        assert_eq!(second.status(), StatusCode::OK);
+        let second_body = axum::body::to_bytes(second.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_body, second_body);
+        assert_eq!(
+            room_clock_step(&app, "ctrl-serial-room").await,
+            step_after_first
+        );
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_concurrent_same_key_steps_once() {
+        let app = new_app();
+        create_paused_step_room(&app, "ctrl-concurrent-room").await;
+        let before = room_clock_step(&app, "ctrl-concurrent-room").await;
+        let first = control_request(
+            &app,
+            "/rooms/ctrl-concurrent-room/clock/step",
+            None,
+            Some("step-concurrent"),
+            None,
+        );
+        let second = control_request(
+            &app,
+            "/rooms/ctrl-concurrent-room/clock/step",
+            None,
+            Some("step-concurrent"),
+            None,
+        );
+        let (first, second) = tokio::join!(first, second);
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(second.status(), StatusCode::OK);
+        let first_body = axum::body::to_bytes(first.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let second_body = axum::body::to_bytes(second.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_body, second_body);
+        let after = room_clock_step(&app, "ctrl-concurrent-room").await;
+        assert_eq!(
+            after.saturating_sub(before),
+            1,
+            "before={before} after={after}"
+        );
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_same_key_different_operation_conflicts() {
+        let app = new_app();
+        create_paused_step_room(&app, "ctrl-conflict-room").await;
+        let before = room_clock_step(&app, "ctrl-conflict-room").await;
+        let pause = control_request(
+            &app,
+            "/rooms/ctrl-conflict-room/pause",
+            None,
+            Some("shared-key"),
+            None,
+        )
+        .await;
+        assert_eq!(pause.status(), StatusCode::OK);
+        let step = control_request(
+            &app,
+            "/rooms/ctrl-conflict-room/clock/step",
+            None,
+            Some("shared-key"),
+            None,
+        )
+        .await;
+        assert_eq!(step.status(), StatusCode::CONFLICT);
+        assert_eq!(room_clock_step(&app, "ctrl-conflict-room").await, before);
+        let advance = control_request(
+            &app,
+            "/rooms/ctrl-conflict-room/clock/advance",
+            None,
+            Some("advance-key"),
+            Some(serde_json::json!({"steps": 1})),
+        )
+        .await;
+        assert_eq!(advance.status(), StatusCode::OK);
+        let different_steps = control_request(
+            &app,
+            "/rooms/ctrl-conflict-room/clock/advance",
+            None,
+            Some("advance-key"),
+            Some(serde_json::json!({"steps": 2})),
+        )
+        .await;
+        assert_eq!(different_steps.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            room_clock_step(&app, "ctrl-conflict-room").await,
+            before + 1
+        );
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_pre_commit_failure_leaves_state_and_retry_succeeds() {
+        struct FailOnceMutationJournal {
+            inner: journal::InMemoryJournalStore,
+            remaining_failures: usize,
+        }
+
+        impl JournalStore for FailOnceMutationJournal {
+            fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
+                self.inner.load_recovery()
+            }
+
+            fn create_room(
+                &mut self,
+                owner_user_id: &str,
+                scenario: &ScenarioConfig,
+                bootstrap: &exchange_core::RoomBootstrap,
+                account_ids: &[AccountId],
+                seed_records: &[JournalExecution],
+                initial_snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                self.inner.create_room(
+                    owner_user_id,
+                    scenario,
+                    bootstrap,
+                    account_ids,
+                    seed_records,
+                    initial_snapshot,
+                )
+            }
+
+            fn append_executions(
+                &mut self,
+                records: &[JournalExecution],
+                snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                self.inner.append_executions(records, snapshot)
+            }
+
+            fn append_room_mutation(
+                &mut self,
+                mutation: &PendingJournalMutation,
+                execution_records: &[JournalExecution],
+                transfer_records: &[JournalTransfer],
+                snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                if self.remaining_failures > 0 {
+                    self.remaining_failures -= 1;
+                    return Err(JournalError::Recovery(
+                        "injected control commit failure".into(),
+                    ));
+                }
+                self.inner.append_room_mutation(
+                    mutation,
+                    execution_records,
+                    transfer_records,
+                    snapshot,
+                )
+            }
+
+            fn find_control_idempotency(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+                idempotency_key: &str,
+            ) -> Result<Option<journal::ControlIdempotencyRecord>, JournalError> {
+                self.inner
+                    .find_control_idempotency(user_id, room_id, idempotency_key)
+            }
+
+            fn user_can_administer_room(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+            ) -> Result<bool, JournalError> {
+                self.inner.user_can_administer_room(user_id, room_id)
+            }
+
+            fn user_can_access_room(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+            ) -> Result<bool, JournalError> {
+                self.inner.user_can_access_room(user_id, room_id)
+            }
+
+            fn update_room_status(
+                &mut self,
+                room_id: &str,
+                status: MarketStatus,
+            ) -> Result<(), JournalError> {
+                self.inner.update_room_status(room_id, status)
+            }
+        }
+
+        let app = new_app_with_journal(
+            "http://127.0.0.1:57305",
+            Box::new(FailOnceMutationJournal {
+                inner: journal::InMemoryJournalStore::new(),
+                remaining_failures: 1,
+            }),
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("ctrl-fail-room"),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let failed = control_request(
+            &app,
+            "/rooms/ctrl-fail-room/pause",
+            None,
+            Some("pause-fail"),
+            None,
+        )
+        .await;
+        assert_eq!(failed.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let status = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/ctrl-fail-room/view")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(status.status(), StatusCode::OK);
+        let view: MarketView = response_json(status).await;
+        assert_eq!(view.status, MarketStatus::Running);
+        let retry = control_request(
+            &app,
+            "/rooms/ctrl-fail-room/pause",
+            None,
+            Some("pause-fail"),
+            None,
+        )
+        .await;
+        assert_eq!(retry.status(), StatusCode::OK);
+        let replay = control_request(
+            &app,
+            "/rooms/ctrl-fail-room/pause",
+            None,
+            Some("pause-fail"),
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_survives_restart_without_second_step() {
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let app = recovering_app(Box::new(journal.clone()));
+        create_paused_step_room(&app, "ctrl-restart-room").await;
+        let first = control_request(
+            &app,
+            "/rooms/ctrl-restart-room/clock/step",
+            None,
+            Some("step-restart"),
+            None,
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let first_body = axum::body::to_bytes(first.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let live_step = room_clock_step(&app, "ctrl-restart-room").await;
+        drop(app);
+
+        let recovered = recovering_app(Box::new(journal));
+        let replay = control_request(
+            &recovered,
+            "/rooms/ctrl-restart-room/clock/step",
+            None,
+            Some("step-restart"),
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+        let replay_body = axum::body::to_bytes(replay.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_body, replay_body);
+        assert_eq!(
+            room_clock_step(&recovered, "ctrl-restart-room").await,
+            live_step
+        );
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_takeover_replays_and_old_fence_cannot_append() {
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let first_state = shared_state(
+            AppState::recover_with_journal_bundle_and_auth_policy(
+                "http://127.0.0.1:57305",
+                JournalStoreBundle::single(Box::new(journal.clone())),
+                AuthPolicy::local_development(),
+                Some(training_lease_config("ctrl-a", "http://127.0.0.1:57305")),
+            )
+            .unwrap(),
+        );
+        let first = app(first_state.clone());
+        create_paused_step_room(&first, "ctrl-takeover-room").await;
+        let first_step = control_request(
+            &first,
+            "/rooms/ctrl-takeover-room/clock/step",
+            None,
+            Some("step-takeover"),
+            None,
+        )
+        .await;
+        assert_eq!(first_step.status(), StatusCode::OK);
+        let first_body = axum::body::to_bytes(first_step.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let live_step = room_clock_step(&first, "ctrl-takeover-room").await;
+        let old_claim = {
+            let app = first_state.app.lock().await;
+            app.room_lease_claim("ctrl-takeover-room")
+                .unwrap()
+                .expect("writer lease")
+        };
+        release_owned_room_writer_leases(&first_state)
+            .await
+            .unwrap();
+        drop(first);
+        drop(first_state);
+
+        let recovered = leased_recovering_app(journal.clone(), "ctrl-b", "http://127.0.0.1:57306");
+        let replay = control_request(
+            &recovered,
+            "/rooms/ctrl-takeover-room/clock/step",
+            None,
+            Some("step-takeover"),
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+        let replay_body = axum::body::to_bytes(replay.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_body, replay_body);
+        assert_eq!(
+            room_clock_step(&recovered, "ctrl-takeover-room").await,
+            live_step
+        );
+
+        let mut stale = journal;
+        let fenced = stale.append_room_mutation_fenced(
+            &old_claim,
+            &PendingJournalMutation::new(
+                "ctrl-takeover-room",
+                0,
+                RoomMutation::StatusChanged {
+                    status: MarketStatus::Running,
+                },
+            ),
+            &[],
+            &[],
+            None,
+        );
+        assert!(matches!(fenced, Err(JournalError::RoomLeaseLost { .. })));
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_revoked_permission_does_not_leak_body() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("ctrl-revoke-room"),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/ctrl-revoke-room/members",
+                None,
+                serde_json::json!({"user_id":"operator","role":"admin"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let first = control_request(
+            &app,
+            "/rooms/ctrl-revoke-room/pause",
+            Some("operator"),
+            Some("pause-revoke"),
+            None,
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let remove = send_json(
+            &app,
+            Method::POST,
+            "/rooms/ctrl-revoke-room/members/operator",
+            None,
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(remove.status(), StatusCode::OK);
+        let replay = control_request(
+            &app,
+            "/rooms/ctrl-revoke-room/pause",
+            Some("operator"),
+            Some("pause-revoke"),
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(replay.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8_lossy(&body);
+        assert!(!text.contains("Paused"));
+        assert!(!text.contains("\"status\":\"Paused\""));
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_postgres_restart_replays_step() {
+        let Some(database_url) = postgres_test_database_url() else {
+            return;
+        };
+        let room_id = format!(
+            "ctrl-pg-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        cleanup_postgres_room(&database_url, &room_id);
+        let live_url = database_url.clone();
+        let store =
+            tokio::task::spawn_blocking(move || PostgresJournalStore::connect_migrated(&live_url))
+                .await
+                .unwrap()
+                .unwrap();
+        let app = recovering_app(Box::new(store));
+        create_paused_step_room(&app, &room_id).await;
+        let first = control_request(
+            &app,
+            &format!("/rooms/{room_id}/clock/step"),
+            None,
+            Some("step-pg"),
+            None,
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let first_body = axum::body::to_bytes(first.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let live_step = room_clock_step(&app, &room_id).await;
+        drop(app);
+
+        let recover_url = database_url.clone();
+        let recovered_store = tokio::task::spawn_blocking(move || {
+            PostgresJournalStore::connect_migrated(&recover_url)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        let recovered = recovering_app(Box::new(recovered_store));
+        let replay = control_request(
+            &recovered,
+            &format!("/rooms/{room_id}/clock/step"),
+            None,
+            Some("step-pg"),
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+        let replay_body = axum::body::to_bytes(replay.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_body, replay_body);
+        assert_eq!(room_clock_step(&recovered, &room_id).await, live_step);
+        cleanup_postgres_room(&database_url, &room_id);
     }
 
     #[tokio::test]
