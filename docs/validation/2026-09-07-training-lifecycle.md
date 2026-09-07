@@ -13,6 +13,6 @@
   - 快 3 步 vs 慢 3×1 步。
   - PostgreSQL `connect_migrated`（不用进程独占 runtime lock）崩溃恢复；避免与 `postgres_journal_persists_and_recovers_room_when_configured` 抢 advisory lock。
 
-24h soak：**门槛已豁免**（「不需要跑24h soak」），见 `docs/validation/2026-09-07-p6-24h-gate-waiver.md`。86400s 未跑。未把短时 soak 当作 24h。
+P6.2 24h soak：未执行，阶段阻塞，见 `docs/validation/2026-09-07-p6-24h-gate-waiver.md`。86400s 未跑。未把短时 soak 当作 24h。本记录只覆盖 P3/P4 缺口，不把 P6 标为完成。
 
-是否满足本步骤门槛：是（P3/P4 所列缺口已在 shipped 路径上覆盖；24h 仍豁免）。
+是否满足本步骤门槛：是（仅 P3/P4 所列缺口）。P6 门槛未满足。

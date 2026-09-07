@@ -323,20 +323,18 @@ P0 基线与契约
 
 - [x] 覆盖数据库不可用、慢读/慢写、进程退出、客户端取消、租约失效、慢订阅者和磁盘/容量限制的适用场景。
 - [x] 明确故障后 readiness、worker 状态、请求错误和恢复动作，禁止自动无限重试。
-- [x] 先执行短时 smoke（仅验证 `scripts/backend_soak.sh` 启动器；8s 样本不是 24h）。
-- 24h 声明负载持续运行：**P6 的 24h 门槛已由操作者豁免，未执行，本项不勾选为完成。** 原文：「不需要跑24h soak」。`scripts/backend_soak.sh` 默认仍为 `MARKETFORGE_SOAK_SECONDS=86400`。
-- [x] 验证长日志恢复、缓存有界及正常关停，不以单次测试通过替代持续运行证据。
+- [ ] 先执行短时 smoke，再执行声明负载下的 24 小时持续运行，保存命令、资源曲线及异常记录。
+- [ ] 验证长日志恢复、缓存有界及正常关停，不以单次测试通过替代持续运行证据。
 
 ### P6.3 整理交付
 
 - [x] 更新 README、存储文档、API 契约、CLI 使用说明和插件兼容说明。
 - [x] 为数据库迁移、版本升级、备份和恢复提供可执行步骤；不承诺未验证的降级兼容。
 - [x] CI 加入新增 Rust crate、Python SDK 的适用检查，以及训练闭环和 PostgreSQL 恢复测试。
-- [x] 发布说明列出已通过的负载、故障场景、运行时长及仍有的限制。
+- [ ] 发布说明列出已通过的负载、故障场景、运行时长及仍有的限制。
 
-**P6 门槛（本轮）**：功能、恢复、隔离、短时持续运行、文档/CI 齐全。
-**24h soak 门槛：已豁免。** 操作者原文：「不需要跑24h soak」。86400s 未跑；8s 启动器不是 24h，不得作为该门槛的通过证据。
-记录：`docs/validation/2026-09-06-p6.md`、`docs/validation/2026-09-07-p6-24h-gate-waiver.md`。`scripts/backend_soak.sh` 仍默认 86400s 供后续主机使用。
+**P6 门槛**：功能、恢复、隔离与持续运行证据齐全，才能称为可部署的训练后端。
+记录：`docs/validation/2026-09-06-p6.md`。24h 声明负载未执行；短时启动器不是 24h。阶段门槛未满足，停止于 P6.2。`scripts/backend_soak.sh` 默认仍为 86400s。
 
 ## 10. 验证命令与证据格式
 
@@ -379,7 +377,7 @@ MARKETFORGE_DATABASE_URL="$MARKETFORGE_TEST_DATABASE_URL" ./scripts/postgres_mul
 | CLI replay 子命令 | P4 | 历史定位、重放、差异和报告 |
 | 连续运行/中断恢复对照测试 | P4 | 市场、策略、任务结果一致 |
 | 批量 runner 与 Python SDK 示例 | P5 | 多 seed 评估、失败记录和恢复 |
-| 持续运行脚本 | P6 | `scripts/backend_soak.sh`；本轮 24h 由操作者豁免 |
+| 持续运行脚本 | P6 | `scripts/backend_soak.sh`；24h 未跑，P6.2 阻塞 |
 
 ### 10.3 每步完成记录模板
 
