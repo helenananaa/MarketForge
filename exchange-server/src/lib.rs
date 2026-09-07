@@ -3000,17 +3000,54 @@ async fn start_training_run(
             .zip(bootstrap.seed_executions.iter().cloned())
             .map(|(command, execution)| JournalExecution::seed(command, execution))
             .collect::<Vec<_>>();
-        app.journal
-            .create_room(
-                &user_id,
-                &request.scenario,
-                &bootstrap,
-                &account_ids,
-                &seed_records,
-                None,
+        let lease_config = app
+            .room_lease_runtime
+            .as_ref()
+            .map(|runtime| runtime.config.clone());
+        let initial_lease = if let Some(config) = &lease_config {
+            Some(
+                app.journal
+                    .create_room_with_writer_lease(
+                        &user_id,
+                        &request.scenario,
+                        &bootstrap,
+                        &account_ids,
+                        &seed_records,
+                        None,
+                        &config.instance_id,
+                        Some(&config.owner_url),
+                        config.lease_duration,
+                    )
+                    .await
+                    .map_err(api_error_from_journal)?,
             )
-            .await
-            .map_err(api_error_from_journal)?;
+        } else {
+            app.journal
+                .create_room(
+                    &user_id,
+                    &request.scenario,
+                    &bootstrap,
+                    &account_ids,
+                    &seed_records,
+                    None,
+                )
+                .await
+                .map_err(api_error_from_journal)?;
+            None
+        };
+        if let Some(lease) = initial_lease
+            && let Some(runtime) = app.room_lease_runtime.as_mut()
+        {
+            runtime.leases.insert(room_id.clone(), lease);
+            runtime.lost_rooms.remove(&room_id);
+        }
+        app.replace_room_executions(
+            room_id.clone(),
+            seed_records
+                .iter()
+                .map(|record| record.execution.clone())
+                .collect(),
+        );
         let cursor = command_cursor_after_actor(&bootstrap)?;
         app.append_room_mutation(
             &PendingJournalMutation::new(
@@ -11640,27 +11677,331 @@ mod tests {
             slow_result.run.fills[0].price_tick
         );
 
-        let live = parse_training(fast.clone(), "speed-fast".to_string()).await;
-        let recovered_runs = {
-            // Same-process persist proof: TrainingProgress is the recovery source.
-            let response = fast
-                .oneshot(
-                    Request::builder()
-                        .method(Method::GET)
-                        .uri("/rooms/speed-fast-room/replay")
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::OK);
-            live
-        };
-        assert_eq!(recovered_runs.score.q, slow_result.score.q);
         assert_eq!(
-            recovered_runs.run.status,
+            fast_result.run.status,
             exchange_core::TrainingStatus::Completed
         );
+        assert_eq!(
+            slow_result.run.status,
+            exchange_core::TrainingStatus::Completed
+        );
+    }
+
+    fn recovering_app(journal: Box<dyn JournalStore>) -> axum::Router {
+        new_app_recovering_with_journal("http://127.0.0.1:57305", journal).unwrap()
+    }
+
+    fn training_lease_config(instance_id: &str, owner_url: &str) -> RoomLeaseRuntimeConfig {
+        RoomLeaseRuntimeConfig {
+            mode: RoomLeaseRuntimeMode::RoomLeased,
+            instance_id: instance_id.to_string(),
+            owner_url: owner_url.to_string(),
+            lease_duration: Duration::from_secs(5),
+            renew_interval: Duration::from_millis(50),
+        }
+    }
+
+    fn leased_recovering_app(
+        journal: journal::SharedInMemoryJournalStore,
+        instance_id: &str,
+        owner_url: &str,
+    ) -> axum::Router {
+        let config = training_lease_config(instance_id, owner_url);
+        new_app_recovering_with_journal_factory_sync(
+            owner_url.to_string(),
+            AuthPolicy::local_development(),
+            default_cors_origins(),
+            Some(config),
+            move || Ok(JournalStoreBundle::single(Box::new(journal))),
+        )
+        .unwrap()
+    }
+
+    fn postgres_test_database_url() -> Option<String> {
+        match std::env::var("MARKETFORGE_TEST_DATABASE_URL") {
+            Ok(database_url) if !database_url.trim().is_empty() => Some(database_url),
+            _ if std::env::var("MARKETFORGE_REQUIRE_POSTGRES_TESTS").as_deref() == Ok("1") => {
+                panic!(
+                    "MARKETFORGE_REQUIRE_POSTGRES_TESTS=1 requires MARKETFORGE_TEST_DATABASE_URL"
+                );
+            }
+            _ => None,
+        }
+    }
+
+    fn unique_training_ids(prefix: &str) -> (String, String) {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        (
+            format!("{prefix}-room-{}-{suffix}", std::process::id()),
+            format!("{prefix}-run-{}-{suffix}", std::process::id()),
+        )
+    }
+
+    async fn start_two_sided_training_and_buy(
+        app: &axum::Router,
+        run_id: &str,
+        room_id: &str,
+        horizon: u64,
+    ) {
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                "/training/runs",
+                None,
+                two_sided_training(run_id, room_id, horizon),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                &format!("/rooms/{room_id}/orders"),
+                None,
+                limit_buy(20, 101, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    async fn advance_room_clock(app: &axum::Router, room_id: &str, steps: u64) {
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                &format!("/rooms/{room_id}/clock/advance"),
+                None,
+                AdvanceClockRequest { steps },
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    async fn training_result(app: &axum::Router, run_id: &str) -> TrainingRunResponse {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!("/training/runs/{run_id}/result"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "training result {run_id}"
+        );
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    async fn room_accounts(app: &axum::Router, room_id: &str) -> AccountSnapshots {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!("/rooms/{room_id}/accounts"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "accounts {room_id}");
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    async fn room_event_seqs(app: &axum::Router, room_id: &str) -> Vec<u64> {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!("/rooms/{room_id}/events?from_start=true&limit=50"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "events {room_id}");
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let events: RoomEventsResponse = serde_json::from_slice(&body).unwrap();
+        events
+            .executions
+            .iter()
+            .map(|execution| execution.command_seq)
+            .collect()
+    }
+
+    fn assert_training_pair_matches(live: &TrainingRunResponse, recovered: &TrainingRunResponse) {
+        assert_eq!(recovered.run.status, live.run.status);
+        assert_eq!(recovered.run.steps_elapsed, live.run.steps_elapsed);
+        assert_eq!(recovered.run.filled_qty, live.run.filled_qty);
+        assert_eq!(recovered.run.fees_paid, live.run.fees_paid);
+        assert_eq!(recovered.run.rejects, live.run.rejects);
+        assert_eq!(recovered.run.cancels, live.run.cancels);
+        assert_eq!(recovered.run.open_buy_qty, live.run.open_buy_qty);
+        assert_eq!(recovered.run.fills, live.run.fills);
+        assert_eq!(recovered.score, live.score);
+        assert_eq!(live.run.status, exchange_core::TrainingStatus::Completed);
+        assert_eq!(live.score.q, 1);
+        assert_eq!(live.score.steps_elapsed, 3);
+    }
+
+    fn assert_event_seqs_match_training(seqs: &[u64], run: &TrainingRunResponse) {
+        assert!(
+            seqs.windows(2).all(|window| window[0] < window[1]),
+            "{seqs:?}"
+        );
+        assert!(
+            run.run
+                .fills
+                .iter()
+                .all(|fill| fill.command_seq.is_some_and(|seq| seqs.contains(&seq))),
+            "{seqs:?} fills={:?}",
+            run.run.fills
+        );
+    }
+
+    #[tokio::test]
+    async fn training_journal_crash_recovery_matches_live_run() {
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let app = recovering_app(Box::new(journal.clone()));
+        start_two_sided_training_and_buy(&app, "mem-train", "mem-train-room", 3).await;
+        advance_room_clock(&app, "mem-train-room", 3).await;
+        let live = training_result(&app, "mem-train").await;
+        let live_accounts = room_accounts(&app, "mem-train-room").await;
+        let live_seqs = room_event_seqs(&app, "mem-train-room").await;
+        drop(app);
+
+        let recovered = recovering_app(Box::new(journal));
+        let recovered_run = training_result(&recovered, "mem-train").await;
+        assert_training_pair_matches(&live, &recovered_run);
+        assert_eq!(
+            room_accounts(&recovered, "mem-train-room").await,
+            live_accounts
+        );
+        let recovered_seqs = room_event_seqs(&recovered, "mem-train-room").await;
+        assert_eq!(recovered_seqs, live_seqs);
+        assert_event_seqs_match_training(&recovered_seqs, &recovered_run);
+    }
+
+    #[tokio::test]
+    async fn training_lease_takeover_matches_continuous_run() {
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let continuous_journal = journal::SharedInMemoryJournalStore::new();
+        let continuous = recovering_app(Box::new(continuous_journal));
+        start_two_sided_training_and_buy(&continuous, "lease-train", "lease-train-room", 3).await;
+        advance_room_clock(&continuous, "lease-train-room", 3).await;
+        let continuous_run = training_result(&continuous, "lease-train").await;
+        let continuous_accounts = room_accounts(&continuous, "lease-train-room").await;
+        let continuous_seqs = room_event_seqs(&continuous, "lease-train-room").await;
+
+        let first_state = shared_state(
+            AppState::recover_with_journal_bundle_and_auth_policy(
+                "http://127.0.0.1:57305",
+                JournalStoreBundle::single(Box::new(journal.clone())),
+                AuthPolicy::local_development(),
+                Some(training_lease_config("train-a", "http://127.0.0.1:57305")),
+            )
+            .unwrap(),
+        );
+        let first = app(first_state.clone());
+        start_two_sided_training_and_buy(&first, "lease-train", "lease-train-room", 3).await;
+        advance_room_clock(&first, "lease-train-room", 1).await;
+        release_owned_room_writer_leases(&first_state)
+            .await
+            .unwrap();
+        drop(first);
+        drop(first_state);
+
+        let recovered = leased_recovering_app(journal, "train-b", "http://127.0.0.1:57306");
+        advance_room_clock(&recovered, "lease-train-room", 2).await;
+        let recovered_run = training_result(&recovered, "lease-train").await;
+        assert_training_pair_matches(&continuous_run, &recovered_run);
+        assert_eq!(
+            room_accounts(&recovered, "lease-train-room").await,
+            continuous_accounts
+        );
+        let recovered_seqs = room_event_seqs(&recovered, "lease-train-room").await;
+        assert_eq!(recovered_seqs, continuous_seqs);
+        assert_event_seqs_match_training(&recovered_seqs, &recovered_run);
+        let owner = recovered
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/lease-train-room/owner")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(owner.status(), StatusCode::OK);
+        let owner_body = axum::body::to_bytes(owner.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let owner: RoomOwnerResponse = serde_json::from_slice(&owner_body).unwrap();
+        assert_eq!(owner.owner_id, "train-b");
+        assert_eq!(owner.fencing_token, 2);
+    }
+
+    #[tokio::test]
+    async fn training_postgres_crash_recovery_matches_live_run() {
+        let Some(database_url) = postgres_test_database_url() else {
+            return;
+        };
+        let (room_id, run_id) = unique_training_ids("pg-train");
+        cleanup_postgres_room(&database_url, &room_id);
+
+        let live_url = database_url.clone();
+        let store =
+            tokio::task::spawn_blocking(move || PostgresJournalStore::connect_migrated(&live_url))
+                .await
+                .unwrap()
+                .unwrap();
+        let app = recovering_app(Box::new(store));
+        start_two_sided_training_and_buy(&app, &run_id, &room_id, 3).await;
+        advance_room_clock(&app, &room_id, 3).await;
+        let live = training_result(&app, &run_id).await;
+        let live_accounts = room_accounts(&app, &room_id).await;
+        let live_seqs = room_event_seqs(&app, &room_id).await;
+        drop(app);
+
+        let recover_url = database_url.clone();
+        let recovered_store = tokio::task::spawn_blocking(move || {
+            PostgresJournalStore::connect_migrated(&recover_url)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        let recovered = recovering_app(Box::new(recovered_store));
+        let recovered_run = training_result(&recovered, &run_id).await;
+        assert_training_pair_matches(&live, &recovered_run);
+        assert_eq!(room_accounts(&recovered, &room_id).await, live_accounts);
+        let recovered_seqs = room_event_seqs(&recovered, &room_id).await;
+        assert_eq!(recovered_seqs, live_seqs);
+        assert_event_seqs_match_training(&recovered_seqs, &recovered_run);
+        cleanup_postgres_room(&database_url, &room_id);
     }
 
     #[tokio::test]

@@ -273,6 +273,7 @@ P0 基线与契约
 - [x] 固定场景分别执行完整连续运行、进程中断恢复、租约接管和不同步进速度运行。
 - [x] 比较命令/事件顺序、最终账户、agent 状态、训练状态及评分。
 - [x] 将故障点、运行版本、输入摘要和差异输出保存为验收证据。
+- [x] 对照覆盖 shipped journal persist/replay：共享内存 journal 崩溃恢复、租约接管、PostgreSQL `connect_migrated` 恢复（不用独占 runtime lock）；速度对照见既有 HTTP 快/慢步进测试。
 
 **P4 门槛 / M2**：同一训练可完成、恢复、回放并复算报告；恢复测试不能只验证最终余额。
 记录：`docs/validation/2026-09-06-p4.md`。

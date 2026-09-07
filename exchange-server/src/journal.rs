@@ -7,6 +7,9 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(test)]
+use std::sync::{Arc, Mutex};
+
 use exchange_core::{
     ActorExecution, Command, MarketStatus, RoomBootstrap, ScenarioConfig, SimulationRoom,
     VenueToVenueTransfer,
@@ -1918,6 +1921,333 @@ impl InMemoryJournalStore {
             .values()
             .map(|snapshot| (*snapshot).clone())
             .collect()
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+pub(crate) struct SharedInMemoryJournalStore {
+    inner: Arc<Mutex<InMemoryJournalStore>>,
+}
+
+#[cfg(test)]
+impl SharedInMemoryJournalStore {
+    pub(crate) fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(InMemoryJournalStore::new())),
+        }
+    }
+
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, InMemoryJournalStore>, JournalError> {
+        self.inner
+            .lock()
+            .map_err(|_| JournalError::Recovery("shared in-memory journal lock poisoned".into()))
+    }
+}
+
+#[cfg(test)]
+impl JournalStore for SharedInMemoryJournalStore {
+    fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
+        self.lock()?.load_recovery()
+    }
+
+    fn health_check(&mut self) -> Result<(), JournalError> {
+        self.lock()?.health_check()
+    }
+
+    fn acquire_room_writer_lease(
+        &mut self,
+        room_id: &str,
+        owner_id: &str,
+        owner_url: Option<&str>,
+        duration: Duration,
+    ) -> Result<Option<RoomWriterLease>, JournalError> {
+        self.lock()?
+            .acquire_room_writer_lease(room_id, owner_id, owner_url, duration)
+    }
+
+    fn current_room_writer_lease(
+        &mut self,
+        room_id: &str,
+    ) -> Result<Option<RoomWriterLease>, JournalError> {
+        self.lock()?.current_room_writer_lease(room_id)
+    }
+
+    fn query_room_routes(
+        &mut self,
+        user_id: &str,
+        after_room_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<RoomRoutingRecord>, JournalError> {
+        self.lock()?
+            .query_room_routes(user_id, after_room_id, limit)
+    }
+
+    fn renew_room_writer_lease(
+        &mut self,
+        claim: &RoomLeaseClaim,
+        duration: Duration,
+    ) -> Result<Option<RoomWriterLease>, JournalError> {
+        self.lock()?.renew_room_writer_lease(claim, duration)
+    }
+
+    fn release_room_writer_lease(&mut self, claim: &RoomLeaseClaim) -> Result<bool, JournalError> {
+        self.lock()?.release_room_writer_lease(claim)
+    }
+
+    fn find_idempotent_execution(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<JournalExecution>, JournalError> {
+        self.lock()?
+            .find_idempotent_execution(user_id, room_id, idempotency_key)
+    }
+
+    fn query_executions(
+        &mut self,
+        room_id: &str,
+        after_command_seq: Option<u64>,
+        from_start: bool,
+        limit: usize,
+    ) -> Result<ExecutionPage, JournalError> {
+        self.lock()?
+            .query_executions(room_id, after_command_seq, from_start, limit)
+    }
+
+    fn create_room(
+        &mut self,
+        owner_user_id: &str,
+        scenario: &ScenarioConfig,
+        bootstrap: &RoomBootstrap,
+        account_ids: &[AccountId],
+        seed_records: &[JournalExecution],
+        initial_snapshot: Option<&JournalSnapshot>,
+    ) -> Result<(), JournalError> {
+        self.lock()?.create_room(
+            owner_user_id,
+            scenario,
+            bootstrap,
+            account_ids,
+            seed_records,
+            initial_snapshot,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn create_room_with_writer_lease(
+        &mut self,
+        owner_user_id: &str,
+        scenario: &ScenarioConfig,
+        bootstrap: &RoomBootstrap,
+        account_ids: &[AccountId],
+        seed_records: &[JournalExecution],
+        initial_snapshot: Option<&JournalSnapshot>,
+        writer_owner_id: &str,
+        writer_owner_url: Option<&str>,
+        lease_duration: Duration,
+    ) -> Result<RoomWriterLease, JournalError> {
+        self.lock()?.create_room_with_writer_lease(
+            owner_user_id,
+            scenario,
+            bootstrap,
+            account_ids,
+            seed_records,
+            initial_snapshot,
+            writer_owner_id,
+            writer_owner_url,
+            lease_duration,
+        )
+    }
+
+    fn append_executions(
+        &mut self,
+        records: &[JournalExecution],
+        snapshot: Option<&JournalSnapshot>,
+    ) -> Result<(), JournalError> {
+        self.lock()?.append_executions(records, snapshot)
+    }
+
+    fn append_executions_fenced(
+        &mut self,
+        claim: &RoomLeaseClaim,
+        records: &[JournalExecution],
+        snapshot: Option<&JournalSnapshot>,
+    ) -> Result<(), JournalError> {
+        self.lock()?
+            .append_executions_fenced(claim, records, snapshot)
+    }
+
+    fn append_transfers(
+        &mut self,
+        records: &[JournalTransfer],
+        snapshot: Option<&JournalSnapshot>,
+    ) -> Result<(), JournalError> {
+        self.lock()?.append_transfers(records, snapshot)
+    }
+
+    fn append_snapshot(&mut self, snapshot: &JournalSnapshot) -> Result<(), JournalError> {
+        self.lock()?.append_snapshot(snapshot)
+    }
+
+    fn append_room_mutation(
+        &mut self,
+        mutation: &PendingJournalMutation,
+        execution_records: &[JournalExecution],
+        transfer_records: &[JournalTransfer],
+        snapshot: Option<&JournalSnapshot>,
+    ) -> Result<(), JournalError> {
+        self.lock()?
+            .append_room_mutation(mutation, execution_records, transfer_records, snapshot)
+    }
+
+    fn append_room_mutation_fenced(
+        &mut self,
+        claim: &RoomLeaseClaim,
+        mutation: &PendingJournalMutation,
+        execution_records: &[JournalExecution],
+        transfer_records: &[JournalTransfer],
+        snapshot: Option<&JournalSnapshot>,
+    ) -> Result<(), JournalError> {
+        self.lock()?.append_room_mutation_fenced(
+            claim,
+            mutation,
+            execution_records,
+            transfer_records,
+            snapshot,
+        )
+    }
+
+    fn update_room_status(
+        &mut self,
+        room_id: &str,
+        status: MarketStatus,
+    ) -> Result<(), JournalError> {
+        self.lock()?.update_room_status(room_id, status)
+    }
+
+    fn upsert_room_member(
+        &mut self,
+        room_id: &str,
+        user_id: &str,
+        role: &str,
+    ) -> Result<(), JournalError> {
+        self.lock()?.upsert_room_member(room_id, user_id, role)
+    }
+
+    fn remove_room_member(&mut self, room_id: &str, user_id: &str) -> Result<(), JournalError> {
+        self.lock()?.remove_room_member(room_id, user_id)
+    }
+
+    fn assign_account_owner(
+        &mut self,
+        room_id: &str,
+        account_id: AccountId,
+        user_id: &str,
+    ) -> Result<(), JournalError> {
+        self.lock()?
+            .assign_account_owner(room_id, account_id, user_id)
+    }
+
+    fn user_room_role(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+    ) -> Result<Option<String>, JournalError> {
+        self.lock()?.user_room_role(user_id, room_id)
+    }
+
+    fn user_can_access_room(&mut self, user_id: &str, room_id: &str) -> Result<bool, JournalError> {
+        self.lock()?.user_can_access_room(user_id, room_id)
+    }
+
+    fn user_can_administer_room(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+    ) -> Result<bool, JournalError> {
+        self.lock()?.user_can_administer_room(user_id, room_id)
+    }
+
+    fn user_can_access_account(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        account_id: AccountId,
+    ) -> Result<bool, JournalError> {
+        self.lock()?
+            .user_can_access_account(user_id, room_id, account_id)
+    }
+
+    fn query_orders(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        instrument_id: Option<&str>,
+        account_id: Option<AccountId>,
+        limit: usize,
+    ) -> Result<Vec<OrderProjection>, JournalError> {
+        self.lock()?
+            .query_orders(user_id, room_id, instrument_id, account_id, limit)
+    }
+
+    fn query_trades(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        instrument_id: Option<&str>,
+        account_id: Option<AccountId>,
+        limit: usize,
+    ) -> Result<Vec<TradeProjection>, JournalError> {
+        self.lock()?
+            .query_trades(user_id, room_id, instrument_id, account_id, limit)
+    }
+
+    fn query_market_ticks(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        instrument_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<MarketTickProjection>, JournalError> {
+        self.lock()?
+            .query_market_ticks(user_id, room_id, instrument_id, limit)
+    }
+
+    fn query_account_ledger(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        instrument_id: Option<&str>,
+        account_id: Option<AccountId>,
+        limit: usize,
+    ) -> Result<Vec<AccountLedgerProjection>, JournalError> {
+        self.lock()?
+            .query_account_ledger(user_id, room_id, instrument_id, account_id, limit)
+    }
+
+    fn query_position_snapshots(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        instrument_id: Option<&str>,
+        account_id: Option<AccountId>,
+        limit: usize,
+    ) -> Result<Vec<PositionSnapshotProjection>, JournalError> {
+        self.lock()?
+            .query_position_snapshots(user_id, room_id, instrument_id, account_id, limit)
+    }
+
+    fn query_transfers(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        account_id: Option<AccountId>,
+        limit: usize,
+    ) -> Result<Vec<VenueTransfer>, JournalError> {
+        self.lock()?
+            .query_transfers(user_id, room_id, account_id, limit)
     }
 }
 
