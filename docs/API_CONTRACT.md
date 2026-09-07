@@ -99,6 +99,28 @@ Account assignment after a training run has started returns HTTP 409.
 
 Non-admin actors are capped at 8 actions per simulation step (`429` when exceeded). Illegal `price_tick`/`qty` (`<= 0`) return `400`. Quota is per `(room, user, step)` and does not block other rooms.
 
+The Python SDK (`python/marketforge`) talks only to HTTP: `observe` / `place` / `cancel`, training start/status/abort/result/report, `clock` / `advance_clock`, and `events`. Batch evaluation is `scripts/batch_runner.py` (library `marketforge.batch`).
+
+## Training (`training.v1`)
+
+```
+POST /training/runs
+GET  /training/runs/{run_id}
+POST /training/runs/{run_id}/abort
+GET  /training/runs/{run_id}/result
+GET  /training/runs/{run_id}/report
+```
+
+`POST /training/runs` creates the room, persists `TrainingProgress`, and returns status `Running`. That response is not a finished score. The same `run_id` is looked up and returned; a different run that reuses an existing room is HTTP 409. Agents listed on the request are started on the internal worker (not the Bearer HTTP callback). Clock `advance` / scheduler steps call `TrainingRun::on_step` and `settle_training_residuals` on the finish line.
+
+Agent templates include `NoiseTrader`, `DcaTrader`, `GridTrader`, `ContinuousMarketMaker`, and `CancelAtStep`. `ContinuousMarketMaker` and `NoiseTrader` carry a `seed`. Batch evaluation derives child seeds with the same wrapping-u64 function as `exchange_core::training_scenarios::child_seed(parent, agent_name)` and will not treat a renamed room as a different experiment.
+
+Versioned scenarios `basic_execution`, `liquidity_withdrawal`, and `inventory_stress` live in `exchange-core` (`training_scenarios.rs`). Liquidity withdrawal cancels via the named liquidity account at a sim step; it does not rewrite prices.
+
+## Batch evaluation
+
+`scripts/batch_runner.py BASE SPEC [seeds…]` isolates one room per seed, injects child seeds, drives strategy plus clock, and records a row only after `Completed` / `Failed` / `Aborted` (or an explicit HTTP failure). Local `--state` is temp-file + `os.replace` with a single writer. Crash resume reconciles `GET /training/runs/{id}`; the JSON file is not the score. Failed rows stay in the comparison set. `q=0` is not a low-cost win (`incomplete_penalty_ppm` / `zero_fills`). `--fail-seeds` aborts after start and does not mutate `target_qty`.
+
 ## Operations
 
 ```

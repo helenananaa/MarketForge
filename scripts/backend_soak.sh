@@ -13,6 +13,7 @@ BASE_URL="${MARKETFORGE_BASE_URL:-http://127.0.0.1:57318}"
 OUT_DIR="${MARKETFORGE_SOAK_DIR:-${ROOT}/target/p6-soak}"
 ROOMS="${MARKETFORGE_SOAK_ROOMS:-2}"
 TICK_SECONDS="${MARKETFORGE_SOAK_TICK_SECONDS:-2}"
+ROOM_PREFIX="${MARKETFORGE_SOAK_ROOM_PREFIX:-soak-room}"
 SERVER_PID=""
 
 mkdir -p "${OUT_DIR}"
@@ -35,6 +36,7 @@ trap cleanup EXIT
   echo "declared_load_version=1"
   echo "duration_s=${SOAK_SECONDS}"
   echo "rooms=${ROOMS}"
+  echo "room_prefix=${ROOM_PREFIX}"
   echo "agents_per_room=0"
   echo "tick_s=${TICK_SECONDS}"
   echo "orders_per_tick=1"
@@ -83,7 +85,7 @@ PY
 }
 
 for i in $(seq 1 "${ROOMS}"); do
-  create_room "soak-room-${i}" || { echo "create soak-room-${i} failed" | tee -a "${EXCEPTIONS}"; echo "failed $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${STATUS}"; exit 1; }
+  create_room "${ROOM_PREFIX}-${i}" || { echo "create ${ROOM_PREFIX}-${i} failed" | tee -a "${EXCEPTIONS}"; echo "failed $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "${STATUS}"; exit 1; }
 done
 
 deadline=$(( $(date +%s) + SOAK_SECONDS ))
@@ -92,7 +94,7 @@ errors=0
 while [[ "$(date +%s)" -lt "${deadline}" ]]; do
   ticks=$((ticks + 1))
   for i in $(seq 1 "${ROOMS}"); do
-    if ! python3 - "${BASE_URL}" "soak-room-${i}" "${ticks}" >>"${COMMANDS}" 2>>"${EXCEPTIONS}" <<'PY'
+    if ! python3 - "${BASE_URL}" "${ROOM_PREFIX}-${i}" "${ticks}" >>"${COMMANDS}" 2>>"${EXCEPTIONS}" <<'PY'
 import json, sys, urllib.request, time
 base, room, tick = sys.argv[1], sys.argv[2], sys.argv[3]
 body = {"participant_id": "soak", "account_id": 20, "action": {"PlaceLimit": {"side": "Buy", "price_tick": 101, "qty": 1}}}
@@ -129,7 +131,7 @@ PY
   sleep "${TICK_SECONDS}"
 done
 
-curl -fsS -X POST "${BASE_URL}/rooms/soak-room-1/pause" >/dev/null || true
-curl -fsS -X POST "${BASE_URL}/rooms/soak-room-1/close" >/dev/null || true
+curl -fsS -X POST "${BASE_URL}/rooms/${ROOM_PREFIX}-1/pause" >/dev/null || true
+curl -fsS -X POST "${BASE_URL}/rooms/${ROOM_PREFIX}-1/close" >/dev/null || true
 echo "completed $(date -u +%Y-%m-%dT%H:%M:%SZ) ticks=${ticks} errors=${errors}" >> "${STATUS}"
 echo "soak completed ticks=${ticks} errors=${errors} dir=${OUT_DIR}"

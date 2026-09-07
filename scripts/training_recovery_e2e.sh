@@ -30,6 +30,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
+reap_server() {
+  local pid="$1"
+  local sig="${2:-TERM}"
+  if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+    kill -"${sig}" "${pid}" 2>/dev/null || true
+    wait "${pid}" 2>/dev/null || true
+  fi
+  # Session advisory locks drop with the backend; wait so the next instance
+  # does not see a stale exclusive runtime lock.
+  sleep 0.5
+}
+
 wait_ready() {
   local url="$1" log="$2"
   for _ in $(seq 1 80); do
@@ -44,13 +56,17 @@ wait_ready() {
 
 start_server() {
   local bind="$1" log="$2" instance="$3" mode="$4" advertise="$5"
+  local lock_wait="0"
+  if [[ "${mode}" == "single-active" ]]; then
+    lock_wait="${MARKETFORGE_E2E_LOCK_WAIT_MS:-3000}"
+  fi
   MARKETFORGE_DATABASE_URL="${DATABASE_URL}" \
     MARKETFORGE_AUTH_TOKENS_JSON="${AUTH_JSON}" \
     MARKETFORGE_BIND_ADDR="${bind}" \
     MARKETFORGE_INSTANCE_ID="${instance}" \
     MARKETFORGE_ADVERTISE_URL="${advertise}" \
     MARKETFORGE_RUNTIME_MODE="${mode}" \
-    MARKETFORGE_RUNTIME_LOCK_WAIT_MS="0" \
+    MARKETFORGE_RUNTIME_LOCK_WAIT_MS="${lock_wait}" \
     MARKETFORGE_ROOM_LEASE_DURATION_MS="${MARKETFORGE_ROOM_LEASE_DURATION_MS:-2000}" \
     MARKETFORGE_ROOM_LEASE_RENEW_INTERVAL_MS="${MARKETFORGE_ROOM_LEASE_RENEW_INTERVAL_MS:-500}" \
     MARKETFORGE_JOURNAL_READ_WORKERS="${MARKETFORGE_JOURNAL_READ_WORKERS:-2}" \
@@ -209,7 +225,7 @@ A_PID="$(start_server "${BIND_A}" "${LOG_DIR}/continuous.log" "e2e-a" "single-ac
 wait_ready "${BASE_A}" "${LOG_DIR}/continuous.log"
 trainee "${BASE_A}/training/runs" --data "$(start_training_payload "e2e-cont-${SUFFIX}" "e2e-cont-${SUFFIX}" 3)" >/dev/null
 drive_to_terminal "${BASE_A}" "e2e-cont-${SUFFIX}" "e2e-cont-${SUFFIX}"
-kill "${A_PID}"; wait "${A_PID}" 2>/dev/null || true; A_PID=""
+reap_server "${A_PID}"; A_PID=""
 PASS=$((PASS + 1))
 
 echo "== path 2 restart =="
@@ -227,12 +243,12 @@ trainee "${BASE_A}/rooms/e2e-restart-${SUFFIX}/orders" --data '{
   "account_id": 20,
   "action": {"PlaceLimit": {"side": "Buy", "price_tick": 90, "qty": 1}}
 }' >/dev/null
-kill -TERM "${A_PID}"; wait "${A_PID}" 2>/dev/null || true; A_PID=""
+reap_server "${A_PID}" TERM; A_PID=""
 A_PID="$(start_server "${BIND_A}" "${LOG_DIR}/restart-2.log" "e2e-restart" "single-active" "${BASE_A}")"
 wait_ready "${BASE_A}" "${LOG_DIR}/restart-2.log"
 admin "${BASE_A}/rooms/e2e-restart-${SUFFIX}/clock/advance" --data '{"steps":3}' >/dev/null
 assert_terminal "${BASE_A}" "e2e-restart-${SUFFIX}" "e2e-restart-${SUFFIX}"
-kill "${A_PID}"; wait "${A_PID}" 2>/dev/null || true; A_PID=""
+reap_server "${A_PID}"; A_PID=""
 PASS=$((PASS + 1))
 
 echo "== path 3 takeover =="
@@ -245,12 +261,12 @@ trainee "${BASE_A}/rooms/e2e-take-${SUFFIX}/orders" --data '{
   "account_id": 20,
   "action": {"PlaceLimit": {"side": "Buy", "price_tick": 101, "qty": 1}}
 }' >/dev/null
-kill -TERM "${A_PID}"; wait "${A_PID}" 2>/dev/null || true; A_PID=""
+reap_server "${A_PID}" TERM; A_PID=""
 B_PID="$(start_server "${BIND_B}" "${LOG_DIR}/takeover-b.log" "e2e-take-b" "room-leased" "${BASE_B}")"
 wait_ready "${BASE_B}" "${LOG_DIR}/takeover-b.log"
 admin "${BASE_B}/rooms/e2e-take-${SUFFIX}/clock/advance" --data '{"steps":3}' >/dev/null
 assert_terminal "${BASE_B}" "e2e-take-${SUFFIX}" "e2e-take-${SUFFIX}"
-kill "${B_PID}"; wait "${B_PID}" 2>/dev/null || true; B_PID=""
+reap_server "${B_PID}"; B_PID=""
 PASS=$((PASS + 1))
 
 echo "== path 4 speed =="
@@ -283,7 +299,7 @@ for key in ("status", "filled_qty", "fees_paid", "score_q"):
         raise SystemExit(f"speed mismatch {key}: {fast[key]} vs {slow[key]}")
 print(json.dumps({"speed_match": True, "status": fast["status"], "filled_qty": fast["filled_qty"]}))
 PY
-kill "${A_PID}"; wait "${A_PID}" 2>/dev/null || true; A_PID=""
+reap_server "${A_PID}"; A_PID=""
 PASS=$((PASS + 1))
 
 echo "training recovery e2e passed ${PASS}/4 paths"

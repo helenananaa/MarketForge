@@ -226,6 +226,8 @@ The migration set creates:
 - `marketforge_users`
 - `marketforge_room_members`
 - `marketforge_account_owners`
+- `marketforge_control_idempotency` (0013; `control.v1` success bodies)
+- `marketforge_external_action_counts` (0014; per `(room, user, step)` quota)
 
 `marketforge_executions` is the canonical command journal, while
 `marketforge_room_mutations` records durable state transitions that are not
@@ -507,7 +509,7 @@ MARKETFORGE_DATABASE_URL='postgres://marketforge:marketforge@127.0.0.1:55432/mar
 ## Migrations, backup, and restore
 
 Schema changes are append-only files under `exchange-server/migrations`
-(`0001`–`0013`). On startup with `MARKETFORGE_DATABASE_URL` set, the writer
+(`0001`–`0014`). On startup with `MARKETFORGE_DATABASE_URL` set, the writer
 applies any not-yet-recorded versions into `marketforge_schema_migrations`.
 Already-applied versions are immutable. There is no supported downgrade path;
 roll forward with a new migration if a repair is required.

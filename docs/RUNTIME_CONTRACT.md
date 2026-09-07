@@ -331,13 +331,13 @@ them. Existing `room_owned_by_other_instance`, `room_lease_lost`, and
 
 | Artifact | Current version | Compatibility |
 | --- | --- | --- |
-| SQL migrations | `0001`–`0012` under `exchange-server/migrations` | Append-only. Applied versions are immutable; repairs are a new version. Tracked in `marketforge_schema_migrations`. |
+| SQL migrations | `0001`–`0014` under `exchange-server/migrations` | Append-only. Applied versions are immutable; repairs are a new version. Tracked in `marketforge_schema_migrations`. 0013 is `marketforge_control_idempotency`; 0014 is `marketforge_external_action_counts`. |
 | Room mutation schema | `1` | Unknown version fails recovery. Additive fields must default. |
 | `StateCheckpoint` actor JSON | implicit serde of `SimulationRoom` | Unknown/legacy shapes either normalize (tested) or fail closed. Periodic snapshot table rows are not this schema. |
 | Scenario config | serde of `ScenarioConfig` | Stored on the room row. Breaking field changes need a version field before use as a training product (P3). |
-| Agent template JSON | `AgentTemplate` serde | Config only; **not** recoverable strategy state. P1 introduces versioned agent state blobs. |
+| Agent template JSON | `AgentTemplate` serde | Includes `NoiseTrader`, `DcaTrader`, `GridTrader`, `ContinuousMarketMaker`, `CancelAtStep`. Continuous MM persists RNG/mid/inventory; Grid behavior is unchanged. |
 | Strategy protocol | `strategy.v1` | Observation + HTTP place/cancel. Breaking observation fields require a new version string. |
-| Scoring | not published | P3 adds a scoring-rule version; reports must record it. |
+| Scoring | `SCORING_RULE_VERSION` / `scoring_version` on `TrainingScore` | Reports record scoring version; incomplete runs take `incomplete_penalty_ppm`. |
 | HTTP API | unversioned paths | Additive fields with defaults. Breaking response changes require a versioned path or an explicit compat window documented in the validation record. |
 | CandleScope plugin | contract tests in `marketforge-candlescope-plugin/tests` | Plugin tests must stay green. Aggregation uses `market_time_ms` and refuses integers above `MAX_SAFE_INTEGER` (`2^53-1`) in JS-facing JSON. |
 
@@ -355,18 +355,37 @@ were a contiguous `command_seq`.
 These are accepted P0 facts. They do not fail the P0 gate. Later stages must
 not assume they are already solved.
 
-1. Agent workers HTTP-callback the same process and are blocked in Bearer mode.
+1. The HTTP `/rooms/{id}/agents` callback worker is still blocked in Bearer
+   mode. `POST /training/runs` starts the **internal** agent worker, which is
+   the supported Bearer path.
 2. `AgentRuntime` clock is not the room clock; workers sleep on wall time.
-3. No versioned participant/agent state in the journal.
-4. `MarketView.accounts` is the full account set; it is not a participant
-   observation protocol.
+3. Agent kind state (RNG / inventory / DCA steps) is persisted on scheduler
+   mutations for recovery; it is not a separate public snapshot API.
+4. `MarketView.accounts` is the full account set; participant observation is
+   `GET /rooms/{id}/observe` (`strategy.v1`).
 5. Periodic snapshots are not `StateCheckpoint` mutations, so they do not
    accelerate recovery of newly persisted rooms.
-6. User-visible public/private streams do not exist; the execution SSE is an
-   admin audit surface.
+6. Closed in F3: `/stream/public` and `/stream/private` exist. Resume with
+   `after_command_seq`; connection-local `stream_seq` is not a cross-connection
+   key. `/events/stream` remains the admin contiguous audit surface.
 7. Control writes are durable-idempotent under `control.v1` (see §5). In-memory
    journal replay matches in-process only.
 8. Error bodies are mostly uncoded strings.
+
+## 10. Training scenarios and batch evaluation
+
+`exchange_core::training_scenarios` defines versioned `basic_execution`,
+`liquidity_withdrawal`, and `inventory_stress`. Child RNGs use
+`child_seed(parent, name)` (wrapping u64). Liquidity withdrawal cancels on the
+named account at a sim step; it is not a price rewrite. Reports describe
+injected facts and must not be read as live-market manipulation evidence.
+
+Batch evaluation (`python/marketforge/batch.py`, `scripts/batch_runner.py`)
+treats start as `Running` only, injects those child seeds, drives strategy and
+clock to a terminal status, and reconciles crash resume from the server run.
+Run identity is scenario digest + strategy version + params + seed + scoring
+version. Local JSON uses atomic replace and is not the score authority. Zero
+fills are not a low-cost win.
 
 Matching, journal-then-install, fencing tokens, command/mutation interleaving,
 and `market_time_ms` on new executions **are** in place and are the baseline
