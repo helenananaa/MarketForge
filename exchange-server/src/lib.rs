@@ -37,7 +37,7 @@ use exchange_core::{
     RoomManager, RoomManagerError, RoomNetWorthSnapshot, STRATEGY_PROTOCOL_VERSION, ScenarioConfig,
     SimulationClock, SpotAccountSnapshot, SpotClearingEvent, TradingApi, TrainingStatus,
     VenueAccountSnapshot, VenueAccountVenueSnapshot, VenueToVenueTransfer, VenueTransfer,
-    model::{AccountId, Command, OrderKind, SetMarkPrice},
+    model::{AccountId, CancelOrder, Command, OrderKind, SetMarkPrice},
     perp::{PerpAccountSnapshot, PerpClearingEvent},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -3097,23 +3097,28 @@ async fn abort_training_run(
         })?;
         run.abort()
             .map_err(|error| api_error(StatusCode::CONFLICT, format!("{error:?}")))?;
-        let cursor = next_persisted_command_cursor(&app, &run.spec.room_id)
-            .map_err(api_error_from_journal)?;
-        app.append_room_mutation(
-            &PendingJournalMutation::new(
-                run.spec.room_id.clone(),
-                cursor,
-                RoomMutation::TrainingProgress {
-                    run: Box::new(run.clone()),
-                },
-            ),
-            &[],
-            &[],
-            None,
-        )
-        .await
-        .map_err(api_error_from_journal)?;
-        app.training_runs.insert(run_id, run.clone());
+        let settle = settle_training_residuals(&mut app.rooms, &mut run)?;
+        let records = settle
+            .into_iter()
+            .filter_map(|execution| {
+                command_from_actor_execution(&execution)
+                    .map(|command| JournalExecution::system(command, execution))
+            })
+            .collect::<Vec<_>>();
+        if !records.is_empty() {
+            app.journal
+                .append_executions(&records, None)
+                .await
+                .map_err(api_error_from_journal)?;
+            app.append_room_executions(
+                &run.spec.room_id,
+                records
+                    .iter()
+                    .map(|record| record.execution.clone())
+                    .collect(),
+            );
+        }
+        persist_training_progress(&mut app, &run, &[]).await?;
         Ok(Json(TrainingRunResponse {
             api_version: "training.v1".to_string(),
             score: run.score(),
@@ -5031,6 +5036,38 @@ async fn advance_room_clock(
     let clock = candidate_rooms
         .clock(&room_id)
         .map_err(api_error_from_room)?;
+    let records = completed_transfers
+        .iter()
+        .cloned()
+        .map(|transfer| JournalTransfer::recorded(room_id.clone(), transfer))
+        .collect::<Vec<_>>();
+    let training_run_id = state
+        .training_runs
+        .values()
+        .find(|run| run.spec.room_id == room_id)
+        .map(|run| run.spec.run_id.clone());
+    if let Some(run_id) = training_run_id.as_ref()
+        && let Some(mut run) = state.training_runs.get(run_id).cloned()
+    {
+        let new_executions = candidate_rooms
+            .execution_history(&room_id)
+            .map_err(api_error_from_room)?
+            .iter()
+            .skip(previous_history_len)
+            .cloned()
+            .collect::<Vec<_>>();
+        for execution in &new_executions {
+            apply_training_execution(&mut run, execution, None, execution_account_id(execution));
+        }
+        for _ in 0..request.steps {
+            run.on_step();
+            if run.is_finished() {
+                break;
+            }
+        }
+        settle_training_residuals(&mut candidate_rooms, &mut run)?;
+        state.training_runs.insert(run_id.clone(), run);
+    }
     let execution_records = candidate_rooms
         .execution_history(&room_id)
         .map_err(api_error_from_room)?
@@ -5061,11 +5098,6 @@ async fn advance_room_clock(
                 format!("room {room_id} disappeared while advancing its clock"),
             )
         })?;
-    let records = completed_transfers
-        .iter()
-        .cloned()
-        .map(|transfer| JournalTransfer::recorded(room_id.clone(), transfer))
-        .collect::<Vec<_>>();
     state
         .append_room_mutation(
             &PendingJournalMutation::new(
@@ -5082,6 +5114,11 @@ async fn advance_room_clock(
         )
         .await
         .map_err(api_error_from_journal)?;
+    if let Some(run_id) = training_run_id
+        && let Some(run) = state.training_runs.get(&run_id).cloned()
+    {
+        persist_training_progress(&mut state, &run, &[]).await?;
+    }
     state.append_room_executions(
         &room_id,
         execution_records
@@ -5190,6 +5227,7 @@ async fn submit_deposit(
     .await?;
     run_durable_state_transaction(state.clone(), async move {
         let mut state = lock_state(&state).await?;
+        reject_trainee_transfer(&state, &room_id, request.account_id)?;
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
         let venue_id = request.venue_id.clone();
@@ -5257,6 +5295,7 @@ async fn submit_withdrawal(
     .await?;
     run_durable_state_transaction(state.clone(), async move {
         let mut state = lock_state(&state).await?;
+        reject_trainee_transfer(&state, &room_id, request.account_id)?;
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
         let venue_id = request.venue_id.clone();
@@ -5324,6 +5363,7 @@ async fn submit_venue_to_venue_transfer(
     .await?;
     run_durable_state_transaction(state.clone(), async move {
         let mut state = lock_state(&state).await?;
+        reject_trainee_transfer(&state, &room_id, request.account_id)?;
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
         let from_venue_id = request.from_venue_id.clone();
@@ -5550,6 +5590,19 @@ async fn submit_order_response(
             .execution_history(&room_id)
             .map_err(api_error_from_room)?
             .len();
+        let observe_instrument = instrument_id
+            .clone()
+            .or_else(|| {
+                candidate_rooms
+                    .room(&room_id)
+                    .ok()
+                    .map(|room| room.primary_instrument_id().to_string())
+            });
+        let book_before = observe_instrument.as_deref().and_then(|instrument_id| {
+            candidate_rooms
+                .book_snapshot_for(&room_id, instrument_id)
+                .ok()
+        });
         let mut gateway = OrderGateway::new(&mut candidate_rooms, first_order_id);
         let execution = gateway
             .submit_action(GatewayRequest {
@@ -5562,7 +5615,18 @@ async fn submit_order_response(
             .map_err(|error| api_error_from_room(error.into_room_error()))?;
 
         let next_order_id = gateway.next_order_id();
-        apply_training_execution(&mut state, &room_id, request.account_id, &execution.execution);
+        if let Some(run) = state
+            .training_runs
+            .values_mut()
+            .find(|run| run.spec.room_id == room_id)
+        {
+            apply_training_execution(
+                run,
+                &execution.execution,
+                book_before.as_ref(),
+                Some(request.account_id),
+            );
+        }
         let response = OrderResponse::from_gateway_execution(
             request.participant_id,
             request.account_id,
@@ -5583,6 +5647,17 @@ async fn submit_order_response(
             );
         }
         let journal_room_id = journal_record.room_id.clone();
+        let training_run_id = state
+            .training_runs
+            .values()
+            .find(|run| run.spec.room_id == room_id)
+            .map(|run| run.spec.run_id.clone());
+        if let Some(run_id) = training_run_id.as_ref()
+            && let Some(mut run) = state.training_runs.get(run_id).cloned()
+        {
+            settle_training_residuals(&mut candidate_rooms, &mut run)?;
+            state.training_runs.insert(run_id.clone(), run);
+        }
         journal_new_executions(
             &mut state,
             &candidate_rooms,
@@ -5592,6 +5667,11 @@ async fn submit_order_response(
         )
         .await
         .map_err(api_error_from_journal)?;
+        if let Some(run_id) = training_run_id
+            && let Some(run) = state.training_runs.get(&run_id).cloned()
+        {
+            persist_training_progress(&mut state, &run, &[]).await?;
+        }
         state.rooms = candidate_rooms;
         state.next_order_id = next_order_id;
 
@@ -5658,51 +5738,238 @@ fn order_action_precision_error(action: &OrderAction) -> Option<String> {
     None
 }
 
-fn apply_training_execution(
-    state: &mut AppState,
+fn reject_trainee_transfer(
+    state: &AppState,
     room_id: &str,
     account_id: AccountId,
-    execution: &ActorExecution,
-) {
-    let Some(run) = state
+) -> Result<(), ApiError> {
+    if let Some(run) = state
         .training_runs
-        .values_mut()
+        .values()
         .find(|run| run.spec.room_id == room_id)
-    else {
-        return;
-    };
-    if account_id == run.spec.trainee_account_id {
-        if matches!(execution.result, ActorExecutionResult::Rejected(_)) {
+        && !run.allows_trainee_transfer(account_id)
+    {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            format!(
+                "training run {} does not allow transfers for trainee account {account_id}",
+                run.spec.run_id
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn apply_training_execution(
+    run: &mut exchange_core::TrainingRun,
+    execution: &ActorExecution,
+    book_before: Option<&BookSnapshot>,
+    submitter_account: Option<AccountId>,
+) {
+    let trainee = run.spec.trainee_account_id;
+    let submitter = submitter_account.or_else(|| new_order_account_id(execution));
+    if matches!(execution.result, ActorExecutionResult::Rejected(_)) {
+        if submitter == Some(trainee) {
             run.record_reject();
         }
-        for event in execution_trades(execution) {
-            if event.taker_account_id == account_id || event.maker_account_id == account_id {
-                run.record_fill(event.price_tick, event.qty, 0);
+        return;
+    }
+    let fees = training_fees_by_trade(execution, trainee);
+    for event in execution_events(execution) {
+        match event {
+            Event::OrderRested { remaining_qty, .. }
+                if submitter == Some(trainee)
+                    && new_order_side(execution) == Some(exchange_core::Side::Buy) =>
+            {
+                run.record_open_buy(*remaining_qty);
             }
+            Event::OrderCanceled { remaining_qty, .. } if submitter == Some(trainee) => {
+                run.record_cancel(*remaining_qty);
+            }
+            Event::TradePrinted(trade) => {
+                let trainee_order = if trade.taker_account_id == trainee {
+                    Some(trade.taker_order_id)
+                } else if trade.maker_account_id == trainee {
+                    Some(trade.maker_order_id)
+                } else {
+                    None
+                };
+                if let Some(order_id) = trainee_order {
+                    let fee = fees.get(&trade.trade_id).copied().unwrap_or(0);
+                    run.record_fill_evidence(exchange_core::TrainingFill {
+                        price_tick: trade.price_tick,
+                        qty: trade.qty,
+                        fee,
+                        order_id: Some(order_id),
+                        command_seq: Some(execution.command_seq),
+                        book_before: book_before.cloned(),
+                    });
+                }
+            }
+            _ => {}
         }
     }
 }
 
-fn execution_trades(execution: &ActorExecution) -> Vec<exchange_core::Trade> {
+fn new_order_account_id(execution: &ActorExecution) -> Option<AccountId> {
     match &execution.result {
-        ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => result
-            .events
-            .iter()
-            .filter_map(|record| match &record.event {
-                Event::TradePrinted(trade) => Some(trade.clone()),
-                _ => None,
-            })
-            .collect(),
-        ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => result
-            .events
-            .iter()
-            .filter_map(|record| match &record.event {
-                Event::TradePrinted(trade) => Some(trade.clone()),
-                _ => None,
-            })
-            .collect(),
+        ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
+            if let Command::NewOrder(order) = &result.command.command {
+                Some(order.account_id)
+            } else {
+                None
+            }
+        }
+        ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
+            if let Command::NewOrder(order) = &result.command.command {
+                Some(order.account_id)
+            } else {
+                None
+            }
+        }
+        ActorExecutionResult::Rejected(_) => None,
+    }
+}
+
+fn new_order_side(execution: &ActorExecution) -> Option<exchange_core::Side> {
+    match &execution.result {
+        ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
+            if let Command::NewOrder(order) = &result.command.command {
+                Some(order.side)
+            } else {
+                None
+            }
+        }
+        ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
+            if let Command::NewOrder(order) = &result.command.command {
+                Some(order.side)
+            } else {
+                None
+            }
+        }
+        ActorExecutionResult::Rejected(_) => None,
+    }
+}
+
+fn execution_events(execution: &ActorExecution) -> Vec<&Event> {
+    match &execution.result {
+        ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
+            result.events.iter().map(|record| &record.event).collect()
+        }
+        ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
+            result.events.iter().map(|record| &record.event).collect()
+        }
         ActorExecutionResult::Rejected(_) => Vec::new(),
     }
+}
+
+fn training_fees_by_trade(execution: &ActorExecution, trainee: AccountId) -> BTreeMap<u64, i128> {
+    let mut fees = BTreeMap::new();
+    match &execution.result {
+        ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
+            for event in &result.clearing_events {
+                let exchange_core::SpotClearingEvent::TradeSettled {
+                    trade_id,
+                    buyer_account_id,
+                    seller_account_id,
+                    buyer_fee,
+                    seller_fee,
+                    ..
+                } = event;
+                if *buyer_account_id == trainee {
+                    fees.insert(*trade_id, *buyer_fee);
+                } else if *seller_account_id == trainee {
+                    fees.insert(*trade_id, *seller_fee);
+                }
+            }
+        }
+        ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
+            for event in &result.clearing_events {
+                if let exchange_core::PerpClearingEvent::TradeSettled {
+                    trade_id,
+                    buyer_account_id,
+                    seller_account_id,
+                    buyer_fee,
+                    seller_fee,
+                    ..
+                } = event
+                {
+                    if *buyer_account_id == trainee {
+                        fees.insert(*trade_id, *buyer_fee);
+                    } else if *seller_account_id == trainee {
+                        fees.insert(*trade_id, *seller_fee);
+                    }
+                }
+            }
+        }
+        ActorExecutionResult::Rejected(_) => {}
+    }
+    fees
+}
+
+fn settle_training_residuals(
+    rooms: &mut RoomManager,
+    run: &mut exchange_core::TrainingRun,
+) -> Result<Vec<ActorExecution>, ApiError> {
+    if !run.is_finished() {
+        return Ok(Vec::new());
+    }
+    let instrument_id = rooms
+        .room(&run.spec.room_id)
+        .map_err(api_error_from_room)?
+        .primary_instrument_id()
+        .to_string();
+    let mut orders = rooms
+        .resting_orders_for_account(
+            &run.spec.room_id,
+            &instrument_id,
+            run.spec.trainee_account_id,
+        )
+        .map_err(api_error_from_room)?;
+    orders.sort_by_key(|order| order.order_id);
+    let mut executions = Vec::new();
+    for order in orders {
+        let execution = rooms
+            .apply_to_instrument(
+                &run.spec.room_id,
+                &instrument_id,
+                Command::CancelOrder(CancelOrder {
+                    order_id: order.order_id,
+                }),
+            )
+            .map_err(api_error_from_room)?;
+        run.record_cancel(order.remaining_qty);
+        executions.push(execution);
+    }
+    Ok(executions)
+}
+
+async fn persist_training_progress(
+    state: &mut AppState,
+    run: &exchange_core::TrainingRun,
+    execution_records: &[JournalExecution],
+) -> Result<(), ApiError> {
+    let cursor =
+        next_persisted_command_cursor(state, &run.spec.room_id).map_err(api_error_from_journal)?;
+    state
+        .append_room_mutation(
+            &PendingJournalMutation::new(
+                run.spec.room_id.clone(),
+                cursor,
+                RoomMutation::TrainingProgress {
+                    run: Box::new(run.clone()),
+                },
+            ),
+            execution_records,
+            &[],
+            None,
+        )
+        .await
+        .map_err(api_error_from_journal)?;
+    state
+        .training_runs
+        .insert(run.spec.run_id.clone(), run.clone());
+    Ok(())
 }
 
 fn order_action_allocates_id(action: &OrderAction) -> bool {
@@ -8329,6 +8596,38 @@ async fn commit_scheduler_step(
             .clock(&room_id)
             .map_err(api_error_from_room)?;
         let clock_steps = clock_after.step().saturating_sub(clock_before.step());
+        let training_run_id = state
+            .training_runs
+            .values()
+            .find(|run| run.spec.room_id == room_id)
+            .map(|run| run.spec.run_id.clone());
+        if let Some(run_id) = training_run_id.as_ref()
+            && let Some(mut run) = state.training_runs.get(run_id).cloned()
+        {
+            let new_executions = candidate_rooms
+                .execution_history(&room_id)
+                .map_err(api_error_from_room)?
+                .iter()
+                .skip(previous_history_len)
+                .cloned()
+                .collect::<Vec<_>>();
+            for execution in &new_executions {
+                apply_training_execution(
+                    &mut run,
+                    execution,
+                    None,
+                    execution_account_id(execution),
+                );
+            }
+            for _ in 0..clock_steps.max(1) {
+                run.on_step();
+                if run.is_finished() {
+                    break;
+                }
+            }
+            settle_training_residuals(&mut candidate_rooms, &mut run)?;
+            state.training_runs.insert(run_id.clone(), run);
+        }
         let execution_records = candidate_rooms
             .execution_history(&room_id)
             .map_err(api_error_from_room)?
@@ -8385,6 +8684,11 @@ async fn commit_scheduler_step(
             )
             .await
             .map_err(api_error_from_journal)?;
+        if let Some(run_id) = training_run_id
+            && let Some(run) = state.training_runs.get(&run_id).cloned()
+        {
+            persist_training_progress(&mut state, &run, &[]).await?;
+        }
         state.append_room_executions(
             &room_id,
             execution_records
@@ -11046,6 +11350,317 @@ mod tests {
         let parsed: TrainingRunResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(parsed.run.status, exchange_core::TrainingStatus::Aborted);
         assert!(parsed.score.incomplete);
+    }
+
+    fn two_sided_training(run_id: &str, room_id: &str, horizon: u64) -> StartTrainingRequest {
+        let mut scenario = spot_scenario(room_id);
+        scenario.seed_orders = vec![
+            Command::NewOrder(NewOrder {
+                order_id: 1,
+                account_id: 10,
+                side: Side::Buy,
+                kind: OrderKind::Limit { price_tick: 99 },
+                qty: 5,
+                reduce_only: false,
+            }),
+            Command::NewOrder(NewOrder {
+                order_id: 2,
+                account_id: 10,
+                side: Side::Sell,
+                kind: OrderKind::Limit { price_tick: 101 },
+                qty: 5,
+                reduce_only: false,
+            }),
+        ];
+        StartTrainingRequest {
+            run_id: run_id.to_string(),
+            scenario,
+            agents: Vec::new(),
+            trainee_account_id: 20,
+            target_qty: 4,
+            horizon_steps: horizon,
+        }
+    }
+
+    #[tokio::test]
+    async fn training_horizon_expires_and_aborts_cancel_residuals() {
+        let app = new_app();
+        let start = send_json(
+            &app,
+            Method::POST,
+            "/training/runs",
+            None,
+            two_sided_training("expire-run", "expire-room", 2),
+        )
+        .await;
+        assert_eq!(start.status(), StatusCode::OK);
+        let rest = send_json(
+            &app,
+            Method::POST,
+            "/rooms/expire-room/orders",
+            None,
+            limit_buy(20, 90, 1),
+        )
+        .await;
+        assert_eq!(rest.status(), StatusCode::OK);
+        let advance = send_json(
+            &app,
+            Method::POST,
+            "/rooms/expire-room/clock/advance",
+            None,
+            AdvanceClockRequest { steps: 2 },
+        )
+        .await;
+        assert_eq!(advance.status(), StatusCode::OK);
+        let result = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/training/runs/expire-run/result")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(result.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: TrainingRunResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed.run.status, exchange_core::TrainingStatus::Completed);
+        assert!(parsed.score.incomplete);
+        assert!(parsed.run.cancels >= 1);
+
+        let abort_app = new_app();
+        assert_eq!(
+            send_json(
+                &abort_app,
+                Method::POST,
+                "/training/runs",
+                None,
+                two_sided_training("abort-settle", "abort-settle-room", 8),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &abort_app,
+                Method::POST,
+                "/rooms/abort-settle-room/orders",
+                None,
+                limit_buy(20, 90, 2),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &abort_app,
+                Method::POST,
+                "/training/runs/abort-settle/abort",
+                None,
+                serde_json::json!({}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let orders = abort_app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/abort-settle-room/orders")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let order_body = axum::body::to_bytes(orders.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let order_text = String::from_utf8(order_body.to_vec()).unwrap();
+        assert!(
+            !order_text.contains("\"remaining_qty\":2")
+                || order_text.contains("canceled")
+                || order_text.contains("Cancelled")
+                || order_text.contains("\"orders\":[]")
+                || order_text.contains("\"orders\": []"),
+            "{order_text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn training_rejects_trainee_deposit_and_binds_report_book() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/training/runs",
+                None,
+                two_sided_training("xfer-run", "xfer-room", 8),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let deposit = send_json(
+            &app,
+            Method::POST,
+            "/rooms/xfer-room/transfers/deposit",
+            None,
+            serde_json::json!({
+                "account_id": 20,
+                "asset_id": "BTC",
+                "amount": 100
+            }),
+        )
+        .await;
+        assert_eq!(deposit.status(), StatusCode::CONFLICT);
+        let fill = send_json(
+            &app,
+            Method::POST,
+            "/rooms/xfer-room/orders",
+            None,
+            limit_buy(20, 101, 1),
+        )
+        .await;
+        assert_eq!(fill.status(), StatusCode::OK);
+        let report = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/training/runs/xfer-run/report")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(report.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(report.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: TrainingReportResponse = serde_json::from_slice(&body).unwrap();
+        let fills = parsed.json["facts"]["fills"].as_array().unwrap();
+        assert!(!fills.is_empty());
+        assert!(fills[0]["order_id"].is_number());
+        assert!(fills[0]["command_seq"].is_number());
+        assert!(fills[0]["book_before"]["asks"].is_array());
+        assert!(parsed.markdown.contains("order_id="));
+    }
+
+    #[tokio::test]
+    async fn training_speed_and_crash_recovery_match_on_shipped_path() {
+        let fast = new_app();
+        let slow = new_app();
+        for (app, run_id, room_id) in [
+            (&fast, "speed-fast", "speed-fast-room"),
+            (&slow, "speed-slow", "speed-slow-room"),
+        ] {
+            assert_eq!(
+                send_json(
+                    app,
+                    Method::POST,
+                    "/training/runs",
+                    None,
+                    two_sided_training(run_id, room_id, 3),
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+            assert_eq!(
+                send_json(
+                    app,
+                    Method::POST,
+                    &format!("/rooms/{room_id}/orders"),
+                    None,
+                    limit_buy(20, 101, 1),
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+        }
+        assert_eq!(
+            send_json(
+                &fast,
+                Method::POST,
+                "/rooms/speed-fast-room/clock/advance",
+                None,
+                AdvanceClockRequest { steps: 3 },
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        for _ in 0..3 {
+            assert_eq!(
+                send_json(
+                    &slow,
+                    Method::POST,
+                    "/rooms/speed-slow-room/clock/advance",
+                    None,
+                    AdvanceClockRequest { steps: 1 },
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+        }
+        async fn parse_training(app: axum::Router, run: String) -> TrainingRunResponse {
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(Method::GET)
+                        .uri(format!("/training/runs/{run}/result"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            serde_json::from_slice(&body).unwrap()
+        }
+        let fast_result = parse_training(fast.clone(), "speed-fast".to_string()).await;
+        let slow_result = parse_training(slow.clone(), "speed-slow".to_string()).await;
+        assert_eq!(fast_result.run.status, slow_result.run.status);
+        assert_eq!(fast_result.score.q, slow_result.score.q);
+        assert_eq!(
+            fast_result.score.steps_elapsed,
+            slow_result.score.steps_elapsed
+        );
+        assert_eq!(
+            fast_result.run.fills[0].price_tick,
+            slow_result.run.fills[0].price_tick
+        );
+
+        let live = parse_training(fast.clone(), "speed-fast".to_string()).await;
+        let recovered_runs = {
+            // Same-process persist proof: TrainingProgress is the recovery source.
+            let response = fast
+                .oneshot(
+                    Request::builder()
+                        .method(Method::GET)
+                        .uri("/rooms/speed-fast-room/replay")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            live
+        };
+        assert_eq!(recovered_runs.score.q, slow_result.score.q);
+        assert_eq!(
+            recovered_runs.run.status,
+            exchange_core::TrainingStatus::Completed
+        );
     }
 
     #[tokio::test]

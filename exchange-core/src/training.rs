@@ -3,7 +3,7 @@ use serde_json::json;
 
 use crate::{
     agents::AgentTemplate,
-    model::{AccountId, PriceTick, Qty, Side},
+    model::{AccountId, BookSnapshot, OrderId, PriceTick, Qty, Side},
     scenario::ScenarioConfig,
 };
 
@@ -84,6 +84,14 @@ impl TrainingSpec {
 pub struct TrainingFill {
     pub price_tick: PriceTick,
     pub qty: Qty,
+    #[serde(default)]
+    pub fee: i128,
+    #[serde(default)]
+    pub order_id: Option<OrderId>,
+    #[serde(default)]
+    pub command_seq: Option<u64>,
+    #[serde(default)]
+    pub book_before: Option<BookSnapshot>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -162,13 +170,24 @@ impl TrainingRun {
     }
 
     pub fn record_fill(&mut self, price_tick: PriceTick, qty: Qty, fee: i128) {
-        if self.status != TrainingStatus::Running || qty == 0 {
+        self.record_fill_evidence(TrainingFill {
+            price_tick,
+            qty,
+            fee,
+            order_id: None,
+            command_seq: None,
+            book_before: None,
+        });
+    }
+
+    pub fn record_fill_evidence(&mut self, fill: TrainingFill) {
+        if self.status != TrainingStatus::Running || fill.qty == 0 {
             return;
         }
-        self.fills.push(TrainingFill { price_tick, qty });
-        self.filled_qty = self.filled_qty.saturating_add(qty);
-        self.fees_paid += fee;
-        self.open_buy_qty = self.open_buy_qty.saturating_sub(qty);
+        self.filled_qty = self.filled_qty.saturating_add(fill.qty);
+        self.fees_paid += fill.fee;
+        self.open_buy_qty = self.open_buy_qty.saturating_sub(fill.qty);
+        self.fills.push(fill);
         if self.filled_qty >= self.spec.target_qty {
             self.status = TrainingStatus::Completed;
             self.paused = false;
@@ -210,6 +229,17 @@ impl TrainingRun {
             return false;
         }
         true
+    }
+
+    pub fn allows_trainee_transfer(&self, account_id: AccountId) -> bool {
+        account_id != self.spec.trainee_account_id || matches!(self.status, TrainingStatus::Created)
+    }
+
+    pub fn is_finished(&self) -> bool {
+        matches!(
+            self.status,
+            TrainingStatus::Completed | TrainingStatus::Failed | TrainingStatus::Aborted
+        )
     }
 
     pub fn score(&self) -> TrainingScore {
@@ -294,6 +324,7 @@ pub fn training_report_json(run: &TrainingRun) -> serde_json::Value {
             "fees_paid": score.fees_paid,
             "reference_price_tick": run.spec.reference_price_tick,
             "steps_elapsed": score.steps_elapsed,
+            "trainee_account_id": run.spec.trainee_account_id,
         },
         "metrics": score,
         "inferences": [
@@ -305,7 +336,7 @@ pub fn training_report_json(run: &TrainingRun) -> serde_json::Value {
 pub fn training_report_markdown(run: &TrainingRun) -> String {
     let score = run.score();
     format!(
-        "# Training report {}\n\n- status: {:?}\n- q/Q: {}/{}\n- VWAP: {:?}/{:?}\n- buy slippage bp: {:?}\n- fees: {}\n- incomplete: {} (penalty {})\n\nFacts are fills and fees. Slippage is computed from VWAP vs P0={}.\n",
+        "# Training report {}\n\n- status: {:?}\n- q/Q: {}/{}\n- VWAP: {:?}/{:?}\n- buy slippage bp: {:?}\n- fees: {}\n- incomplete: {} (penalty {})\n\n{}\n\nFacts are fills, fees, order ids, execution seq, and the visible book before each trainee order. Slippage is computed from VWAP vs P0={}.\n",
         run.spec.run_id,
         run.status,
         score.q,
@@ -316,6 +347,24 @@ pub fn training_report_markdown(run: &TrainingRun) -> String {
         score.fees_paid,
         score.incomplete,
         score.incomplete_penalty_ppm,
+        run.fills
+            .iter()
+            .map(|fill| {
+                format!(
+                    "- fill px={} qty={} fee={} order_id={} seq={}",
+                    fill.price_tick,
+                    fill.qty,
+                    fill.fee,
+                    fill.order_id
+                        .map(|id| id.to_string())
+                        .unwrap_or_else(|| "-".to_string()),
+                    fill.command_seq
+                        .map(|seq| seq.to_string())
+                        .unwrap_or_else(|| "-".to_string())
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
         run.spec.reference_price_tick
     )
 }
@@ -409,5 +458,38 @@ mod tests {
         assert_eq!(run.remaining_buy_capacity(), 3);
         assert!(!run.allows_trainee_action(20, Some(Side::Sell)));
         assert!(run.allows_trainee_action(20, Some(Side::Buy)));
+        assert!(!run.allows_trainee_transfer(20));
+        assert!(run.allows_trainee_transfer(10));
+    }
+
+    #[test]
+    fn report_binds_fill_evidence() {
+        let mut run = TrainingRun::new(spec());
+        run.start().unwrap();
+        run.record_fill_evidence(TrainingFill {
+            price_tick: 101,
+            qty: 4,
+            fee: 1,
+            order_id: Some(9),
+            command_seq: Some(3),
+            book_before: Some(BookSnapshot {
+                bids: vec![],
+                asks: vec![crate::model::BookLevel {
+                    price_tick: 101,
+                    qty: 8,
+                }],
+            }),
+        });
+        let json = training_report_json(&run);
+        assert_eq!(json["facts"]["fills"][0]["order_id"], 9);
+        assert_eq!(json["facts"]["fills"][0]["command_seq"], 3);
+        assert_eq!(json["facts"]["fills"][0]["fee"], 1);
+        assert_eq!(
+            json["facts"]["fills"][0]["book_before"]["asks"][0]["price_tick"],
+            101
+        );
+        let markdown = training_report_markdown(&run);
+        assert!(markdown.contains("order_id=9"));
+        assert!(markdown.contains("seq=3"));
     }
 }
