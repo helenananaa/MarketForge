@@ -19,7 +19,7 @@ cargo clippy -p exchange-core -p exchange-server --all-targets -- -D warnings
 | 检查 | 退出码 | 计数 |
 | --- | --- | --- |
 | private_stream | 0 | 6 |
-| training_scenarios | 0 | 5 |
+| training_scenarios | 0 | 5（inventory_stress 现要求 filled>0；MM 账户预置仓位 8，taker 限价吃卖盘） |
 | continuous_mm | 0 | 2 |
 | training_recovery_e2e | 0 | 4/4；report_q=journal_q=score_q；score_frozen |
 | clippy | 0 | — |

@@ -150,11 +150,12 @@ pub fn liquidity_withdrawal(room_id: &str, seed: u64) -> TrainingScenario {
 
 pub fn inventory_stress(room_id: &str, seed: u64) -> TrainingScenario {
     let mut scenario = base_scenario(room_id, 40);
+    scenario.seed_orders.clear();
     scenario.accounts = vec![
         ScenarioAccount::Spot {
             account_id: 10,
             cash_balance: 1_000_000,
-            position_qty: 0,
+            position_qty: 8,
         },
         ScenarioAccount::Spot {
             account_id: 20,
@@ -186,9 +187,9 @@ pub fn inventory_stress(room_id: &str, seed: u64) -> TrainingScenario {
                 participant: participant(room_id, "taker", 20),
                 interval_steps: 1,
                 order_qty: 4,
-                use_market_order: true,
+                use_market_order: false,
                 limit_offset_ticks: 0,
-                fallback_price_tick: 100,
+                fallback_price_tick: 101,
                 side: Side::Buy,
             }),
         ],
@@ -316,14 +317,47 @@ mod tests {
         }
     }
 
+    fn fill_qty(rooms: &RoomManager, room_id: &str) -> u64 {
+        rooms
+            .execution_history(room_id)
+            .unwrap()
+            .iter()
+            .map(|execution| match &execution.result {
+                crate::ActorExecutionResult::Accepted(crate::MarketExecution::Spot(result)) => {
+                    result
+                        .events
+                        .iter()
+                        .filter_map(|record| match &record.event {
+                            crate::Event::TradePrinted(trade) => Some(trade.qty),
+                            _ => None,
+                        })
+                        .sum::<u64>()
+                }
+                _ => 0,
+            })
+            .sum()
+    }
+
     #[test]
     fn inventory_stress_background_flow_keeps_mm_within_cap() {
+        let stress = inventory_stress("stress-cfg", 1);
+        assert!(stress.scenario.seed_orders.is_empty());
+        match &stress.scenario.accounts[0] {
+            ScenarioAccount::Spot { position_qty, .. } => assert_eq!(*position_qty, 8),
+            other => panic!("expected MM spot inventory, got {other:?}"),
+        }
         for seed in [1_u64, 4, 8] {
             let room = format!("stress-{seed}");
             let rooms = run_steps(inventory_stress(&room, seed), 6);
+            let filled = fill_qty(&rooms, &room);
+            assert!(filled > 0, "seed {seed} background taker produced no fills");
             assert!(resting_count(&rooms, &room, 10) <= 4);
             let qty = position(&rooms, &room, 10);
             assert!(qty.abs() <= 8, "seed {seed} inventory {qty} exceeded cap 8");
+            assert!(
+                qty < 8,
+                "seed {seed} inventory {qty} did not decline from 8"
+            );
         }
     }
 }
