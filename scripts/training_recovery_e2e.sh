@@ -145,7 +145,21 @@ scenario = json.loads('''$(scenario_json "${room}")''')
 print(json.dumps({
   "run_id": "${run}",
   "scenario": scenario,
-  "agents": [],
+  "agents": [{
+    "GridTrader": {
+      "participant": {
+        "participant_id": "grid",
+        "kind": "RuleAgent",
+        "room_id": "${room}",
+        "account_id": 10,
+        "instrument_id": "V-BTC-SPOT"
+      },
+      "center_price_tick": 100,
+      "grid_spacing_ticks": 2,
+      "levels": 1,
+      "qty_per_level": 1
+    }
+  }],
   "trainee_account_id": 20,
   "target_qty": 2,
   "horizon_steps": ${horizon},
@@ -156,7 +170,7 @@ PY
 assert_terminal() {
   local url="$1" run="$2" room="$3"
   python3 - <<PY
-import json, sys, urllib.request
+import json, sys, urllib.error, urllib.request
 url = "${url}"
 run = "${run}"
 room = "${room}"
@@ -170,12 +184,14 @@ def get(path):
 result = get(f"/training/runs/{run}/result")
 report = get(f"/training/runs/{run}/report")
 orders = get(f"/rooms/{room}/orders")
+events = get(f"/rooms/{room}/events?from_start=true&limit=200")
+trades = get(f"/rooms/{room}/trades")
 status = result["run"]["status"]
 if status not in ("Completed", "Aborted"):
     raise SystemExit(f"expected terminal training status, got {status}")
 open_trainee = [
     o for o in orders.get("orders", [])
-    if o.get("account_id") == 20 and o.get("status") == "open"
+    if o.get("account_id") == 20 and str(o.get("status", "")).lower() in ("open", "resting", "accepted")
 ]
 if open_trainee:
     raise SystemExit(f"residual fillable trainee orders: {open_trainee}")
@@ -186,7 +202,85 @@ for fill in fills:
     if fill.get("order_id") is None:
         raise SystemExit(f"fill missing order_id: {fill}")
 score = result.get("score") or {}
-report_score = (report.get("json") or {}).get("score") or report.get("score")
+report_json = report.get("json") or {}
+report_score = report_json.get("metrics") or report_json.get("score") or report.get("score") or {}
+if report_score.get("q") != score.get("q"):
+    raise SystemExit(f"report score q {report_score.get('q')} != result score q {score.get('q')}")
+if report_score.get("fees_paid") != score.get("fees_paid"):
+    raise SystemExit(f"report fees {report_score.get('fees_paid')} != result fees {score.get('fees_paid')}")
+
+def journal_trainee_fills():
+    q = 0
+    notional = 0
+    rows = list(trades.get("trades") or [])
+    if not rows:
+        for execution in events.get("executions") or []:
+            for event in execution.get("events") or []:
+                if not isinstance(event, dict):
+                    continue
+                kind = event.get("type") or next(iter(event.keys()), None)
+                body = event if event.get("type") else event.get("TradePrinted")
+                if kind not in ("TradePrinted", None) and "TradePrinted" not in event:
+                    continue
+                if not isinstance(body, dict):
+                    continue
+                maker = body.get("maker_account_id")
+                taker = body.get("taker_account_id")
+                if 20 not in (maker, taker):
+                    continue
+                q += int(body.get("qty") or 0)
+                notional += int(body.get("price_tick") or 0) * int(body.get("qty") or 0)
+        return q, notional
+    for trade in rows:
+        maker = trade.get("maker_account_id")
+        taker = trade.get("taker_account_id")
+        if 20 not in (maker, taker):
+            continue
+        qty = int(trade.get("qty") or 0)
+        px = int(trade.get("price_tick") or 0)
+        q += qty
+        notional += px * qty
+    return q, notional
+
+journal_q, journal_notional = journal_trainee_fills()
+if journal_q != int(score.get("q") or 0):
+    raise SystemExit(f"journal trainee q {journal_q} != score q {score.get('q')}")
+if journal_q:
+    ref = int(result["run"]["spec"]["reference_price_tick"])
+    vwap_num = journal_notional
+    vwap_den = journal_q
+    slip = 10000 * (vwap_num - ref * vwap_den) // (ref * vwap_den)
+    if score.get("vwap_tick_num") not in (vwap_num, str(vwap_num)):
+        raise SystemExit(f"journal vwap num {vwap_num} != score {score.get('vwap_tick_num')}")
+    if score.get("buy_slippage_bp") not in (slip, str(slip)):
+        raise SystemExit(f"journal slippage {slip} != score {score.get('buy_slippage_bp')}")
+
+frozen_q = score.get("q")
+req = urllib.request.Request(
+    url + f"/rooms/{room}/orders",
+    data=json.dumps({
+        "participant_id": "trainee-late",
+        "account_id": 20,
+        "action": {"PlaceLimit": {"side": "Buy", "price_tick": 101, "qty": 1}},
+    }).encode(),
+    headers={**headers, "content-type": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(req) as resp:
+        late = json.load(resp)
+    late_status = str(late).lower()
+    accepted = "orderaccepted" in late_status.replace("_", "") or '"accepted": true' in late_status
+    rejected = "reject" in late_status
+    if accepted and not rejected:
+        raise SystemExit(f"post-end trainee order was accepted: {late}")
+except urllib.error.HTTPError as exc:
+    if exc.code not in (400, 403, 409, 429):
+        raise SystemExit(f"post-end order unexpected HTTP {exc.code}: {exc.read().decode()}")
+after = get(f"/training/runs/{run}/result")
+if (after.get("score") or {}).get("q") != frozen_q:
+    raise SystemExit(f"score changed after terminal order: {frozen_q} -> {(after.get('score') or {}).get('q')}")
+
 print(json.dumps({
     "run_id": run,
     "room_id": room,
@@ -194,9 +288,13 @@ print(json.dumps({
     "filled_qty": result["run"].get("filled_qty"),
     "fees_paid": result["run"].get("fees_paid"),
     "score_q": score.get("q"),
+    "report_q": report_score.get("q"),
+    "journal_q": journal_q,
     "fills": len(fills),
     "open_trainee_orders": 0,
     "book_before_bound": True,
+    "score_frozen": True,
+    "report_matches_score": True,
 }, indent=2))
 PY
 }
@@ -273,8 +371,8 @@ echo "== path 4 speed =="
 A_PID="$(start_server "${BIND_A}" "${LOG_DIR}/speed.log" "e2e-speed" "single-active" "${BASE_A}")"
 wait_ready "${BASE_A}" "${LOG_DIR}/speed.log"
 trainee "${BASE_A}/training/runs" --data "$(start_training_payload "e2e-fast-${SUFFIX}" "e2e-fast-${SUFFIX}" 3)" >/dev/null
+drive_to_terminal "${BASE_A}" "e2e-fast-${SUFFIX}" "e2e-fast-${SUFFIX}" >"${LOG_DIR}/e2e-fast.json"
 trainee "${BASE_A}/training/runs" --data "$(start_training_payload "e2e-slow-${SUFFIX}" "e2e-slow-${SUFFIX}" 3)" >/dev/null
-drive_to_terminal "${BASE_A}" "e2e-fast-${SUFFIX}" "e2e-fast-${SUFFIX}" >/tmp/e2e-fast.json
 trainee "${BASE_A}/rooms/e2e-slow-${SUFFIX}/members" --data '{"user_id":"admin","role":"admin"}' >/dev/null
 trainee "${BASE_A}/rooms/e2e-slow-${SUFFIX}/orders" --data '{
   "participant_id": "trainee",
@@ -289,11 +387,11 @@ trainee "${BASE_A}/rooms/e2e-slow-${SUFFIX}/orders" --data '{
 admin "${BASE_A}/rooms/e2e-slow-${SUFFIX}/clock/advance" --data '{"steps":1}' >/dev/null
 admin "${BASE_A}/rooms/e2e-slow-${SUFFIX}/clock/advance" --data '{"steps":1}' >/dev/null
 admin "${BASE_A}/rooms/e2e-slow-${SUFFIX}/clock/advance" --data '{"steps":1}' >/dev/null
-assert_terminal "${BASE_A}" "e2e-slow-${SUFFIX}" "e2e-slow-${SUFFIX}" >/tmp/e2e-slow.json
-python3 - <<'PY'
+assert_terminal "${BASE_A}" "e2e-slow-${SUFFIX}" "e2e-slow-${SUFFIX}" >"${LOG_DIR}/e2e-slow.json"
+python3 - <<PY
 import json
-fast = json.load(open("/tmp/e2e-fast.json"))
-slow = json.load(open("/tmp/e2e-slow.json"))
+fast = json.load(open("${LOG_DIR}/e2e-fast.json"))
+slow = json.load(open("${LOG_DIR}/e2e-slow.json"))
 for key in ("status", "filled_qty", "fees_paid", "score_q"):
     if fast[key] != slow[key]:
         raise SystemExit(f"speed mismatch {key}: {fast[key]} vs {slow[key]}")

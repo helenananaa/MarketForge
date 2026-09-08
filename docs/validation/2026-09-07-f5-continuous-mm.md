@@ -19,8 +19,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 | 检查 | 退出码 | 测试 |
 | --- | --- | --- |
-| continuous_mm | 0 | 1 |
-| training_scenarios | 0 | 2 |
+| continuous_mm | 0 | 1（后续补洞为 2，见 skeptic-gap-fixes） |
+| training_scenarios | 0 | 2（后续补洞为 5，含真实调度样本） |
 | grid_trader_seeds | 0 | 1（Grid 未变） |
 | clippy | 0 | — |
 

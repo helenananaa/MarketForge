@@ -28,7 +28,7 @@ cargo clippy -p exchange-server --all-targets -- -D warnings
 
 | 检查 | 退出码 | 测试数 |
 | --- | --- | --- |
-| private_stream | 0 | 3 passed |
+| private_stream | 0 | 3 passed（后续补洞见 `2026-09-07-skeptic-gap-fixes.md`，现为 6） |
 | exchange-server --lib | 0 | 125 passed |
 | fmt / clippy | 0 | — |
 

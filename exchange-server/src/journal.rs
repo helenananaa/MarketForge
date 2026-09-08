@@ -682,7 +682,8 @@ impl JournalExecution {
         command: Command,
         execution: ActorExecution,
     ) -> Self {
-        let execution = RoomExecutionSummary::from_execution(execution);
+        let mut execution = RoomExecutionSummary::from_execution(execution);
+        execution.submit_account_id = Some(account_id);
         Self {
             room_id: execution.room_id.clone(),
             command_seq: execution.command_seq,

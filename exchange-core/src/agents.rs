@@ -686,7 +686,7 @@ mod tests {
     use crate::{
         SpotRiskConfig,
         actor::{AccountSnapshot, ActorExecutionResult, MarketExecution, MarketStatus},
-        gateway::{OrderGateway, TradingApi},
+        gateway::{GatewayRequest, OrderGateway, TradingApi},
         market::{InstrumentConfig, MarketConfig, SpotMarketConfig},
         model::BookSnapshot,
         observation::{PARTICIPANT_OBSERVATION_VERSION, ParticipantObservation},
@@ -818,12 +818,86 @@ mod tests {
         assert!(!first.is_empty());
         assert!(first.len() <= 2);
         let persisted = trader.persist_kind_state();
-        let mut restored = ContinuousMarketMaker::new(config);
+        let mut restored = ContinuousMarketMaker::new(config.clone());
         assert!(restored.restore_kind_state(&persisted));
         let second = run_participant_once(&mut gateway, &mut restored).unwrap();
-        assert!(second.is_empty() || second.len() <= 4);
+        assert!(
+            second.is_empty(),
+            "restore must not double-quote, got {second:?}"
+        );
         let view = gateway.market_view("room-1").unwrap();
         assert!(view.book.bids.len() + view.book.asks.len() <= 4);
+    }
+
+    #[test]
+    fn continuous_mm_replenishes_after_fill_and_restart_matches_live() {
+        let config = ContinuousMmConfig {
+            participant: participant_config("cmm-1", 30),
+            version: 1,
+            seed: 9,
+            half_spread_ticks: 2,
+            size_per_level: 1,
+            inventory_target: 0,
+            inventory_cap: 10,
+            requote_threshold_ticks: 5,
+            max_resting_orders: 4,
+            replenish_steps: 1,
+            fallback_price_tick: 100,
+        };
+
+        let mut live_rooms = RoomManager::new();
+        live_rooms.create_room(spot_scenario()).unwrap();
+        let mut live_gateway = OrderGateway::new(&mut live_rooms, 1);
+        let mut live = ContinuousMarketMaker::new(config.clone());
+        let quoted = run_participant_once(&mut live_gateway, &mut live).unwrap();
+        assert!(!quoted.is_empty());
+        let ask = live_gateway
+            .market_view("room-1")
+            .unwrap()
+            .book
+            .asks
+            .first()
+            .expect("ask")
+            .price_tick;
+        live_gateway
+            .submit_action(GatewayRequest {
+                participant_id: "taker".to_string(),
+                room_id: "room-1".to_string(),
+                instrument_id: Some("V-BTC-SPOT".to_string()),
+                account_id: 20,
+                action: OrderAction::PlaceLimit {
+                    side: Side::Buy,
+                    price_tick: ask,
+                    qty: 1,
+                },
+            })
+            .unwrap();
+        let replenished = run_participant_once(&mut live_gateway, &mut live).unwrap();
+        assert!(!replenished.is_empty(), "MM should replenish after a fill");
+        let view = live_gateway.market_view("room-1").unwrap();
+        assert!(view.book.bids.len() + view.book.asks.len() <= 4);
+
+        let mut restart_rooms = RoomManager::new();
+        restart_rooms.create_room(spot_scenario()).unwrap();
+        let mut restart_gateway = OrderGateway::new(&mut restart_rooms, 1);
+        let mut first_leg = ContinuousMarketMaker::new(config.clone());
+        let _ = run_participant_once(&mut restart_gateway, &mut first_leg).unwrap();
+        let persisted = first_leg.persist_kind_state();
+        let mut restored = ContinuousMarketMaker::new(config.clone());
+        assert!(restored.restore_kind_state(&persisted));
+        let restarted = run_participant_once(&mut restart_gateway, &mut restored).unwrap();
+
+        let mut twin_rooms = RoomManager::new();
+        twin_rooms.create_room(spot_scenario()).unwrap();
+        let mut twin_gateway = OrderGateway::new(&mut twin_rooms, 1);
+        let mut twin = ContinuousMarketMaker::new(config);
+        let _ = run_participant_once(&mut twin_gateway, &mut twin).unwrap();
+        let continued = run_participant_once(&mut twin_gateway, &mut twin).unwrap();
+        assert_eq!(
+            restarted.len(),
+            continued.len(),
+            "restart decisions must match a live twin"
+        );
     }
 
     #[test]

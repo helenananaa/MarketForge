@@ -25,7 +25,7 @@ MARKETFORGE_DATABASE_URL="$MARKETFORGE_TEST_DATABASE_URL" ./scripts/training_rec
 | e2e 第 2 次 | 0 | 4/4 paths |
 | `tests::training_postgres_crash_recovery_matches_live_run` | 0 | ok |
 
-机器可读断言（每次路径）：status Completed、open_trainee_orders 0、book_before_bound true、fees_paid 0、filled_qty 1、score_q 1。速度路径 `speed_match: true`。
+机器可读断言（每次路径）：status Completed、open_trainee_orders 0、book_before_bound true、fees_paid 0、filled_qty 1、score_q 1。速度路径 `speed_match: true`。后续补洞（`2026-09-07-skeptic-gap-fixes.md`）增加 Grid 机器人、`/trades` 复算与终态分数冻结。
 
 ## 故障点及预期/实际状态
 

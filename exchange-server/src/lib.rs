@@ -4787,7 +4787,7 @@ async fn scoped_room_stream(
         }
     };
     let after = query.after_command_seq;
-    let history = stream_history_executions(&app, &journal, &room_id, &cached, after).await?;
+    let fetched = stream_history_executions(&app, &journal, &room_id, &cached, after).await?;
     drop(app);
     let connection = lifecycle.open_sse_connection();
     let stream_name = match scope {
@@ -4796,26 +4796,69 @@ async fn scoped_room_stream(
     };
     let mut seq = 0_u64;
     let mut initial = VecDeque::new();
-    initial.push_back(UserStreamEvent {
-        api_version: "http.v1".to_string(),
-        stream: stream_name.to_string(),
-        stream_seq: {
-            seq += 1;
-            seq
-        },
-        command_seq: None,
-        kind: "snapshot".to_string(),
-        payload: snapshot,
+    let snapshot_seq = snapshot
+        .get("cursor")
+        .and_then(|cursor| cursor.get("command_seq"))
+        .and_then(|value| value.as_u64());
+    let caught_up = match (after, latest_seq) {
+        (Some(cursor), Some(latest)) => cursor >= latest,
+        (Some(_), None) => fetched.is_empty(),
+        (None, _) => true,
+    };
+    let fills_next = after.is_none_or(|cursor| {
+        caught_up
+            || fetched
+                .first()
+                .is_some_and(|execution| execution.command_seq == cursor + 1)
     });
-    for execution in history {
-        if after.is_some_and(|cursor| execution.command_seq <= cursor) {
-            continue;
+    let resume_deltas = after.is_some() && fills_next && !caught_up;
+    if after.is_some() && !fills_next {
+        seq += 1;
+        initial.push_back(UserStreamEvent {
+            api_version: "http.v1".to_string(),
+            stream: stream_name.to_string(),
+            stream_seq: seq,
+            command_seq: snapshot_seq,
+            kind: "resync_required".to_string(),
+            payload: serde_json::json!({"code": "resync_required"}),
+        });
+    }
+    let mut min_command_seq = after;
+    if !resume_deltas {
+        seq += 1;
+        initial.push_back(UserStreamEvent {
+            api_version: "http.v1".to_string(),
+            stream: stream_name.to_string(),
+            stream_seq: seq,
+            command_seq: snapshot_seq,
+            kind: "snapshot".to_string(),
+            payload: snapshot,
+        });
+        min_command_seq = snapshot_seq;
+    } else {
+        for execution in fetched {
+            if after.is_some_and(|cursor| execution.command_seq <= cursor) {
+                continue;
+            }
+            if let Some(event) =
+                scoped_event_from_execution(&execution, scope, &user_id, &journal, seq + 1).await
+            {
+                seq = event.stream_seq;
+                min_command_seq = execution.command_seq.into();
+                initial.push_back(event);
+            }
         }
-        if let Some(event) =
-            scoped_event_from_execution(&execution, scope, &user_id, &journal, seq + 1).await
-        {
-            seq = event.stream_seq;
-            initial.push_back(event);
+        if !initial.iter().any(|event| event.kind == "execution") {
+            seq += 1;
+            initial.push_back(UserStreamEvent {
+                api_version: "http.v1".to_string(),
+                stream: stream_name.to_string(),
+                stream_seq: seq,
+                command_seq: snapshot_seq,
+                kind: "snapshot".to_string(),
+                payload: snapshot,
+            });
+            min_command_seq = snapshot_seq;
         }
     }
     let stream_state = ScopedStreamState {
@@ -4824,6 +4867,7 @@ async fn scoped_room_stream(
         user_id,
         journal,
         stream_seq: seq,
+        min_command_seq,
         backlog: initial,
         receiver,
         shutdown,
@@ -4845,6 +4889,12 @@ async fn scoped_room_stream(
             }
             match state.receiver.recv().await {
                 Ok(execution) => {
+                    if state
+                        .min_command_seq
+                        .is_some_and(|min| execution.command_seq <= min)
+                    {
+                        continue;
+                    }
                     if let Some(event) = scoped_event_from_execution(
                         &execution,
                         state.scope,
@@ -4868,6 +4918,7 @@ async fn scoped_room_stream(
                             return Some((Ok(event), state));
                         }
                         state.stream_seq = event.stream_seq;
+                        state.min_command_seq = Some(execution.command_seq);
                         state.backlog.push_back(event);
                     }
                 }
@@ -4892,6 +4943,7 @@ struct ScopedStreamState {
     user_id: String,
     journal: JournalCoordinator,
     stream_seq: u64,
+    min_command_seq: Option<u64>,
     backlog: VecDeque<UserStreamEvent>,
     receiver: broadcast::Receiver<RoomExecutionSummary>,
     shutdown: watch::Receiver<bool>,
@@ -13966,18 +14018,128 @@ mod tests {
     }
 
     async fn first_sse_data(response: axum::http::Response<Body>) -> serde_json::Value {
-        let mut stream = response.into_body().into_data_stream();
-        let chunk = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        collect_sse_events(response, 1)
             .await
-            .expect("sse")
-            .expect("frame")
-            .expect("bytes");
-        let text = String::from_utf8(chunk.to_vec()).unwrap();
-        let data = text
-            .lines()
-            .find_map(|line| line.strip_prefix("data: "))
-            .expect(&text);
-        serde_json::from_str(data).unwrap()
+            .into_iter()
+            .next()
+            .expect("sse frame")
+    }
+
+    async fn collect_sse_from_stream(
+        stream: &mut (impl futures_util::Stream<Item = Result<axum::body::Bytes, axum::Error>> + Unpin),
+        max_frames: usize,
+    ) -> Vec<serde_json::Value> {
+        let mut events = Vec::new();
+        let mut buf = String::new();
+        for _ in 0..max_frames.max(1) * 8 {
+            if events.len() >= max_frames {
+                break;
+            }
+            match tokio::time::timeout(Duration::from_millis(500), stream.next()).await {
+                Ok(Some(Ok(chunk))) => {
+                    buf.push_str(&String::from_utf8_lossy(&chunk));
+                    while let Some(idx) = buf.find("\n\n") {
+                        let frame = buf[..idx].to_string();
+                        buf = buf[idx + 2..].to_string();
+                        if let Some(data) =
+                            frame.lines().find_map(|line| line.strip_prefix("data: "))
+                            && let Ok(value) = serde_json::from_str::<serde_json::Value>(data)
+                        {
+                            events.push(value);
+                            if events.len() >= max_frames {
+                                break;
+                            }
+                        }
+                    }
+                }
+                _ => break,
+            }
+        }
+        events
+    }
+
+    async fn collect_sse_events(
+        response: axum::http::Response<Body>,
+        max_frames: usize,
+    ) -> Vec<serde_json::Value> {
+        let mut stream = response.into_body().into_data_stream();
+        collect_sse_from_stream(&mut stream, max_frames).await
+    }
+
+    fn json_body(body: axum::body::Bytes) -> serde_json::Value {
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    fn first_order_id(value: &serde_json::Value) -> Option<u64> {
+        match value {
+            serde_json::Value::Object(map) => {
+                if let Some(id) = map.get("order_id").and_then(|item| item.as_u64()) {
+                    return Some(id);
+                }
+                map.values().find_map(first_order_id)
+            }
+            serde_json::Value::Array(items) => items.iter().find_map(first_order_id),
+            _ => None,
+        }
+    }
+
+    fn limit_cancel(account_id: AccountId, order_id: u64) -> SubmitOrderRequest {
+        SubmitOrderRequest {
+            participant_id: "p5".to_string(),
+            instrument_id: None,
+            account_id,
+            action: OrderAction::Cancel { order_id },
+        }
+    }
+
+    async fn get_json(app: &axum::Router, uri: &str, user: Option<&str>) -> serde_json::Value {
+        let mut builder = Request::builder().method(Method::GET).uri(uri);
+        if let Some(user) = user {
+            builder = builder.header(USER_ID_HEADER, user);
+        }
+        let response = app
+            .clone()
+            .oneshot(builder.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        json_body(
+            axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+    }
+
+    fn snapshot_order_ids(snapshot: &serde_json::Value, account_id: i64) -> Vec<u64> {
+        let payload = snapshot.get("payload").unwrap_or(snapshot);
+        payload["orders"]
+            .as_array()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .filter(|order| order["account_id"] == account_id)
+            .filter_map(|order| order["order_id"].as_u64())
+            .collect()
+    }
+
+    async fn observe_order_ids(
+        app: &axum::Router,
+        room_id: &str,
+        user: &str,
+        account_id: i64,
+    ) -> Vec<u64> {
+        let observed = get_json(
+            app,
+            &format!("/rooms/{room_id}/observe?account_id={account_id}"),
+            Some(user),
+        )
+        .await;
+        let observation = observed.get("observation").unwrap_or(&observed);
+        observation["own_orders"]
+            .as_array()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .filter_map(|order| order["order_id"].as_u64())
+            .collect()
     }
 
     #[tokio::test]
@@ -14063,37 +14225,280 @@ mod tests {
         )
         .await;
         assert_eq!(post.status(), StatusCode::OK);
-        let posted: serde_json::Value = serde_json::from_slice(
-            &axum::body::to_bytes(post.into_body(), usize::MAX)
+        let posted = json_body(
+            axum::body::to_bytes(post.into_body(), usize::MAX)
                 .await
                 .unwrap(),
-        )
-        .unwrap();
+        );
         assert!(posted.to_string().contains("OrderRested"), "{posted}");
-        let response = app
+        let order_id = first_order_id(&posted).expect("posted order_id");
+        let live = app
             .clone()
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri("/rooms/priv-delta/stream/private?after_command_seq=0")
+                    .uri("/rooms/priv-delta/stream/private")
                     .header(USER_ID_HEADER, "alice")
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        let mut stream = response.into_body().into_data_stream();
-        let mut text = String::new();
-        for _ in 0..4 {
-            match tokio::time::timeout(Duration::from_millis(500), stream.next()).await {
-                Ok(Some(Ok(chunk))) => text.push_str(&String::from_utf8_lossy(&chunk)),
-                _ => break,
+        let mut live_stream = live.into_body().into_data_stream();
+        let opened = collect_sse_from_stream(&mut live_stream, 1).await;
+        let snapshot = opened.first().expect("snapshot");
+        assert_eq!(snapshot["kind"], "snapshot");
+        assert!(
+            snapshot_order_ids(snapshot, 20).contains(&order_id),
+            "{snapshot}"
+        );
+        let cancel = send_json(
+            &app,
+            Method::POST,
+            "/rooms/priv-delta/orders",
+            Some("alice"),
+            limit_cancel(20, order_id),
+        )
+        .await;
+        assert_eq!(cancel.status(), StatusCode::OK);
+        let canceled = json_body(
+            axum::body::to_bytes(cancel.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        );
+        assert!(
+            canceled.to_string().contains("OrderCanceled")
+                || canceled.to_string().contains("canceled"),
+            "{canceled}"
+        );
+        let live_delta = collect_sse_from_stream(&mut live_stream, 4).await;
+        assert!(
+            live_delta.iter().any(|event| {
+                event["kind"] == "execution" && event.to_string().contains("OrderCanceled")
+            }),
+            "live cancel missing: {live_delta:?}"
+        );
+        let resume_cursor = snapshot["payload"]["cursor"]["command_seq"]
+            .as_u64()
+            .expect("snapshot cursor");
+        let resume = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!(
+                        "/rooms/priv-delta/stream/private?after_command_seq={resume_cursor}"
+                    ))
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let resume_events = collect_sse_events(resume, 8).await;
+        assert!(
+            resume_events.iter().any(|event| {
+                event["kind"] == "execution" && event.to_string().contains("OrderCanceled")
+            }) || resume_events.iter().any(|event| {
+                event["kind"] == "snapshot" && !snapshot_order_ids(event, 20).contains(&order_id)
+            }),
+            "{resume_events:?}"
+        );
+        let live_ids = observe_order_ids(&app, "priv-delta", "alice", 20).await;
+        assert!(
+            !live_ids.contains(&order_id),
+            "authority still has canceled order {live_ids:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn private_stream_snapshot_plus_deltas_match_authority_orders() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("priv-rebuild")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, "priv-rebuild", "alice", 20).await;
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/priv-rebuild/orders",
+                Some("alice"),
+                limit_buy(20, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/priv-rebuild/stream/private")
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let events = collect_sse_events(response, 4).await;
+        let snapshot = events
+            .iter()
+            .find(|event| event["kind"] == "snapshot")
+            .expect("snapshot");
+        let boundary = snapshot["payload"]["cursor"]["command_seq"]
+            .as_u64()
+            .or_else(|| snapshot["command_seq"].as_u64());
+        for event in &events {
+            if event["kind"] == "execution"
+                && let Some(seq) = event["command_seq"].as_u64()
+                && let Some(boundary) = boundary
+            {
+                assert!(
+                    seq > boundary,
+                    "mixed snapshot {boundary} with older delta {seq}: {event}"
+                );
             }
         }
+        let mut rebuilt = snapshot_order_ids(snapshot, 20);
+        rebuilt.sort_unstable();
+        let mut live = observe_order_ids(&app, "priv-rebuild", "alice", 20).await;
+        live.sort_unstable();
+        assert_eq!(rebuilt, live, "snapshot={snapshot} observe={live:?}");
+    }
+
+    #[tokio::test]
+    async fn private_stream_cache_overflow_fills_from_journal_or_resyncs() {
+        let execution_count = ROOM_EVENT_CACHE_CAPACITY + 2;
+        let (app, state) = paged_event_app(execution_count);
+        {
+            let state = state.app.lock().await;
+            let cache = state.executions.get("paged-room").unwrap();
+            assert_eq!(cache.len(), ROOM_EVENT_CACHE_CAPACITY);
+            assert_eq!(cache.front().unwrap().command_seq, 2);
+        }
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/paged-room/stream/public?after_command_seq=0")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let events = collect_sse_events(response, 8).await;
+        let resync = events
+            .iter()
+            .any(|event| event["kind"] == "resync_required");
+        let from_journal = events
+            .iter()
+            .any(|event| event["kind"] == "execution" && event["command_seq"].as_u64() == Some(1));
         assert!(
-            text.contains("OrderRested") || text.contains("account_id"),
-            "{text}"
+            resync || from_journal,
+            "cache overflow must journal-fill seq 1 or resync: {events:?}"
         );
+        if let Some(snapshot) = events.iter().find(|event| event["kind"] == "snapshot") {
+            let boundary = snapshot["payload"]["cursor"]["command_seq"]
+                .as_u64()
+                .or_else(|| snapshot["command_seq"].as_u64());
+            for event in &events {
+                if event["kind"] == "execution"
+                    && let Some(seq) = event["command_seq"].as_u64()
+                    && let Some(boundary) = boundary
+                {
+                    assert!(
+                        seq > boundary,
+                        "mixed latest snapshot with older delta {seq}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn private_stream_reconnect_does_not_double_apply_resting_orders() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("priv-retry")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, "priv-retry", "alice", 20).await;
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/priv-retry/orders",
+                Some("alice"),
+                limit_buy(20, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let first = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/priv-retry/stream/private")
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let snapshot = first_sse_data(first).await;
+        let cursor = snapshot["payload"]["cursor"]["command_seq"]
+            .as_u64()
+            .expect("cursor");
+        let second = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!(
+                        "/rooms/priv-retry/stream/private?after_command_seq={cursor}"
+                    ))
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let replay = collect_sse_events(second, 6).await;
+        let mut seen = snapshot_order_ids(&snapshot, 20);
+        for event in &replay {
+            if event["kind"] == "snapshot" {
+                seen = snapshot_order_ids(event, 20);
+            }
+        }
+        seen.sort_unstable();
+        seen.dedup();
+        let mut live = observe_order_ids(&app, "priv-retry", "alice", 20).await;
+        live.sort_unstable();
+        assert_eq!(seen, live);
+        assert_eq!(seen.len(), 1, "reconnect doubled orders: {replay:?}");
     }
 
     #[tokio::test]
