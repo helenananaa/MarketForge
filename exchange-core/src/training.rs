@@ -10,6 +10,7 @@ use crate::{
 pub const TRAINING_SPEC_VERSION: u16 = 1;
 pub const SCORING_RULE_VERSION: u16 = 1;
 pub const LOW_SLIPPAGE_BUY_TASK_VERSION: u16 = 1;
+pub const SCENARIO_INJECTION_DISCLAIMER: &str = "Injected training scenarios and background agents are simulated facts; they are not evidence of live-market manipulation.";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum TrainingStatus {
@@ -314,6 +315,12 @@ pub fn score_run(run: &TrainingRun) -> TrainingScore {
 
 pub fn training_report_json(run: &TrainingRun) -> serde_json::Value {
     let score = run.score();
+    let injected_agent_ids = run
+        .spec
+        .agents
+        .iter()
+        .map(AgentTemplate::participant_id)
+        .collect::<Vec<_>>();
     json!({
         "api_version": "report.v1",
         "spec_digest": run.spec.digest(),
@@ -325,10 +332,12 @@ pub fn training_report_json(run: &TrainingRun) -> serde_json::Value {
             "reference_price_tick": run.spec.reference_price_tick,
             "steps_elapsed": score.steps_elapsed,
             "trainee_account_id": run.spec.trainee_account_id,
+            "injected_agent_ids": injected_agent_ids,
         },
         "metrics": score,
         "inferences": [
-            "Incomplete runs receive incomplete_penalty_ppm; do not treat lower fill count as higher execution quality."
+            "Incomplete runs receive incomplete_penalty_ppm; do not treat lower fill count as higher execution quality.",
+            SCENARIO_INJECTION_DISCLAIMER,
         ],
     })
 }
@@ -366,7 +375,8 @@ pub fn training_report_markdown(run: &TrainingRun) -> String {
             .collect::<Vec<_>>()
             .join("\n"),
         run.spec.reference_price_tick
-    )
+    ) + SCENARIO_INJECTION_DISCLAIMER
+        + "\n"
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -491,5 +501,34 @@ mod tests {
         let markdown = training_report_markdown(&run);
         assert!(markdown.contains("order_id=9"));
         assert!(markdown.contains("seq=3"));
+        assert!(markdown.contains(SCENARIO_INJECTION_DISCLAIMER));
+        assert!(
+            json["inferences"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item.as_str() == Some(SCENARIO_INJECTION_DISCLAIMER))
+        );
+        assert_eq!(json["facts"]["injected_agent_ids"], serde_json::json!([]));
+        assert!(markdown.contains("not evidence of live-market manipulation"));
+    }
+
+    #[test]
+    fn report_lists_injected_agents_as_facts() {
+        let mut spec = spec();
+        spec.agents = crate::training_scenarios::basic_execution("train-1", 3).agents;
+        let mut run = TrainingRun::new(spec);
+        run.start().unwrap();
+        let json = training_report_json(&run);
+        assert_eq!(
+            json["facts"]["injected_agent_ids"],
+            serde_json::json!(["mm"])
+        );
+        let inferences = json["inferences"].as_array().unwrap();
+        assert!(
+            inferences
+                .iter()
+                .any(|item| item.as_str() == Some(SCENARIO_INJECTION_DISCLAIMER))
+        );
     }
 }

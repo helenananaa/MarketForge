@@ -24,6 +24,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 | grid_trader_seeds | 0 | 1（Grid 未变） |
 | clippy | 0 | — |
 
+后续补洞：`training_report_json` / markdown 写入 `SCENARIO_INJECTION_DISCLAIMER`，facts 列出 `injected_agent_ids`。测试 `report_lists_injected_agents_as_facts`、`inventory_stress_background_flow_keeps_mm_within_cap`（filled>0）。
+
 ## 门槛是否满足
 
-是。Grid 回归通过；持续做市有界并恢复；三场景版本化且流动性撤离为账户撤单而非改价。
+是。Grid 回归通过；持续做市有界并恢复；三场景真实调度且报告声明注入场景不是实盘操纵证据。
