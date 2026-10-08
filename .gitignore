@@ -11,3 +11,6 @@ __pycache__/
 !.env.example
 *.pem
 *.key
+.local/agents/
+/.playwright-cli/
+/output/playwright/

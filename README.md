@@ -1,5 +1,7 @@
 # MarketForge
 
+AI 交易员入口支持 `agent.v1` 插件：主动查行情、联网研究、直接交易、编写多文件 Python 策略、安装第三方及系统依赖，并在隔离环境中测试和运行。启动与账户配置见 [AI 交易员指南](docs/AI_TRADERS.md)。
+
 MarketForge is a Rust market simulation engine with a standalone HTTP backend,
 a React web interface, and a CandleScope plugin adapter.
 

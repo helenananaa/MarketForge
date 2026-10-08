@@ -14,6 +14,7 @@ import {
   Square,
 } from "lucide-react";
 import "./styles.css";
+import { AgentTraders } from "./AgentTraders";
 
 type Side = "Buy" | "Sell";
 type AgentStatus = {
@@ -289,6 +290,20 @@ function App() {
     }
   };
 
+  const loadRoom = async () => {
+    const nextRoom = roomId.trim();
+    if (!nextRoom) return;
+    setBusy(true);
+    try {
+      await refresh(nextRoom);
+      await loadSavedBots(nextRoom);
+      setActiveRoom(nextRoom);
+      pushLog({ level: "ok", text: `房间 ${nextRoom} 已载入` });
+    } catch (error) {
+      pushLog({ level: "warn", text: error instanceof Error ? error.message : "载入失败" });
+    } finally { setBusy(false); }
+  };
+
   const submitOrder = async () => {
     if (!activeRoom) {
       pushLog({ level: "warn", text: "请先创建或载入房间" });
@@ -406,6 +421,7 @@ function App() {
         </div>
       </header>
 
+      <AgentTraders room={activeRoom} instrument={view?.instrument_id ?? "V-BTC-SPOT"} />
       <section className="market-strip">
         <div className="symbol-block">
           <span className="coin">V</span>
@@ -432,6 +448,7 @@ function App() {
             <Plus size={16} aria-hidden="true" />
             创建
           </button>
+          <button onClick={loadRoom} disabled={busy || !roomId.trim()}>载入</button>
           <button onClick={() => refresh()} disabled={!activeRoom || busy}>
             <RefreshCw size={16} aria-hidden="true" />
           </button>
