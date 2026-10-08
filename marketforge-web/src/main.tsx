@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import "./styles.css";
 import { AgentTraders } from "./AgentTraders";
+import backgroundMarket from "../../scripts/fixtures/background_market.json";
 
 type Side = "Buy" | "Sell";
 type AgentStatus = {
@@ -272,8 +273,8 @@ function App() {
         body: JSON.stringify(sampleRoomPayload(nextRoom)),
       });
       setActiveRoom(nextRoom);
-      setBotInstances([]);
-      pushLog({ level: "ok", text: `房间 ${nextRoom} 已创建` });
+      await loadSavedBots(nextRoom);
+      pushLog({ level: "ok", text: `房间 ${nextRoom} 已创建，20 个背景交易者已启动` });
       await refresh(nextRoom);
     } catch (error) {
       const message = error instanceof Error ? error.message : "create room failed";
@@ -446,7 +447,7 @@ function App() {
           />
           <button onClick={createRoom} disabled={busy}>
             <Plus size={16} aria-hidden="true" />
-            创建
+            创建仿真市场
           </button>
           <button onClick={loadRoom} disabled={busy || !roomId.trim()}>载入</button>
           <button onClick={() => refresh()} disabled={!activeRoom || busy}>
@@ -903,63 +904,10 @@ function isPerpAccount(account: AnyAccount): account is PerpAccount {
 }
 
 function sampleRoomPayload(roomId: string) {
-  return {
-    scenario: {
-      room_id: roomId,
-      market: {
-        Spot: {
-          instrument: { symbol: "V-BTC-SPOT", tick_size: 1, lot_size: 1 },
-          clearing: { maker_fee_ppm: 0, taker_fee_ppm: 0 },
-          risk: {
-            price_tick_size: null,
-            lot_size: null,
-            max_order_qty: null,
-            max_order_notional: null,
-            allow_short: false,
-          },
-        },
-      },
-      accounts: [
-        { Spot: { account_id: 10, cash_balance: 10_000, position_qty: 120 } },
-        { Basic: { account_id: 20, cash_balance: 10_000 } },
-        { Basic: { account_id: 30, cash_balance: 10_000 } },
-      ],
-      seed_orders: [
-        {
-          NewOrder: {
-            order_id: 10_000,
-            account_id: 10,
-            side: "Sell",
-            kind: { Limit: { price_tick: 104 } },
-            qty: 8,
-          },
-        },
-      ],
-    },
-    agents: [dcaAgent(roomId)],
-    agent_interval_ms: 900,
-    autostart_agents: false,
-  };
-}
-
-function dcaAgent(roomId: string) {
-  return {
-    DcaTrader: {
-      participant: {
-        participant_id: "dca-worker",
-        instrument_id: "V-BTC-SPOT",
-        kind: "RuleAgent",
-        room_id: roomId,
-        account_id: 30,
-      },
-      interval_steps: 1,
-      order_qty: 1,
-      use_market_order: false,
-      limit_offset_ticks: 0,
-      fallback_price_tick: 100,
-      side: "Buy",
-    },
-  };
+  const recipe = structuredClone(backgroundMarket);
+  recipe.scenario.room_id = roomId;
+  for (const bot of recipe.agents) bot.Plugin.participant.room_id = roomId;
+  return recipe;
 }
 
 function summarizeOrder(response: OrderResponse) {

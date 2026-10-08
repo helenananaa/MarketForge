@@ -130,7 +130,7 @@ class PluginLiveTests(unittest.TestCase):
     def test_catalog_and_invalid_configuration(self):
         client = self.client()
         bots = client.list_bots()
-        self.assertEqual(len(bots), 6)
+        self.assertEqual(len(bots), 11)
         self.assertIn("example.buy-remaining", {bot["id"] for bot in bots})
         with self.assertRaises(MarketForgeError) as error:
             Client(self.base).list_bots()

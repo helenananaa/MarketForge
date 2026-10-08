@@ -9,6 +9,10 @@ It models spot and perpetual markets, order matching, accounts and portfolios,
 margin and liquidation, venue rules, transfers, and replayable room events.
 The backend supports PostgreSQL journal persistence and room writer leases.
 
+The web's “创建仿真市场” action starts 20 background participants with finite capital:
+dynamic makers, value and trend traders, adaptive noise, and TWAP execution.
+See [Background market behavior and experiments](docs/BACKGROUND_MARKET.md).
+
 ## Components
 
 - `exchange-core`: matching, risk, simulation, training, and room state.

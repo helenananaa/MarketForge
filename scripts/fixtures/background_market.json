@@ -1,0 +1,770 @@
+{
+  "scenario": {
+    "room_id": "background-market",
+    "venue_preset": null,
+    "venue_rules": {
+      "circuit_breaker": {
+        "halted": false,
+        "reason": null
+      },
+      "trading_session": {
+        "sessions": []
+      },
+      "price_limits": [],
+      "settlement": {
+        "spot_sell_delay_steps": 0
+      },
+      "transfers": {
+        "deposit_delay_steps": 0,
+        "withdrawal_delay_steps": 0
+      }
+    },
+    "venue_asset_policy": {
+      "deposit_assets": [],
+      "withdrawal_assets": [],
+      "settlement_assets": [],
+      "margin_assets": [],
+      "deposit_rules": [],
+      "withdrawal_rules": [],
+      "settlement_rules": [],
+      "margin_rules": []
+    },
+    "assets": [],
+    "market": {
+      "Spot": {
+        "instrument": {
+          "instrument_id": "V-BTC-SPOT",
+          "venue_id": "default-venue",
+          "symbol": "V-BTC-SPOT",
+          "base_asset": "V",
+          "quote_asset": "BTC",
+          "tick_size": 1,
+          "lot_size": 1
+        },
+        "clearing": {
+          "maker_fee_ppm": 100,
+          "taker_fee_ppm": 300
+        },
+        "risk": {
+          "price_tick_size": null,
+          "lot_size": null,
+          "max_order_qty": null,
+          "max_order_notional": null,
+          "allow_short": false
+        }
+      }
+    },
+    "extra_markets": [],
+    "initial_portfolios": [],
+    "initial_allocations": [],
+    "routed_initial_allocations": [],
+    "accounts": [
+      {
+        "Spot": {
+          "account_id": 10,
+          "cash_balance": 100000,
+          "position_qty": 200
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 20,
+          "cash_balance": 10000,
+          "position_qty": 20
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 30,
+          "cash_balance": 10000,
+          "position_qty": 20
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 100,
+          "cash_balance": 20000,
+          "position_qty": 40
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 101,
+          "cash_balance": 25000,
+          "position_qty": 40
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 102,
+          "cash_balance": 30000,
+          "position_qty": 40
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 103,
+          "cash_balance": 35000,
+          "position_qty": 30
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 104,
+          "cash_balance": 40000,
+          "position_qty": 30
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 105,
+          "cash_balance": 20000,
+          "position_qty": 30
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 106,
+          "cash_balance": 25000,
+          "position_qty": 30
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 107,
+          "cash_balance": 30000,
+          "position_qty": 25
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 108,
+          "cash_balance": 35000,
+          "position_qty": 25
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 109,
+          "cash_balance": 40000,
+          "position_qty": 25
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 110,
+          "cash_balance": 20000,
+          "position_qty": 30
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 111,
+          "cash_balance": 25000,
+          "position_qty": 30
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 112,
+          "cash_balance": 30000,
+          "position_qty": 30
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 113,
+          "cash_balance": 35000,
+          "position_qty": 30
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 114,
+          "cash_balance": 40000,
+          "position_qty": 30
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 115,
+          "cash_balance": 20000,
+          "position_qty": 30
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 116,
+          "cash_balance": 25000,
+          "position_qty": 30
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 117,
+          "cash_balance": 30000,
+          "position_qty": 30
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 118,
+          "cash_balance": 35000,
+          "position_qty": 10
+        }
+      },
+      {
+        "Spot": {
+          "account_id": 119,
+          "cash_balance": 40000,
+          "position_qty": 80
+        }
+      }
+    ],
+    "seed_orders": [
+      {
+        "NewOrder": {
+          "order_id": 10000,
+          "account_id": 10,
+          "side": "Buy",
+          "kind": {
+            "Limit": {
+              "price_tick": 98
+            }
+          },
+          "qty": 20,
+          "reduce_only": false
+        }
+      },
+      {
+        "NewOrder": {
+          "order_id": 10001,
+          "account_id": 10,
+          "side": "Sell",
+          "kind": {
+            "Limit": {
+              "price_tick": 102
+            }
+          },
+          "qty": 20,
+          "reduce_only": false
+        }
+      }
+    ],
+    "routed_seed_orders": []
+  },
+  "agents": [
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "maker-0",
+          "kind": "MarketMaker",
+          "room_id": "background-market",
+          "account_id": 100,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "DynamicMarketMaker",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 4038570651826368,
+        "config": {
+          "decision_interval_ms": 1000,
+          "half_spread_ticks": 1,
+          "inventory_cap": 100,
+          "inventory_target": 40,
+          "jitter_ms": 500,
+          "levels": 2,
+          "max_qty": 3
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "maker-1",
+          "kind": "MarketMaker",
+          "room_id": "background-market",
+          "account_id": 101,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "DynamicMarketMaker",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 4038570651826369,
+        "config": {
+          "decision_interval_ms": 1500,
+          "half_spread_ticks": 2,
+          "inventory_cap": 100,
+          "inventory_target": 40,
+          "jitter_ms": 500,
+          "levels": 2,
+          "max_qty": 4
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "maker-2",
+          "kind": "MarketMaker",
+          "room_id": "background-market",
+          "account_id": 102,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "DynamicMarketMaker",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 4038570651826370,
+        "config": {
+          "decision_interval_ms": 2000,
+          "half_spread_ticks": 3,
+          "inventory_cap": 100,
+          "inventory_target": 40,
+          "jitter_ms": 500,
+          "levels": 2,
+          "max_qty": 5
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "value-0",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 103,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "ValueTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 6751972110257901,
+        "config": {
+          "decision_interval_ms": 2000,
+          "fair_price_tick": 98,
+          "information_delay_ms": 0,
+          "jitter_ms": 1500,
+          "max_qty": 1,
+          "value_shift_at_ms": 60000,
+          "value_shift_ticks": 12
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "value-1",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 104,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "ValueTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 6751972110257902,
+        "config": {
+          "decision_interval_ms": 2500,
+          "fair_price_tick": 100,
+          "information_delay_ms": 4000,
+          "jitter_ms": 1500,
+          "max_qty": 2,
+          "value_shift_at_ms": 60000,
+          "value_shift_ticks": 12
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "value-2",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 105,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "ValueTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 6751972110257903,
+        "config": {
+          "decision_interval_ms": 3000,
+          "fair_price_tick": 102,
+          "information_delay_ms": 8000,
+          "jitter_ms": 1500,
+          "max_qty": 3,
+          "value_shift_at_ms": 60000,
+          "value_shift_ticks": 12
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "value-3",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 106,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "ValueTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 6751972110257904,
+        "config": {
+          "decision_interval_ms": 3500,
+          "fair_price_tick": 104,
+          "information_delay_ms": 12000,
+          "jitter_ms": 1500,
+          "max_qty": 1,
+          "value_shift_at_ms": 60000,
+          "value_shift_ticks": 12
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "trend-0",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 107,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "TrendTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 7152408966320449,
+        "config": {
+          "decision_interval_ms": 1500,
+          "inventory_cap": 70,
+          "inventory_target": 25,
+          "jitter_ms": 1000,
+          "lookback": 4,
+          "position_size": 15,
+          "signal_threshold_ticks": 1
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "trend-1",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 108,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "TrendTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 7152408966320450,
+        "config": {
+          "decision_interval_ms": 2000,
+          "inventory_cap": 70,
+          "inventory_target": 25,
+          "jitter_ms": 1000,
+          "lookback": 8,
+          "position_size": 15,
+          "signal_threshold_ticks": 2
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "trend-2",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 109,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "TrendTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 7152408966320451,
+        "config": {
+          "decision_interval_ms": 2500,
+          "inventory_cap": 70,
+          "inventory_target": 25,
+          "jitter_ms": 1000,
+          "lookback": 12,
+          "position_size": 15,
+          "signal_threshold_ticks": 3
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "noise-0",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 110,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "AdaptiveNoiseTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 7302425291701126,
+        "config": {
+          "activity_ppm": 250000,
+          "decision_interval_ms": 1000,
+          "inventory_cap": 60,
+          "jitter_ms": 2500,
+          "market_order_ratio_ppm": 300000,
+          "max_qty": 1,
+          "order_ttl_ms": 4000,
+          "side_persistence_ppm": 500000
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "noise-1",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 111,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "AdaptiveNoiseTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 7302425291701127,
+        "config": {
+          "activity_ppm": 300000,
+          "decision_interval_ms": 1250,
+          "inventory_cap": 60,
+          "jitter_ms": 2500,
+          "market_order_ratio_ppm": 350000,
+          "max_qty": 2,
+          "order_ttl_ms": 5000,
+          "side_persistence_ppm": 540000
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "noise-2",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 112,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "AdaptiveNoiseTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 7302425291701128,
+        "config": {
+          "activity_ppm": 350000,
+          "decision_interval_ms": 1500,
+          "inventory_cap": 60,
+          "jitter_ms": 2500,
+          "market_order_ratio_ppm": 400000,
+          "max_qty": 3,
+          "order_ttl_ms": 6000,
+          "side_persistence_ppm": 580000
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "noise-3",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 113,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "AdaptiveNoiseTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 7302425291701129,
+        "config": {
+          "activity_ppm": 400000,
+          "decision_interval_ms": 1750,
+          "inventory_cap": 60,
+          "jitter_ms": 2500,
+          "market_order_ratio_ppm": 450000,
+          "max_qty": 1,
+          "order_ttl_ms": 7000,
+          "side_persistence_ppm": 620000
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "noise-4",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 114,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "AdaptiveNoiseTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 7302425291701130,
+        "config": {
+          "activity_ppm": 450000,
+          "decision_interval_ms": 2000,
+          "inventory_cap": 60,
+          "jitter_ms": 2500,
+          "market_order_ratio_ppm": 500000,
+          "max_qty": 2,
+          "order_ttl_ms": 8000,
+          "side_persistence_ppm": 660000
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "noise-5",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 115,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "AdaptiveNoiseTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 7302425291701131,
+        "config": {
+          "activity_ppm": 500000,
+          "decision_interval_ms": 2250,
+          "inventory_cap": 60,
+          "jitter_ms": 2500,
+          "market_order_ratio_ppm": 550000,
+          "max_qty": 3,
+          "order_ttl_ms": 9000,
+          "side_persistence_ppm": 700000
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "noise-6",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 116,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "AdaptiveNoiseTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 7302425291701132,
+        "config": {
+          "activity_ppm": 550000,
+          "decision_interval_ms": 2500,
+          "inventory_cap": 60,
+          "jitter_ms": 2500,
+          "market_order_ratio_ppm": 600000,
+          "max_qty": 1,
+          "order_ttl_ms": 10000,
+          "side_persistence_ppm": 740000
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "noise-7",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 117,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "AdaptiveNoiseTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 7302425291701133,
+        "config": {
+          "activity_ppm": 600000,
+          "decision_interval_ms": 2750,
+          "inventory_cap": 60,
+          "jitter_ms": 2500,
+          "market_order_ratio_ppm": 650000,
+          "max_qty": 2,
+          "order_ttl_ms": 11000,
+          "side_persistence_ppm": 780000
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "execution-buy",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 118,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "ExecutionTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 5983764115797614,
+        "config": {
+          "decision_interval_ms": 2000,
+          "horizon_ms": 120000,
+          "jitter_ms": 500,
+          "max_qty": 3,
+          "max_slippage_ticks": 3,
+          "side": "Buy",
+          "start_after_ms": 20000,
+          "target_qty": 40
+        }
+      }
+    },
+    {
+      "Plugin": {
+        "participant": {
+          "participant_id": "execution-sell",
+          "kind": "RuleAgent",
+          "room_id": "background-market",
+          "account_id": 119,
+          "instrument_id": "V-BTC-SPOT"
+        },
+        "plugin_id": "ExecutionTrader",
+        "plugin_version": "1",
+        "state_version": 1,
+        "config_version": 1,
+        "seed": 5134462961425930,
+        "config": {
+          "decision_interval_ms": 2000,
+          "horizon_ms": 120000,
+          "jitter_ms": 500,
+          "max_qty": 3,
+          "max_slippage_ticks": 3,
+          "side": "Sell",
+          "start_after_ms": 35000,
+          "target_qty": 40
+        }
+      }
+    }
+  ],
+  "agent_interval_ms": 500,
+  "autostart_agents": true
+}
