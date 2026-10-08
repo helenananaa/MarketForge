@@ -26,6 +26,13 @@ pub struct RoomManager {
     executions: BTreeMap<RoomId, Vec<ActorExecution>>,
     pending_liquidations: BTreeMap<RoomId, VecDeque<PendingRoomLiquidation>>,
     recovered_last_trades: BTreeMap<(RoomId, String), i64>,
+    restored_bot_history: BTreeMap<
+        RoomId,
+        (
+            std::sync::Arc<Vec<crate::observation::BotTradeReceipt>>,
+            bool,
+        ),
+    >,
 }
 
 impl RoomManager {
@@ -499,6 +506,7 @@ impl RoomManager {
         let removed = self.rooms.remove(room_id).is_some();
         self.executions.remove(room_id);
         self.pending_liquidations.remove(room_id);
+        self.restored_bot_history.remove(room_id);
         removed
     }
 
@@ -660,7 +668,164 @@ impl RoomManager {
             public_trades,
             own_orders,
             own_account,
+            bot_market_data: None,
+            perp_price: room
+                .perp_price_snapshot(instrument_id)
+                .map_err(RoomManagerError::Actor)?,
         })
+    }
+
+    /// Build history under the same room lock as the participant snapshot.
+    pub fn bot_observation(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+        account_id: AccountId,
+        request: Option<crate::bots::BotMarketDataRequest>,
+    ) -> Result<crate::ParticipantObservation, RoomManagerError> {
+        let mut observation = self.participant_observation(room_id, instrument_id, account_id)?;
+        if let Some(request) = request {
+            if request.validate().is_err() {
+                return Err(RoomManagerError::Candle(
+                    crate::CandleError::InvalidInterval,
+                ));
+            }
+            let (receipts, complete) = self.bot_trade_history(room_id, instrument_id)?;
+            let timed = receipts
+                .iter()
+                .map(|receipt| {
+                    crate::TimedTrade::from_trade(receipt.market_time_ms, &receipt.trade)
+                })
+                .collect::<Vec<_>>();
+            let mut candles =
+                crate::aggregate_candles(&timed, request.interval_ms, observation.market_time_ms)
+                    .map_err(RoomManagerError::Candle)?;
+            candles.retain(|bar| bar.is_final);
+            let mut truncated = !complete || candles.len() > request.max_bars;
+            if candles.len() > request.max_bars {
+                candles.drain(..candles.len() - request.max_bars);
+            }
+            let mut fills = Vec::new();
+            let mut details = Vec::new();
+            for receipt in receipts {
+                let trade = &receipt.trade;
+                if trade.maker_account_id == account_id || trade.taker_account_id == account_id {
+                    let buyer = if trade.taker_side == crate::Side::Buy {
+                        trade.taker_account_id
+                    } else {
+                        trade.maker_account_id
+                    };
+                    details.push(crate::observation::BotFillDetail {
+                        trade_id: trade.trade_id,
+                        market_time_ms: receipt.market_time_ms,
+                        fee_paid: if account_id == buyer {
+                            receipt.buyer_fee
+                        } else {
+                            receipt.seller_fee
+                        },
+                    });
+                    fills.push(receipt.trade);
+                }
+            }
+            if fills.len() > 4096 {
+                truncated = true;
+                details.drain(..details.len() - 4096);
+                fills.drain(..fills.len() - 4096);
+            }
+            observation.bot_market_data = Some(crate::BotMarketData {
+                interval_ms: request.interval_ms,
+                candles,
+                own_fills: fills,
+                fill_details: details,
+                truncated,
+            });
+        }
+        Ok(observation)
+    }
+
+    /// Restore public receipts independently of engine checkpoint replay.
+    pub fn restore_bot_history(
+        &mut self,
+        room_id: &str,
+        receipts: Vec<crate::observation::BotTradeReceipt>,
+        complete: bool,
+    ) {
+        self.restored_bot_history.insert(
+            room_id.to_string(),
+            (std::sync::Arc::new(receipts), complete),
+        );
+    }
+
+    fn bot_trade_history(
+        &self,
+        room_id: &str,
+        instrument_id: &str,
+    ) -> Result<(Vec<crate::observation::BotTradeReceipt>, bool), RoomManagerError> {
+        use crate::{Event, PerpClearingEvent, SpotClearingEvent};
+        let mut receipts = BTreeMap::new();
+        let mut complete = true;
+        if let Some((restored, restored_complete)) = self.restored_bot_history.get(room_id) {
+            complete = *restored_complete;
+            for receipt in restored
+                .iter()
+                .filter(|receipt| receipt.instrument_id == instrument_id)
+            {
+                receipts.insert(receipt.trade.trade_id, receipt.clone());
+            }
+        }
+        for execution in self.execution_history(room_id)? {
+            if execution.instrument_id != instrument_id {
+                continue;
+            }
+            let mut fees = BTreeMap::new();
+            let events = match &execution.result {
+                ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
+                    for event in &result.clearing_events {
+                        let SpotClearingEvent::TradeSettled {
+                            trade_id,
+                            buyer_fee,
+                            seller_fee,
+                            ..
+                        } = event;
+                        fees.insert(*trade_id, (*buyer_fee, *seller_fee));
+                    }
+                    &result.events
+                }
+                ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
+                    for event in &result.clearing_events {
+                        if let PerpClearingEvent::TradeSettled {
+                            trade_id,
+                            buyer_fee,
+                            seller_fee,
+                            ..
+                        } = event
+                        {
+                            fees.insert(*trade_id, (*buyer_fee, *seller_fee));
+                        }
+                    }
+                    &result.events
+                }
+                ActorExecutionResult::Rejected(_) => continue,
+            };
+            for record in events {
+                if let Event::TradePrinted(trade) = &record.event {
+                    let fee = fees.get(&trade.trade_id);
+                    let receipt = crate::observation::BotTradeReceipt {
+                        instrument_id: instrument_id.to_string(),
+                        market_time_ms: execution.market_time_ms,
+                        trade: trade.clone(),
+                        buyer_fee: fee.map(|value| value.0),
+                        seller_fee: fee.map(|value| value.1),
+                    };
+                    if let Some(previous) = receipts.insert(trade.trade_id, receipt.clone())
+                        && previous != receipt
+                    {
+                        complete = false;
+                    }
+                }
+            }
+        }
+        Ok((receipts.into_values().collect(), complete))
     }
 
     pub fn venue_account_snapshot(
@@ -807,11 +972,49 @@ impl RoomManager {
         if self.status(room_id)? == crate::actor::MarketStatus::Closed {
             return Err(RoomManagerError::Simulation(SimulationRoomError::Closed));
         }
-        let transfers = self
-            .simulation_room_mut(room_id)
-            .map(|room| room.advance_clock(steps))?
-            .map_err(RoomManagerError::Simulation)?;
-        self.advance_pending_liquidations(room_id, usize::MAX)?;
+        if !self.simulation_room(room_id)?.has_funding() {
+            let transfers = self
+                .simulation_room_mut(room_id)?
+                .advance_clock(steps)
+                .map_err(RoomManagerError::Simulation)?;
+            self.advance_pending_liquidations(room_id, usize::MAX)?;
+            return Ok(transfers);
+        }
+        self.clock(room_id)?
+            .checked_time_after(steps)
+            .map_err(|error| RoomManagerError::Simulation(SimulationRoomError::Clock(error)))?;
+        if steps > 1 {
+            let mut staged = self.clone();
+            let transfers = staged.advance_clock_in_steps(room_id, steps)?;
+            *self = staged;
+            Ok(transfers)
+        } else {
+            self.advance_clock_in_steps(room_id, steps)
+        }
+    }
+
+    fn advance_clock_in_steps(
+        &mut self,
+        room_id: &str,
+        steps: u64,
+    ) -> Result<Vec<VenueTransfer>, RoomManagerError> {
+        let mut transfers = Vec::new();
+        for _ in 0..steps {
+            let room = self.simulation_room_mut(room_id)?;
+            transfers.extend(
+                room.advance_clock(1)
+                    .map_err(RoomManagerError::Simulation)?,
+            );
+            let funding = room.take_funding_executions();
+            self.executions
+                .entry(room_id.to_string())
+                .or_default()
+                .extend(funding);
+            self.advance_pending_liquidations(room_id, usize::MAX)?;
+        }
+        if steps == 0 {
+            self.advance_pending_liquidations(room_id, usize::MAX)?;
+        }
         Ok(transfers)
     }
 
@@ -988,6 +1191,8 @@ mod tests {
                 },
                 risk: PerpRiskConfig::default(),
                 initial_mark_price_tick: 100,
+                price_link: None,
+                funding: None,
             }),
             extra_markets: Vec::new(),
             initial_portfolios: Vec::new(),
@@ -1032,6 +1237,8 @@ mod tests {
                 },
                 risk: PerpRiskConfig::default(),
                 initial_mark_price_tick: 100,
+                price_link: None,
+                funding: None,
             })
         };
         ScenarioConfig {
@@ -1097,6 +1304,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 100,
+            price_link: None,
+            funding: None,
         });
         let config = ExchangeConfig::new("virtual", vec![spot, perp]).unwrap();
         let mut exchange = ExchangeActor::new(room_id, config).unwrap();
@@ -1169,6 +1378,8 @@ mod tests {
                 },
                 risk: PerpRiskConfig::default(),
                 initial_mark_price_tick: 100,
+                price_link: None,
+                funding: None,
             }),
             extra_markets: Vec::new(),
             initial_portfolios: vec![ScenarioPortfolio {
@@ -1304,6 +1515,99 @@ mod tests {
                 .any(|record| matches!(record.event, Event::TradePrinted(_)))
         );
         assert_eq!(manager.execution_history("room-1").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn bot_history_is_closed_complete_private_to_account_and_bounded() {
+        let mut scenario = spot_scenario("history");
+        scenario.seed_orders.clear();
+        scenario.accounts.push(ScenarioAccount::Basic {
+            account_id: 30,
+            cash_balance: 1000,
+        });
+        let mut manager = RoomManager::new();
+        manager.create_room(scenario).unwrap();
+        for index in 0..40u64 {
+            let (seller, buyer) = if index % 2 == 0 { (10, 20) } else { (20, 10) };
+            manager
+                .apply("history", limit(index * 2 + 1, seller, Side::Sell, 100, 1))
+                .unwrap();
+            manager
+                .apply("history", limit(index * 2 + 2, buyer, Side::Buy, 100, 1))
+                .unwrap();
+            manager.advance_clock("history", 1).unwrap();
+        }
+        let ordinary = manager
+            .participant_observation("history", "V-BTC-SPOT", 20)
+            .unwrap();
+        assert_eq!(ordinary.public_trades.len(), 32);
+        assert!(
+            serde_json::to_value(&ordinary)
+                .unwrap()
+                .get("bot_market_data")
+                .is_none()
+        );
+        let request = crate::bots::BotMarketDataRequest {
+            interval_ms: 1000,
+            max_bars: 64,
+        };
+        let view = manager
+            .bot_observation("history", "V-BTC-SPOT", 20, Some(request))
+            .unwrap();
+        let data = view.bot_market_data.unwrap();
+        assert_eq!(data.candles.len(), 40);
+        assert_eq!(data.own_fills.len(), 40);
+        assert!(!data.truncated);
+        assert!(
+            data.candles
+                .iter()
+                .all(|bar| bar.is_final && bar.close_time_ms <= view.market_time_ms)
+        );
+        let empty = manager
+            .bot_observation("history", "V-BTC-SPOT", 30, Some(request))
+            .unwrap();
+        assert!(empty.bot_market_data.unwrap().own_fills.is_empty());
+        let bounded = manager
+            .bot_observation(
+                "history",
+                "V-BTC-SPOT",
+                20,
+                Some(crate::bots::BotMarketDataRequest {
+                    max_bars: 2,
+                    ..request
+                }),
+            )
+            .unwrap();
+        let bounded = bounded.bot_market_data.unwrap();
+        assert!(bounded.truncated);
+        assert_eq!(bounded.candles.len(), 2);
+        assert_eq!(bounded.candles[0].open_time_ms, 38000);
+        manager
+            .apply("history", limit(81, 10, Side::Sell, 100, 1))
+            .unwrap();
+        manager
+            .apply("history", limit(82, 20, Side::Buy, 100, 1))
+            .unwrap();
+        let forming = manager
+            .bot_observation("history", "V-BTC-SPOT", 20, Some(request))
+            .unwrap();
+        assert_eq!(forming.bot_market_data.unwrap().candles.len(), 40);
+        assert!(
+            manager
+                .bot_observation(
+                    "history",
+                    "V-BTC-SPOT",
+                    20,
+                    Some(crate::bots::BotMarketDataRequest {
+                        max_bars: 4097,
+                        ..request
+                    })
+                )
+                .is_err()
+        );
+        let recovered: crate::ParticipantObservation =
+            serde_json::from_value(serde_json::to_value(ordinary).unwrap()).unwrap();
+        assert!(recovered.bot_market_data.is_none());
     }
 
     #[test]
@@ -1486,6 +1790,8 @@ mod tests {
                 },
                 risk: PerpRiskConfig::default(),
                 initial_mark_price_tick: 80,
+                price_link: None,
+                funding: None,
             }),
             extra_markets: Vec::new(),
             initial_portfolios: Vec::new(),

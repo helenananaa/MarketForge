@@ -83,6 +83,8 @@ pub struct PerpAccount {
     pub avg_entry_price_tick: PriceTick,
     pub realized_pnl: Money,
     pub fees_paid: Money,
+    #[serde(default, with = "crate::funding::json_money")]
+    pub funding_pnl: Money,
     pub reserved_margin: Money,
 }
 
@@ -117,6 +119,7 @@ impl PerpAccount {
             reserved_margin: self.reserved_margin,
             available_cash: self.available_cash(),
             fees_paid: self.fees_paid,
+            funding_pnl: self.funding_pnl,
         }
     }
 
@@ -155,6 +158,8 @@ pub struct PerpAccountSnapshot {
     #[serde(default)]
     pub available_cash: Money,
     pub fees_paid: Money,
+    #[serde(default, with = "crate::funding::json_money")]
+    pub funding_pnl: Money,
 }
 
 fn default_perp_margin_status() -> PerpMarginStatus {
@@ -182,6 +187,13 @@ pub struct PerpAutoDeleveragingAllocation {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum PerpClearingEvent {
+    FundingSettled {
+        account_id: AccountId,
+        funding_time_ms: u64,
+        rate_ppm: i32,
+        cash_delta: Money,
+        snapshot: PerpAccountSnapshot,
+    },
     TradeSettled {
         trade_id: u64,
         buyer_account_id: AccountId,
@@ -347,6 +359,7 @@ impl PerpAccountStore {
             avg_entry_price_tick: 0,
             realized_pnl: 0,
             fees_paid: 0,
+            funding_pnl: 0,
             reserved_margin: 0,
         });
         account.cash_balance = cash_balance;
@@ -360,6 +373,44 @@ impl PerpAccountStore {
 
     pub fn mark_price_tick(&self) -> PriceTick {
         self.mark_price_tick
+    }
+
+    pub(crate) fn settle_funding(
+        &mut self,
+        settlement: &mut crate::FundingSettlement,
+    ) -> Result<Vec<PerpClearingEvent>, ClearingError> {
+        if settlement.mark_price_tick != self.mark_price_tick {
+            return Err(ClearingError::InvalidPrice);
+        }
+        let allocations = crate::funding::funding_allocations(&self.snapshots(), settlement)?;
+        for (id, delta) in &allocations {
+            let account = self
+                .accounts
+                .get_mut(id)
+                .ok_or(ClearingError::AccountNotFound)?;
+            account.cash_balance = account
+                .cash_balance
+                .checked_add(*delta)
+                .ok_or(ClearingError::BalanceOverflow)?;
+            account.funding_pnl = account
+                .funding_pnl
+                .checked_add(*delta)
+                .ok_or(ClearingError::BalanceOverflow)?;
+        }
+        self.refresh_all_reserved_margins()?;
+        let mut events = self.refresh_all_margin_statuses();
+        for (id, delta) in allocations {
+            events.push(PerpClearingEvent::FundingSettled {
+                account_id: id,
+                funding_time_ms: settlement.funding_time_ms,
+                rate_ppm: settlement.rate_ppm,
+                cash_delta: delta,
+                snapshot: self
+                    .account_snapshot(id)
+                    .ok_or(ClearingError::AccountNotFound)?,
+            });
+        }
+        Ok(events)
     }
 
     pub fn sync_cash_balance(
@@ -1246,6 +1297,7 @@ impl PerpAccountStore {
             avg_entry_price_tick: 0,
             realized_pnl: 0,
             fees_paid: 0,
+            funding_pnl: 0,
             reserved_margin: 0,
         })
     }
@@ -1568,6 +1620,7 @@ mod tests {
                 reserved_margin: 0,
                 available_cash: 9_899,
                 fees_paid: 1,
+                funding_pnl: 0,
             })
         );
         assert_eq!(
@@ -1588,6 +1641,7 @@ mod tests {
                 reserved_margin: 0,
                 available_cash: 9_900,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
     }
@@ -1634,6 +1688,7 @@ mod tests {
                 reserved_margin: 120,
                 available_cash: -520,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
     }
@@ -1667,6 +1722,7 @@ mod tests {
                 reserved_margin: 0,
                 available_cash: -320,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
     }

@@ -293,6 +293,18 @@ impl PerpTradingEngine {
     }
 
     fn apply_inner(&mut self, command: Command) -> Result<PerpTradingExecution, ClearingError> {
+        if let Command::SettleFunding(mut settlement) = command {
+            let clearing_events = self.accounts.settle_funding(&mut settlement)?;
+            self.clearing_events.extend(clearing_events.iter().cloned());
+            let recorded = self
+                .log
+                .record(Command::SettleFunding(settlement), Vec::new());
+            return Ok(PerpTradingExecution {
+                command: recorded.command,
+                events: recorded.events,
+                clearing_events,
+            });
+        }
         if let Command::SetMarkPrice(mark_price) = command {
             let clearing_events = self.accounts.set_mark_price_tick(mark_price.price_tick)?;
             self.clearing_events.extend(clearing_events.iter().cloned());
@@ -722,9 +734,10 @@ fn risk_context(book: &OrderBook, command: &Command) -> Result<RiskContext, Clea
         Command::NewOrder(order) => {
             book.fill_quote(order.side, order.kind.limit_price_tick(), order.qty)?
         }
-        Command::CancelOrder(_) | Command::AmendOrder(_) | Command::SetMarkPrice(_) => {
-            Default::default()
-        }
+        Command::CancelOrder(_)
+        | Command::AmendOrder(_)
+        | Command::SetMarkPrice(_)
+        | Command::SettleFunding(_) => Default::default(),
     };
     Ok(RiskContext {
         best_bid: book.best_bid(),
@@ -1180,6 +1193,7 @@ mod tests {
                 reserved_margin: 0,
                 available_cash: 9_960,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
         assert_eq!(
@@ -1200,6 +1214,7 @@ mod tests {
                 reserved_margin: 60,
                 available_cash: 9_900,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
     }
@@ -1237,6 +1252,7 @@ mod tests {
                 reserved_margin: 100,
                 available_cash: 0,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
 
@@ -1287,6 +1303,7 @@ mod tests {
                 reserved_margin: 0,
                 available_cash: 100,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
     }
@@ -1326,6 +1343,7 @@ mod tests {
                 reserved_margin: 40,
                 available_cash: 60,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
     }

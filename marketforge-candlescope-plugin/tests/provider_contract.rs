@@ -95,6 +95,8 @@ fn perp_liquidation_scenario() -> ScenarioConfig {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 100,
+            price_link: None,
+            funding: None,
         }),
         extra_markets: Vec::new(),
         initial_portfolios: Vec::new(),

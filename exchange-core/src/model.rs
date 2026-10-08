@@ -95,6 +95,8 @@ pub enum Command {
     CancelOrder(CancelOrder),
     AmendOrder(AmendOrder),
     SetMarkPrice(SetMarkPrice),
+    /// Only the simulation clock may generate this clearing command.
+    SettleFunding(crate::FundingSettlement),
 }
 
 impl Command {
@@ -103,7 +105,7 @@ impl Command {
             Self::NewOrder(order) => order.order_id,
             Self::CancelOrder(cancel) => cancel.order_id,
             Self::AmendOrder(amend) => amend.order_id,
-            Self::SetMarkPrice(_) => 0,
+            Self::SetMarkPrice(_) | Self::SettleFunding(_) => 0,
         }
     }
 }

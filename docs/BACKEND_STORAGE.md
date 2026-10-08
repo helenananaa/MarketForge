@@ -1,5 +1,15 @@
 # Backend Storage
 
+Windows CandleScope users can run `scripts/start-candlescope-workbench.ps1` to initialize a
+project-owned PostgreSQL cluster and durable backend. Data and DPAPI-encrypted credentials are stored
+under `.local/candlescope-runtime/`; the helper binds PostgreSQL to loopback and verifies its data directory.
+`scripts/backup-candlescope-workbench.ps1` creates and checks a custom archive.
+See [workbench operations](CANDLESCOPE_WORKBENCH.md) for ports and restore verification.
+
+The managed standalone server restores committed Auto scheduler workers after journal recovery.
+Paused/closed rooms and disabled bots retain their state; recovery does not reseed participant accounts.
+Unfinished manual actions block automatic startup. Embedded recovery constructors still do not spawn workers.
+
 MarketForge keeps the matching engine in memory and persists the durable journal
 around it.
 

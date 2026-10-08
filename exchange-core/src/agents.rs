@@ -1135,6 +1135,8 @@ mod tests {
             public_trades: Vec::new(),
             own_orders: Vec::new(),
             own_account: None::<AccountSnapshot>,
+            bot_market_data: None,
+            perp_price: None,
         };
 
         first.observe(&empty_view);

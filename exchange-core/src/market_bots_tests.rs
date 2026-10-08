@@ -47,6 +47,8 @@ fn view(time: u64, mid: i64, position: i128) -> ParticipantObservation {
         },
         public_trades: vec![],
         own_orders: vec![],
+        bot_market_data: None,
+        perp_price: None,
         own_account: Some(AccountSnapshot::Spot(
             SpotAccount {
                 account_id: 20,
@@ -84,6 +86,40 @@ fn resting(id: u64, side: Side, price: i64, qty: u64) -> Order {
         remaining_qty: qty,
         seq: id,
     }
+}
+
+#[test]
+fn linked_perp_maker_prices_actual_orders_from_spot_index_and_withdraws_when_stale() {
+    let mut maker = bot("DynamicMarketMaker", json!({"inventory_target": 0}));
+    let mut observation = view(0, 100, 0);
+    observation.perp_price = Some(crate::PerpPriceSnapshot {
+        instrument_id: "V-BTC-PERP".into(),
+        spot_instrument_id: "V-BTC-SPOT".into(),
+        index_price_tick: Some(200),
+        mark_price_tick: 200,
+        source: Some(crate::IndexPriceSource::SpotMid),
+        source_time_ms: Some(0),
+        max_age_ms: 1000,
+        status: crate::PriceLinkStatus::Live,
+        funding: None,
+    });
+    let actions = maker.decide(&observation).unwrap();
+    assert!(actions.iter().any(|action| matches!(
+        action,
+        OrderAction::PlacePostOnly {
+            side: Side::Buy,
+            price_tick: 199,
+            ..
+        }
+    )));
+    observation.step = 2;
+    observation.market_time_ms = 2000;
+    observation.perp_price.as_mut().unwrap().status = crate::PriceLinkStatus::Stale;
+    observation.own_orders = vec![resting(1, Side::Buy, 199, 1)];
+    assert_eq!(
+        maker.decide(&observation).unwrap(),
+        vec![OrderAction::Cancel { order_id: 1 }]
+    );
 }
 
 #[test]

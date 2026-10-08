@@ -40,6 +40,8 @@ pub struct SimulationRoom {
     pending_venue_transfers: Vec<PendingVenueTransfer>,
     #[serde(default)]
     next_command_seq: ActorSeq,
+    #[serde(skip)]
+    pending_funding_executions: Vec<ActorExecution>,
 }
 
 impl SimulationRoom {
@@ -83,6 +85,7 @@ impl SimulationRoom {
             next_asset_ledger_seq: 0,
             pending_venue_transfers: Vec::new(),
             next_command_seq: 0,
+            pending_funding_executions: Vec::new(),
         };
 
         for portfolio in &scenario.initial_portfolios {
@@ -137,6 +140,7 @@ impl SimulationRoom {
             next_asset_ledger_seq: 0,
             pending_venue_transfers: Vec::new(),
             next_command_seq,
+            pending_funding_executions: Vec::new(),
         }
     }
 
@@ -154,6 +158,13 @@ impl SimulationRoom {
 
     pub fn venue_ids(&self) -> Vec<&str> {
         self.exchanges.keys().map(String::as_str).collect()
+    }
+
+    pub fn instrument_ids(&self) -> Vec<String> {
+        self.exchanges
+            .values()
+            .flat_map(|exchange| exchange.instrument_ids().into_iter().map(str::to_string))
+            .collect()
     }
 
     pub fn primary_exchange(&self) -> &ExchangeActor {
@@ -267,6 +278,21 @@ impl SimulationRoom {
 
     pub fn book_snapshot(&self) -> BookSnapshot {
         self.primary_exchange().book_snapshot()
+    }
+
+    pub fn perp_price_snapshot(
+        &self,
+        instrument_id: &str,
+    ) -> Result<Option<crate::PerpPriceSnapshot>, ActorRejectReason> {
+        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
+            ActorRejectReason::InstrumentNotFound {
+                instrument_id: instrument_id.to_string(),
+            }
+        })?;
+        self.exchanges
+            .get(&venue_id)
+            .expect("resolved venue")
+            .perp_price_snapshot(instrument_id)
     }
 
     pub fn book_snapshot_for(
@@ -422,6 +448,16 @@ impl SimulationRoom {
         self.primary_exchange().clock()
     }
 
+    pub(crate) fn has_funding(&self) -> bool {
+        self.exchanges.values().any(|exchange| {
+            exchange
+                .config()
+                .markets
+                .iter()
+                .any(|market| matches!(market, MarketConfig::Perp(perp) if perp.funding.is_some()))
+        })
+    }
+
     pub fn advance_clock(&mut self, steps: u64) -> Result<Vec<VenueTransfer>, SimulationRoomError> {
         self.clock()
             .checked_time_after(steps)
@@ -430,6 +466,10 @@ impl SimulationRoom {
         let completed = staged.advance_clock_inner(steps)?;
         *self = staged;
         Ok(completed)
+    }
+
+    pub(crate) fn take_funding_executions(&mut self) -> Vec<ActorExecution> {
+        std::mem::take(&mut self.pending_funding_executions)
     }
 
     fn advance_clock_inner(
@@ -452,7 +492,12 @@ impl SimulationRoom {
                 let due = exchange
                     .advance_clock_venue_only(1)
                     .map_err(SimulationRoomError::Clearing)?;
+                let funding = exchange.take_funding_executions();
                 due_by_venue.push((venue_id.clone(), due));
+                for mut execution in funding {
+                    execution.command_seq = self.take_command_seq();
+                    self.pending_funding_executions.push(execution);
+                }
             }
 
             // Make all venue completions visible before creating the linked

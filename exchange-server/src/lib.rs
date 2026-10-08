@@ -14,12 +14,14 @@ use std::{
 };
 
 pub mod auth;
+mod bot_history;
 pub mod bot_plugins;
 mod historical_queries;
 pub mod journal;
 mod realtime;
 #[cfg(test)]
 mod realtime_tests;
+mod simulation_ws;
 pub mod storage_audit;
 
 use axum::{
@@ -79,7 +81,12 @@ pub const ROOM_LEASE_RENEW_INTERVAL_MS_ENV: &str = "MARKETFORGE_ROOM_LEASE_RENEW
 const DEFAULT_ROOM_LEASE_DURATION_MS: u64 = 15_000;
 const DEFAULT_ROOM_LEASE_RENEW_INTERVAL_MS: u64 = 5_000;
 const MIN_ROOM_LEASE_RENEW_INTERVAL_MS: u64 = 10;
-const DEFAULT_CORS_ORIGINS: &[&str] = &["http://127.0.0.1:57304", "http://localhost:57304"];
+const DEFAULT_CORS_ORIGINS: &[&str] = &[
+    "http://127.0.0.1:57304",
+    "http://localhost:57304",
+    "http://127.0.0.1:15173",
+    "http://localhost:15173",
+];
 const SYSTEM_LIQUIDATION_ORDER_ID_BASE: OrderId = 9_000_000_000_000_000_000;
 
 struct ServerState {
@@ -596,8 +603,11 @@ impl AppState {
         {
             retain_recovery_rooms(&mut recovery, &runtime.leases);
         }
-        let rooms = recover_rooms(&recovery)?;
+        let mut rooms = recover_rooms(&recovery)?;
         let schedulers = scheduler_states_from_recovery(&recovery);
+        let bot_registry = bot_plugins::bot_registry_from_env()
+            .map_err(|error| JournalError::Recovery(error.to_string()))?;
+        bot_history::restore(&mut rooms, &schedulers, &bot_registry, &mut *journal.writer)?;
         let executions = execution_summaries_from_recovery(&recovery);
         let journal = if journal.readers.is_empty() {
             JournalCoordinator::new(journal.writer)
@@ -606,7 +616,7 @@ impl AppState {
         };
 
         Ok(Self {
-            bot_registry: exchange_core::BotRegistry::with_builtins(),
+            bot_registry,
             rooms,
             executions,
             room_event_senders: BTreeMap::new(),
@@ -1007,15 +1017,12 @@ where
     F: FnOnce() -> Result<JournalStoreBundle, JournalError>,
 {
     let journal = journal_factory()?;
-    let registry = bot_plugins::bot_registry_from_env()
-        .map_err(|error| JournalError::Recovery(error.to_string()))?;
-    let mut state = AppState::recover_with_journal_bundle_and_auth_policy(
+    let state = AppState::recover_with_journal_bundle_and_auth_policy(
         base_url,
         journal,
         auth_policy,
         room_lease_config,
     )?;
-    state.bot_registry = registry;
     for scheduler in state.schedulers.values() {
         for agent in &scheduler.agents {
             state
@@ -1300,6 +1307,7 @@ where
     )
     .await
     .map_err(|error| io::Error::other(error.to_string()))?;
+    simulation_ws::restore_auto_workers(&state).await?;
     let lease_renewer = tokio::spawn(run_room_lease_renewer(state.clone()));
     let app = app_with_cors_origins(state.clone(), cors_origins);
     let lifecycle = state.lifecycle.clone();
@@ -1537,7 +1545,7 @@ fn app(state: SharedState) -> Router {
 
 fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> Router {
     let cors = CorsLayer::new()
-        .allow_origin(cors_origins)
+        .allow_origin(cors_origins.clone())
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([
             axum::http::header::CONTENT_TYPE,
@@ -1547,13 +1555,25 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
             HeaderName::from_static("last-event-id"),
         ]);
 
+    let ws_origins = Arc::new(cors_origins.clone());
     Router::new()
+        .route("/runtime", get(simulation_ws::runtime_info))
+        .route(
+            "/rooms/{room_id}/ws",
+            get(move |state, headers, path, query, upgrade| {
+                simulation_ws::upgrade(state, headers, path, query, upgrade, ws_origins.clone())
+            }),
+        )
         .route("/health", get(readiness))
         .route("/health/live", get(liveness))
         .route("/health/ready", get(readiness))
         .route("/metrics", get(metrics))
         .route("/cluster/rooms", get(cluster_rooms))
         .route("/bots", get(list_bots))
+        .route(
+            "/scenarios/background-market",
+            get(background_market_recipe),
+        )
         .route("/training/runs", post(start_training_run))
         .route("/training/runs/{run_id}", get(training_run_status))
         .route("/training/runs/{run_id}/abort", post(abort_training_run))
@@ -2041,6 +2061,20 @@ fn append_prometheus_metric(
     writeln!(body, "# HELP {name} {help}").expect("writing metrics to a String cannot fail");
     writeln!(body, "# TYPE {name} {metric_type}").expect("writing metrics to a String cannot fail");
     writeln!(body, "{name} {value}").expect("writing metrics to a String cannot fail");
+}
+
+/// The backend owns the training recipe; frontends only choose its room name.
+async fn background_market_recipe(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+) -> ApiResult<CreateRoomRequest> {
+    let state = lock_state(&state).await?;
+    current_user_id(&headers, &state.auth_policy)?;
+    serde_json::from_str(include_str!(
+        "../../scripts/fixtures/background_market.json"
+    ))
+    .map(Json)
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))
 }
 
 async fn list_bots(
@@ -2623,6 +2657,8 @@ fn execution_summary_matches(
         && stored.status == replayed.status
         && stored.accepted == replayed.accepted
         && stored.reject_reason == replayed.reject_reason
+        && stored.price_updates == replayed.price_updates
+        && stored.funding_settlement == replayed.funding_settlement
         && stored.clearing_event_count == replayed.clearing_event_count
         && clearing_event_summaries_match(
             stored.clearing_event_count,
@@ -4584,6 +4620,23 @@ async fn ensure_room_owned(state: &SharedState, room_id: &str) -> Result<(), Api
         }
         return Err(api_error_from_room(error));
     }
+    let bot_registry = app.bot_registry.clone();
+    if let Err(error) = bot_history::restore_async(
+        &mut app.rooms,
+        room_id,
+        scheduler.as_ref(),
+        &bot_registry,
+        &journal,
+    )
+    .await
+    {
+        let _ = journal.release_room_writer_lease(&renewed.claim).await;
+        if let Some(runtime) = app.room_lease_runtime.as_mut() {
+            runtime.leases.remove(room_id);
+            runtime.lost_rooms.insert(room_id.to_string());
+        }
+        return Err(api_error_from_journal(error));
+    }
     app.executions
         .insert(room_id.to_string(), cached_executions);
     for tick in last_market_ticks {
@@ -4640,6 +4693,10 @@ async fn market_view_response(
     let room = state.rooms.room(&room_id).map_err(api_error_from_room)?;
     let venue_id = room.venue_id().to_string();
     let instrument_id = instrument_id.unwrap_or_else(|| room.primary_instrument_id().to_string());
+    let simulation = state
+        .rooms
+        .simulation_room(&room_id)
+        .map_err(api_error_from_room)?;
     Ok(Json(MarketView {
         room_id: room_id.clone(),
         venue_id,
@@ -4653,6 +4710,10 @@ async fn market_view_response(
             .rooms
             .account_snapshots_for(&room_id, &instrument_id)
             .map_err(api_error_from_room)?,
+        instruments: simulation.instrument_ids(),
+        perp_price: simulation
+            .perp_price_snapshot(&instrument_id)
+            .map_err(|error| api_error_from_room(RoomManagerError::Actor(error)))?,
     }))
 }
 
@@ -4702,6 +4763,8 @@ pub struct TickerResponse {
     pub instrument_id: InstrumentId,
     pub market_time_ms: u64,
     pub ticker: exchange_core::Ticker,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub perp_price: Option<exchange_core::PerpPriceSnapshot>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -4769,12 +4832,19 @@ async fn ticker_response(
         .rooms
         .ticker(&room_id, &instrument_id)
         .map_err(api_error_from_room)?;
+    let perp_price = state
+        .rooms
+        .simulation_room(&room_id)
+        .map_err(api_error_from_room)?
+        .perp_price_snapshot(&instrument_id)
+        .map_err(|error| api_error_from_room(RoomManagerError::Actor(error)))?;
     Ok(Json(TickerResponse {
         api_version: "http.v1".to_string(),
         room_id,
         instrument_id,
         market_time_ms: clock.market_time_ms(),
         ticker,
+        perp_price,
     }))
 }
 
@@ -5264,11 +5334,39 @@ async fn scoped_event_from_execution(
                 "instrument_id": execution.instrument_id,
                 "events": kinds,
                 "accepted": execution.accepted,
+                "price_updates": execution.price_updates,
+                "funding_settlement": execution.funding_settlement,
             }),
         }),
         StreamScope::Private => {
             if !user_can_see_private_execution(execution, user_id, journal).await {
                 return None;
+            }
+            let mut visible = execution.clone();
+            if execution.funding_settlement.is_some()
+                && !journal
+                    .user_can_administer_room(user_id, &execution.room_id)
+                    .await
+                    .unwrap_or(false)
+            {
+                visible.clearing_events.clear();
+                for event in &execution.clearing_events {
+                    let id = match event {
+                        ClearingEventSummary::PerpFundingSettled { account_id, .. }
+                        | ClearingEventSummary::PerpMarginStatusChanged { account_id, .. } => {
+                            *account_id
+                        }
+                        _ => continue,
+                    };
+                    if journal
+                        .user_can_access_account(user_id, &execution.room_id, id)
+                        .await
+                        .unwrap_or(false)
+                    {
+                        visible.clearing_events.push(event.clone());
+                    }
+                }
+                visible.clearing_event_count = visible.clearing_events.len();
             }
             Some(UserStreamEvent {
                 api_version: "http.v1".to_string(),
@@ -5276,7 +5374,7 @@ async fn scoped_event_from_execution(
                 stream_seq,
                 command_seq: Some(execution.command_seq),
                 kind: "execution".to_string(),
-                payload: serde_json::to_value(execution).unwrap_or_else(|_| serde_json::json!({})),
+                payload: serde_json::to_value(visible).unwrap_or_else(|_| serde_json::json!({})),
             })
         }
         StreamScope::Public => None,
@@ -5334,6 +5432,9 @@ async fn user_can_see_private_execution(
     }
     for clearing in &execution.clearing_events {
         match clearing {
+            ClearingEventSummary::PerpFundingSettled { account_id, .. } => {
+                accounts.push(*account_id)
+            }
             ClearingEventSummary::SpotTradeSettled {
                 buyer_account_id,
                 seller_account_id,
@@ -7154,6 +7255,10 @@ pub struct RoomExecutionSummary {
     #[serde(default)]
     pub clearing_events: Vec<ClearingEventSummary>,
     pub clearing_event_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub price_updates: Vec<exchange_core::PerpPriceSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub funding_settlement: Option<exchange_core::FundingSettlement>,
     #[serde(skip)]
     clearing_events_omitted: bool,
 }
@@ -7175,6 +7280,10 @@ struct RoomExecutionSummaryPayload {
     #[serde(default)]
     clearing_events: Vec<ClearingEventSummary>,
     clearing_event_count: usize,
+    #[serde(default)]
+    price_updates: Vec<exchange_core::PerpPriceSnapshot>,
+    #[serde(default)]
+    funding_settlement: Option<exchange_core::FundingSettlement>,
 }
 
 impl<'de> Deserialize<'de> for RoomExecutionSummary {
@@ -7199,6 +7308,8 @@ impl<'de> Deserialize<'de> for RoomExecutionSummary {
             events: payload.events,
             clearing_events: payload.clearing_events,
             clearing_event_count: payload.clearing_event_count,
+            price_updates: payload.price_updates,
+            funding_settlement: payload.funding_settlement,
             clearing_events_omitted,
         })
     }
@@ -7234,6 +7345,8 @@ impl RoomExecutionSummary {
             clearing_events,
             clearing_event_count,
             clearing_events_omitted: false,
+            price_updates: execution.price_updates,
+            funding_settlement: execution.funding_settlement,
         }
     }
 }
@@ -7319,6 +7432,10 @@ pub struct OrderResponse {
     pub events: Vec<EventSummary>,
     pub clearing_events: Vec<ClearingEventSummary>,
     pub clearing_event_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub price_updates: Vec<exchange_core::PerpPriceSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub funding_settlement: Option<exchange_core::FundingSettlement>,
 }
 
 impl OrderResponse {
@@ -7353,6 +7470,8 @@ impl OrderResponse {
             events: summary.events,
             clearing_events: summary.clearing_events,
             clearing_event_count: summary.clearing_event_count,
+            price_updates: summary.price_updates,
+            funding_settlement: summary.funding_settlement,
         }
     }
 }
@@ -7396,6 +7515,16 @@ fn reject_reason_to_string(reason: ActorRejectReason) -> String {
             format!("instrument not found: {instrument_id}")
         }
         ActorRejectReason::WrongMarketKind => "wrong market kind".to_string(),
+        ActorRejectReason::PriceLinkNotReady => {
+            "spot index unavailable or stale; only reduce-only orders and cancellations are allowed"
+                .to_string()
+        }
+        ActorRejectReason::FundingManaged => {
+            "funding is managed by the simulation clock".to_string()
+        }
+        ActorRejectReason::LinkedMarkPriceManaged => {
+            "linked perpetual mark price is managed by its spot index".to_string()
+        }
         ActorRejectReason::VenueRule(reason) => format!("venue rule rejected: {reason:?}"),
         ActorRejectReason::Clearing(error) => format!("clearing error: {error:?}"),
     }
@@ -7482,6 +7611,14 @@ pub enum EventSummary {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type")]
 pub enum ClearingEventSummary {
+    PerpFundingSettled {
+        account_id: AccountId,
+        funding_time_ms: u64,
+        rate_ppm: i32,
+        #[serde(with = "json_i128")]
+        cash_delta: i128,
+        account: PerpAccountStateSummary,
+    },
     SpotTradeSettled {
         trade_id: u64,
         buyer_account_id: AccountId,
@@ -7605,6 +7742,8 @@ pub struct PerpAccountStateSummary {
     pub available_cash: i128,
     #[serde(with = "json_i128")]
     pub fees_paid: i128,
+    #[serde(default, with = "json_i128")]
+    pub funding_pnl: i128,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -7647,6 +7786,7 @@ impl PerpAccountStateSummary {
             reserved_margin: snapshot.reserved_margin,
             available_cash: snapshot.available_cash,
             fees_paid: snapshot.fees_paid,
+            funding_pnl: snapshot.funding_pnl,
         }
     }
 }
@@ -7682,6 +7822,19 @@ impl ClearingEventSummary {
 
     fn from_perp(event: PerpClearingEvent) -> Self {
         match event {
+            PerpClearingEvent::FundingSettled {
+                account_id,
+                funding_time_ms,
+                rate_ppm,
+                cash_delta,
+                snapshot,
+            } => Self::PerpFundingSettled {
+                account_id,
+                funding_time_ms,
+                rate_ppm,
+                cash_delta,
+                account: PerpAccountStateSummary::from_snapshot(snapshot),
+            },
             PerpClearingEvent::TradeSettled {
                 trade_id,
                 buyer_account_id,
@@ -8893,6 +9046,8 @@ fn observation_from_market_view(
         public_trades: Vec::new(),
         own_orders: Vec::new(),
         own_account,
+        bot_market_data: None,
+        perp_price: view.perp_price.clone(),
     }
 }
 
@@ -9396,7 +9551,10 @@ fn execution_account_id(execution: &exchange_core::ActorExecution) -> Option<Acc
         ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
             match &result.command.command {
                 Command::NewOrder(order) => Some(order.account_id),
-                Command::CancelOrder(_) | Command::AmendOrder(_) | Command::SetMarkPrice(_) => None,
+                Command::CancelOrder(_)
+                | Command::AmendOrder(_)
+                | Command::SetMarkPrice(_)
+                | Command::SettleFunding(_) => None,
             }
         }
         ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
@@ -9426,6 +9584,8 @@ impl std::error::Error for AgentWorkerError {}
 
 #[cfg(test)]
 mod tests {
+    include!("price_link_tests.rs");
+    include!("funding_tests.rs");
     use super::*;
     use axum::{
         body::Body,
@@ -9534,6 +9694,8 @@ mod tests {
 
     fn synthetic_execution(room_id: &str, command_seq: u64) -> RoomExecutionSummary {
         RoomExecutionSummary {
+            price_updates: Vec::new(),
+            funding_settlement: None,
             room_id: room_id.to_string(),
             instrument_id: Some("V-BTC-SPOT".to_string()),
             submit_account_id: None,
@@ -10007,6 +10169,8 @@ mod tests {
                 },
                 risk: exchange_core::PerpRiskConfig::default(),
                 initial_mark_price_tick: 100,
+                price_link: None,
+                funding: None,
             })],
             initial_portfolios: Vec::new(),
             initial_allocations: Vec::new(),
@@ -10057,6 +10221,8 @@ mod tests {
                 },
                 risk: exchange_core::PerpRiskConfig::default(),
                 initial_mark_price_tick: 100,
+                price_link: None,
+                funding: None,
             })
         };
 
@@ -10110,6 +10276,8 @@ mod tests {
                 },
                 risk: exchange_core::PerpRiskConfig::default(),
                 initial_mark_price_tick,
+                price_link: None,
+                funding: None,
             }),
             extra_markets: Vec::new(),
             initial_portfolios: Vec::new(),
@@ -10183,6 +10351,77 @@ mod tests {
         assert!(allowed_headers.contains("last-event-id"));
     }
 
+    #[tokio::test]
+    async fn candlescope_background_recipe_creates_a_room_with_backend_owned_accounts() {
+        let app = new_app();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/scenarios/background-market")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut recipe: CreateRoomRequest = response_json(response).await;
+        assert_eq!(recipe.agents.len(), 20);
+        recipe.autostart_agents = Some(false);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&recipe).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/rooms/background-market/observe?account_id=20")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let observed: serde_json::Value = response_json(response).await;
+        assert_eq!(
+            observed["observation"]["own_account"]["Spot"]["account_id"],
+            20
+        );
+    }
+
+    #[tokio::test]
+    async fn candlescope_origin_can_send_authenticated_idempotent_orders() {
+        let response = new_app()
+            .oneshot(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri("/rooms/example/orders")
+                    .header("origin", "http://127.0.0.1:15173")
+                    .header("access-control-request-method", "POST")
+                    .header(
+                        "access-control-request-headers",
+                        "authorization, content-type, idempotency-key",
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            "http://127.0.0.1:15173"
+        );
+    }
+
     #[test]
     fn account_summaries_preserve_i128_values() {
         let summary = SpotAccountStateSummary::from_snapshot(SpotAccountSnapshot {
@@ -10216,6 +10455,8 @@ mod tests {
         assert_eq!(normal_json["cash_balance"], 42);
 
         let execution = RoomExecutionSummary {
+            price_updates: Vec::new(),
+            funding_settlement: None,
             room_id: "i128-room".to_string(),
             instrument_id: Some("V-BTC-SPOT".to_string()),
             submit_account_id: None,
@@ -10274,6 +10515,8 @@ mod tests {
     #[test]
     fn recovery_execution_validation_rejects_same_count_with_different_clearing_amounts() {
         let stored = RoomExecutionSummary {
+            price_updates: Vec::new(),
+            funding_settlement: None,
             room_id: "clearing-validation-room".to_string(),
             instrument_id: Some("V-BTC-SPOT".to_string()),
             submit_account_id: None,
@@ -10552,6 +10795,8 @@ mod tests {
                 },
                 risk: exchange_core::PerpRiskConfig::default(),
                 initial_mark_price_tick: 100,
+                price_link: None,
+                funding: None,
             })
         };
         let scenario = ScenarioConfig {

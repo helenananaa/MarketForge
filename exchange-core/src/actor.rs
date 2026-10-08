@@ -63,6 +63,18 @@ pub struct ExchangeActor {
     clock: SimulationClock,
     transfers: VenueTransferStore,
     next_command_seq: ActorSeq,
+    #[serde(default)]
+    price_links: BTreeMap<InstrumentId, crate::PerpPriceSnapshot>,
+    #[serde(default)]
+    spot_trade_prices: BTreeMap<InstrumentId, crate::price_link::SpotTradePrice>,
+    #[serde(default)]
+    funding_states: BTreeMap<InstrumentId, crate::funding::FundingState>,
+    #[serde(skip)]
+    pending_funding_executions: Vec<ActorExecution>,
+    /// The unpaid part of logical collateral after funding. Risk requirements
+    /// remain unchanged; only the cash that can actually be frozen is capped.
+    #[serde(default)]
+    funding_collateral_shortfalls: MarketReservations,
 }
 
 impl ExchangeActor {
@@ -93,6 +105,11 @@ impl ExchangeActor {
             next_command_seq: 0,
             clock: SimulationClock::default(),
             transfers: VenueTransferStore::new(),
+            price_links: BTreeMap::new(),
+            spot_trade_prices: BTreeMap::new(),
+            funding_states: BTreeMap::new(),
+            pending_funding_executions: Vec::new(),
+            funding_collateral_shortfalls: BTreeMap::new(),
         })
     }
 
@@ -143,6 +160,11 @@ impl ExchangeActor {
             next_command_seq,
             clock: SimulationClock::default(),
             transfers: VenueTransferStore::new(),
+            price_links: BTreeMap::new(),
+            spot_trade_prices: BTreeMap::new(),
+            funding_states: BTreeMap::new(),
+            pending_funding_executions: Vec::new(),
+            funding_collateral_shortfalls: BTreeMap::new(),
         })
     }
 
@@ -283,6 +305,15 @@ impl ExchangeActor {
         steps: u64,
     ) -> Result<Vec<VenueTransfer>, ClearingError> {
         let mut staged = self.clone();
+        staged
+            .clock
+            .checked_time_after(steps)
+            .map_err(|_| ClearingError::BalanceOverflow)?;
+        let has_funding = staged
+            .config
+            .markets
+            .iter()
+            .any(|market| matches!(market, MarketConfig::Perp(perp) if perp.funding.is_some()));
         let mut completed = Vec::new();
         for _ in 0..steps {
             staged.clock.advance_step();
@@ -290,10 +321,164 @@ impl ExchangeActor {
                 .transfers
                 .process_due(&mut staged.venue_accounts, staged.clock.step());
             completed.extend(due);
+            if has_funding {
+                staged.sync_all_accounts_after_external_balance_change_inner()?;
+                staged.advance_funding()?;
+            }
         }
         staged.sync_all_accounts_after_external_balance_change_inner()?;
         *self = staged;
         Ok(completed)
+    }
+
+    pub(crate) fn take_funding_executions(&mut self) -> Vec<ActorExecution> {
+        std::mem::take(&mut self.pending_funding_executions)
+    }
+
+    fn funding_snapshot(
+        &self,
+        id: &str,
+        price: &crate::PerpPriceSnapshot,
+    ) -> Option<crate::FundingSnapshot> {
+        let MarketConfig::Perp(config) = self.markets.get(id)?.config() else {
+            return None;
+        };
+        let funding = config.funding.as_ref()?;
+        let initial = crate::funding::FundingState::new(funding);
+        let state = self.funding_states.get(id).unwrap_or(&initial);
+        let instantaneous =
+            crate::funding::sample_rate(funding, price, &self.markets[id].book_snapshot());
+        Some(crate::FundingSnapshot {
+            market_time_ms: self.clock.market_time_ms(),
+            interval_ms: funding.interval_ms,
+            base_rate_ppm: funding.base_rate_ppm,
+            max_rate_ppm: funding.max_rate_ppm,
+            min_coverage_ppm: funding.min_coverage_ppm,
+            estimated_rate_ppm: instantaneous.map(|_| {
+                if state.covered_ms > 0 {
+                    (state.rate_time_sum / i128::from(state.covered_ms)).clamp(
+                        -i128::from(funding.max_rate_ppm),
+                        i128::from(funding.max_rate_ppm),
+                    ) as i32
+                } else {
+                    instantaneous.expect("valid sample").clamp(
+                        -i128::from(funding.max_rate_ppm),
+                        i128::from(funding.max_rate_ppm),
+                    ) as i32
+                }
+            }),
+            next_funding_time_ms: state.next_funding_time_ms,
+            covered_ms: state.covered_ms,
+            last_settlement: state.last_settlement.clone(),
+        })
+    }
+
+    fn advance_funding(&mut self) -> Result<(), ClearingError> {
+        let configs: Vec<_> = self
+            .config
+            .markets
+            .iter()
+            .filter_map(|market| {
+                let MarketConfig::Perp(config) = market else {
+                    return None;
+                };
+                Some((
+                    config.instrument.instrument_id.clone(),
+                    config.funding.clone()?,
+                ))
+            })
+            .collect();
+        let now = self.clock.market_time_ms();
+        for (id, config) in configs {
+            let price = self
+                .perp_price_snapshot(&id)
+                .expect("configured market")
+                .expect("funding requires a link");
+            let sample =
+                crate::funding::sample_rate(&config, &price, &self.markets[&id].book_snapshot());
+            let state = self
+                .funding_states
+                .entry(id.clone())
+                .or_insert_with(|| crate::funding::FundingState::new(&config));
+            if let Some(rate) = sample {
+                state.covered_ms = state
+                    .covered_ms
+                    .checked_add(self.clock.step_duration_ms())
+                    .ok_or(ClearingError::BalanceOverflow)?;
+                state.rate_time_sum = state
+                    .rate_time_sum
+                    .checked_add(
+                        rate.checked_mul(i128::from(self.clock.step_duration_ms()))
+                            .ok_or(ClearingError::BalanceOverflow)?,
+                    )
+                    .ok_or(ClearingError::BalanceOverflow)?;
+            }
+            if now < state.next_funding_time_ms {
+                continue;
+            }
+            let status = if sample.is_some()
+                && u128::from(state.covered_ms) * 1_000_000
+                    >= u128::from(config.interval_ms) * u128::from(config.min_coverage_ppm)
+            {
+                crate::FundingStatus::Settled
+            } else {
+                crate::FundingStatus::SkippedPrices
+            };
+            let rate_ppm = if state.covered_ms > 0 {
+                (state.rate_time_sum / i128::from(state.covered_ms)).clamp(
+                    -i128::from(config.max_rate_ppm),
+                    i128::from(config.max_rate_ppm),
+                ) as i32
+            } else {
+                0
+            };
+            let settlement = crate::FundingSettlement {
+                instrument_id: id.clone(),
+                funding_time_ms: state.next_funding_time_ms,
+                interval_ms: config.interval_ms,
+                covered_ms: state.covered_ms,
+                rate_ppm,
+                mark_price_tick: price.mark_price_tick,
+                status,
+                total_transfer: 0,
+            };
+            let command_seq = self.take_command_seq();
+            self.sync_market_accounts_from_venue(&id)?;
+            let MarketEngine::Perp(engine) =
+                &mut self.markets.get_mut(&id).expect("configured market").engine
+            else {
+                unreachable!();
+            };
+            let result = engine.apply(Command::SettleFunding(settlement))?;
+            let Command::SettleFunding(settlement) = &result.command.command else {
+                unreachable!();
+            };
+            let execution = ActorExecution {
+                room_id: self.room_id.clone(),
+                instrument_id: id.clone(),
+                command_seq,
+                market_time_ms: now,
+                status: self.status(),
+                price_updates: Vec::new(),
+                funding_settlement: Some(settlement.clone()),
+                result: ActorExecutionResult::Accepted(MarketExecution::Perp(result)),
+            };
+            self.sync_venue_accounts_from_execution(&id, &execution)?;
+            self.sync_all_accounts_after_external_balance_change_inner()?;
+            let state = self
+                .funding_states
+                .get_mut(&id)
+                .expect("funding state initialized");
+            state.last_settlement = execution.funding_settlement.clone();
+            state.next_funding_time_ms = state
+                .next_funding_time_ms
+                .checked_add(config.interval_ms)
+                .ok_or(ClearingError::BalanceOverflow)?;
+            state.covered_ms = 0;
+            state.rate_time_sum = 0;
+            self.pending_funding_executions.push(execution);
+        }
+        Ok(())
     }
 
     pub fn submit_deposit(
@@ -769,11 +954,54 @@ impl ExchangeActor {
         }
 
         let command_seq = self.take_command_seq();
+        if matches!(command, Command::SettleFunding(_)) {
+            return Ok(ActorExecution {
+                room_id: self.room_id.clone(),
+                instrument_id: instrument_id.into(),
+                command_seq,
+                market_time_ms: self.clock.market_time_ms(),
+                status: self.status(),
+                result: ActorExecutionResult::Rejected(ActorRejectReason::FundingManaged),
+                price_updates: Vec::new(),
+                funding_settlement: None,
+            });
+        }
+        if let Some(price) = self.perp_price_snapshot(instrument_id)? {
+            let rejection = match &command {
+                Command::SetMarkPrice(_) => Some(ActorRejectReason::LinkedMarkPriceManaged),
+                Command::NewOrder(order)
+                    if !order.reduce_only && price.status != crate::PriceLinkStatus::Live =>
+                {
+                    Some(ActorRejectReason::PriceLinkNotReady)
+                }
+                Command::AmendOrder(_) if price.status != crate::PriceLinkStatus::Live => {
+                    Some(ActorRejectReason::PriceLinkNotReady)
+                }
+                _ => None,
+            };
+            if let Some(reason) = rejection {
+                return Ok(ActorExecution {
+                    price_updates: Vec::new(),
+                    funding_settlement: None,
+                    room_id: self.room_id.clone(),
+                    instrument_id: instrument_id.to_string(),
+                    command_seq,
+                    market_time_ms: self.clock.market_time_ms(),
+                    status: self.status(),
+                    result: ActorExecutionResult::Rejected(reason),
+                });
+            }
+        }
+        let before_book = self.config.markets.iter().any(|market| {
+            matches!(market, MarketConfig::Perp(perp) if perp.price_link.as_ref().is_some_and(|link| link.spot_instrument_id == instrument_id))
+        }).then(|| self.markets[instrument_id].book_snapshot());
         let affected_perp_quote_assets = self
             .perp_quote_assets_affected_by_instrument(instrument_id)
             .expect("instrument existence was checked above");
         if let Some(rejection) = self.check_venue_rules(instrument_id, &command)? {
             return Ok(ActorExecution {
+                price_updates: Vec::new(),
+                funding_settlement: None,
                 room_id: self.room_id.clone(),
                 instrument_id: instrument_id.to_string(),
                 command_seq,
@@ -804,6 +1032,16 @@ impl ExchangeActor {
             {
                 return Ok(self.clearing_rejection(instrument_id, command_seq, error));
             }
+            if let Err(error) =
+                staged.refresh_price_links(instrument_id, before_book.as_ref(), &mut execution)
+            {
+                return Ok(self.clearing_rejection(instrument_id, command_seq, error));
+            }
+            if !execution.price_updates.is_empty()
+                && let Err(error) = staged.reconcile_market_reservations()
+            {
+                return Ok(self.clearing_rejection(instrument_id, command_seq, error));
+            }
             for quote_asset in &affected_perp_quote_assets {
                 if let Err(error) = staged.sync_perp_cross_margin_group(quote_asset) {
                     return Ok(self.clearing_rejection(instrument_id, command_seq, error));
@@ -812,6 +1050,145 @@ impl ExchangeActor {
         }
         *self = staged;
         Ok(execution)
+    }
+
+    pub fn perp_price_snapshot(
+        &self,
+        instrument_id: &str,
+    ) -> Result<Option<crate::PerpPriceSnapshot>, ActorRejectReason> {
+        let market = self.market(instrument_id)?;
+        let MarketConfig::Perp(config) = market.config() else {
+            return Ok(None);
+        };
+        let Some(link) = &config.price_link else {
+            return Ok(None);
+        };
+        let snapshot =
+            self.price_links
+                .get(instrument_id)
+                .cloned()
+                .unwrap_or(crate::PerpPriceSnapshot {
+                    instrument_id: instrument_id.to_string(),
+                    spot_instrument_id: link.spot_instrument_id.clone(),
+                    index_price_tick: None,
+                    mark_price_tick: config.initial_mark_price_tick,
+                    source: None,
+                    source_time_ms: None,
+                    max_age_ms: link.max_age_ms,
+                    status: crate::PriceLinkStatus::AwaitingPrice,
+                    funding: None,
+                });
+        let mut snapshot = snapshot.at_time(self.clock.market_time_ms());
+        snapshot.funding = self.funding_snapshot(instrument_id, &snapshot);
+        Ok(Some(snapshot))
+    }
+
+    fn refresh_price_links(
+        &mut self,
+        source_id: &str,
+        before_book: Option<&BookSnapshot>,
+        execution: &mut ActorExecution,
+    ) -> Result<(), ClearingError> {
+        let linked: Vec<_> = self
+            .config
+            .markets
+            .iter()
+            .filter_map(|market| {
+                let MarketConfig::Perp(perp) = market else {
+                    return None;
+                };
+                let link = perp.price_link.as_ref()?;
+                (link.spot_instrument_id == source_id).then(|| {
+                    (
+                        perp.instrument.instrument_id.clone(),
+                        perp.instrument.tick_size,
+                        link.clone(),
+                    )
+                })
+            })
+            .collect();
+        if linked.is_empty() {
+            return Ok(());
+        }
+        let before_book = before_book.expect("linked source captured before command");
+        let now = self.clock.market_time_ms();
+        let trade = match &execution.result {
+            ActorExecutionResult::Accepted(MarketExecution::Spot(spot)) => {
+                spot.events.iter().rev().find_map(|record| {
+                    if let crate::model::Event::TradePrinted(trade) = &record.event {
+                        Some(trade.price_tick)
+                    } else {
+                        None
+                    }
+                })
+            }
+            _ => None,
+        };
+        if let Some(price_tick) = trade {
+            self.spot_trade_prices.insert(
+                source_id.to_string(),
+                crate::price_link::SpotTradePrice {
+                    price_tick,
+                    market_time_ms: now,
+                },
+            );
+        }
+        let book = self
+            .markets
+            .get(source_id)
+            .expect("validated index source")
+            .book_snapshot();
+        if trade.is_none()
+            && before_book.bids.first() == book.bids.first()
+            && before_book.asks.first() == book.asks.first()
+        {
+            return Ok(());
+        }
+        for (perp_id, tick_size, link) in linked {
+            let mut price = self
+                .perp_price_snapshot(&perp_id)
+                .expect("validated perpetual")
+                .expect("configured price link");
+            let sample = match (book.bids.first(), book.asks.first()) {
+                (Some(bid), Some(ask))
+                    if bid.price_tick > 0 && ask.price_tick >= bid.price_tick =>
+                {
+                    Some((
+                        bid.price_tick + (ask.price_tick - bid.price_tick) / 2,
+                        now,
+                        crate::IndexPriceSource::SpotMid,
+                    ))
+                }
+                _ => self
+                    .spot_trade_prices
+                    .get(source_id)
+                    .filter(|trade| now.saturating_sub(trade.market_time_ms) <= link.max_age_ms)
+                    .map(|trade| {
+                        (
+                            trade.price_tick,
+                            trade.market_time_ms,
+                            crate::IndexPriceSource::SpotTrade,
+                        )
+                    }),
+            };
+            if let Some((index, time, source)) = sample {
+                price.index_price_tick = Some(index);
+                price.mark_price_tick = crate::price_link::mark_on_grid(index, tick_size);
+                price.source = Some(source);
+                price.source_time_ms = Some(time);
+                price.status = crate::PriceLinkStatus::Live;
+                let market = self.markets.get_mut(&perp_id).expect("validated perpetual");
+                let MarketEngine::Perp(engine) = &mut market.engine else {
+                    unreachable!();
+                };
+                engine.set_mark_price_tick(price.mark_price_tick)?;
+            } else {
+                price.status = crate::PriceLinkStatus::Unavailable;
+            }
+            self.price_links.insert(perp_id, price.clone());
+            execution.price_updates.push(price);
+        }
+        Ok(())
     }
 
     pub fn liquidate_account(
@@ -1060,6 +1437,8 @@ impl ExchangeActor {
         error: ClearingError,
     ) -> ActorExecution {
         ActorExecution {
+            price_updates: Vec::new(),
+            funding_settlement: None,
             room_id: self.room_id.clone(),
             instrument_id: instrument_id.to_string(),
             command_seq,
@@ -1102,6 +1481,7 @@ impl ExchangeActor {
                 .map(|balance| {
                     balance
                         .available
+                        .max(0)
                         .checked_add(own_quote_reservation)
                         .ok_or(ClearingError::BalanceOverflow)
                 })
@@ -1197,6 +1577,13 @@ impl ExchangeActor {
                         balance
                             .available
                             .checked_add(cross_group_reservation)
+                            .and_then(|value| {
+                                value.checked_sub(reservation_amount(
+                                    &self.funding_collateral_shortfalls,
+                                    target_account.account_id,
+                                    quote_asset,
+                                ))
+                            })
                             .ok_or(ClearingError::BalanceOverflow)
                     })
                     .transpose()?
@@ -1216,7 +1603,33 @@ impl ExchangeActor {
     }
 
     fn reconcile_market_reservations(&mut self) -> Result<(), ClearingError> {
-        let next = aggregate_market_reservations(&self.markets)?;
+        let mut next = aggregate_market_reservations(&self.markets)?;
+        let mut shortfalls = MarketReservations::new();
+        for (account_id, asset_id) in self.funding_liability_accounts() {
+            let logical = reservation_amount(&next, account_id, &asset_id);
+            let previous = reservation_amount(&self.market_reservations, account_id, &asset_id);
+            if let Some(balance) = self.venue_accounts.balance_snapshot(account_id, &asset_id) {
+                let outside = balance
+                    .reserved
+                    .checked_sub(previous)
+                    .ok_or(ClearingError::ReservationUnderflow)?;
+                let budget = balance
+                    .total
+                    .checked_sub(outside)
+                    .ok_or(ClearingError::BalanceOverflow)?
+                    .max(0);
+                let actual = logical.min(budget);
+                if logical > actual {
+                    next.entry(account_id)
+                        .or_default()
+                        .insert(asset_id.clone(), actual);
+                    shortfalls
+                        .entry(account_id)
+                        .or_default()
+                        .insert(asset_id, logical - actual);
+                }
+            }
+        }
         let mut keys = std::collections::BTreeSet::new();
         for (account_id, balances) in &self.market_reservations {
             for asset_id in balances.keys() {
@@ -1248,6 +1661,60 @@ impl ExchangeActor {
             }
         }
         self.market_reservations = next;
+        self.funding_collateral_shortfalls = shortfalls;
+        Ok(())
+    }
+
+    fn funding_liability_accounts(&self) -> std::collections::BTreeSet<(AccountId, String)> {
+        let funded_quotes: std::collections::BTreeSet<_> = self
+            .markets
+            .values()
+            .filter_map(|market| {
+                let MarketConfig::Perp(config) = market.config() else {
+                    return None;
+                };
+                config
+                    .funding
+                    .as_ref()
+                    .map(|_| config.instrument.quote_asset.clone())
+            })
+            .collect();
+        self.markets
+            .values()
+            .filter_map(|market| {
+                let MarketConfig::Perp(config) = market.config() else {
+                    return None;
+                };
+                if !funded_quotes.contains(&config.instrument.quote_asset) {
+                    return None;
+                }
+                let AccountSnapshots::Perp(accounts) = market.account_snapshots() else {
+                    unreachable!();
+                };
+                Some(
+                    accounts
+                        .into_iter()
+                        .filter(|account| account.position_qty != 0)
+                        .map(|account| (account.account_id, config.instrument.quote_asset.clone()))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .flatten()
+            .collect()
+    }
+
+    fn validate_venue_after_clearing(&self) -> Result<(), ClearingError> {
+        let liabilities = self.funding_liability_accounts();
+        for account in self.venue_accounts.account_snapshots() {
+            for balance in account.balances {
+                if balance.reserved < 0
+                    || (balance.total < balance.reserved
+                        && !liabilities.contains(&(account.account_id, balance.asset_id)))
+                {
+                    return Err(ClearingError::InsufficientAvailableBalance);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1288,9 +1755,10 @@ impl ExchangeActor {
                 }
             }
         }
-        self.venue_accounts
-            .validate()
-            .map_err(clearing_error_from_venue_account_error)?;
+        if execution.funding_settlement.is_some() {
+            self.reconcile_market_reservations()?;
+        }
+        self.validate_venue_after_clearing()?;
         Ok(())
     }
 
@@ -1353,6 +1821,15 @@ impl ExchangeActor {
         quote_asset: &str,
     ) -> Result<(), ClearingError> {
         match event {
+            PerpClearingEvent::FundingSettled {
+                account_id,
+                cash_delta,
+                ..
+            } => {
+                self.venue_accounts
+                    .apply_signed_delta(*account_id, quote_asset.to_string(), *cash_delta)
+                    .map_err(clearing_error_from_venue_account_error)?;
+            }
             PerpClearingEvent::TradeSettled {
                 buyer_account_id,
                 seller_account_id,
@@ -1636,8 +2113,23 @@ impl MarketActor {
     pub fn apply_from(&mut self, command: Command, origin: CommandOrigin) -> ActorExecution {
         let seq = self.take_command_seq();
 
+        if matches!(command, Command::SettleFunding(_)) {
+            return ActorExecution {
+                room_id: self.room_id.clone(),
+                instrument_id: self.config.instrument_id().into(),
+                command_seq: seq,
+                market_time_ms: 0,
+                status: self.status,
+                price_updates: Vec::new(),
+                funding_settlement: None,
+                result: ActorExecutionResult::Rejected(ActorRejectReason::FundingManaged),
+            };
+        }
+
         if self.status == MarketStatus::Closed {
             return ActorExecution {
+                price_updates: Vec::new(),
+                funding_settlement: None,
                 room_id: self.room_id.clone(),
                 instrument_id: self.config.instrument_id().to_string(),
                 command_seq: seq,
@@ -1652,6 +2144,8 @@ impl MarketActor {
             && origin != CommandOrigin::Scheduler
         {
             return ActorExecution {
+                price_updates: Vec::new(),
+                funding_settlement: None,
                 room_id: self.room_id.clone(),
                 instrument_id: self.config.instrument_id().to_string(),
                 command_seq: seq,
@@ -1667,6 +2161,8 @@ impl MarketActor {
         };
 
         ActorExecution {
+            price_updates: Vec::new(),
+            funding_settlement: None,
             room_id: self.room_id.clone(),
             instrument_id: self.config.instrument_id().to_string(),
             command_seq: seq,
@@ -1685,6 +2181,8 @@ impl MarketActor {
 
         if self.status == MarketStatus::Closed {
             return ActorExecution {
+                price_updates: Vec::new(),
+                funding_settlement: None,
                 room_id: self.room_id.clone(),
                 instrument_id: self.config.instrument_id().to_string(),
                 command_seq: seq,
@@ -1705,6 +2203,8 @@ impl MarketActor {
         };
 
         ActorExecution {
+            price_updates: Vec::new(),
+            funding_settlement: None,
             room_id: self.room_id.clone(),
             instrument_id: self.config.instrument_id().to_string(),
             command_seq: seq,
@@ -1781,6 +2281,9 @@ pub struct ActorExecution {
     pub market_time_ms: u64,
     pub status: MarketStatus,
     pub result: ActorExecutionResult,
+    /// Derived, public price changes, committed with the originating command.
+    pub price_updates: Vec<crate::PerpPriceSnapshot>,
+    pub funding_settlement: Option<crate::FundingSettlement>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1795,6 +2298,9 @@ pub enum ActorRejectReason {
     MarketClosed,
     InstrumentNotFound { instrument_id: InstrumentId },
     WrongMarketKind,
+    PriceLinkNotReady,
+    LinkedMarkPriceManaged,
+    FundingManaged,
     VenueRule(VenueRuleRejectReason),
     Clearing(ClearingError),
 }
@@ -1975,6 +2481,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 100,
+            price_link: None,
+            funding: None,
         })
     }
 
@@ -2138,6 +2646,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 100,
+            price_link: None,
+            funding: None,
         });
         let config = ExchangeConfig::new("binance", vec![spot, perp]).unwrap();
         let mut exchange = ExchangeActor::new("room-1", config).unwrap();
@@ -2197,6 +2707,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 80,
+            price_link: None,
+            funding: None,
         });
         let config = ExchangeConfig::new("binance", vec![perp]).unwrap();
         let mut exchange = ExchangeActor::new("room-1", config).unwrap();
@@ -2266,6 +2778,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 100,
+            price_link: None,
+            funding: None,
         });
         let config = ExchangeConfig::new("binance", vec![perp]).unwrap();
         let mut exchange = ExchangeActor::new("room-1", config).unwrap();
@@ -2379,6 +2893,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 80,
+            price_link: None,
+            funding: None,
         });
         let config = ExchangeConfig::new("binance", vec![perp]).unwrap();
         let mut exchange = ExchangeActor::new("room-1", config).unwrap();
@@ -2447,6 +2963,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 80,
+            price_link: None,
+            funding: None,
         });
         let config = ExchangeConfig::new("binance", vec![perp]).unwrap();
         let mut exchange = ExchangeActor::new("room-1", config).unwrap();
@@ -2527,6 +3045,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 80,
+            price_link: None,
+            funding: None,
         });
         let config = ExchangeConfig::new("binance", vec![perp]).unwrap();
         let mut exchange = ExchangeActor::new("room-1", config).unwrap();

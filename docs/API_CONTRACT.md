@@ -3,6 +3,59 @@
 Protocol version: `http.v1`. Additive fields with defaults are compatible.
 Breaking changes require a new version string on ticker/candles/user streams.
 
+## CandleScope WebSocket (simulation.ws.v1)
+
+`GET /runtime` is authenticated and reports `{storage:{kind,durable},websocket:{version,snapshot_interval_ms}}`.
+It never returns a database URL or credentials. `/health/ready` remains the health check.
+
+`GET /rooms/{id}/ws?account_id=20&interval_ms=1000&instrument_id=...` upgrades to a read-only socket.
+Origin must match the configured CORS origins when supplied. The client must send one
+`{"kind":"authenticate","token":"..."}` or `{"kind":"authenticate","user_id":"..."}` message
+within 5 s. Credentials do not enter the URL. Local identity only works under the existing local auth policy.
+Unsupported accounts/intervals, unknown hello fields, failed authentication and revoked permissions fail closed.
+
+The server sends `{"api_version":"simulation.ws.v1","kind":"snapshot","sequence":1,"data":{
+"observation":<strategy.v1 response>,"candles":<http.v1 response>}}`.
+Snapshots include only the requested account and its orders; book/recent trades are public room data.
+Candles cover the latest 500 intervals. Both components have the same simulation time; a concurrent
+commit crossing the database read causes the sample to be discarded. Database I/O does not hold the writer lock.
+
+The server samples every 250 ms, sends changed full snapshots, and sends idle `kind:"heartbeat"` frames
+every 5 s. Sequence begins at 1 for each connection; it is not a durable resume cursor.
+Reconnect always replaces state from a fresh full snapshot. Clients reject gaps and mixed identities/clocks.
+Authorization is rechecked even for idle rooms. Errors use `kind:"error",status,error` and terminate the connection.
+Inbound messages/frames are limited to 16 KiB; sends time out after 5 s. Slow readers disconnect rather than
+accumulating an unbounded queue. Server shutdown closes sockets.
+
+Order/cancel/control writes continue through the existing HTTP idempotency and durable commit paths.
+The socket accepts no trading commands. Existing SSE APIs remain compatible.
+Implementation uses the [Axum WebSocket API](https://docs.rs/axum/latest/axum/extract/ws/index.html).
+
+## Spot/perpetual linkage
+
+An optional perpetual `price_link: {spot_instrument_id, max_age_ms}` configures a
+same-venue, same-base/quote spot index. Instrument view, ticker and observation
+responses expose optional `perp_price`; execution/order summaries and public
+streams expose `price_updates`. Updates are atomic with the originating spot
+command and verified on journal replay. Linked marks cannot be manually set;
+unavailable/stale indexes reject new non-reduce-only orders and amendments.
+See [linkage semantics and configuration](SPOT_PERP_LINK.md).
+
+## Perpetual funding
+
+Optional perpetual `funding: {interval_ms, base_rate_ppm, max_rate_ppm, min_coverage_ppm}` requires
+`price_link`. Public `perp_price.funding` exposes the estimated period rate,
+simulation-time settlement cursor, coverage and last receipt. Perpetual accounts
+expose signed cumulative `funding_pnl`; execution summaries expose optional
+`funding_settlement`. Private `PerpFundingSettled` clearing events and account
+ledger rows (`account_side: "funding"`) carry actual cash deltas. Public streams
+include only funding totals; private funding events are filtered by account access.
+
+Clock mutations atomically journal the derived funding executions. Idempotent
+clock retries do not pay twice; replay compares settlement and account receipts.
+`Command::SettleFunding` is reserved for clock-generated internal executions and
+cannot be submitted by a trader. See [funding semantics and configuration](FUNDING.md).
+
 ## Identity
 
 - Loopback: optional `x-user-id` (default `local-user`).
@@ -94,6 +147,11 @@ Removing a member deletes that user's `account_owners` rows. Subsequent writes, 
 Account assignment after a training run has started returns HTTP 409.
 
 ## Bot plugins (`bot.v1`)
+
+`GET /scenarios/background-market` returns an authenticated `CreateRoomRequest` recipe owned by
+the backend, including the default background participants. Reading it has no side effects.
+Clients may choose a room name (and update the participants' matching room names) and submit
+it through the ordinary `POST /rooms` path. See [CandleScope workbench](CANDLESCOPE_WORKBENCH.md).
 
 `GET /bots` lists authenticated users' available builtin and installed process bot descriptors and parameter definitions. `GET /rooms/{id}/bots` returns the saved scheduler configuration/state (or null), with room-admin authorization. Existing `/rooms/{id}/agents` start/status and `/agents/stop` manage the instances.
 

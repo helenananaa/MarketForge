@@ -1,0 +1,23 @@
+{
+  "bot": {
+    "id": "pine.strategy",
+    "name": "Pine 策略交易者",
+    "version": "1.0.0",
+    "protocol_version": "bot.v1",
+    "state_version": 1,
+    "runtime": "process",
+    "parameters": {
+      "script": {"type": "string", "default": "ma.pine"},
+      "inputs": {"type": "object", "default": {}},
+      "bar_interval_ms": {"type": "integer", "default": 10000, "minimum": 1000, "maximum": 86400000, "choices": [1000, 5000, 10000, 15000, 30000, 45000, 60000, 120000, 180000, 300000, 600000, 900000, 1800000, 3600000, 14400000, 86400000]},
+      "history_limit": {"type": "integer", "default": 512, "minimum": 16, "maximum": 2048},
+      "max_qty": {"type": "integer", "default": 2, "minimum": 1, "maximum": 1000000},
+      "inventory_cap": {"type": "integer", "default": 10, "minimum": 1, "maximum": 1000000},
+      "slippage_ticks": {"type": "integer", "default": 2, "minimum": 0, "maximum": 10000},
+      "fee_buffer_ppm": {"type": "integer", "default": 1000, "minimum": 0, "maximum": 1000000}
+    }
+  },
+  "command": ["python3", "bot.py"],
+  "timeout_ms": 5000,
+  "market_data": {"interval_parameter": "bar_interval_ms", "max_bars": 2049}
+}

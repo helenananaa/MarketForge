@@ -1,8 +1,7 @@
-import { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Bot,
-  ChevronDown,
   CircleHelp,
   Globe2,
   Play,
@@ -16,6 +15,7 @@ import {
 import "./styles.css";
 import { AgentTraders } from "./AgentTraders";
 import backgroundMarket from "../../scripts/fixtures/background_market.json";
+import linkedMarket from "../../scripts/fixtures/linked_market.json";
 
 type Side = "Buy" | "Sell";
 type AgentStatus = {
@@ -54,12 +54,14 @@ type SpotAccount = {
   cash_balance: number;
   position_qty: number;
   fees_paid: number;
+  available_cash?: number;
 };
 type PerpAccount = SpotAccount & {
   equity: number;
   realized_pnl: number;
   unrealized_pnl: number;
   initial_margin: number;
+  funding_pnl?: number;
 };
 type AnyAccount = SpotAccount | PerpAccount;
 type AccountSnapshots = { Spot: SpotAccount[] } | { Perp: PerpAccount[] };
@@ -72,6 +74,19 @@ type MarketView = {
     asks: BookLevel[];
   };
   accounts: AccountSnapshots;
+  instruments?: string[];
+  perp_price?: {
+    spot_instrument_id: string;
+    index_price_tick: number | null;
+    mark_price_tick: number;
+    status: "awaiting_price" | "live" | "stale" | "unavailable";
+    funding?: {
+      market_time_ms: number;
+      estimated_rate_ppm: number | null;
+      next_funding_time_ms: number;
+      last_settlement: { status: "settled" | "no_positions" | "skipped_prices" | "unbalanced_positions"; rate_ppm: number; covered_ms: number; interval_ms: number } | null;
+    };
+  };
 };
 type ApiEvent = {
   type: string;
@@ -126,6 +141,9 @@ function App() {
   const [roomId, setRoomId] = useState(ROOM_DEFAULT);
   const [activeRoom, setActiveRoom] = useState("");
   const [view, setView] = useState<MarketView | null>(null);
+  const [activeInstrument, setActiveInstrument] = useState("");
+  const [linkedMarkets, setLinkedMarkets] = useState(true);
+  const refreshRequest = useRef(0);
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [roomEvents, setRoomEvents] = useState<RoomExecutionSummary[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -148,6 +166,8 @@ function App() {
 
   const accounts = useMemo(() => flattenAccounts(view?.accounts), [view]);
   const selectedAccount = accounts.find((account) => account.account_id === accountId);
+  const quantityUnit = view && "Perp" in view.accounts ? "张" : "单位";
+  const funding = view?.perp_price?.funding;
   const bestBid = view?.book.bids[0]?.price_tick;
   const bestAsk = view?.book.asks[0]?.price_tick;
   const lastPrice = bestAsk ?? bestBid ?? price;
@@ -231,24 +251,27 @@ function App() {
   };
 
   const refresh = useCallback(
-    async (room = activeRoom) => {
+    async (room = activeRoom, instrument = activeInstrument) => {
       if (!room) {
         return;
       }
+      const request = ++refreshRequest.current;
       const [nextView, nextAgents, nextEvents] = await Promise.all([
-        api<MarketView>(`/rooms/${room}/view`),
+        api<MarketView>(instrument ? `/rooms/${room}/instruments/${encodeURIComponent(instrument)}/view` : `/rooms/${room}/view`),
         api<AgentStatus>(`/rooms/${room}/agents`),
         api<RoomEventsResponse>(`/rooms/${room}/events?limit=80`),
       ]);
+      if (request !== refreshRequest.current) return;
       setView(nextView);
+      setActiveInstrument(nextView.instrument_id);
       setAgentStatus(nextAgents);
       setRoomEvents(nextEvents.executions);
     },
-    [activeRoom, api],
+    [activeRoom, activeInstrument, api],
   );
 
   useEffect(() => {
-    if (!activeRoom || !autoRefresh) {
+    if (!activeRoom || !autoRefresh || busy) {
       return;
     }
     const handle = window.setInterval(() => {
@@ -257,7 +280,7 @@ function App() {
       );
     }, 900);
     return () => window.clearInterval(handle);
-  }, [activeRoom, autoRefresh, pushLog, refresh]);
+  }, [activeRoom, autoRefresh, busy, pushLog, refresh]);
 
   const loadSavedBots = async (room: string) => {
     const saved = await api<{ agents: { template: BotInstance | Record<string, unknown> }[] } | null>(`/rooms/${room}/bots`);
@@ -268,20 +291,21 @@ function App() {
     const nextRoom = roomId.trim() || ROOM_DEFAULT;
     setBusy(true);
     try {
+      const payload = sampleRoomPayload(nextRoom, linkedMarkets);
       await api("/rooms", {
         method: "POST",
-        body: JSON.stringify(sampleRoomPayload(nextRoom)),
+        body: JSON.stringify(payload),
       });
       setActiveRoom(nextRoom);
       await loadSavedBots(nextRoom);
-      pushLog({ level: "ok", text: `房间 ${nextRoom} 已创建，20 个背景交易者已启动` });
-      await refresh(nextRoom);
+      pushLog({ level: "ok", text: `房间 ${nextRoom} 已创建，${payload.agents.length} 个背景交易者已启动${linkedMarkets ? "，现货与永续已绑定" : ""}` });
+      await refresh(nextRoom, "");
     } catch (error) {
       const message = error instanceof Error ? error.message : "create room failed";
       if (message.includes("RoomAlreadyExists")) {
         setActiveRoom(nextRoom);
         pushLog({ level: "info", text: `房间 ${nextRoom} 已载入` });
-        await refresh(nextRoom);
+        await refresh(nextRoom, "");
         await loadSavedBots(nextRoom);
       } else {
         pushLog({ level: "warn", text: message });
@@ -296,7 +320,7 @@ function App() {
     if (!nextRoom) return;
     setBusy(true);
     try {
-      await refresh(nextRoom);
+      await refresh(nextRoom, "");
       await loadSavedBots(nextRoom);
       setActiveRoom(nextRoom);
       pushLog({ level: "ok", text: `房间 ${nextRoom} 已载入` });
@@ -320,6 +344,7 @@ function App() {
         method: "POST",
         body: JSON.stringify({
           participant_id: "human-web",
+          instrument_id: activeInstrument,
           account_id: accountId,
           action,
         }),
@@ -388,8 +413,15 @@ function App() {
     }
   };
 
+  const switchInstrument = async (instrument: string) => {
+    setBusy(true);
+    try { await refresh(activeRoom, instrument); }
+    catch (error) { pushLog({ level: "warn", text: error instanceof Error ? error.message : "切换失败" }); }
+    finally { setBusy(false); }
+  };
+
   return (
-    <main className="terminal">
+    <main className={`terminal${view?.perp_price ? " has-perp-price" : ""}`}>
       <header className="global-nav">
         <div className="brand">
           <span className="brand-mark">MF</span>
@@ -428,8 +460,10 @@ function App() {
           <span className="coin">V</span>
           <div>
             <div className="symbol-line">
-              <strong>V-BTC/SPOT</strong>
-              <ChevronDown size={16} aria-hidden="true" />
+              <select aria-label="交易品种" value={activeInstrument} disabled={busy || !view} onChange={(event) => switchInstrument(event.target.value)}>
+                {!view && <option value="">选择交易品种</option>}
+                {(view?.instruments ?? (view ? [view.instrument_id] : [])).map((id) => <option key={id} value={id}>{id}</option>)}
+              </select>
             </div>
             <span>{activeRoom || "未载入房间"}</span>
           </div>
@@ -449,6 +483,10 @@ function App() {
             <Plus size={16} aria-hidden="true" />
             创建仿真市场
           </button>
+          <label className="auto-toggle">
+            <input type="checkbox" checked={linkedMarkets} onChange={(event) => setLinkedMarkets(event.target.checked)} />
+            绑定永续
+          </label>
           <button onClick={loadRoom} disabled={busy || !roomId.trim()}>载入</button>
           <button onClick={() => refresh()} disabled={!activeRoom || busy}>
             <RefreshCw size={16} aria-hidden="true" />
@@ -463,6 +501,17 @@ function App() {
           </label>
         </div>
       </section>
+
+      {view?.perp_price && <section className="linked-price-strip" aria-label="现货永续联动">
+        <MarketStat label="现货指数价" value={formatNumber(view.perp_price.index_price_tick ?? undefined)} />
+        <MarketStat label="标记价" value={formatNumber(view.perp_price.mark_price_tick)} />
+        <MarketStat label={`关联 ${view.perp_price.spot_instrument_id}`} value={{ live: "已联动", stale: "行情过期", unavailable: "行情不足", awaiting_price: "等待行情" }[view.perp_price.status]} />
+        {funding && <>
+          <MarketStat label="资金费率（预估）" value={funding.estimated_rate_ppm === null ? "等待行情" : `${funding.estimated_rate_ppm >= 0 ? "+" : ""}${(funding.estimated_rate_ppm / 10000).toFixed(4)}%`} />
+          <MarketStat label="距结算（仿真时间）" value={`${Math.max(0, Math.ceil((funding.next_funding_time_ms - funding.market_time_ms) / 1000))} 秒`} />
+          <MarketStat label="上次资金费结算" value={funding.last_settlement ? `${{ settled: "已结算", no_positions: "无持仓", skipped_prices: "行情不足，已跳过", unbalanced_positions: "持仓不平衡，已跳过" }[funding.last_settlement.status]} · 行情覆盖 ${(funding.last_settlement.covered_ms / funding.last_settlement.interval_ms * 100).toFixed(0)}%` : "尚未结算"} />
+        </>}
+      </section>}
 
       <div className="trade-grid">
         <section className="chart-pane">
@@ -479,7 +528,7 @@ function App() {
               </button>
             ))}
           </div>
-          <ChartPlaceholder price={lastPrice} />
+          <ChartPlaceholder price={lastPrice} instrument={view?.instrument_id ?? "V-BTC-SPOT"} />
         </section>
 
         <section className="orderbook-pane">
@@ -529,7 +578,7 @@ function App() {
             suffix="TICK"
             disabled={orderKind === "Market"}
           />
-          <TicketInput label="数量" value={qty} onChange={setQty} suffix="BTC" />
+          <TicketInput label="数量" value={qty} onChange={setQty} suffix={quantityUnit} />
           <div className="percent-row">
             {[0, 25, 50, 75, 100].map((item) => (
               <button key={item}>{item}%</button>
@@ -537,13 +586,17 @@ function App() {
           </div>
           <div className="balance-lines">
             <span>可用现金</span>
-            <strong>{selectedAccount?.cash_balance ?? "-"} EUR</strong>
+            <strong>{selectedAccount?.available_cash ?? selectedAccount?.cash_balance ?? "-"}</strong>
             <span>持仓数量</span>
-            <strong>{selectedAccount?.position_qty ?? "-"} BTC</strong>
+            <strong>{selectedAccount?.position_qty ?? "-"} {quantityUnit}</strong>
+            {selectedAccount && "funding_pnl" in selectedAccount && <>
+              <span>累计资金费收付</span>
+              <strong>{selectedAccount.funding_pnl ?? 0}</strong>
+            </>}
           </div>
           <button className={side === "Buy" ? "submit buy" : "submit sell"} onClick={submitOrder} disabled={busy || !activeRoom}>
             <Send size={17} aria-hidden="true" />
-            {side === "Buy" ? "买入 BTC" : "卖出 BTC"}
+            {side === "Buy" ? "买入" : "卖出"} {quantityUnit}
           </button>
           <div className="ai-box">
             <div className="ai-state">
@@ -632,12 +685,12 @@ function MarketStat({
   );
 }
 
-function ChartPlaceholder({ price }: { price: number }) {
+function ChartPlaceholder({ price, instrument }: { price: number; instrument: string }) {
   const candles = [42, 48, 45, 51, 49, 54, 52, 58, 61, 57, 64, 68, 65, 71, 75, 73, 78, 76, 82, 80];
   return (
     <div className="chart-surface">
       <div className="chart-title">
-        <span>V-BTC/SPOT - 1 - MarketForge</span>
+        <span>{instrument} - 1 - MarketForge</span>
         <strong>{formatNumber(price)}</strong>
       </div>
       <div className="chart-grid">
@@ -903,8 +956,8 @@ function isPerpAccount(account: AnyAccount): account is PerpAccount {
   return Object.prototype.hasOwnProperty.call(account, "equity");
 }
 
-function sampleRoomPayload(roomId: string) {
-  const recipe = structuredClone(backgroundMarket);
+function sampleRoomPayload(roomId: string, linked: boolean) {
+  const recipe = structuredClone(linked ? linkedMarket : backgroundMarket);
   recipe.scenario.room_id = roomId;
   for (const bot of recipe.agents) bot.Plugin.participant.room_id = roomId;
   return recipe;

@@ -205,6 +205,32 @@ input:focus {
   gap: 5px;
 }
 
+.symbol-line select {
+  min-width: 0;
+  width: 100%;
+  font-size: 14px;
+  font-weight: 700;
+  min-height: 32px;
+  padding: 4px;
+  border: 1px solid #2b3038;
+  border-radius: 4px;
+  background: #171a1f;
+  color: #f4f7fb;
+}
+
+.terminal.has-perp-price {
+  grid-template-rows: 48px auto 54px auto minmax(680px, 1fr);
+}
+
+.linked-price-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  padding: 10px 14px;
+  background: #07090c;
+  border-bottom: 1px solid #242830;
+}
+
 .symbol-block strong {
   font-size: 16px;
 }
@@ -234,7 +260,7 @@ input:focus {
 
 .room-controls {
   display: grid;
-  grid-template-columns: minmax(100px, 1fr) auto auto 36px auto;
+  grid-template-columns: minmax(100px, 1fr) auto auto auto 36px auto;
   gap: 8px;
   align-items: center;
 }

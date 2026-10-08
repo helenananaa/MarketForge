@@ -13,4 +13,6 @@ __pycache__/
 *.key
 .local/agents/
 /.playwright-cli/
+/.local/candlescope-runtime/
 /output/playwright/
+/output/candlescope-workbench/

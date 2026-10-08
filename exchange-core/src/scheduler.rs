@@ -352,7 +352,14 @@ pub fn run_scheduler_step_with_policy(
                 });
             }
             let observation = rooms
-                .participant_observation(&room_id, &instrument_id, account_id)
+                .bot_observation(
+                    &room_id,
+                    &instrument_id,
+                    account_id,
+                    registry
+                        .market_data_request(&state.agents[participant_index].template)
+                        .map_err(SchedulerError::Bot)?,
+                )
                 .map_err(SchedulerError::Room)?;
             let actions = agents[participant_index]
                 .decide(&observation)

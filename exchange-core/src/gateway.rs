@@ -91,6 +91,10 @@ pub struct MarketView {
     pub status: MarketStatus,
     pub book: BookSnapshot,
     pub accounts: AccountSnapshots,
+    #[serde(default)]
+    pub instruments: Vec<InstrumentId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub perp_price: Option<crate::PerpPriceSnapshot>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -330,6 +334,10 @@ impl TradingApi for OrderGateway<'_> {
         instrument_id: &str,
     ) -> Result<MarketView, GatewayError> {
         let room = self.rooms.room(room_id).map_err(GatewayError::Room)?;
+        let simulation = self
+            .rooms
+            .simulation_room(room_id)
+            .map_err(GatewayError::Room)?;
         Ok(MarketView {
             room_id: room_id.to_string(),
             venue_id: room.venue_id().to_string(),
@@ -343,6 +351,10 @@ impl TradingApi for OrderGateway<'_> {
                 .rooms
                 .account_snapshots_for(room_id, instrument_id)
                 .map_err(GatewayError::Room)?,
+            instruments: simulation.instrument_ids(),
+            perp_price: simulation
+                .perp_price_snapshot(instrument_id)
+                .map_err(|error| GatewayError::Room(RoomManagerError::Actor(error)))?,
         })
     }
 

@@ -30,6 +30,15 @@ pub struct ProcessBotManifest {
     pub command: Vec<String>,
     #[serde(default = "default_timeout")]
     pub timeout_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub market_data: Option<ProcessMarketData>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProcessMarketData {
+    pub interval_parameter: String,
+    pub max_bars: usize,
 }
 fn default_timeout() -> u64 {
     1_000
@@ -73,6 +82,19 @@ pub fn load_bot_plugins(root: &Path) -> Result<BotRegistry, BotError> {
                 manifest.bot.id
             )));
         }
+        if let Some(data) = &manifest.market_data {
+            let parameter = manifest
+                .bot
+                .parameters
+                .get(&data.interval_parameter)
+                .ok_or_else(|| BotError("market data interval parameter is missing".into()))?;
+            if !matches!(parameter.kind, exchange_core::bots::ParameterType::Integer)
+                || parameter.minimum.is_none_or(|min| min < 1)
+                || !(1..=4096).contains(&data.max_bars)
+            {
+                return Err(BotError("invalid process market data declaration".into()));
+            }
+        }
         registry.register(ProcessBotFactory {
             manifest,
             directory,
@@ -91,6 +113,25 @@ pub fn bot_registry_from_env() -> Result<BotRegistry, BotError> {
 impl BotFactory for ProcessBotFactory {
     fn descriptor(&self) -> &BotDescriptor {
         &self.manifest.bot
+    }
+    fn market_data_request(
+        &self,
+        template: &AgentTemplate,
+    ) -> Result<Option<exchange_core::bots::BotMarketDataRequest>, BotError> {
+        let Some(data) = &self.manifest.market_data else {
+            return Ok(None);
+        };
+        let AgentTemplate::Plugin(config) = template else {
+            return Err(BotError("process bot requires Plugin config".into()));
+        };
+        let config = self.manifest.bot.validate_config(&config.config)?;
+        let interval_ms = config[&data.interval_parameter]
+            .as_u64()
+            .ok_or_else(|| BotError("market data interval must be a positive integer".into()))?;
+        Ok(Some(exchange_core::bots::BotMarketDataRequest {
+            interval_ms,
+            max_bars: data.max_bars,
+        }))
     }
     fn create(
         &self,
@@ -329,6 +370,34 @@ mod tests {
         rooms
             .participant_observation("f6-batch", "V-BTC-SPOT", 20)
             .unwrap()
+    }
+
+    #[test]
+    fn pine_manifest_requests_only_bounded_configured_history_without_running_python() {
+        let registry = load_bot_plugins(&example_root()).unwrap();
+        let mut config = match template() {
+            AgentTemplate::Plugin(value) => value,
+            _ => unreachable!(),
+        };
+        config.plugin_id = "pine.strategy".into();
+        config.config = serde_json::json!({"bar_interval_ms": 15000});
+        let template = AgentTemplate::Plugin(config.clone());
+        registry.validate_template(&template).unwrap();
+        let request = registry.market_data_request(&template).unwrap().unwrap();
+        assert_eq!(request.interval_ms, 15000);
+        assert_eq!(request.max_bars, 2049);
+        config.config = serde_json::json!({"bar_interval_ms": 0});
+        assert!(
+            registry
+                .validate_template(&AgentTemplate::Plugin(config))
+                .is_err()
+        );
+        assert!(
+            registry
+                .market_data_request(&super::tests::template())
+                .unwrap()
+                .is_none()
+        );
     }
     struct Package(PathBuf);
     impl Package {

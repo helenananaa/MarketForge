@@ -12,6 +12,22 @@ pub const BOT_PROTOCOL_VERSION: &str = "bot.v1";
 pub const BOT_CONFIG_VERSION: u16 = 1;
 pub const MAX_BOT_ACTIONS: usize = 64;
 
+/// Optional, bounded public history requested by an installed factory.
+#[derive(Clone, Copy, Debug)]
+pub struct BotMarketDataRequest {
+    pub interval_ms: u64,
+    pub max_bars: usize,
+}
+
+impl BotMarketDataRequest {
+    pub fn validate(&self) -> Result<(), BotError> {
+        if self.interval_ms == 0 || !(1..=4096).contains(&self.max_bars) {
+            return Err(BotError("invalid bot market data bounds".into()));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BotConfig {
@@ -216,6 +232,13 @@ pub(crate) fn unrestricted_policy() -> impl BotExecutionPolicy {
 
 pub trait BotFactory: Send + Sync {
     fn descriptor(&self) -> &BotDescriptor;
+    /// Metadata only: must not execute plugin code or perform IO.
+    fn market_data_request(
+        &self,
+        _template: &AgentTemplate,
+    ) -> Result<Option<BotMarketDataRequest>, BotError> {
+        Ok(None)
+    }
     fn create(
         &self,
         template: &AgentTemplate,
@@ -294,7 +317,23 @@ impl BotRegistry {
         factory.create(&normalized, state)
     }
     pub fn validate_template(&self, template: &AgentTemplate) -> Result<(), BotError> {
+        self.market_data_request(template)?;
         self.create(template, &template.initial_state()).map(|_| ())
+    }
+
+    pub fn market_data_request(
+        &self,
+        template: &AgentTemplate,
+    ) -> Result<Option<BotMarketDataRequest>, BotError> {
+        let factory = self
+            .factories
+            .get(template.bot_id())
+            .ok_or_else(|| BotError(format!("unknown bot: {}", template.bot_id())))?;
+        let request = factory.market_data_request(template)?;
+        if let Some(request) = request {
+            request.validate()?;
+        }
+        Ok(request)
     }
 }
 

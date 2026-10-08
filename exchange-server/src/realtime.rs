@@ -199,9 +199,12 @@ pub(super) async fn run(
                             if in_flight.contains(id) || failed.contains(id) { continue; }
                             let observation = agent.requires_instrument()
                                 .map_err(|e| format!("{e:?}"))
-                                .and_then(|instrument| app.rooms.participant_observation(
-                                    &room_id, instrument, agent.account_id(),
-                                ).map_err(|e| format!("{e:?}")));
+                                .and_then(|instrument| {
+                                    let request = app.bot_registry.market_data_request(&agent.template)
+                                        .map_err(|e| e.to_string())?;
+                                    app.rooms.bot_observation(&room_id, instrument, agent.account_id(), request)
+                                        .map_err(|e| format!("{e:?}"))
+                                });
                             inputs.push((agent.clone(), observation, app.bot_registry.clone(),
                                 control.epoch.load(Ordering::Acquire)));
                         }

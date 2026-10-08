@@ -25,7 +25,9 @@ def arena(room, names, cash=100000):
                 "clearing": {"maker_fee_ppm": 100, "taker_fee_ppm": 300}, "risk": {"allow_short": False}}},
             "extra_markets": [{"Perp": {"instrument": instrument("V-USD-PERP"),
                 "clearing": {"maker_fee_ppm": 100, "taker_fee_ppm": 300, "leverage": 2},
-                "risk": {}, "initial_mark_price_tick": 100}}],
+                "risk": {}, "initial_mark_price_tick": 100,
+                "funding": {"interval_ms": 60000, "base_rate_ppm": 100, "max_rate_ppm": 10000, "min_coverage_ppm": 800000},
+                "price_link": {"spot_instrument_id": "V-USD-SPOT", "max_age_ms": 30000}}}],
             "accounts": [{"Spot": {"account_id": 10, "cash_balance": cash * 2, "position_qty": 1000}}] +
                 [{"Basic": {"account_id": 20 + index, "cash_balance": cash}} for index, _ in enumerate(names)],
             "seed_orders": [order(1, "Buy", 99, 100), order(2, "Sell", 101, 100)],
@@ -52,7 +54,7 @@ def main():
     client.start_agents(args.room, [], interval_ms=1000)
     print(json.dumps({"room": args.room, "instruments": ["V-USD-SPOT", "V-USD-PERP"],
                       "traders": [{"id": name, "account_id": 20 + i, "user_id": "agent-" + name} for i, name in enumerate(names)],
-                      "note": "Seeded finite liquidity only. No automatic spot/perp price linkage or background population added."}, indent=2))
+                      "note": "Perpetual index/mark follow spot. Seeded finite liquidity only; no background population added."}, indent=2))
 
 
 if __name__ == "__main__":

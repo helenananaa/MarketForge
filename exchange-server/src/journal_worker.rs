@@ -30,6 +30,7 @@ type JournalJob = Box<dyn FnOnce(&mut dyn JournalStore) + Send + 'static>;
 /// OS thread for its entire lifetime.
 #[derive(Clone)]
 pub(crate) struct JournalCoordinator {
+    storage_kind: &'static str,
     writer: JournalWorker,
     readers: Arc<Vec<JournalWorker>>,
     next_reader: Arc<AtomicUsize>,
@@ -87,6 +88,7 @@ impl JournalCoordinator {
         capacity: usize,
     ) -> Self {
         assert!(capacity > 0, "journal queue capacity must be positive");
+        let storage_kind = writer.storage_kind();
         let writer =
             JournalWorker::spawn(writer, capacity, "marketforge-journal-write".to_string());
         let readers = readers
@@ -97,6 +99,7 @@ impl JournalCoordinator {
             })
             .collect();
         Self {
+            storage_kind,
             writer,
             readers: Arc::new(readers),
             next_reader: Arc::new(AtomicUsize::new(0)),
@@ -109,6 +112,10 @@ impl JournalCoordinator {
         }
         let index = self.next_reader.fetch_add(1, Ordering::Relaxed) % self.readers.len();
         &self.readers[index]
+    }
+
+    pub(crate) fn storage_kind(&self) -> &'static str {
+        self.storage_kind
     }
 
     pub(crate) fn metrics_snapshot(&self) -> JournalCoordinatorMetricsSnapshot {

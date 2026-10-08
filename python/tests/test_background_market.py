@@ -31,7 +31,8 @@ class BackgroundRecipeTests(unittest.TestCase):
 
 class BackgroundHttpTests(unittest.TestCase):
     def test_catalog_room_autostart_fills_and_saved_bot_state(self):
-        server = ROOT / "target/debug" / ("exchange-server.exe" if os.name == "nt" else "exchange-server")
+        server = Path(os.environ.get("MARKETFORGE_TEST_SERVER", str(
+            ROOT / "target/debug" / ("exchange-server.exe" if os.name == "nt" else "exchange-server"))))
         if not server.exists():
             self.skipTest("build exchange-server before HTTP acceptance")
         with socket.socket() as sock:

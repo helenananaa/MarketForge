@@ -166,6 +166,13 @@ python3 scripts/batch_runner.py http://127.0.0.1:57305 your-plugin-training-spec
 
 ## 6. 验证
 
+需要 Pine 策略背景交易者时，参见 [Pine bot 安装、脚本和执行边界](PINE_BOTS.md)。
+进程清单可额外声明 `market_data: {"interval_parameter":"bar_interval_ms","max_bars":2049}`。
+周期参数必须声明为 minimum >= 1 的 integer，max_bars 为 1–4096。宿主只在该 bot
+的决策观察中加入 `bot_market_data`，包含 interval_ms、收盘 candles、own_fills、
+对应的 fill_details（仿真成交时间、实际手续费）和 truncated 标志；未声明的插件
+继续使用原来的观察 JSON。
+
 ```bash
 export MARKETFORGE_BOT_PLUGIN_DIR="$PWD/bot-plugins"
 cargo fmt --all -- --check

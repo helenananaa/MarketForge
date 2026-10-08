@@ -671,7 +671,15 @@ impl ScheduledBot for MarketBot {
             return Ok(vec![]);
         }
         self.state.last_observation = Some((view.step, view.market_time_ms));
-        let mid = match (view.book.bids.first(), view.book.asks.first()) {
+        if self.plugin.plugin_id == "DynamicMarketMaker"
+            && view
+                .perp_price
+                .as_ref()
+                .is_some_and(|price| price.status != crate::PriceLinkStatus::Live)
+        {
+            return Ok(self.cancel_orders(view));
+        }
+        let book_mid = match (view.book.bids.first(), view.book.asks.first()) {
             (Some(b), Some(a)) => b.price_tick + (a.price_tick - b.price_tick) / 2,
             (Some(b), None) => b.price_tick,
             (None, Some(a)) => a.price_tick,
@@ -681,6 +689,14 @@ impl ScheduledBot for MarketBot {
                 .map_or(self.config.fallback_price_tick, |t| t.price_tick),
         }
         .max(1);
+        let mid = if self.plugin.plugin_id == "DynamicMarketMaker" {
+            view.perp_price
+                .as_ref()
+                .and_then(|price| price.index_price_tick)
+                .unwrap_or(book_mid)
+        } else {
+            book_mid
+        };
         if let Some(previous) = self.state.last_mid {
             self.state.volatility_ticks = ((i128::from(self.state.volatility_ticks) * 3
                 + (i128::from(mid) - i128::from(previous)).abs())

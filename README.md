@@ -13,6 +13,13 @@ The web's “创建仿真市场” action starts 20 background participants with
 dynamic makers, value and trend traders, adaptive noise, and TWAP execution.
 See [Background market behavior and experiments](docs/BACKGROUND_MARKET.md).
 
+The web now offers linked spot/perpetual rooms by default, with a spot-derived
+index and mark price plus three finite-capital perpetual makers. See
+[Spot/perpetual linkage](docs/SPOT_PERP_LINK.md) for configuration and boundaries.
+
+Linked perpetuals also support [periodic funding](docs/FUNDING.md), including
+account cashflows, collateral risk, deterministic recovery and public/private receipts.
+
 ## Components
 
 - `exchange-core`: matching, risk, simulation, training, and room state.
@@ -103,8 +110,10 @@ Frontend `npm` build is optional for backend work.
 - [HTTP API contract](docs/API_CONTRACT.md)
 - [Backend storage and runtime configuration](docs/BACKEND_STORAGE.md)
 - [Bot plugins and installation](docs/BOT_PLUGINS.md)
+- [Pine background strategies and mixed market](docs/PINE_BOTS.md)
 - [Historical storage, archives, and capacity validation](docs/HISTORICAL_STORAGE.md)
 - [CandleScope adapter](marketforge-candlescope-plugin/README.md)
+- [CandleScope durable workbench](docs/CANDLESCOPE_WORKBENCH.md)
 
 ## License
 

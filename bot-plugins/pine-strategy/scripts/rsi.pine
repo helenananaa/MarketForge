@@ -1,0 +1,12 @@
+//@version=6
+strategy("MarketForge RSI")
+length = input.int(7, "Length", minval=2)
+low = input.int(35, "Low", minval=1, maxval=49)
+high = input.int(65, "High", minval=51, maxval=99)
+qty = input.int(2, "Quantity", minval=1)
+r = ta.rsi(close, length)
+if r < low and strategy.position_size == 0
+    strategy.entry("L", strategy.long, qty=qty)
+if r > high and strategy.position_size > 0
+    strategy.close("L")
+plot(r)

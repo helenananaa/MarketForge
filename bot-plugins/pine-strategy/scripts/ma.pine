@@ -1,0 +1,13 @@
+//@version=6
+strategy("MarketForge MA")
+fast = input.int(3, "Fast", minval=1)
+slow = input.int(8, "Slow", minval=2)
+qty = input.int(2, "Quantity", minval=1)
+fastMA = ta.sma(close, fast)
+slowMA = ta.sma(close, slow)
+if fastMA > slowMA and strategy.position_size == 0
+    strategy.entry("L", strategy.long, qty=qty)
+if fastMA < slowMA and strategy.position_size > 0
+    strategy.close("L")
+plot(fastMA)
+plot(slowMA)

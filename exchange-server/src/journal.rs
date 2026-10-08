@@ -153,6 +153,10 @@ pub struct RoomRoutingRecord {
 }
 
 pub trait JournalStore: Send {
+    fn storage_kind(&self) -> &'static str {
+        "memory"
+    }
+
     fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError>;
 
     fn load_room_recovery(&mut self, room_id: &str) -> Result<JournalRecovery, JournalError> {
@@ -3896,6 +3900,10 @@ fn query_recovery_rows(
 }
 
 impl JournalStore for PostgresJournalStore {
+    fn storage_kind(&self) -> &'static str {
+        "postgresql"
+    }
+
     fn load_full_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
         run_postgres(&mut self.client, |client| {
             load_postgres_recovery(client, None, false)
@@ -6278,6 +6286,47 @@ fn clearing_ledger_rows(
 ) -> Result<Vec<LedgerProjection>, JournalError> {
     let payload_json = serde_json::to_value(event).map_err(JournalError::Serialize)?;
     match event {
+        ClearingEventSummary::PerpFundingSettled {
+            account_id,
+            cash_delta,
+            account,
+            ..
+        } => Ok(vec![LedgerProjection {
+            ledger_seq: ledger_seq(clearing_index, 0)?,
+            market_kind: "perp",
+            account_id: i64_from_u64(*account_id, "account_id")?,
+            trade_id: 0,
+            account_side: "funding",
+            cash_delta: i64_from_i128(*cash_delta, "cash_delta")?,
+            position_delta: 0,
+            fee: 0,
+            realized_pnl: 0,
+            price_tick: 0,
+            qty: 0,
+            notional: 0,
+            cash_balance: i64_from_i128(account.cash_balance, "cash_balance")?,
+            position_qty: i64_from_i128(account.position_qty, "position_qty")?,
+            avg_entry_price_tick: Some(account.avg_entry_price_tick),
+            realized_pnl_total: Some(i64_from_i128(account.realized_pnl, "realized_pnl_total")?),
+            unrealized_pnl: Some(i64_from_i128(account.unrealized_pnl, "unrealized_pnl")?),
+            equity: Some(i64_from_i128(account.equity, "equity")?),
+            initial_margin: Some(i64_from_i128(account.initial_margin, "initial_margin")?),
+            maintenance_margin: Some(i64_from_i128(
+                account.maintenance_margin,
+                "maintenance_margin",
+            )?),
+            portfolio_initial_margin: account
+                .portfolio_initial_margin
+                .map(|amount| i64_from_i128(amount, "portfolio_initial_margin"))
+                .transpose()?,
+            portfolio_maintenance_margin: account
+                .portfolio_maintenance_margin
+                .map(|amount| i64_from_i128(amount, "portfolio_maintenance_margin"))
+                .transpose()?,
+            margin_status: Some(account.margin_status.clone()),
+            fees_paid: i64_from_i128(account.fees_paid, "fees_paid")?,
+            payload_json,
+        }]),
         ClearingEventSummary::SpotTradeSettled {
             trade_id,
             buyer_account_id,
@@ -6913,7 +6962,10 @@ fn new_order_did_not_create_order(record: &JournalExecution, order_id: u64) -> b
 fn command_account_id(command: &Command) -> Option<AccountId> {
     match command {
         Command::NewOrder(order) => Some(order.account_id),
-        Command::CancelOrder(_) | Command::AmendOrder(_) | Command::SetMarkPrice(_) => None,
+        Command::CancelOrder(_)
+        | Command::AmendOrder(_)
+        | Command::SetMarkPrice(_)
+        | Command::SettleFunding(_) => None,
     }
 }
 
@@ -6976,6 +7028,8 @@ mod tests {
             quota_user_step: None,
             command,
             execution: RoomExecutionSummary {
+                price_updates: Vec::new(),
+                funding_settlement: None,
                 room_id: "room-1".to_string(),
                 instrument_id: Some("V-BTC-SPOT".to_string()),
                 submit_account_id: None,
@@ -7603,6 +7657,8 @@ mod tests {
             quota_user_step: None,
             command,
             execution: RoomExecutionSummary {
+                price_updates: Vec::new(),
+                funding_settlement: None,
                 room_id: "room-1".to_string(),
                 instrument_id: Some("V-BTC-PERP".to_string()),
                 submit_account_id: None,

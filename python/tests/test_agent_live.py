@@ -86,7 +86,8 @@ class LiveAgentTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("MARKETFORGE_AGENT_LIVE_TEST") == "1", "set MARKETFORGE_AGENT_LIVE_TEST=1 for real exchange/provider transport")
     def test_two_plugin_traders_real_http_spot_perp_and_generated_strategy(self):
         with tempfile.TemporaryDirectory() as folder:
-            executable = ROOT / "target/debug" / ("exchange-server.exe" if os.name == "nt" else "exchange-server")
+            executable = Path(os.environ.get("MARKETFORGE_TEST_SERVER", str(
+                ROOT / "target/debug" / ("exchange-server.exe" if os.name == "nt" else "exchange-server"))))
             self.assertTrue(executable.exists(), "cargo build -p exchange-server first")
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0)); port = sock.getsockname()[1]

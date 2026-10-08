@@ -92,7 +92,9 @@ class PluginLiveTests(unittest.TestCase):
     @classmethod
     def start_server(cls):
         cls.log = open(cls.logs / f"{cls.prefix}-{time.time_ns()}.log", "w")
-        cls.server = subprocess.Popen([str(ROOT / "target/debug/exchange-server")], cwd=ROOT,
+        binary = Path(os.environ.get("MARKETFORGE_TEST_SERVER", str(
+            ROOT / "target/debug" / ("exchange-server.exe" if os.name == "nt" else "exchange-server"))))
+        cls.server = subprocess.Popen([str(binary)], cwd=ROOT,
                                      env=cls.env, stdout=cls.log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
@@ -130,7 +132,7 @@ class PluginLiveTests(unittest.TestCase):
     def test_catalog_and_invalid_configuration(self):
         client = self.client()
         bots = client.list_bots()
-        self.assertEqual(len(bots), 11)
+        self.assertEqual(len(bots), 12)
         self.assertIn("example.buy-remaining", {bot["id"] for bot in bots})
         with self.assertRaises(MarketForgeError) as error:
             Client(self.base).list_bots()

@@ -297,7 +297,8 @@ class LiveBatchTests(unittest.TestCase):
             raise AssertionError("MARKETFORGE_REQUIRE_POSTGRES_TESTS=1 but MARKETFORGE_TEST_DATABASE_URL is empty")
         if not DSN:
             raise unittest.SkipTest("MARKETFORGE_TEST_DATABASE_URL not set")
-        binary = ROOT / "target" / "debug" / "exchange-server"
+        binary = Path(os.environ.get("MARKETFORGE_TEST_SERVER", str(
+            ROOT / "target/debug" / ("exchange-server.exe" if os.name == "nt" else "exchange-server"))))
         if not binary.exists():
             built = subprocess.run(
                 ["cargo", "build", "-p", "exchange-server"],

@@ -258,6 +258,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 100,
+            price_link: None,
+            funding: None,
         })
     }
 

@@ -5,6 +5,9 @@ pub mod bots;
 pub mod candles;
 pub mod clock;
 pub mod engine;
+pub mod funding;
+#[cfg(test)]
+mod funding_tests;
 pub mod gateway;
 pub mod jsonl;
 pub mod log;
@@ -16,6 +19,9 @@ pub mod participant;
 pub mod perp;
 pub mod population;
 pub mod portfolio;
+pub mod price_link;
+#[cfg(test)]
+mod price_link_tests;
 pub mod replay;
 pub mod risk;
 pub mod room;
@@ -48,6 +54,7 @@ pub use candles::{
 };
 pub use clock::{ClockError, MAX_CLOCK_ADVANCE_STEPS, SimulationClock};
 pub use engine::OrderBook;
+pub use funding::{FundingConfig, FundingSettlement, FundingSnapshot, FundingStatus};
 pub use gateway::{
     GatewayError, GatewayExecution, GatewayRequest, MarketView, OrderAction, OrderGateway,
     ParticipantId, TradingApi,
@@ -66,8 +73,8 @@ pub use model::{
     PriceTick, Qty, RejectReason, SetMarkPrice, Side, Trade,
 };
 pub use observation::{
-    EXTERNAL_ACTIONS_PER_STEP, MAX_PUBLIC_TRADES_IN_OBSERVATION, PARTICIPANT_OBSERVATION_VERSION,
-    ParticipantObservation, STRATEGY_PROTOCOL_VERSION,
+    BotMarketData, EXTERNAL_ACTIONS_PER_STEP, MAX_PUBLIC_TRADES_IN_OBSERVATION,
+    PARTICIPANT_OBSERVATION_VERSION, ParticipantObservation, STRATEGY_PROTOCOL_VERSION,
 };
 pub use participant::{Participant, ParticipantConfig, ParticipantKind, run_participant_once};
 pub use perp::{
@@ -78,6 +85,7 @@ pub use portfolio::{
     PortfolioAccountSnapshot, PortfolioAssetBalance, PortfolioBalanceSnapshot, PortfolioError,
     PortfolioStore,
 };
+pub use price_link::{IndexPriceSource, PerpPriceLinkConfig, PerpPriceSnapshot, PriceLinkStatus};
 pub use replay::{LoggedOrderBook, ReplayEngine, ReplayReport};
 pub use risk::{PerpRiskConfig, PerpRiskEngine, RiskContext, SpotRiskConfig, SpotRiskEngine};
 pub use room::{PendingRoomLiquidation, RoomBootstrap, RoomManager, RoomManagerError};

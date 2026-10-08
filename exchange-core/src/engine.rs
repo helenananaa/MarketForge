@@ -37,7 +37,7 @@ impl OrderBook {
             Command::NewOrder(order) => self.place_order(order),
             Command::CancelOrder(cancel) => self.cancel_order(cancel),
             Command::AmendOrder(amend) => self.amend_order(amend),
-            Command::SetMarkPrice(_) => Vec::new(),
+            Command::SetMarkPrice(_) | Command::SettleFunding(_) => Vec::new(),
         }
     }
 
