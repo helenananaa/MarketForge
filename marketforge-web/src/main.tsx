@@ -21,7 +21,28 @@ type AgentStatus = {
   running: boolean;
   interval_ms: number;
   participants: string[];
+  lifecycle?: string;
+  last_error?: string | null;
 };
+type BotParameter = {
+  type: "integer" | "boolean" | "string" | "object" | "array";
+  required: boolean;
+  default: unknown;
+  minimum?: number | null;
+  maximum?: number | null;
+  choices: unknown[];
+};
+type BotDescriptor = {
+  id: string;
+  name: string;
+  version: string;
+  state_version: number;
+  parameters: Record<string, BotParameter>;
+};
+type BotInstance = { Plugin: {
+  participant: { participant_id: string; kind: "RuleAgent"; room_id: string; account_id: number; instrument_id: string };
+  plugin_id: string; plugin_version: string; state_version: number; seed: number; config: Record<string, unknown>;
+} };
 type BookLevel = {
   price_tick: number;
   qty: number;
@@ -42,6 +63,7 @@ type AnyAccount = SpotAccount | PerpAccount;
 type AccountSnapshots = { Spot: SpotAccount[] } | { Perp: PerpAccount[] };
 type MarketView = {
   room_id: string;
+  instrument_id: string;
   status: "Running" | "Paused" | "Closed";
   book: {
     bids: BookLevel[];
@@ -112,6 +134,15 @@ function App() {
   const [price, setPrice] = useState(100);
   const [qty, setQty] = useState(2);
   const [accountId, setAccountId] = useState(20);
+  const [bots, setBots] = useState<BotDescriptor[]>([]);
+  const [botId, setBotId] = useState("DcaTrader");
+  const [botParams, setBotParams] = useState<Record<string, string>>({});
+  const [botAccount, setBotAccount] = useState(30);
+  const [botSeed, setBotSeed] = useState(1);
+  const [botInstanceId, setBotInstanceId] = useState("bot-1");
+  const [botInstances, setBotInstances] = useState<BotInstance[]>([]);
+  const selectedBot = bots.find((bot) => bot.id === botId);
+
 
   const accounts = useMemo(() => flattenAccounts(view?.accounts), [view]);
   const selectedAccount = accounts.find((account) => account.account_id === accountId);
@@ -147,6 +178,56 @@ function App() {
     [apiBase],
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    api<BotDescriptor[]>("/bots").then((descriptors) => {
+      if (!cancelled) setBots(descriptors);
+    }).catch((error: Error) => {
+      if (!cancelled) { setBots([]); pushLog({ level: "warn", text: error.message }); }
+    });
+    return () => { cancelled = true; };
+  }, [api, pushLog]);
+
+  const configureBot = (id: string) => {
+    setBotId(id);
+    setBotParams({});
+  };
+
+  const makeBotInstance = (): BotInstance => {
+    if (!selectedBot || !activeRoom) throw new Error("请先载入房间并选择交易 bot");
+    if (!botInstanceId.trim()) throw new Error("请填写 bot 实例名称");
+    if (!Number.isSafeInteger(botAccount) || botAccount <= 0 || !Number.isSafeInteger(botSeed) || botSeed < 0) {
+      throw new Error("账户和种子必须是有效整数");
+    }
+    const config: Record<string, unknown> = {};
+    for (const [name, parameter] of Object.entries(selectedBot.parameters)) {
+      const raw = botParams[name];
+      if (raw === undefined || raw === "") {
+        if (parameter.default !== null && parameter.default !== undefined) config[name] = parameter.default;
+        else if (parameter.required) throw new Error(`请填写参数 ${name}`);
+        continue;
+      }
+      const value = parameter.type === "string" ? raw : JSON.parse(raw);
+      if (parameter.type === "integer" && !Number.isSafeInteger(value)) throw new Error(`${name} 必须是整数`);
+      config[name] = value;
+    }
+    return { Plugin: {
+      participant: { participant_id: botInstanceId.trim(), kind: "RuleAgent", room_id: activeRoom, account_id: botAccount, instrument_id: view?.instrument_id ?? "V-BTC-SPOT" },
+      plugin_id: selectedBot.id, plugin_version: selectedBot.version, state_version: selectedBot.state_version, seed: botSeed, config,
+    } };
+  };
+
+  const addBotInstance = () => {
+    try {
+      const instance = makeBotInstance();
+      if (botInstances.some((bot) => bot.Plugin.participant.participant_id === instance.Plugin.participant.participant_id)) {
+        throw new Error("bot 实例名称重复");
+      }
+      setBotInstances([...botInstances, instance]);
+      setBotInstanceId(`bot-${botInstances.length + 2}`);
+    } catch (error) { pushLog({ level: "warn", text: error instanceof Error ? error.message : "添加失败" }); }
+  };
+
   const refresh = useCallback(
     async (room = activeRoom) => {
       if (!room) {
@@ -176,6 +257,11 @@ function App() {
     return () => window.clearInterval(handle);
   }, [activeRoom, autoRefresh, pushLog, refresh]);
 
+  const loadSavedBots = async (room: string) => {
+    const saved = await api<{ agents: { template: BotInstance | Record<string, unknown> }[] } | null>(`/rooms/${room}/bots`);
+    setBotInstances((saved?.agents ?? []).flatMap(({ template }) => "Plugin" in template ? [template as BotInstance] : []));
+  };
+
   const createRoom = async () => {
     const nextRoom = roomId.trim() || ROOM_DEFAULT;
     setBusy(true);
@@ -185,6 +271,7 @@ function App() {
         body: JSON.stringify(sampleRoomPayload(nextRoom)),
       });
       setActiveRoom(nextRoom);
+      setBotInstances([]);
       pushLog({ level: "ok", text: `房间 ${nextRoom} 已创建` });
       await refresh(nextRoom);
     } catch (error) {
@@ -193,6 +280,7 @@ function App() {
         setActiveRoom(nextRoom);
         pushLog({ level: "info", text: `房间 ${nextRoom} 已载入` });
         await refresh(nextRoom);
+        await loadSavedBots(nextRoom);
       } else {
         pushLog({ level: "warn", text: message });
       }
@@ -245,12 +333,12 @@ function App() {
       const status = await api<AgentStatus>(`/rooms/${activeRoom}/agents`, {
         method: "POST",
         body: JSON.stringify({
-          agents: [dcaAgent(activeRoom)],
+          agents: botInstances.length ? botInstances : [makeBotInstance()],
           interval_ms: 700,
         }),
       });
       setAgentStatus(status);
-      pushLog({ level: "ok", text: "AI 交易员已启动" });
+      pushLog({ level: "ok", text: "交易 bot 已启动" });
       await refresh();
     } catch (error) {
       pushLog({
@@ -273,7 +361,7 @@ function App() {
         body: "{}",
       });
       setAgentStatus(status);
-      pushLog({ level: "info", text: "AI 交易员已停止" });
+      pushLog({ level: "info", text: "交易 bot 已停止" });
     } catch (error) {
       pushLog({
         level: "warn",
@@ -442,11 +530,44 @@ function App() {
           <div className="ai-box">
             <div className="ai-state">
               <Bot size={16} aria-hidden="true" />
-              <strong>{agentStatus?.running ? "AI 运行中" : "AI 已停止"}</strong>
+              <strong>{agentStatus?.running ? "Bot 运行中" : "Bot 已停止"}</strong>
               <span>{agentStatus?.interval_ms ? `${agentStatus.interval_ms}ms` : "-"}</span>
             </div>
+            <label className="bot-field">交易 bot
+              <select aria-label="交易 bot" value={botId} onChange={(event) => configureBot(event.target.value)} disabled={busy || !bots.length}>
+                {bots.map((bot) => <option key={bot.id} value={bot.id}>{bot.name} · {bot.version}</option>)}
+              </select>
+            </label>
+            <label className="bot-field">实例名称
+              <input aria-label="实例名称" value={botInstanceId} onChange={(event) => setBotInstanceId(event.target.value)} />
+            </label>
+            <TicketInput label="Bot 账户" value={botAccount} onChange={setBotAccount} suffix="ID" />
+            <TicketInput label="随机种子" value={botSeed} onChange={setBotSeed} suffix="" />
+            {Object.entries(selectedBot?.parameters ?? {}).map(([name, parameter]) => {
+              const fallback = parameter.default === null || parameter.default === undefined ? "" : parameter.type === "string" ? String(parameter.default) : JSON.stringify(parameter.default);
+              const value = botParams[name] ?? fallback;
+              return <label className="bot-field" key={name}>{name}{parameter.required ? " *" : ""}
+                {parameter.type === "boolean" || parameter.choices.length ?
+                  <select aria-label={name} value={value} onChange={(event) => setBotParams({ ...botParams, [name]: event.target.value })}>
+                    {(!value || parameter.default == null) && <option value="">请选择</option>}
+                    {(parameter.type === "boolean" ? [true, false] : parameter.choices).map((choice) => {
+                      const text = parameter.type === "string" ? String(choice) : JSON.stringify(choice);
+                      return <option key={text} value={text}>{text}</option>;
+                    })}
+                  </select> : <input aria-label={name} value={value} type={parameter.type === "integer" ? "number" : "text"}
+                    min={parameter.minimum ?? undefined} max={parameter.maximum ?? undefined}
+                    onChange={(event) => setBotParams({ ...botParams, [name]: event.target.value })} />}
+              </label>;
+            })}
+            <button className="bot-add" onClick={addBotInstance} disabled={busy || !activeRoom || !selectedBot}>添加到启动列表</button>
+            {botInstances.map((bot) => <div className="bot-instance" key={bot.Plugin.participant.participant_id}>
+              <span>{bot.Plugin.participant.participant_id} · {bot.Plugin.plugin_id} · 账户 {bot.Plugin.participant.account_id}</span>
+              <button aria-label={`移除 ${bot.Plugin.participant.participant_id}`} onClick={() => setBotInstances(botInstances.filter((item) => item !== bot))}>移除</button>
+            </div>)}
+            {!!botInstances.length && <small>启动将应用整个列表；列表为空时启动当前配置。</small>}
+            {agentStatus?.last_error && <p role="alert" className="bot-error">{agentStatus.last_error}</p>}
             <div className="ai-buttons">
-              <button onClick={startAi} disabled={busy || !activeRoom}>
+              <button onClick={startAi} disabled={busy || !activeRoom || !selectedBot}>
                 <Play size={16} aria-hidden="true" />
                 启动
               </button>
@@ -809,6 +930,7 @@ function dcaAgent(roomId: string) {
     DcaTrader: {
       participant: {
         participant_id: "dca-worker",
+        instrument_id: "V-BTC-SPOT",
         kind: "RuleAgent",
         room_id: roomId,
         account_id: 30,

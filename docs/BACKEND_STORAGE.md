@@ -408,11 +408,24 @@ Snapshots are stored in `marketforge_room_snapshots` as serialized actor state:
 
 Room creation stores an initial snapshot when seed executions exist. Submitted
 commands store a new snapshot every 100 command sequences. The execution journal
-remains the durable audit trail. Startup recovery currently selects versioned
-`StateCheckpoint` mutations; snapshot rows remain useful for compatibility,
-inspection, and migration input. Periodic snapshot rows are not yet mirrored to
-`StateCheckpoint` mutations, so they do not currently reduce replay for newly
-persisted rooms.
+remains the durable audit trail. Migration 15 connects snapshots to
+`marketforge_recovery_heads`: the same transaction stores the actor snapshot,
+next command cursor, latest room mutation sequence and order-id high water mark.
+Recovery synthesizes a `StateCheckpoint` from that boundary and reads only its
+command/mutation suffix, plus the latest scheduler and training payloads. Periodic
+checkpoint JSON is not duplicated in the mutation journal; the original bootstrap
+checkpoint remains for compatibility. Recovery-only boundaries are kept separate
+from canonical mutations, whose cursor ordering is still validated. The committed
+actor cursor supplies the next command when the execution suffix is empty.
+Startup/takeover reads use a
+repeatable-read transaction. Full historical replay still reads complete journals.
+
+Historical candles aggregate durable market ticks. The latest trade per
+instrument restores ticker/SSE state even without post-checkpoint trades.
+Older ticks without authoritative simulation time fall back to full replay.
+Snapshots still contain growing engine history; no journal rows are removed.
+See [Historical storage](HISTORICAL_STORAGE.md) for capacity measurements,
+checksummed archives, isolated restore validation and the ClickHouse mirror.
 
 Timeline responses are served from the canonical journal, not from the replayed
 actor history. This keeps `/rooms/{room_id}/events` complete even when the

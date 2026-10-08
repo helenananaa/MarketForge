@@ -1,0 +1,16 @@
+{
+  "bot": {
+    "id": "example.buy-remaining",
+    "name": "按卖一价买入",
+    "version": "1.0.0",
+    "protocol_version": "bot.v1",
+    "state_version": 1,
+    "runtime": "process",
+    "parameters": {
+      "target_qty": {"type": "integer", "required": true, "minimum": 1, "maximum": 1000000},
+      "qty_per_step": {"type": "integer", "default": 1, "minimum": 1, "maximum": 1000000}
+    }
+  },
+  "command": ["python3", "bot.py"],
+  "timeout_ms": 1000
+}

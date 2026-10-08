@@ -15,6 +15,7 @@ pub enum AgentTemplate {
     GridTrader(GridTraderConfig),
     ContinuousMarketMaker(ContinuousMmConfig),
     CancelAtStep(CancelAtStepConfig),
+    Plugin(crate::bots::BotConfig),
 }
 
 #[derive(Default)]
@@ -80,25 +81,226 @@ impl AgentRuntime {
 }
 
 impl AgentTemplate {
-    pub fn participant_id(&self) -> &str {
+    pub fn config(&self) -> &ParticipantConfig {
         match self {
-            Self::NoiseTrader(config) => &config.participant.participant_id,
-            Self::DcaTrader(config) => &config.participant.participant_id,
-            Self::GridTrader(config) => &config.participant.participant_id,
-            Self::ContinuousMarketMaker(config) => &config.participant.participant_id,
-            Self::CancelAtStep(config) => &config.participant.participant_id,
+            Self::NoiseTrader(config) => &config.participant,
+            Self::DcaTrader(config) => &config.participant,
+            Self::GridTrader(config) => &config.participant,
+            Self::ContinuousMarketMaker(config) => &config.participant,
+            Self::CancelAtStep(config) => &config.participant,
+            Self::Plugin(config) => &config.participant,
         }
     }
 
-    pub fn into_participant(self) -> Box<dyn Participant> {
+    pub fn participant_id(&self) -> &str {
+        &self.config().participant_id
+    }
+
+    pub fn bot_id(&self) -> &str {
         match self {
+            Self::NoiseTrader(_) => "NoiseTrader",
+            Self::DcaTrader(_) => "DcaTrader",
+            Self::GridTrader(_) => "GridTrader",
+            Self::ContinuousMarketMaker(_) => "ContinuousMarketMaker",
+            Self::CancelAtStep(_) => "CancelAtStep",
+            Self::Plugin(config) => &config.plugin_id,
+        }
+    }
+
+    pub fn initial_state(&self) -> PersistedAgentKindState {
+        match self {
+            Self::NoiseTrader(config) => PersistedAgentKindState::Noise {
+                rng_state: config.seed.max(1),
+            },
+            Self::DcaTrader(_) => PersistedAgentKindState::Dca { observed_steps: 0 },
+            Self::GridTrader(_) => PersistedAgentKindState::Grid {
+                has_seeded_grid: false,
+            },
+            Self::ContinuousMarketMaker(config) => PersistedAgentKindState::ContinuousMm {
+                rng_state: config.seed.max(1),
+                last_mid: None,
+                steps_since_quote: 0,
+                inventory: 0,
+            },
+            Self::CancelAtStep(_) => PersistedAgentKindState::CancelAtStep {
+                canceled: false,
+                observed_steps: 0,
+            },
+            Self::Plugin(config) => PersistedAgentKindState::Plugin {
+                plugin_id: config.plugin_id.clone(),
+                plugin_version: config.plugin_version.clone(),
+                state_version: config.state_version,
+                data: serde_json::Value::Null,
+            },
+        }
+    }
+
+    /// For standalone participants. Scheduled plugins require a host BotRegistry.
+    pub fn into_participant(self) -> Result<Box<dyn Participant>, crate::bots::BotError> {
+        Ok(match self {
             Self::NoiseTrader(config) => Box::new(NoiseTrader::new(config)),
             Self::DcaTrader(config) => Box::new(DcaTrader::new(config)),
             Self::GridTrader(config) => Box::new(GridTrader::new(config)),
             Self::ContinuousMarketMaker(config) => Box::new(ContinuousMarketMaker::new(config)),
             Self::CancelAtStep(config) => Box::new(CancelAtStepTrader::new(config)),
+            Self::Plugin(_) => {
+                return Err(crate::bots::BotError(
+                    "plugins require a host BotRegistry".into(),
+                ));
+            }
+        })
+    }
+}
+
+macro_rules! builtin_bot {
+    ($factory:ident, $bot:ty, $variant:ident, $seeded:expr) => {
+        struct $factory(crate::bots::BotDescriptor);
+        impl crate::bots::ScheduledBot for $bot {
+            fn decide(
+                &mut self,
+                observation: &ParticipantObservation,
+            ) -> Result<Vec<OrderAction>, crate::bots::BotError> {
+                Participant::observe(self, observation);
+                Ok(Participant::decide(self))
+            }
+            fn snapshot(&self) -> PersistedAgentKindState {
+                self.persist_kind_state()
+            }
+        }
+        impl crate::bots::BotFactory for $factory {
+            fn descriptor(&self) -> &crate::bots::BotDescriptor {
+                &self.0
+            }
+            fn create(
+                &self,
+                template: &AgentTemplate,
+                state: &PersistedAgentKindState,
+            ) -> Result<Box<dyn crate::bots::ScheduledBot>, crate::bots::BotError> {
+                let config = match template {
+                    AgentTemplate::$variant(config) => config.clone(),
+                    AgentTemplate::Plugin(config) => {
+                        let mut value = self.0.validate_config(&config.config)?;
+                        if $seeded {
+                            value["seed"] = config.seed.into();
+                        }
+                        value["participant"] = serde_json::to_value(&config.participant)
+                            .map_err(|error| crate::bots::BotError(error.to_string()))?;
+                        serde_json::from_value(value)
+                            .map_err(|error| crate::bots::BotError(error.to_string()))?
+                    }
+                    _ => return Err(crate::bots::BotError("incorrect builtin template".into())),
+                };
+                let initial_state = AgentTemplate::$variant(config.clone()).initial_state();
+                let mut bot = <$bot>::new(config);
+                let owned_state;
+                let state = if let PersistedAgentKindState::Plugin { data, .. } = state {
+                    owned_state = if data.is_null() {
+                        initial_state
+                    } else {
+                        serde_json::from_value(data.clone())
+                            .map_err(|error| crate::bots::BotError(error.to_string()))?
+                    };
+                    &owned_state
+                } else {
+                    state
+                };
+                if !bot.restore_kind_state(state) {
+                    return Err(crate::bots::BotError("incorrect builtin state".into()));
+                }
+                if let AgentTemplate::Plugin(config) = template {
+                    Ok(Box::new(BuiltinPluginAdapter {
+                        bot: Box::new(bot),
+                        config: config.clone(),
+                    }))
+                } else {
+                    Ok(Box::new(bot))
+                }
+            }
+        }
+    };
+}
+
+struct BuiltinPluginAdapter {
+    bot: Box<dyn crate::bots::ScheduledBot>,
+    config: crate::bots::BotConfig,
+}
+impl crate::bots::ScheduledBot for BuiltinPluginAdapter {
+    fn decide(
+        &mut self,
+        observation: &ParticipantObservation,
+    ) -> Result<Vec<OrderAction>, crate::bots::BotError> {
+        self.bot.decide(observation)
+    }
+    fn snapshot(&self) -> PersistedAgentKindState {
+        PersistedAgentKindState::Plugin {
+            plugin_id: self.config.plugin_id.clone(),
+            plugin_version: self.config.plugin_version.clone(),
+            state_version: self.config.state_version,
+            data: serde_json::to_value(self.bot.snapshot()).expect("builtin state serializes"),
         }
     }
+}
+
+builtin_bot!(NoiseFactory, NoiseTrader, NoiseTrader, true);
+builtin_bot!(DcaFactory, DcaTrader, DcaTrader, false);
+builtin_bot!(GridFactory, GridTrader, GridTrader, false);
+builtin_bot!(
+    MmFactory,
+    ContinuousMarketMaker,
+    ContinuousMarketMaker,
+    true
+);
+builtin_bot!(CancelFactory, CancelAtStepTrader, CancelAtStep, false);
+
+pub(crate) fn register_builtin_bots(registry: &mut crate::bots::BotRegistry) {
+    use crate::bots::{BOT_PROTOCOL_VERSION, BotDescriptor, BotParameter, ParameterType};
+    fn descriptor(id: &str, name: &str, defaults: serde_json::Value) -> BotDescriptor {
+        let parameters = defaults
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| {
+                let kind = if value.is_boolean() {
+                    ParameterType::Boolean
+                } else if value.is_string() {
+                    ParameterType::String
+                } else {
+                    ParameterType::Integer
+                };
+                (
+                    key.clone(),
+                    BotParameter {
+                        kind,
+                        required: false,
+                        default: Some(value.clone()),
+                        minimum: None,
+                        maximum: None,
+                        choices: Vec::new(),
+                    },
+                )
+            })
+            .collect();
+        BotDescriptor {
+            id: id.into(),
+            name: name.into(),
+            version: "1".into(),
+            protocol_version: BOT_PROTOCOL_VERSION.into(),
+            state_version: 1,
+            runtime: "builtin".into(),
+            parameters,
+        }
+    }
+    registry.register(NoiseFactory(descriptor("NoiseTrader", "Noise trader", serde_json::json!({"reference_price_tick":100,"price_radius_ticks":3,"max_qty":2,"market_order_ratio_ppm":0})))).unwrap();
+    registry.register(DcaFactory(descriptor("DcaTrader", "DCA trader", serde_json::json!({"interval_steps":1,"order_qty":1,"use_market_order":false,"limit_offset_ticks":0,"fallback_price_tick":100,"side":"Buy"})))).unwrap();
+    registry.register(GridFactory(descriptor("GridTrader", "Grid trader", serde_json::json!({"center_price_tick":100,"grid_spacing_ticks":5,"levels":1,"qty_per_level":2})))).unwrap();
+    registry.register(MmFactory(descriptor("ContinuousMarketMaker", "Continuous market maker", serde_json::json!({"version":1,"half_spread_ticks":2,"size_per_level":1,"inventory_target":0,"inventory_cap":10,"requote_threshold_ticks":1,"max_resting_orders":2,"replenish_steps":1,"fallback_price_tick":100})))).unwrap();
+    registry
+        .register(CancelFactory(descriptor(
+            "CancelAtStep",
+            "Cancel at step",
+            serde_json::json!({"cancel_at_step":1}),
+        )))
+        .unwrap();
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -170,6 +372,12 @@ pub const AGENT_CONFIG_VERSION: u16 = 1;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum PersistedAgentKindState {
+    Plugin {
+        plugin_id: String,
+        plugin_version: String,
+        state_version: u16,
+        data: serde_json::Value,
+    },
     Noise {
         rng_state: u64,
     },

@@ -335,7 +335,7 @@ them. Existing `room_owned_by_other_instance`, `room_lease_lost`, and
 | Room mutation schema | `1` | Unknown version fails recovery. Additive fields must default. |
 | `StateCheckpoint` actor JSON | implicit serde of `SimulationRoom` | Unknown/legacy shapes either normalize (tested) or fail closed. Periodic snapshot table rows are not this schema. |
 | Scenario config | serde of `ScenarioConfig` | Stored on the room row. Breaking field changes need a version field before use as a training product (P3). |
-| Agent template JSON | `AgentTemplate` serde | Includes `NoiseTrader`, `DcaTrader`, `GridTrader`, `ContinuousMarketMaker`, `CancelAtStep`. Continuous MM persists RNG/mid/inventory; Grid behavior is unchanged. |
+| Agent template JSON | `AgentTemplate` serde | Includes `NoiseTrader`, `DcaTrader`, `GridTrader`, `ContinuousMarketMaker`, `CancelAtStep`, and the version-pinned `Plugin` envelope (`bot.v1`). Continuous MM persists RNG/mid/inventory; Grid behavior is unchanged. |
 | Strategy protocol | `strategy.v1` | Observation + HTTP place/cancel. Breaking observation fields require a new version string. |
 | Scoring | `SCORING_RULE_VERSION` / `scoring_version` on `TrainingScore` | Reports record scoring version; incomplete runs take `incomplete_penalty_ppm`. |
 | HTTP API | unversioned paths | Additive fields with defaults. Breaking response changes require a versioned path or an explicit compat window documented in the validation record. |

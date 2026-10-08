@@ -159,6 +159,24 @@ class Client:
     def training_report(self, run_id: str) -> Any:
         return self._request("GET", f"/training/runs/{run_id}/report")
 
+    def list_bots(self) -> Any:
+        return self._request("GET", "/bots")
+
+    def room_bots(self, room_id: str) -> Any:
+        return self._request("GET", f"/rooms/{room_id}/bots")
+
+    def start_agents(self, room_id: str, agents: list[dict[str, Any]], interval_ms: int = 1000) -> Any:
+        return self._request("POST", f"/rooms/{room_id}/agents", {"agents": agents, "interval_ms": interval_ms})
+
+    def stop_agents(self, room_id: str) -> Any:
+        return self._request("POST", f"/rooms/{room_id}/agents/stop", {})
+
+    def pause_room(self, room_id: str, idempotency_key: Optional[str] = None) -> Any:
+        return self._request("POST", f"/rooms/{room_id}/pause", {}, idempotency_key=idempotency_key)
+
+    def step_bots(self, room_id: str, idempotency_key: Optional[str] = None) -> Any:
+        return self._request("POST", f"/rooms/{room_id}/clock/step", {}, idempotency_key=idempotency_key)
+
     def clock(self, room_id: str) -> Any:
         return self._request("GET", f"/rooms/{room_id}/clock")
 

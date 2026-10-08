@@ -118,6 +118,7 @@ fn run() -> Result<(), String> {
         ["account", "list", room_id] => {
             print_json(&client.room_accounts(room_id).map_err(|e| e.to_string())?)
         }
+        ["bot", "list"] => print_json(&client.list_bots().map_err(|e| e.to_string())?),
         ["agent", "status", room_id] => {
             print_json(&client.agent_status(room_id).map_err(|e| e.to_string())?)
         }
@@ -246,6 +247,7 @@ fn run() -> Result<(), String> {
   account list ID|assign ROOM ACCOUNT USER
   member add ROOM USER ROLE|remove ROOM USER
   observe ROOM ACCOUNT
+  bot list
   agent status ID|start ID FILE|stop ID
   order submit ID ACCOUNT buy|sell PRICE QTY
   order cancel ID ACCOUNT ORDER_ID

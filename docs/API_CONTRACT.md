@@ -93,6 +93,16 @@ Removing a member deletes that user's `account_owners` rows. Subsequent writes, 
 
 Account assignment after a training run has started returns HTTP 409.
 
+## Bot plugins (`bot.v1`)
+
+`GET /bots` lists authenticated users' available builtin and installed process bot descriptors and parameter definitions. `GET /rooms/{id}/bots` returns the saved scheduler configuration/state (or null), with room-admin authorization. Existing `/rooms/{id}/agents` start/status and `/agents/stop` manage the instances.
+
+Agent requests additionally accept `{ "Plugin": { "participant": ParticipantConfig, "plugin_id": "example.buy-remaining", "plugin_version": "1.0.0", "state_version": 1, "config_version": 1, "seed": 7, "config": { "target_qty": 4 } } }`. All three numeric version/seed fields default to 1. Participant IDs must be unique and include explicit instrument routing. Unknown plugin IDs, versions and parameters return 400 before creation. Commands come only from locally installed manifests loaded with `MARKETFORGE_BOT_PLUGIN_DIR`, never from API bodies.
+
+Builtin template JSON remains supported; builtin plugin IDs are the original template names and version `"1"`. Registration persists initial configuration before stepping. Reapplying an identical instance preserves its state; changing its configuration resets that instance. Adding/removing other instances preserves unchanged instances. Changing the list during an unfinished step returns 409. An empty list durably clears the configuration. Stop preserves state; recovered automatic workers require explicit start.
+
+Process plugins receive one versioned JSON decision request and return actions/state. The platform submits through its gateway and journals saved state and unfinished actions. It applies the existing training buy-only/capacity rules and records each execution's book/fill evidence. See [bot installation and protocol](BOT_PLUGINS.md) for manifests, limits and examples.
+
 ## External strategy protocol (`strategy.v1`)
 
 `GET /rooms/{id}/observe` returns `{ "api_version": "strategy.v1", "observation": ParticipantObservation }`. Observation is public book/trades/sim time plus the caller's own orders and account. Place/cancel go through `POST /rooms/{id}/orders` with `Idempotency-Key`. External strategies do not access the database or internal actors.
@@ -111,7 +121,7 @@ GET  /training/runs/{run_id}/result
 GET  /training/runs/{run_id}/report
 ```
 
-`POST /training/runs` creates the room, persists `TrainingProgress`, and returns status `Running`. That response is not a finished score. The same `run_id` is looked up and returned; a different run that reuses an existing room is HTTP 409. Agents listed on the request are started on the internal worker (not the Bearer HTTP callback). Clock `advance` / scheduler steps call `TrainingRun::on_step` and `settle_training_residuals` on the finish line.
+`POST /training/runs` creates the room, persists `TrainingProgress`, and returns status `Running`. That response is not a finished score. The same `run_id` is looked up and returned; a different run that reuses an existing room is HTTP 409. Agents listed on the request are started on the internal worker (not the Bearer HTTP callback). Optional `manual_agents: true` instead persists an initial manual scheduler without starting a worker; pause the room and use `/clock/step` for complete decision/action/state steps. Clock `advance` / scheduler steps call `TrainingRun::on_step` and `settle_training_residuals` on the finish line.
 
 Agent templates include `NoiseTrader`, `DcaTrader`, `GridTrader`, `ContinuousMarketMaker`, and `CancelAtStep`. `ContinuousMarketMaker` and `NoiseTrader` carry a `seed`. Batch evaluation derives child seeds with the same wrapping-u64 function as `exchange_core::training_scenarios::child_seed(parent, agent_name)` and will not treat a renamed room as a different experiment.
 

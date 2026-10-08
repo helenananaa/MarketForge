@@ -633,6 +633,40 @@ impl JournalCoordinator {
         .await
     }
 
+    pub(crate) async fn query_candles(
+        &self,
+        user_id: &str,
+        room_id: &str,
+        instrument_id: &str,
+        interval_ms: u64,
+        now_ms: u64,
+        after: Option<u64>,
+    ) -> Result<Option<Vec<exchange_core::candles::Candle>>, JournalError> {
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        let instrument_id = instrument_id.to_string();
+        self.execute_read(move |store| {
+            store.query_candles(
+                &user_id,
+                &room_id,
+                &instrument_id,
+                interval_ms,
+                now_ms,
+                after,
+            )
+        })
+        .await
+    }
+
+    pub(crate) async fn load_room_replay(
+        &self,
+        room_id: &str,
+    ) -> Result<crate::journal::JournalRecovery, JournalError> {
+        let room_id = room_id.to_string();
+        self.execute_read(move |store| store.load_room_replay(&room_id))
+            .await
+    }
+
     pub(crate) async fn query_market_ticks(
         &self,
         user_id: &str,

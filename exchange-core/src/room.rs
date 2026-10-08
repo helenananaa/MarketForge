@@ -25,6 +25,7 @@ pub struct RoomManager {
     rooms: BTreeMap<RoomId, SimulationRoom>,
     executions: BTreeMap<RoomId, Vec<ActorExecution>>,
     pending_liquidations: BTreeMap<RoomId, VecDeque<PendingRoomLiquidation>>,
+    recovered_last_trades: BTreeMap<(RoomId, String), i64>,
 }
 
 impl RoomManager {
@@ -493,6 +494,8 @@ impl RoomManager {
     }
 
     pub fn remove_room(&mut self, room_id: &str) -> bool {
+        self.recovered_last_trades
+            .retain(|(room, _), _| room != room_id);
         let removed = self.rooms.remove(room_id).is_some();
         self.executions.remove(room_id);
         self.pending_liquidations.remove(room_id);
@@ -728,12 +731,28 @@ impl RoomManager {
         let last = self
             .timed_trades(room_id, instrument_id)?
             .last()
-            .map(|trade| trade.price_tick);
+            .map(|trade| trade.price_tick)
+            .or_else(|| {
+                self.recovered_last_trades
+                    .get(&(room_id.to_string(), instrument_id.to_string()))
+                    .copied()
+            });
         Ok(crate::candles::Ticker::from_book_and_last(
             book.bids.first().map(|level| level.price_tick),
             book.asks.first().map(|level| level.price_tick),
             last,
         ))
+    }
+
+    /// Preserve last-trade ticker state when restoring only a journal suffix.
+    pub fn restore_last_trade_price(
+        &mut self,
+        room_id: &str,
+        instrument_id: &str,
+        price_tick: i64,
+    ) {
+        self.recovered_last_trades
+            .insert((room_id.to_string(), instrument_id.to_string()), price_tick);
     }
 
     pub fn timed_trades(

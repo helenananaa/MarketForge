@@ -92,9 +92,12 @@ Frontend `npm` build is optional for backend work.
 
 - [Design](docs/DESIGN.md)
 - [Backend execution plan (Chinese)](docs/BACKEND_EXECUTION_PLAN.md)
+- [Backend follow-up execution plan (Chinese)](docs/BACKEND_FOLLOWUP_EXECUTION_PLAN.md)
 - [Runtime contract](docs/RUNTIME_CONTRACT.md)
 - [HTTP API contract](docs/API_CONTRACT.md)
 - [Backend storage and runtime configuration](docs/BACKEND_STORAGE.md)
+- [Bot plugins and installation](docs/BOT_PLUGINS.md)
+- [Historical storage, archives, and capacity validation](docs/HISTORICAL_STORAGE.md)
 - [CandleScope adapter](marketforge-candlescope-plugin/README.md)
 
 ## License

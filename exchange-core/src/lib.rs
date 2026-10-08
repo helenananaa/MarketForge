@@ -1,6 +1,7 @@
 pub mod account;
 pub mod actor;
 pub mod agents;
+pub mod bots;
 pub mod candles;
 pub mod clock;
 pub mod engine;
@@ -85,7 +86,7 @@ pub use scenario::{
 pub use scheduler::{
     AgentContinuity, CrashPoint, DEFAULT_CATCH_UP_LIMIT, PersistedAgent, SCHEDULER_STATE_VERSION,
     SchedulerError, SchedulerMode, SchedulerPhase, SchedulerState, SchedulerStepOutcome,
-    run_scheduler_step,
+    run_scheduler_step, run_scheduler_step_with_policy, run_scheduler_step_with_registry,
 };
 pub use simulation::{
     AccountNetWorthAssetSnapshot, AccountNetWorthSnapshot, AssetLedgerEntry, AssetLedgerKind,
@@ -116,4 +117,10 @@ pub use venue_rules::{
     CircuitBreakerRuleConfig, PendingSpotBuy, PriceLimitRuleConfig, SettlementRuleConfig,
     TradingSessionRuleConfig, TradingSessionWindow, TransferPolicyConfig, VenuePreset,
     VenueRuleConfig, VenueRuleConfigError, VenueRuleEngine, VenueRuleRejectReason,
+};
+
+pub use bots::{
+    BOT_CONFIG_VERSION, BOT_PROTOCOL_VERSION, BotConfig, BotDecisionRequest, BotDecisionResponse,
+    BotDescriptor, BotError, BotExecutionPolicy, BotFactory, BotParameter, BotRegistry,
+    MAX_BOT_ACTIONS, ParameterType, ScheduledBot,
 };

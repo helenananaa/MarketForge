@@ -63,6 +63,18 @@ def agent_name(agent: Any) -> str:
     return kind or "agent"
 
 
+def has_plugin_agents(request: dict[str, Any]) -> bool:
+    return any(agent_kind_and_body(agent)[0] == "Plugin" for agent in request.get("agents") or [])
+
+
+def has_trainee_agent(request: dict[str, Any]) -> bool:
+    account_id = request.get("trainee_account_id")
+    return any(
+        isinstance(body, dict) and (body.get("participant") or {}).get("account_id") == account_id
+        for _kind, body in (agent_kind_and_body(agent) for agent in request.get("agents") or [])
+    )
+
+
 def inject_seed(spec: dict[str, Any], seed: int) -> dict[str, Any]:
     """Copy spec and set each agent `seed` field from child_seed(parent, agent name).
 
@@ -71,8 +83,8 @@ def inject_seed(spec: dict[str, Any], seed: int) -> dict[str, Any]:
     """
     request = copy.deepcopy(spec)
     for agent in request.get("agents") or []:
-        _kind, body = agent_kind_and_body(agent)
-        if body is not None and "seed" in body:
+        kind, body = agent_kind_and_body(agent)
+        if body is not None and ("seed" in body or kind == "Plugin"):
             body["seed"] = child_seed(seed, agent_name(agent))
     return request
 
@@ -99,6 +111,9 @@ def experiment_identity(spec: dict[str, Any], seed: int) -> dict[str, Any]:
     strategy_version = 1
     for agent in agents:
         _kind, body = agent_kind_and_body(agent)
+        if body is not None and body.get("plugin_version") is not None:
+            strategy_version = body["plugin_version"]
+            break
         if body is not None and body.get("version") is not None:
             strategy_version = body["version"]
             break
@@ -145,6 +160,10 @@ def prepare_request(
         request["scenario"] = {}
     request["scenario"]["room_id"] = f"{base}-{suffix}"
     _rewrite_agent_rooms(request, request["scenario"]["room_id"])
+    if has_plugin_agents(request):
+        if not has_trainee_agent(request):
+            raise ValueError("plugin evaluation requires a bot bound to trainee_account_id")
+        request["manual_agents"] = True
     if max_steps is not None:
         request["horizon_steps"] = max_steps
     return request
@@ -240,6 +259,9 @@ def drive_until_terminal(
     account_id = int(request.get("trainee_account_id") or 0)
     deadline = time.monotonic() + timeout_seconds
     advances = 0
+    plugin_agents = has_plugin_agents(request)
+    if plugin_agents and not is_terminal_status(run_status(payload)):
+        client.pause_room(room_id, idempotency_key=f"batch-pause-{run_id}")
     while time.monotonic() < deadline:
         if cancel_run_ids is not None and run_id in cancel_run_ids:
             try:
@@ -252,7 +274,7 @@ def drive_until_terminal(
         status = run_status(payload)
         if is_terminal_status(status):
             return payload
-        if drive_strategy_enabled and account_id:
+        if drive_strategy_enabled and account_id and not (plugin_agents and has_trainee_agent(request)):
             try:
                 drive_strategy(client, room_id, account_id, remaining_qty(payload))
             except MarketForgeError:
@@ -260,11 +282,18 @@ def drive_until_terminal(
         if max_clock_advances is not None and advances >= max_clock_advances:
             return client.training_status(run_id)
         try:
-            client.advance_clock(
-                room_id,
-                1,
-                idempotency_key=f"batch-clock-{run_id}-{advances}",
-            )
+            if plugin_agents:
+                # Use the server's durable simulation step: decision + actions + state,
+                # rather than advancing a clock while a wall-clock worker races it.
+                # A cursor-derived key also survives a batch-process restart.
+                cursor = client.clock(room_id)["clock"]["step"]
+                client.step_bots(room_id, idempotency_key=f"batch-bots-{run_id}-{cursor}")
+            else:
+                client.advance_clock(
+                    room_id,
+                    1,
+                    idempotency_key=f"batch-clock-{run_id}-{advances}",
+                )
             advances += 1
         except MarketForgeError as exc:
             payload = client.training_status(run_id)

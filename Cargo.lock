@@ -271,6 +271,7 @@ dependencies = [
  "axum",
  "exchange-core",
  "futures-util",
+ "libc",
  "postgres",
  "reqwest",
  "serde",

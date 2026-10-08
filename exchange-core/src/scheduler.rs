@@ -1,14 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    agents::{
-        AGENT_CONFIG_VERSION, AGENT_STATE_VERSION, AgentTemplate, CancelAtStepTrader,
-        ContinuousMarketMaker, DcaTrader, GridTrader, NoiseTrader, PersistedAgentKindState,
-    },
+    agents::{AGENT_CONFIG_VERSION, AGENT_STATE_VERSION, AgentTemplate, PersistedAgentKindState},
+    bots::{BotError, BotRegistry, MAX_BOT_ACTIONS, ScheduledBot},
     gateway::{GatewayError, GatewayRequest, OrderAction, OrderGateway, TradingApi},
     model::AccountId,
-    observation::ParticipantObservation,
-    participant::{Participant, ParticipantConfig},
+    participant::ParticipantConfig,
     room::{RoomManager, RoomManagerError},
 };
 
@@ -145,25 +142,7 @@ impl SchedulerState {
 
 impl PersistedAgent {
     pub fn from_template(template: AgentTemplate) -> Self {
-        let kind_state = match &template {
-            AgentTemplate::NoiseTrader(config) => PersistedAgentKindState::Noise {
-                rng_state: config.seed.max(1),
-            },
-            AgentTemplate::DcaTrader(_) => PersistedAgentKindState::Dca { observed_steps: 0 },
-            AgentTemplate::GridTrader(_) => PersistedAgentKindState::Grid {
-                has_seeded_grid: false,
-            },
-            AgentTemplate::ContinuousMarketMaker(config) => PersistedAgentKindState::ContinuousMm {
-                rng_state: config.seed.max(1),
-                last_mid: None,
-                steps_since_quote: 0,
-                inventory: 0,
-            },
-            AgentTemplate::CancelAtStep(_) => PersistedAgentKindState::CancelAtStep {
-                canceled: false,
-                observed_steps: 0,
-            },
-        };
+        let kind_state = template.initial_state();
         Self {
             version: AGENT_STATE_VERSION,
             config_version: AGENT_CONFIG_VERSION,
@@ -174,38 +153,17 @@ impl PersistedAgent {
     }
 
     pub fn requires_instrument(&self) -> Result<&str, SchedulerError> {
-        let instrument = match &self.template {
-            AgentTemplate::NoiseTrader(config) => config.participant.instrument_id.as_deref(),
-            AgentTemplate::DcaTrader(config) => config.participant.instrument_id.as_deref(),
-            AgentTemplate::GridTrader(config) => config.participant.instrument_id.as_deref(),
-            AgentTemplate::ContinuousMarketMaker(config) => {
-                config.participant.instrument_id.as_deref()
-            }
-            AgentTemplate::CancelAtStep(config) => config.participant.instrument_id.as_deref(),
-        };
+        let instrument = self.template.config().instrument_id.as_deref();
         instrument.ok_or_else(|| SchedulerError::MissingInstrument {
             participant_id: self.template.participant_id().to_string(),
         })
     }
 
     pub fn account_id(&self) -> AccountId {
-        match &self.template {
-            AgentTemplate::NoiseTrader(config) => config.participant.account_id,
-            AgentTemplate::DcaTrader(config) => config.participant.account_id,
-            AgentTemplate::GridTrader(config) => config.participant.account_id,
-            AgentTemplate::ContinuousMarketMaker(config) => config.participant.account_id,
-            AgentTemplate::CancelAtStep(config) => config.participant.account_id,
-        }
+        self.config().account_id
     }
-
     pub fn config(&self) -> &ParticipantConfig {
-        match &self.template {
-            AgentTemplate::NoiseTrader(config) => &config.participant,
-            AgentTemplate::DcaTrader(config) => &config.participant,
-            AgentTemplate::GridTrader(config) => &config.participant,
-            AgentTemplate::ContinuousMarketMaker(config) => &config.participant,
-            AgentTemplate::CancelAtStep(config) => &config.participant,
-        }
+        self.template.config()
     }
 }
 
@@ -217,6 +175,7 @@ pub enum SchedulerError {
     Closed,
     NotPausedForManualStep,
     UnknownCrashRestore,
+    Bot(BotError),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -234,84 +193,6 @@ pub struct SchedulerStepOutcome {
     pub crash_point: CrashPoint,
 }
 
-enum RuntimeAgent {
-    Noise(NoiseTrader),
-    Dca(DcaTrader),
-    Grid(GridTrader),
-    ContinuousMm(ContinuousMarketMaker),
-    CancelAtStep(CancelAtStepTrader),
-}
-
-impl RuntimeAgent {
-    fn from_persisted(agent: &PersistedAgent) -> Result<Self, SchedulerError> {
-        let mut runtime = match agent.template.clone() {
-            AgentTemplate::NoiseTrader(config) => Self::Noise(NoiseTrader::new(config)),
-            AgentTemplate::DcaTrader(config) => Self::Dca(DcaTrader::new(config)),
-            AgentTemplate::GridTrader(config) => Self::Grid(GridTrader::new(config)),
-            AgentTemplate::ContinuousMarketMaker(config) => {
-                Self::ContinuousMm(ContinuousMarketMaker::new(config))
-            }
-            AgentTemplate::CancelAtStep(config) => {
-                Self::CancelAtStep(CancelAtStepTrader::new(config))
-            }
-        };
-        if !runtime.restore(&agent.kind_state) {
-            return Err(SchedulerError::UnknownCrashRestore);
-        }
-        Ok(runtime)
-    }
-
-    fn restore(&mut self, state: &PersistedAgentKindState) -> bool {
-        match self {
-            Self::Noise(agent) => agent.restore_kind_state(state),
-            Self::Dca(agent) => agent.restore_kind_state(state),
-            Self::Grid(agent) => agent.restore_kind_state(state),
-            Self::ContinuousMm(agent) => agent.restore_kind_state(state),
-            Self::CancelAtStep(agent) => agent.restore_kind_state(state),
-        }
-    }
-
-    fn persist(&self) -> PersistedAgentKindState {
-        match self {
-            Self::Noise(agent) => agent.persist_kind_state(),
-            Self::Dca(agent) => agent.persist_kind_state(),
-            Self::Grid(agent) => agent.persist_kind_state(),
-            Self::ContinuousMm(agent) => agent.persist_kind_state(),
-            Self::CancelAtStep(agent) => agent.persist_kind_state(),
-        }
-    }
-
-    fn observe(&mut self, view: &ParticipantObservation) {
-        match self {
-            Self::Noise(agent) => agent.observe(view),
-            Self::Dca(agent) => agent.observe(view),
-            Self::Grid(agent) => agent.observe(view),
-            Self::ContinuousMm(agent) => agent.observe(view),
-            Self::CancelAtStep(agent) => agent.observe(view),
-        }
-    }
-
-    fn decide(&mut self) -> Vec<OrderAction> {
-        match self {
-            Self::Noise(agent) => agent.decide(),
-            Self::Dca(agent) => agent.decide(),
-            Self::Grid(agent) => agent.decide(),
-            Self::ContinuousMm(agent) => agent.decide(),
-            Self::CancelAtStep(agent) => agent.decide(),
-        }
-    }
-
-    fn as_participant(&mut self) -> &mut dyn Participant {
-        match self {
-            Self::Noise(agent) => agent,
-            Self::Dca(agent) => agent,
-            Self::Grid(agent) => agent,
-            Self::ContinuousMm(agent) => agent,
-            Self::CancelAtStep(agent) => agent,
-        }
-    }
-}
-
 fn matches_crash(point: CrashPoint, expected: CrashPoint) -> bool {
     point != CrashPoint::None && point == expected
 }
@@ -327,6 +208,40 @@ pub fn run_scheduler_step(
     state: SchedulerState,
     crash_at: CrashPoint,
 ) -> Result<SchedulerStepOutcome, SchedulerError> {
+    run_scheduler_step_with_registry(
+        rooms,
+        next_order_id,
+        state,
+        crash_at,
+        &BotRegistry::with_builtins(),
+    )
+}
+
+pub fn run_scheduler_step_with_registry(
+    rooms: &mut RoomManager,
+    next_order_id: &mut u64,
+    state: SchedulerState,
+    crash_at: CrashPoint,
+    registry: &BotRegistry,
+) -> Result<SchedulerStepOutcome, SchedulerError> {
+    run_scheduler_step_with_policy(
+        rooms,
+        next_order_id,
+        state,
+        crash_at,
+        registry,
+        &mut crate::bots::unrestricted_policy(),
+    )
+}
+
+pub fn run_scheduler_step_with_policy(
+    rooms: &mut RoomManager,
+    next_order_id: &mut u64,
+    state: SchedulerState,
+    crash_at: CrashPoint,
+    registry: &BotRegistry,
+    policy: &mut dyn crate::bots::BotExecutionPolicy,
+) -> Result<SchedulerStepOutcome, SchedulerError> {
     if rooms.status(&state.room_id).map_err(SchedulerError::Room)?
         == crate::actor::MarketStatus::Closed
     {
@@ -337,7 +252,15 @@ pub fn run_scheduler_step(
     let mut agents = state
         .agents
         .iter()
-        .map(RuntimeAgent::from_persisted)
+        .map(|agent| {
+            if agent.version != AGENT_STATE_VERSION || agent.config_version != AGENT_CONFIG_VERSION
+            {
+                return Err(SchedulerError::UnknownCrashRestore);
+            }
+            registry
+                .create(&agent.template, &agent.kind_state)
+                .map_err(SchedulerError::Bot)
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     match state.phase.clone() {
@@ -423,9 +346,15 @@ pub fn run_scheduler_step(
             let observation = rooms
                 .participant_observation(&room_id, &instrument_id, account_id)
                 .map_err(SchedulerError::Room)?;
-            agents[participant_index].observe(&observation);
-            let actions = agents[participant_index].decide();
-            state.agents[participant_index].kind_state = agents[participant_index].persist();
+            let actions = agents[participant_index]
+                .decide(&observation)
+                .map_err(SchedulerError::Bot)?;
+            if actions.len() > MAX_BOT_ACTIONS {
+                return Err(SchedulerError::Bot(BotError(
+                    "bot exceeded action limit".into(),
+                )));
+            }
+            state.agents[participant_index].kind_state = agents[participant_index].snapshot();
             state.agents[participant_index].unfinished_actions = actions;
             state.phase = SchedulerPhase::Decided {
                 step,
@@ -472,16 +401,24 @@ pub fn run_scheduler_step(
                     crash_point: crash_at,
                 });
             }
+            let request = GatewayRequest {
+                participant_id: participant_id.clone(),
+                room_id: room_id.clone(),
+                instrument_id: Some(instrument_id.clone()),
+                account_id,
+                action: action.clone(),
+            };
+            let observation = rooms
+                .participant_observation(&room_id, &instrument_id, account_id)
+                .map_err(SchedulerError::Room)?;
+            policy
+                .before_action(&request, &observation)
+                .map_err(SchedulerError::Bot)?;
             let mut gateway = OrderGateway::new_scheduler(rooms, *next_order_id);
-            gateway
-                .submit_action(GatewayRequest {
-                    participant_id: participant_id.clone(),
-                    room_id: room_id.clone(),
-                    instrument_id: Some(instrument_id.clone()),
-                    account_id,
-                    action: action.clone(),
-                })
+            let execution = gateway
+                .submit_action(request)
                 .map_err(SchedulerError::Gateway)?;
+            policy.after_action(&execution, &observation.book);
             *next_order_id = gateway.next_order_id();
             state.phase = SchedulerPhase::Submitting {
                 step,
@@ -510,7 +447,6 @@ pub fn run_scheduler_step(
             participant_index: participant_index + 1,
         };
         persist_runtime(&mut state, &agents);
-        let _ = agents[participant_index].as_participant();
     }
 
     if matches_crash(crash_at, CrashPoint::BeforeStepComplete { step }) {
@@ -538,9 +474,9 @@ pub fn run_scheduler_step(
     })
 }
 
-fn persist_runtime(state: &mut SchedulerState, agents: &[RuntimeAgent]) {
+fn persist_runtime(state: &mut SchedulerState, agents: &[Box<dyn ScheduledBot>]) {
     for (persisted, runtime) in state.agents.iter_mut().zip(agents.iter()) {
-        persisted.kind_state = runtime.persist();
+        persisted.kind_state = runtime.snapshot();
         persisted.version = AGENT_STATE_VERSION;
         persisted.config_version = AGENT_CONFIG_VERSION;
     }
@@ -803,5 +739,166 @@ mod tests {
                     crate::ActorExecutionResult::Accepted(_)
                 ))
         );
+    }
+    struct CounterFactory {
+        descriptor: crate::BotDescriptor,
+        calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+    struct CounterBot {
+        config: crate::BotConfig,
+        count: u64,
+        calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+    impl crate::ScheduledBot for CounterBot {
+        fn decide(
+            &mut self,
+            _: &crate::ParticipantObservation,
+        ) -> Result<Vec<OrderAction>, crate::BotError> {
+            self.calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.count += 1;
+            Ok(vec![OrderAction::PlaceLimit {
+                side: Side::Buy,
+                price_tick: 100,
+                qty: 1,
+            }])
+        }
+        fn snapshot(&self) -> PersistedAgentKindState {
+            PersistedAgentKindState::Plugin {
+                plugin_id: self.config.plugin_id.clone(),
+                plugin_version: self.config.plugin_version.clone(),
+                state_version: 1,
+                data: serde_json::json!({"count":self.count}),
+            }
+        }
+    }
+    impl crate::BotFactory for CounterFactory {
+        fn descriptor(&self) -> &crate::BotDescriptor {
+            &self.descriptor
+        }
+        fn create(
+            &self,
+            template: &AgentTemplate,
+            state: &PersistedAgentKindState,
+        ) -> Result<Box<dyn crate::ScheduledBot>, crate::BotError> {
+            let AgentTemplate::Plugin(config) = template else {
+                panic!("expected plugin")
+            };
+            let PersistedAgentKindState::Plugin { data, .. } = state else {
+                panic!("expected plugin state")
+            };
+            Ok(Box::new(CounterBot {
+                config: config.clone(),
+                count: data
+                    .get("count")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0),
+                calls: self.calls.clone(),
+            }))
+        }
+    }
+    #[test]
+    fn registered_bot_recovery_preserves_decision_and_never_resubmits_actions() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        for crash in [
+            CrashPoint::AfterDecisionPersist {
+                step: 1,
+                participant_index: 0,
+            },
+            CrashPoint::BeforeActionSubmit {
+                step: 1,
+                participant_index: 0,
+                action_index: 0,
+            },
+            CrashPoint::AfterActionSubmit {
+                step: 1,
+                participant_index: 0,
+                action_index: 0,
+            },
+            CrashPoint::BeforeStepComplete { step: 1 },
+        ] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let mut registry = crate::BotRegistry::with_builtins();
+            registry
+                .register(CounterFactory {
+                    descriptor: crate::BotDescriptor {
+                        id: "counter".into(),
+                        name: "Counter".into(),
+                        version: "1".into(),
+                        protocol_version: crate::BOT_PROTOCOL_VERSION.into(),
+                        state_version: 1,
+                        runtime: "native".into(),
+                        parameters: Default::default(),
+                    },
+                    calls: calls.clone(),
+                })
+                .unwrap();
+            let template = AgentTemplate::Plugin(crate::BotConfig {
+                participant: ParticipantConfig {
+                    participant_id: "counter-1".into(),
+                    kind: crate::ParticipantKind::RuleAgent,
+                    room_id: "sched-room".into(),
+                    account_id: 20,
+                    instrument_id: Some("V-BTC-SPOT".into()),
+                },
+                plugin_id: "counter".into(),
+                plugin_version: "1".into(),
+                state_version: 1,
+                config_version: 1,
+                seed: 7,
+                config: serde_json::json!({}),
+            });
+            let mut rooms = RoomManager::new();
+            rooms.create_room(scenario()).unwrap();
+            let mut order_id = 1;
+            let state = SchedulerState::new("sched-room", vec![template], SchedulerMode::Manual);
+            let outcome = run_scheduler_step_with_registry(
+                &mut rooms,
+                &mut order_id,
+                state,
+                crash,
+                &registry,
+            )
+            .unwrap();
+            assert!(outcome.crashed);
+            let saved: SchedulerState =
+                serde_json::from_slice(&serde_json::to_vec(&outcome.state).unwrap()).unwrap();
+            let recovered = run_scheduler_step_with_registry(
+                &mut rooms,
+                &mut order_id,
+                saved,
+                CrashPoint::None,
+                &registry,
+            )
+            .unwrap();
+            assert_eq!(calls.load(Ordering::Relaxed), 1, "{crash:?}");
+            assert_eq!(
+                rooms.execution_history("sched-room").unwrap().len(),
+                1,
+                "{crash:?}"
+            );
+            assert_eq!(order_id, 2);
+            assert_eq!(
+                recovered.state.agents[0].kind_state,
+                outcome.state.agents[0].kind_state
+            );
+            let second = run_scheduler_step_with_registry(
+                &mut rooms,
+                &mut order_id,
+                recovered.state,
+                CrashPoint::None,
+                &registry,
+            )
+            .unwrap();
+            assert_eq!(calls.load(Ordering::Relaxed), 2);
+            let PersistedAgentKindState::Plugin { data, .. } = &second.state.agents[0].kind_state
+            else {
+                panic!()
+            };
+            assert_eq!(data["count"], 2);
+        }
     }
 }

@@ -106,6 +106,11 @@ const MIGRATIONS: &[SchemaMigration] = &[
         name: "external_action_quota",
         sql: include_str!("../migrations/0014_external_action_quota.sql"),
     },
+    SchemaMigration {
+        version: 15,
+        name: "recovery_heads",
+        sql: include_str!("../migrations/0015_recovery_heads.sql"),
+    },
 ];
 
 pub const ROOM_MUTATION_SCHEMA_VERSION: u16 = 1;
@@ -160,9 +165,24 @@ pub trait JournalStore: Send {
             .mutations
             .retain(|mutation| mutation.room_id == room_id);
         recovery
+            .runtime_checkpoints
+            .retain(|checkpoint| checkpoint.room_id == room_id);
+        recovery
+            .last_market_ticks
+            .retain(|tick| tick.room_id == room_id);
+        recovery
             .snapshots
             .retain(|snapshot| snapshot.room_id == room_id);
         Ok(recovery)
+    }
+
+    /// Complete canonical history for offline replay and archive validation.
+    fn load_full_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
+        self.load_recovery()
+    }
+
+    fn load_room_replay(&mut self, room_id: &str) -> Result<JournalRecovery, JournalError> {
+        self.load_room_recovery(room_id)
     }
 
     fn health_check(&mut self) -> Result<(), JournalError> {
@@ -436,6 +456,19 @@ pub trait JournalStore: Send {
         _limit: usize,
     ) -> Result<Vec<TradeProjection>, JournalError> {
         Ok(Vec::new())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn query_candles(
+        &mut self,
+        _user_id: &str,
+        _room_id: &str,
+        _instrument_id: &str,
+        _interval_ms: u64,
+        _now_ms: u64,
+        _after_open_time_ms: Option<u64>,
+    ) -> Result<Option<Vec<exchange_core::candles::Candle>>, JournalError> {
+        Ok(None)
     }
 
     fn query_market_ticks(
@@ -1034,6 +1067,14 @@ impl RoomMutation {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct JournalRecovery {
+    /// Recovery-only boundaries are separate from canonical journal mutations.
+    /// A later metadata record may refer to the command before an automatic fill.
+    #[serde(default)]
+    pub runtime_checkpoints: Vec<JournalMutation>,
+    #[serde(default)]
+    pub next_order_id: Option<u64>,
+    #[serde(default)]
+    pub last_market_ticks: Vec<MarketTickProjection>,
     pub rooms: Vec<JournalRoom>,
     pub executions: Vec<JournalExecution>,
     #[serde(default)]
@@ -1354,6 +1395,9 @@ impl JournalStore for InMemoryJournalStore {
             (&left.room_id, left.command_seq).cmp(&(&right.room_id, right.command_seq))
         });
         Ok(JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: self
                 .rooms
                 .iter()
@@ -2386,6 +2430,19 @@ impl JournalStore for SharedInMemoryJournalStore {
             .query_trades(user_id, room_id, instrument_id, account_id, limit)
     }
 
+    fn query_candles(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        instrument_id: &str,
+        interval_ms: u64,
+        now_ms: u64,
+        after: Option<u64>,
+    ) -> Result<Option<Vec<exchange_core::candles::Candle>>, JournalError> {
+        self.lock()?
+            .query_candles(user_id, room_id, instrument_id, interval_ms, now_ms, after)
+    }
+
     fn query_market_ticks(
         &mut self,
         user_id: &str,
@@ -2643,6 +2700,15 @@ impl PostgresJournalStore {
         )
         .map_err(JournalError::Postgres)?;
 
+        if let Command::NewOrder(order) = &record.command
+            && order.order_id >= crate::SYSTEM_LIQUIDATION_ORDER_ID_BASE
+            && (record.participant_id.is_some()
+                || !crate::is_system_liquidation_command(&record.command))
+        {
+            return Err(JournalError::Recovery(
+                "order uses the reserved system-order range".to_string(),
+            ));
+        }
         Self::insert_projected_execution(tx, record)?;
         if let Some((user_id, step)) = &record.quota_user_step {
             Self::consume_external_action(tx, &record.room_id, user_id, *step)?;
@@ -3207,6 +3273,20 @@ impl PostgresJournalStore {
         )
         .map_err(JournalError::Postgres)?;
 
+        let cursor = snapshot.actor.next_command_seq();
+        let updated = tx.execute(
+            "INSERT INTO marketforge_recovery_heads(room_id,checkpoint_mutation_seq,checkpoint_command_cursor,snapshot_command_seq,next_order_id) \
+             SELECT $1,(SELECT COALESCE(MAX(mutation_seq),0) FROM marketforge_room_mutations WHERE room_id=$1),$2,$3, \
+                    COALESCE((SELECT MAX(order_id)+1 FROM marketforge_orders WHERE room_id=$1 AND order_id<9000000000000000000),1) \
+             WHERE $2=(SELECT COALESCE(MAX(command_seq)+1,0) FROM marketforge_executions WHERE room_id=$1) \
+             ON CONFLICT(room_id) DO UPDATE SET checkpoint_mutation_seq=EXCLUDED.checkpoint_mutation_seq,checkpoint_command_cursor=EXCLUDED.checkpoint_command_cursor,snapshot_command_seq=EXCLUDED.snapshot_command_seq,next_order_id=GREATEST(marketforge_recovery_heads.next_order_id,EXCLUDED.next_order_id)",
+            &[&snapshot.room_id, &i64_from_u64(cursor,"command_cursor")?, &command_seq],
+        ).map_err(JournalError::Postgres)?;
+        if updated != 1 {
+            return Err(JournalError::Recovery(
+                "snapshot does not cover the committed command cursor".to_string(),
+            ));
+        }
         Ok(())
     }
 
@@ -3406,7 +3486,6 @@ impl PostgresJournalStore {
         initial_snapshot: Option<&JournalSnapshot>,
         initial_writer_lease: Option<(&str, Option<&str>, u64)>,
     ) -> Result<Option<RoomWriterLease>, JournalError> {
-        let checkpoint_cursor = command_cursor_after_records(seed_records)?;
         let owner_user_id = owner_user_id.to_string();
         let scenario = scenario.clone();
         let bootstrap = bootstrap.clone();
@@ -3478,17 +3557,21 @@ impl PostgresJournalStore {
             }
             if let Some(snapshot) = &initial_snapshot {
                 Self::insert_snapshot(&mut tx, snapshot)?;
-                Self::insert_room_mutation(
+                let mutation_seq = Self::insert_room_mutation(
                     &mut tx,
                     &PendingJournalMutation::new(
                         snapshot.room_id.clone(),
-                        checkpoint_cursor,
+                        snapshot.actor.next_command_seq(),
                         RoomMutation::StateCheckpoint {
                             actor: Box::new(snapshot.actor.clone()),
                             complete_history: true,
                         },
                     ),
                 )?;
+                tx.execute(
+                    "UPDATE marketforge_recovery_heads SET checkpoint_mutation_seq=$2 WHERE room_id=$1",
+                    &[&snapshot.room_id, &i64_from_u64(mutation_seq,"mutation_seq")?],
+                ).map_err(JournalError::Postgres)?;
             }
 
             let lease = initial_writer_lease
@@ -3527,10 +3610,48 @@ impl PostgresJournalStore {
     }
 }
 
-fn load_postgres_recovery(
+pub(crate) fn load_postgres_recovery(
     client: &mut Client,
     room_id: Option<&str>,
+    optimized: bool,
 ) -> Result<JournalRecovery, JournalError> {
+    let mut tx = client
+        .build_transaction()
+        .isolation_level(postgres::IsolationLevel::RepeatableRead)
+        .read_only(true)
+        .start()
+        .map_err(JournalError::Postgres)?;
+    let result = load_postgres_recovery_snapshot(&mut tx, room_id, optimized)?;
+    tx.commit().map_err(JournalError::Postgres)?;
+    Ok(result)
+}
+
+fn load_postgres_recovery_snapshot(
+    client: &mut impl postgres::GenericClient,
+    room_id: Option<&str>,
+    optimized: bool,
+) -> Result<JournalRecovery, JournalError> {
+    // Snapshots remain optional optimizations while full canonical journals are
+    // retained. If a referenced snapshot was removed, recover from the journal
+    // instead of filtering away the commands it would have supplied.
+    let filter = room_id.map(str::to_string);
+    let missing_snapshot: bool = client.query_one(
+        "SELECT EXISTS(SELECT 1 FROM marketforge_recovery_heads h LEFT JOIN marketforge_room_snapshots s \
+         ON s.room_id=h.room_id AND s.command_seq=h.snapshot_command_seq \
+         WHERE h.snapshot_command_seq IS NOT NULL AND s.room_id IS NULL AND ($1::TEXT IS NULL OR h.room_id=$1))",
+        &[&filter],
+    ).map_err(JournalError::Postgres)?.get(0);
+    let optimized = optimized && !missing_snapshot;
+    let executions_table = if optimized {
+        "marketforge_runtime_executions"
+    } else {
+        "marketforge_executions"
+    };
+    let mutations_table = if optimized {
+        "marketforge_runtime_mutations"
+    } else {
+        "marketforge_room_mutations"
+    };
     let rooms = query_recovery_rows(
         client,
         room_id,
@@ -3562,21 +3683,25 @@ fn load_postgres_recovery(
     let executions = query_recovery_rows(
         client,
         room_id,
-        r#"
+        &format!(
+            r#"
         SELECT room_id, command_seq, participant_id, account_id,
                request_user_id, idempotency_key, request_fingerprint,
                command_json, execution_json
-        FROM marketforge_executions
+        FROM {executions_table}
         ORDER BY room_id, command_seq
-        "#,
-        r#"
+        "#
+        ),
+        &format!(
+            r#"
         SELECT room_id, command_seq, participant_id, account_id,
                request_user_id, idempotency_key, request_fingerprint,
                command_json, execution_json
-        FROM marketforge_executions
+        FROM {executions_table}
         WHERE room_id = $1
         ORDER BY room_id, command_seq
-        "#,
+        "#
+        ),
     )?
     .into_iter()
     .map(|row| {
@@ -3606,19 +3731,23 @@ fn load_postgres_recovery(
     let mutations = query_recovery_rows(
         client,
         room_id,
-        r#"
+        &format!(
+            r#"
         SELECT room_id, mutation_seq, command_cursor,
                schema_version, mutation_kind, payload_json
-        FROM marketforge_room_mutations
+        FROM {mutations_table}
         ORDER BY room_id, mutation_seq
-        "#,
-        r#"
+        "#
+        ),
+        &format!(
+            r#"
         SELECT room_id, mutation_seq, command_cursor,
                schema_version, mutation_kind, payload_json
-        FROM marketforge_room_mutations
+        FROM {mutations_table}
         WHERE room_id = $1
         ORDER BY room_id, mutation_seq
-        "#,
+        "#
+        ),
     )?
     .into_iter()
     .map(|row| {
@@ -3661,17 +3790,19 @@ fn load_postgres_recovery(
     let snapshots = query_recovery_rows(
         client,
         room_id,
-        r#"
+        &format!(r#"
         SELECT DISTINCT ON (room_id) room_id, command_seq, actor_json
         FROM marketforge_room_snapshots
+        WHERE NOT {optimized} OR NOT EXISTS (SELECT 1 FROM marketforge_recovery_heads h WHERE h.room_id=marketforge_room_snapshots.room_id AND h.checkpoint_mutation_seq IS NOT NULL)
         ORDER BY room_id, command_seq DESC
-        "#,
-        r#"
+        "#),
+        &format!(r#"
         SELECT DISTINCT ON (room_id) room_id, command_seq, actor_json
         FROM marketforge_room_snapshots
         WHERE room_id = $1
+          AND (NOT {optimized} OR NOT EXISTS (SELECT 1 FROM marketforge_recovery_heads h WHERE h.room_id=marketforge_room_snapshots.room_id AND h.checkpoint_mutation_seq IS NOT NULL))
         ORDER BY room_id, command_seq DESC
-        "#,
+        "#),
     )?
     .into_iter()
     .map(|row| {
@@ -3692,7 +3823,49 @@ fn load_postgres_recovery(
     .flatten()
     .collect();
 
+    let filter = room_id.map(str::to_string);
+    let row = client.query_one(
+        "SELECT MAX(next_order_id) FROM marketforge_recovery_heads WHERE ($1::TEXT IS NULL OR room_id=$1)",
+        &[&filter],
+    ).map_err(JournalError::Postgres)?;
+    let next_order_id = row.get::<_, Option<i64>>(0).map(|value| value as u64);
+    let mut runtime_checkpoints = Vec::new();
+    if optimized {
+        for row in client.query(
+            "SELECT h.room_id,h.checkpoint_command_cursor,h.checkpoint_mutation_seq,s.actor_json \
+             FROM marketforge_recovery_heads h LEFT JOIN marketforge_room_snapshots s \
+             ON s.room_id=h.room_id AND s.command_seq=h.snapshot_command_seq \
+             WHERE h.snapshot_command_seq IS NOT NULL AND ($1::TEXT IS NULL OR h.room_id=$1)", &[&filter],
+        ).map_err(JournalError::Postgres)? {
+            let actor_json: Option<Value> = row.get("actor_json");
+            let actor = deserialize_snapshot_actor(actor_json.ok_or_else(|| JournalError::Recovery("recovery-head snapshot is missing".to_string()))?)?
+                .ok_or_else(|| JournalError::Recovery("incompatible recovery-head snapshot".to_string()))?;
+            let cursor: i64 = row.get("checkpoint_command_cursor");
+            if actor.next_command_seq() != cursor as u64 {
+                return Err(JournalError::Recovery("recovery-head cursor differs from actor snapshot".to_string()));
+            }
+            runtime_checkpoints.push(JournalMutation {
+                room_id: row.get("room_id"), command_cursor: cursor as u64,
+                mutation_seq: row.get::<_,i64>("checkpoint_mutation_seq") as u64,
+                schema_version: ROOM_MUTATION_SCHEMA_VERSION,
+                mutation: RoomMutation::StateCheckpoint { actor: Box::new(actor), complete_history: true },
+            });
+        }
+    }
+    let last_market_ticks = client.query(
+        "SELECT DISTINCT ON (room_id,instrument_id) room_id,instrument_id,command_seq,event_seq,market_time_ms,trade_id,price_tick,qty,taker_side \
+         FROM marketforge_market_ticks WHERE ($1::TEXT IS NULL OR room_id=$1) ORDER BY room_id,instrument_id,command_seq DESC,event_seq DESC",
+        &[&filter],
+    ).map_err(JournalError::Postgres)?.into_iter().map(|row| MarketTickProjection {
+        room_id: row.get("room_id"), instrument_id: row.get("instrument_id"),
+        command_seq: row.get("command_seq"), event_seq: row.get("event_seq"),
+        market_time_ms: row.get("market_time_ms"), trade_id: row.get("trade_id"),
+        price_tick: row.get("price_tick"), qty: row.get("qty"), taker_side: row.get("taker_side"),
+    }).collect();
     Ok(JournalRecovery {
+        runtime_checkpoints,
+        next_order_id,
+        last_market_ticks,
         rooms,
         executions,
         mutations,
@@ -3701,7 +3874,7 @@ fn load_postgres_recovery(
 }
 
 fn query_recovery_rows(
-    client: &mut Client,
+    client: &mut impl postgres::GenericClient,
     room_id: Option<&str>,
     all_rooms_sql: &str,
     one_room_sql: &str,
@@ -3717,6 +3890,19 @@ fn query_recovery_rows(
 }
 
 impl JournalStore for PostgresJournalStore {
+    fn load_full_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
+        run_postgres(&mut self.client, |client| {
+            load_postgres_recovery(client, None, false)
+        })
+    }
+
+    fn load_room_replay(&mut self, room_id: &str) -> Result<JournalRecovery, JournalError> {
+        let room_id = room_id.to_string();
+        run_postgres(&mut self.client, move |client| {
+            load_postgres_recovery(client, Some(&room_id), false)
+        })
+    }
+
     fn acquire_room_writer_lease(
         &mut self,
         room_id: &str,
@@ -3892,14 +4078,14 @@ impl JournalStore for PostgresJournalStore {
 
     fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
         run_postgres(&mut self.client, |client| {
-            load_postgres_recovery(client, None)
+            load_postgres_recovery(client, None, true)
         })
     }
 
     fn load_room_recovery(&mut self, room_id: &str) -> Result<JournalRecovery, JournalError> {
         let room_id = room_id.to_string();
         run_postgres(&mut self.client, move |client| {
-            load_postgres_recovery(client, Some(&room_id))
+            load_postgres_recovery(client, Some(&room_id), true)
         })
     }
 
@@ -4795,6 +4981,31 @@ impl JournalStore for PostgresJournalStore {
                     })
                 })
                 .collect()
+        })
+    }
+
+    fn query_candles(
+        &mut self,
+        user_id: &str,
+        room_id: &str,
+        instrument_id: &str,
+        interval_ms: u64,
+        now_ms: u64,
+        after: Option<u64>,
+    ) -> Result<Option<Vec<exchange_core::candles::Candle>>, JournalError> {
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        let instrument_id = instrument_id.to_string();
+        run_postgres(&mut self.client, move |client| {
+            crate::historical_queries::candles(
+                client,
+                &user_id,
+                &room_id,
+                &instrument_id,
+                interval_ms,
+                now_ms,
+                after,
+            )
         })
     }
 
@@ -7141,7 +7352,7 @@ mod tests {
         assert!(external_action_quota.contains("marketforge_external_action_counts"));
         assert_eq!(
             MIGRATIONS.last().map(|migration| migration.version),
-            Some(14)
+            Some(15)
         );
     }
 

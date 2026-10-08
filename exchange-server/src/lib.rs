@@ -14,7 +14,10 @@ use std::{
 };
 
 pub mod auth;
+pub mod bot_plugins;
+mod historical_queries;
 pub mod journal;
+pub mod storage_audit;
 
 use axum::{
     Json, Router,
@@ -484,6 +487,7 @@ mod json_i128_option {
 }
 
 struct AppState {
+    bot_registry: exchange_core::BotRegistry,
     rooms: RoomManager,
     executions: BTreeMap<RoomId, VecDeque<RoomExecutionSummary>>,
     room_event_senders: BTreeMap<RoomId, broadcast::Sender<RoomExecutionSummary>>,
@@ -556,6 +560,7 @@ impl AppState {
             JournalCoordinator::with_read_stores(journal.writer, journal.readers)
         };
         Self {
+            bot_registry: exchange_core::BotRegistry::with_builtins(),
             rooms: RoomManager::new(),
             executions: BTreeMap::new(),
             room_event_senders: BTreeMap::new(),
@@ -598,6 +603,7 @@ impl AppState {
         };
 
         Ok(Self {
+            bot_registry: exchange_core::BotRegistry::with_builtins(),
             rooms,
             executions,
             room_event_senders: BTreeMap::new(),
@@ -860,6 +866,16 @@ pub fn new_app_with_base_url(base_url: impl Into<String>) -> Router {
     app(shared_state(AppState::new(base_url)))
 }
 
+/// Install a prevalidated host registry for an embedded/in-memory server.
+pub fn new_app_with_bot_registry(
+    base_url: impl Into<String>,
+    registry: exchange_core::BotRegistry,
+) -> Router {
+    let mut state = AppState::new(base_url);
+    state.bot_registry = registry;
+    app(shared_state(state))
+}
+
 pub fn new_app_with_journal(base_url: impl Into<String>, journal: Box<dyn JournalStore>) -> Router {
     app(shared_state(AppState::new_with_journal(base_url, journal)))
 }
@@ -988,12 +1004,24 @@ where
     F: FnOnce() -> Result<JournalStoreBundle, JournalError>,
 {
     let journal = journal_factory()?;
-    AppState::recover_with_journal_bundle_and_auth_policy(
+    let registry = bot_plugins::bot_registry_from_env()
+        .map_err(|error| JournalError::Recovery(error.to_string()))?;
+    let mut state = AppState::recover_with_journal_bundle_and_auth_policy(
         base_url,
         journal,
         auth_policy,
         room_lease_config,
-    )
+    )?;
+    state.bot_registry = registry;
+    for scheduler in state.schedulers.values() {
+        for agent in &scheduler.agents {
+            state
+                .bot_registry
+                .create(&agent.template, &agent.kind_state)
+                .map_err(|error| JournalError::Recovery(error.to_string()))?;
+        }
+    }
+    Ok(state)
 }
 
 pub async fn serve(addr: SocketAddr) -> Result<(), std::io::Error> {
@@ -1522,6 +1550,7 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
         .route("/health/ready", get(readiness))
         .route("/metrics", get(metrics))
         .route("/cluster/rooms", get(cluster_rooms))
+        .route("/bots", get(list_bots))
         .route("/training/runs", post(start_training_run))
         .route("/training/runs/{run_id}", get(training_run_status))
         .route("/training/runs/{run_id}/abort", post(abort_training_run))
@@ -1544,6 +1573,7 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
             get(agent_status).post(start_agents),
         )
         .route("/rooms/{room_id}/agents/stop", post(stop_agents))
+        .route("/rooms/{room_id}/bots", get(room_bots))
         .route("/rooms/{room_id}/events", get(room_events))
         .route("/rooms/{room_id}/events/stream", get(room_event_stream))
         .route("/rooms/{room_id}/owner", get(room_owner))
@@ -2010,6 +2040,15 @@ fn append_prometheus_metric(
     writeln!(body, "{name} {value}").expect("writing metrics to a String cannot fail");
 }
 
+async fn list_bots(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+) -> ApiResult<Vec<exchange_core::BotDescriptor>> {
+    let state = lock_state(&state).await?;
+    current_user_id(&headers, &state.auth_policy)?;
+    Ok(Json(state.bot_registry.descriptors()))
+}
+
 async fn create_room(
     State(state): State<SharedState>,
     headers: HeaderMap,
@@ -2020,7 +2059,11 @@ async fn create_room(
         let mut state = lock_state(&shared).await?;
         let user_id = current_user_id(&headers, &state.auth_policy)?;
         let request = parse_create_room_payload(payload)?;
-        validate_agent_templates(&request.scenario.room_id, &request.agents)?;
+        validate_agent_templates(
+            &request.scenario.room_id,
+            &request.agents,
+            &state.bot_registry,
+        )?;
         let mut candidate_rooms = state.rooms.clone();
         let seed_commands = request.scenario.seed_commands();
         let next_order_id = next_api_order_id_after_commands(state.next_order_id, &seed_commands)?;
@@ -2101,7 +2144,8 @@ async fn create_room(
                     agents: request.agents,
                     interval_ms: request.agent_interval_ms,
                 },
-            )?;
+            )
+            .await?;
         }
 
         Ok(Json(CreateRoomResponse {
@@ -2164,6 +2208,19 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
                 )));
             }
         }
+    }
+
+    // Validate the original journal's cursor ordering before adding recovery
+    // boundaries. Automatic fills can advance a snapshot beyond the cursor of
+    // a later training metadata record; that is not a journal regression.
+    for checkpoint in &recovery.runtime_checkpoints {
+        mutations_by_room
+            .entry(checkpoint.room_id.as_str())
+            .or_default()
+            .push(checkpoint);
+    }
+    for mutations in mutations_by_room.values_mut() {
+        mutations.sort_by_key(|mutation| mutation.mutation_seq);
     }
 
     let snapshots_by_room = recovery.snapshots.iter().fold(
@@ -2379,7 +2436,19 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
         }
     }
 
+    for tick in &recovery.last_market_ticks {
+        rooms.restore_last_trade_price(&tick.room_id, &tick.instrument_id, tick.price_tick);
+    }
     Ok(rooms)
+}
+
+fn recover_rooms_for_full_replay(recovery: &JournalRecovery) -> Result<RoomManager, JournalError> {
+    let mut full = recovery.clone();
+    full.runtime_checkpoints.clear();
+    full.snapshots.clear();
+    full.mutations
+        .retain(|record| !matches!(record.mutation, RoomMutation::StateCheckpoint { .. }));
+    recover_rooms(&full)
 }
 
 fn training_runs_from_recovery(
@@ -2704,7 +2773,7 @@ fn execution_summaries_from_recovery(
 }
 
 fn next_order_id_from_recovery(recovery: &JournalRecovery) -> Result<OrderId, JournalError> {
-    let mut next_order_id = 1;
+    let mut next_order_id = recovery.next_order_id.unwrap_or(1).max(1);
     for execution in &recovery.executions {
         let Command::NewOrder(order) = &execution.command else {
             continue;
@@ -2891,6 +2960,16 @@ fn latest_persisted_command_seq(state: &AppState, room_id: &str) -> Option<u64> 
         .get(room_id)
         .and_then(|executions| executions.back())
         .map(|execution| execution.command_seq)
+        .or_else(|| {
+            // A checkpoint may cover every command, leaving the suffix cache
+            // empty. The committed actor still carries its command cursor.
+            state
+                .rooms
+                .simulation_room(room_id)
+                .ok()?
+                .next_command_seq()
+                .checked_sub(1)
+        })
 }
 
 fn next_persisted_command_cursor(state: &AppState, room_id: &str) -> Result<u64, JournalError> {
@@ -2937,6 +3016,8 @@ pub struct StartTrainingRequest {
     pub trainee_account_id: AccountId,
     pub target_qty: u64,
     pub horizon_steps: u64,
+    #[serde(default)]
+    pub manual_agents: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -2966,6 +3047,7 @@ async fn start_training_run(
             }));
         }
         let room_id = request.scenario.room_id.clone();
+        validate_agent_templates(&room_id, &request.agents, &app.bot_registry)?;
         if app.rooms.status(&room_id).is_ok() {
             return Err(api_error(
                 StatusCode::CONFLICT,
@@ -3078,8 +3160,15 @@ async fn start_training_run(
         .map_err(api_error_from_journal)?;
         app.rooms = candidate;
         app.next_order_id = next_order_id;
-        if !request.agents.is_empty() {
-            let _ = start_agent_worker_for_room(
+        if !request.agents.is_empty() && request.manual_agents {
+            let scheduler = exchange_core::SchedulerState::new(
+                &room_id,
+                request.agents,
+                exchange_core::SchedulerMode::Manual,
+            );
+            install_scheduler(&mut app, scheduler).await?;
+        } else if !request.agents.is_empty() {
+            start_agent_worker_for_room(
                 &shared,
                 &mut app,
                 room_id,
@@ -3087,7 +3176,8 @@ async fn start_training_run(
                     agents: request.agents,
                     interval_ms: Some(50),
                 },
-            );
+            )
+            .await?;
         }
         app.training_runs
             .insert(request.run_id.clone(), run.clone());
@@ -3394,9 +3484,13 @@ async fn replay_room_isolated(
         app.journal.clone()
     };
     let mut recovery = journal
-        .load_room_recovery(&room_id)
+        .load_room_replay(&room_id)
         .await
         .map_err(api_error_from_journal)?;
+    recovery.snapshots.clear();
+    recovery
+        .mutations
+        .retain(|record| !matches!(record.mutation, RoomMutation::StateCheckpoint { .. }));
     if let Some(at) = query.at_command_seq {
         recovery
             .executions
@@ -3485,8 +3579,23 @@ async fn start_agents(
     let authorization =
         authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
     let _ = authorization;
-    let mut app = lock_state(&state).await?;
-    start_agent_worker_for_room(&state, &mut app, room_id, request).map(Json)
+    run_durable_state_transaction(state.clone(), async move {
+        let mut app = lock_state(&state).await?;
+        start_agent_worker_for_room(&state, &mut app, room_id, request)
+            .await
+            .map(Json)
+    })
+    .await
+}
+
+async fn room_bots(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+) -> ApiResult<Option<exchange_core::SchedulerState>> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let app = lock_state(&state).await?;
+    Ok(Json(app.schedulers.get(&room_id).cloned()))
 }
 
 async fn agent_status(
@@ -4403,7 +4512,14 @@ async fn ensure_room_owned(state: &SharedState, room_id: &str) -> Result<(), Api
         let cached_executions = execution_summaries_from_recovery(&recovery)
             .remove(room_id)
             .unwrap_or_default();
-        Ok((room, history, cached_executions, next_order_id, scheduler))
+        Ok((
+            room,
+            history,
+            cached_executions,
+            next_order_id,
+            scheduler,
+            recovery.last_market_ticks,
+        ))
     }) {
         Ok(recovered) => recovered,
         Err(error) => {
@@ -4442,7 +4558,7 @@ async fn ensure_room_owned(state: &SharedState, room_id: &str) -> Result<(), Api
         }
     };
 
-    let (room, history, cached_executions, next_order_id, scheduler) = recovered;
+    let (room, history, cached_executions, next_order_id, scheduler, last_market_ticks) = recovered;
     app.rooms.remove_room(room_id);
     if let Err(error) = app.rooms.restore_simulation_room(room, history) {
         let _ = journal.release_room_writer_lease(&renewed.claim).await;
@@ -4454,6 +4570,10 @@ async fn ensure_room_owned(state: &SharedState, room_id: &str) -> Result<(), Api
     }
     app.executions
         .insert(room_id.to_string(), cached_executions);
+    for tick in last_market_ticks {
+        app.rooms
+            .restore_last_trade_price(&tick.room_id, &tick.instrument_id, tick.price_tick);
+    }
     app.next_order_id = app.next_order_id.max(next_order_id);
     app.room_event_senders.remove(room_id);
     if let Some(scheduler) = scheduler {
@@ -4667,7 +4787,7 @@ async fn candles_response(
     instrument_id: Option<InstrumentId>,
     query: CandleQuery,
 ) -> ApiResult<CandleResponse> {
-    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Room).await?;
+    let authorized = authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Room).await?;
     let interval_ms = query.interval_ms.unwrap_or(1_000);
     if interval_ms == 0 {
         return Err(api_error(
@@ -4675,6 +4795,7 @@ async fn candles_response(
             "interval_ms must be greater than zero".to_string(),
         ));
     }
+    let state_handle = state.clone();
     let state = lock_state(&state).await?;
     let instrument_id = match instrument_id {
         Some(instrument_id) => instrument_id,
@@ -4685,10 +4806,29 @@ async fn candles_response(
             .map_err(api_error_from_room)?,
     };
     let clock = state.rooms.clock(&room_id).map_err(api_error_from_room)?;
-    let mut candles = state
-        .rooms
-        .candles(&room_id, &instrument_id, interval_ms)
-        .map_err(api_error_from_room)?;
+    drop(state);
+    let durable = authorized
+        .journal
+        .query_candles(
+            &authorized.user_id,
+            &room_id,
+            &instrument_id,
+            interval_ms,
+            clock.market_time_ms(),
+            query.after_open_time_ms,
+        )
+        .await
+        .map_err(api_error_from_journal)?;
+    let mut candles = match durable {
+        Some(candles) => candles,
+        None => {
+            let state = lock_state(&state_handle).await?;
+            state
+                .rooms
+                .candles(&room_id, &instrument_id, interval_ms)
+                .map_err(api_error_from_room)?
+        }
+    };
     if let Some(after) = query.after_open_time_ms {
         candles.retain(|candle| candle.open_time_ms > after);
     }
@@ -6496,7 +6636,33 @@ where
     })?
 }
 
-fn start_agent_worker_for_room(
+async fn install_scheduler(
+    state: &mut AppState,
+    scheduler: exchange_core::SchedulerState,
+) -> Result<(), ApiError> {
+    let room_id = scheduler.room_id.clone();
+    let cursor = next_persisted_command_cursor(state, &room_id).map_err(api_error_from_journal)?;
+    state
+        .append_room_mutation(
+            &PendingJournalMutation::new(
+                &room_id,
+                cursor,
+                RoomMutation::SchedulerProgress {
+                    clock_steps: 0,
+                    state: scheduler.clone(),
+                },
+            ),
+            &[],
+            &[],
+            None,
+        )
+        .await
+        .map_err(api_error_from_journal)?;
+    state.schedulers.insert(room_id, scheduler);
+    Ok(())
+}
+
+async fn start_agent_worker_for_room(
     shared: &SharedState,
     state: &mut AppState,
     room_id: RoomId,
@@ -6506,13 +6672,30 @@ fn start_agent_worker_for_room(
     state
         .room_lease_claim(&room_id)
         .map_err(api_error_from_journal)?;
-    validate_agent_templates(&room_id, &request.agents)?;
+    validate_agent_templates(&room_id, &request.agents, &state.bot_registry)?;
 
-    if let Some(worker) = state.agent_workers.remove(&room_id) {
-        worker.stop();
-    }
     if request.agents.is_empty() {
-        state.schedulers.remove(&room_id);
+        if state.schedulers.get(&room_id).is_some_and(|existing| {
+            !matches!(
+                existing.phase,
+                exchange_core::SchedulerPhase::Idle
+                    | exchange_core::SchedulerPhase::StepComplete { .. }
+            )
+        }) {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                "finish the pending scheduler step before changing bots",
+            ));
+        }
+        let scheduler = exchange_core::SchedulerState::new(
+            &room_id,
+            Vec::new(),
+            exchange_core::SchedulerMode::Manual,
+        );
+        install_scheduler(state, scheduler).await?;
+        if let Some(worker) = state.agent_workers.remove(&room_id) {
+            worker.stop();
+        }
         return Ok(AgentWorkerStatus::stopped(room_id));
     }
 
@@ -6544,15 +6727,38 @@ fn start_agent_worker_for_room(
             exchange_core::SchedulerMode::Auto { interval_ms },
         )
     };
-    if let Some(existing) = state.schedulers.get(&room_id)
-        && existing.continuity == exchange_core::AgentContinuity::Continuous
-        && existing.participant_ids() == scheduler.participant_ids()
-    {
-        scheduler = existing.clone();
-        scheduler.mode = exchange_core::SchedulerMode::Auto { interval_ms };
+    if let Some(existing) = state.schedulers.get(&room_id) {
+        if existing
+            .agents
+            .iter()
+            .map(|agent| &agent.template)
+            .eq(scheduler.agents.iter().map(|agent| &agent.template))
+        {
+            scheduler = existing.clone();
+            scheduler.mode = exchange_core::SchedulerMode::Auto { interval_ms };
+        } else {
+            if !matches!(
+                existing.phase,
+                exchange_core::SchedulerPhase::Idle
+                    | exchange_core::SchedulerPhase::StepComplete { .. }
+            ) {
+                return Err(api_error(
+                    StatusCode::CONFLICT,
+                    "finish the pending scheduler step before changing bots",
+                ));
+            }
+            for agent in &mut scheduler.agents {
+                if let Some(previous) = existing
+                    .agents
+                    .iter()
+                    .find(|previous| previous.template == agent.template)
+                {
+                    *agent = previous.clone();
+                }
+            }
+        }
     }
     let participant_ids = scheduler.participant_ids();
-    state.schedulers.insert(room_id.clone(), scheduler);
     let worker = AgentWorkerHandle::spawn(
         shared.clone(),
         room_id.clone(),
@@ -6569,7 +6775,10 @@ fn start_agent_worker_for_room(
             }),
         )
     })?;
-    state.agent_workers.insert(room_id.clone(), worker);
+    install_scheduler(state, scheduler).await?;
+    if let Some(previous) = state.agent_workers.insert(room_id.clone(), worker) {
+        previous.stop();
+    }
 
     Ok(AgentWorkerStatus {
         room_id,
@@ -6584,15 +6793,20 @@ fn start_agent_worker_for_room(
 fn validate_agent_templates(
     room_id: &str,
     templates: &[AgentTemplate],
+    registry: &exchange_core::BotRegistry,
 ) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let mut ids = BTreeSet::new();
     for template in templates {
-        let configured_room_id = match template {
-            AgentTemplate::NoiseTrader(config) => &config.participant.room_id,
-            AgentTemplate::DcaTrader(config) => &config.participant.room_id,
-            AgentTemplate::GridTrader(config) => &config.participant.room_id,
-            AgentTemplate::ContinuousMarketMaker(config) => &config.participant.room_id,
-            AgentTemplate::CancelAtStep(config) => &config.participant.room_id,
-        };
+        if !ids.insert(template.participant_id()) {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "duplicate participant id",
+            ));
+        }
+        registry
+            .validate_template(template)
+            .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+        let configured_room_id = &template.config().room_id;
         if configured_room_id != room_id {
             return Err(api_error(
                 StatusCode::BAD_REQUEST,
@@ -6603,15 +6817,7 @@ fn validate_agent_templates(
                 ),
             ));
         }
-        let instrument_id = match template {
-            AgentTemplate::NoiseTrader(config) => config.participant.instrument_id.as_deref(),
-            AgentTemplate::DcaTrader(config) => config.participant.instrument_id.as_deref(),
-            AgentTemplate::GridTrader(config) => config.participant.instrument_id.as_deref(),
-            AgentTemplate::ContinuousMarketMaker(config) => {
-                config.participant.instrument_id.as_deref()
-            }
-            AgentTemplate::CancelAtStep(config) => config.participant.instrument_id.as_deref(),
-        };
+        let instrument_id = template.config().instrument_id.as_deref();
         if instrument_id.is_none() {
             return Err(api_error(
                 StatusCode::BAD_REQUEST,
@@ -7915,6 +8121,10 @@ impl HttpTradingClient {
         self.post_json(&format!("/rooms/{room_id}/close"), &())
     }
 
+    pub fn list_bots(&self) -> Result<Vec<exchange_core::BotDescriptor>, HttpTradingError> {
+        self.get_json("/bots")
+    }
+
     pub fn start_agents(
         &self,
         room_id: &str,
@@ -8917,6 +9127,72 @@ struct ControlIdempotencyIntent {
     fingerprint: String,
 }
 
+struct ServerBotPolicy {
+    training: Option<exchange_core::TrainingRun>,
+}
+impl exchange_core::BotExecutionPolicy for ServerBotPolicy {
+    fn before_action(
+        &self,
+        request: &GatewayRequest,
+        observation: &ParticipantObservation,
+    ) -> Result<(), exchange_core::BotError> {
+        if let Some(error) = order_action_precision_error(&request.action) {
+            return Err(exchange_core::BotError(error));
+        }
+        let Some(run) = &self.training else {
+            return Ok(());
+        };
+        if request.account_id != run.spec.trainee_account_id {
+            return Ok(());
+        }
+        let (side, additional_qty) =
+            if let OrderAction::Amend { order_id, qty, .. } = &request.action {
+                let order = observation
+                    .own_orders
+                    .iter()
+                    .find(|order| order.order_id == *order_id)
+                    .ok_or_else(|| {
+                        exchange_core::BotError("amend target is not an owned order".into())
+                    })?;
+                (
+                    Some(order.side),
+                    qty.map(|qty| qty.saturating_sub(order.remaining_qty)),
+                )
+            } else {
+                (
+                    order_action_side(&request.action),
+                    order_action_qty(&request.action),
+                )
+            };
+        if !run.allows_trainee_action(request.account_id, side) {
+            return Err(exchange_core::BotError(format!(
+                "training run {} does not allow this action",
+                run.spec.run_id
+            )));
+        }
+        if additional_qty.is_some_and(|qty| qty > run.remaining_buy_capacity()) {
+            return Err(exchange_core::BotError(
+                "order would exceed remaining training buy capacity".into(),
+            ));
+        }
+        Ok(())
+    }
+    fn after_action(
+        &mut self,
+        execution: &exchange_core::GatewayExecution,
+        book_before: &BookSnapshot,
+    ) {
+        if let Some(run) = &mut self.training {
+            apply_training_execution(
+                run,
+                &execution.execution,
+                Some(book_before),
+                Some(execution.account_id),
+            );
+        }
+    }
+}
+
 async fn commit_scheduler_step(
     shared: SharedState,
     room_id: RoomId,
@@ -8977,12 +9253,30 @@ async fn commit_scheduler_step(
             .clock(&room_id)
             .map_err(api_error_from_room)?;
         let mut next_order_id = state.next_order_id;
-        let outcome = match exchange_core::run_scheduler_step(
-            &mut candidate_rooms,
-            &mut next_order_id,
-            scheduler,
-            exchange_core::CrashPoint::None,
-        ) {
+        let registry = state.bot_registry.clone();
+        let training = state
+            .training_runs
+            .values()
+            .find(|run| run.spec.room_id == room_id)
+            .cloned();
+        let training_run_id = training.as_ref().map(|run| run.spec.run_id.clone());
+        let (candidate, order_id, result, training) = tokio::task::spawn_blocking(move || {
+            let mut policy = ServerBotPolicy { training };
+            let result = exchange_core::run_scheduler_step_with_policy(
+                &mut candidate_rooms,
+                &mut next_order_id,
+                scheduler,
+                exchange_core::CrashPoint::None,
+                &registry,
+                &mut policy,
+            );
+            (candidate_rooms, next_order_id, result, policy.training)
+        })
+        .await
+        .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+        let mut candidate_rooms = candidate;
+        let next_order_id = order_id;
+        let outcome = match result {
             Ok(outcome) => {
                 shared.lifecycle.record_scheduler_step(true);
                 outcome
@@ -8996,30 +9290,10 @@ async fn commit_scheduler_step(
             .clock(&room_id)
             .map_err(api_error_from_room)?;
         let clock_steps = clock_after.step().saturating_sub(clock_before.step());
-        let training_run_id = state
-            .training_runs
-            .values()
-            .find(|run| run.spec.room_id == room_id)
-            .map(|run| run.spec.run_id.clone());
         let mut updated_training = None;
         if let Some(run_id) = training_run_id.as_ref()
-            && let Some(mut run) = state.training_runs.get(run_id).cloned()
+            && let Some(mut run) = training
         {
-            let new_executions = candidate_rooms
-                .execution_history(&room_id)
-                .map_err(api_error_from_room)?
-                .iter()
-                .skip(previous_history_len)
-                .cloned()
-                .collect::<Vec<_>>();
-            for execution in &new_executions {
-                apply_training_execution(
-                    &mut run,
-                    execution,
-                    None,
-                    execution_account_id(execution),
-                );
-            }
             for _ in 0..clock_steps.max(1) {
                 run.on_step();
                 if run.is_finished() {
@@ -9636,6 +9910,9 @@ mod tests {
     fn recovery_keeps_only_the_bounded_execution_tail() {
         let execution_count = ROOM_EVENT_CACHE_CAPACITY + 2;
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: Vec::new(),
             executions: (0..execution_count)
                 .map(|command_seq| JournalExecution {
@@ -10110,6 +10387,9 @@ mod tests {
             reduce_only: true,
         });
         let system_recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: Vec::new(),
             executions: vec![system_record],
             mutations: Vec::new(),
@@ -10119,6 +10399,9 @@ mod tests {
 
         record.command = command_with_id(OrderId::MAX);
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: Vec::new(),
             executions: vec![record],
             mutations: Vec::new(),
@@ -10190,6 +10473,9 @@ mod tests {
         }
 
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario,
@@ -10428,6 +10714,9 @@ mod tests {
         }
 
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario,
@@ -10587,6 +10876,9 @@ mod tests {
 
         let expected_actor = serde_json::to_value(rooms.simulation_room(room_id).unwrap()).unwrap();
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario,
@@ -10628,6 +10920,9 @@ mod tests {
         assert_eq!(execution.command_seq, 0);
 
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario,
@@ -10685,6 +10980,9 @@ mod tests {
         let execution = source.apply(room_id, command.clone()).unwrap();
         assert_eq!(execution.command_seq, 0);
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario,
@@ -10771,6 +11069,9 @@ mod tests {
         assert_eq!(legacy_actor.next_command_seq(), 0);
 
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario,
@@ -10936,6 +11237,9 @@ mod tests {
     fn recovery_rejects_regressing_mutation_cursor() {
         let room_id = "regressing-cursor-room";
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario: spot_scenario(room_id),
@@ -12341,6 +12645,7 @@ mod tests {
             }),
         ];
         let request = StartTrainingRequest {
+            manual_agents: false,
             run_id: "run-a".to_string(),
             scenario,
             agents: Vec::new(),
@@ -12412,6 +12717,7 @@ mod tests {
             }),
         ];
         StartTrainingRequest {
+            manual_agents: false,
             run_id: run_id.to_string(),
             scenario,
             agents: Vec::new(),
@@ -13501,6 +13807,7 @@ mod tests {
             "/training/runs",
             None,
             StartTrainingRequest {
+                manual_agents: false,
                 run_id: "freeze-run".to_string(),
                 scenario,
                 agents: Vec::new(),
@@ -17404,6 +17711,9 @@ mod tests {
         let mut executions = seed_records;
         executions.push(submitted_record);
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: "recovered-room".to_string(),
                 scenario,
@@ -17616,6 +17926,9 @@ mod tests {
         executions.push(submitted_record);
 
         let recovery = Arc::new(Mutex::new(JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: "snapshot-seq-room".to_string(),
                 scenario,
@@ -18962,5 +19275,207 @@ mod tests {
         server.abort();
         assert_eq!(view.book.bids[0].price_tick, 100);
         assert!(view.book.bids[0].qty >= 2);
+    }
+    fn installed_example_registry() -> exchange_core::BotRegistry {
+        bot_plugins::load_bot_plugins(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../bot-plugins"),
+        )
+        .unwrap()
+    }
+    fn plugin_training_request(run_id: &str, room_id: &str) -> StartTrainingRequest {
+        let mut request = two_sided_training(run_id, room_id, 8);
+        request.manual_agents = true;
+        request.target_qty = 2;
+        request.agents = vec![AgentTemplate::Plugin(exchange_core::BotConfig {
+            participant: exchange_core::ParticipantConfig {
+                participant_id: "plugin-buyer".into(),
+                kind: exchange_core::ParticipantKind::RuleAgent,
+                room_id: room_id.into(),
+                account_id: 20,
+                instrument_id: Some("V-BTC-SPOT".into()),
+            },
+            plugin_id: "example.buy-remaining".into(),
+            plugin_version: "1.0.0".into(),
+            state_version: 1,
+            config_version: 1,
+            seed: 7,
+            config: serde_json::json!({"target_qty":2,"qty_per_step":1}),
+        })];
+        request
+    }
+
+    #[tokio::test]
+    async fn plugin_training_restart_and_idempotent_steps_preserve_score_and_state() {
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let mut state =
+            AppState::new_with_journal("http://127.0.0.1:57305", Box::new(journal.clone()));
+        state.bot_registry = installed_example_registry();
+        let live_app = app(shared_state(state));
+        let response = send_json(
+            &live_app,
+            Method::POST,
+            "/training/runs",
+            None,
+            plugin_training_request("plugin-run", "plugin-room"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let before: TrainingRunResponse = response_json(response).await;
+        assert_eq!(before.run.filled_qty, 0);
+        assert_eq!(
+            control_request(&live_app, "/rooms/plugin-room/pause", None, None, None)
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        let first = control_request(
+            &live_app,
+            "/rooms/plugin-room/clock/step",
+            None,
+            Some("plugin-step-0"),
+            None,
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let saved: exchange_core::SchedulerState = response_json(first).await;
+        let first_score = training_result(&live_app, "plugin-run").await;
+        assert_eq!(first_score.run.filled_qty, 1);
+        assert_eq!(first_score.run.steps_elapsed, 1);
+        assert!(first_score.run.fills[0].book_before.is_some());
+        drop(live_app);
+        let mut recovered_state = AppState::recover_with_journal_bundle_and_auth_policy(
+            "http://127.0.0.1:57305",
+            JournalStoreBundle::single(Box::new(journal)),
+            AuthPolicy::local_development(),
+            None,
+        )
+        .unwrap();
+        recovered_state.bot_registry = installed_example_registry();
+        assert_eq!(recovered_state.schedulers["plugin-room"], saved);
+        let recovered = app(shared_state(recovered_state));
+        let replay = control_request(
+            &recovered,
+            "/rooms/plugin-room/clock/step",
+            None,
+            Some("plugin-step-0"),
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+        assert_eq!(
+            response_json::<exchange_core::SchedulerState>(replay).await,
+            saved
+        );
+        assert_eq!(
+            training_result(&recovered, "plugin-run")
+                .await
+                .run
+                .filled_qty,
+            1
+        );
+        let second = control_request(
+            &recovered,
+            "/rooms/plugin-room/clock/step",
+            None,
+            Some("plugin-step-1"),
+            None,
+        )
+        .await;
+        assert_eq!(second.status(), StatusCode::OK);
+        let final_run = training_result(&recovered, "plugin-run").await;
+        assert_eq!(final_run.run.status, TrainingStatus::Completed);
+        assert_eq!(final_run.run.filled_qty, 2);
+        assert_eq!(final_run.run.fills.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn invalid_plugin_configuration_is_rejected_before_room_or_training_creation() {
+        let app = new_app_with_bot_registry("http://127.0.0.1:57305", installed_example_registry());
+        for (index, id, version, params) in [
+            (0, "missing", "1.0.0", serde_json::json!({"target_qty":2})),
+            (
+                1,
+                "example.buy-remaining",
+                "2.0.0",
+                serde_json::json!({"target_qty":2}),
+            ),
+            (
+                2,
+                "example.buy-remaining",
+                "1.0.0",
+                serde_json::json!({"target_qty":0}),
+            ),
+        ] {
+            let mut request =
+                plugin_training_request(&format!("bad-{index}"), &format!("bad-room-{index}"));
+            let AgentTemplate::Plugin(config) = &mut request.agents[0] else {
+                panic!()
+            };
+            config.plugin_id = id.into();
+            config.plugin_version = version.into();
+            config.config = params;
+            let response = send_json(&app, Method::POST, "/training/runs", None, &request).await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let rooms = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/rooms")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response_json::<ListRoomsResponse>(rooms).await.rooms.len(),
+                0
+            );
+        }
+    }
+
+    #[test]
+    fn scheduled_training_bot_cannot_sell_or_overbuy() {
+        let spec = plugin_training_request("policy", "policy-room");
+        let mut training = exchange_core::TrainingRun::new(
+            exchange_core::TrainingSpec::low_slippage_buy(
+                spec.run_id,
+                spec.scenario.clone(),
+                spec.agents,
+                20,
+                2,
+                8,
+                100,
+            )
+            .unwrap(),
+        );
+        training.start().unwrap();
+        let policy = ServerBotPolicy {
+            training: Some(training),
+        };
+        let mut rooms = RoomManager::new();
+        rooms.create_room(spec.scenario).unwrap();
+        let observation = rooms
+            .participant_observation("policy-room", "V-BTC-SPOT", 20)
+            .unwrap();
+        use exchange_core::BotExecutionPolicy;
+        for action in [
+            OrderAction::PlaceMarket {
+                side: Side::Sell,
+                qty: 1,
+            },
+            OrderAction::PlaceMarket {
+                side: Side::Buy,
+                qty: 3,
+            },
+        ] {
+            let request = GatewayRequest {
+                participant_id: "buyer".into(),
+                room_id: "policy-room".into(),
+                instrument_id: Some("V-BTC-SPOT".into()),
+                account_id: 20,
+                action,
+            };
+            assert!(policy.before_action(&request, &observation).is_err());
+        }
     }
 }

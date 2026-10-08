@@ -693,3 +693,10 @@ input:focus {
     grid-template-columns: minmax(420px, 1fr) 270px 330px;
   }
 }
+
+.bot-field { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; font-size: 12px; }
+.bot-field input, .bot-field select { width: 100%; min-width: 0; padding: 7px; color: inherit; background: var(--panel, #161b22); border: 1px solid #343b47; border-radius: 4px; }
+.bot-add { margin: 12px 0; padding: 7px; width: 100%; }
+.bot-instance { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: 11px; overflow-wrap: anywhere; }
+.bot-instance button { flex-shrink: 0; }
+.bot-error { color: #f07878; overflow-wrap: anywhere; font-size: 12px; }
