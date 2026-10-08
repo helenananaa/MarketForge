@@ -88,11 +88,18 @@ pub struct SchedulerState {
     pub version: u16,
     pub room_id: String,
     pub mode: SchedulerMode,
+    /// Automatic market time continues when trading bots are stopped.
+    #[serde(default = "bots_enabled_default")]
+    pub bots_enabled: bool,
     pub catch_up_limit: u32,
     pub lagged: bool,
     pub continuity: AgentContinuity,
     pub phase: SchedulerPhase,
     pub agents: Vec<PersistedAgent>,
+}
+
+fn bots_enabled_default() -> bool {
+    true
 }
 
 impl SchedulerState {
@@ -114,6 +121,7 @@ impl SchedulerState {
             version: SCHEDULER_STATE_VERSION,
             room_id: room_id.into(),
             mode,
+            bots_enabled: true,
             catch_up_limit: DEFAULT_CATCH_UP_LIMIT,
             lagged: false,
             continuity: AgentContinuity::Continuous,

@@ -906,6 +906,9 @@ pub enum RoomMutation {
     SchedulerProgress {
         clock_steps: u64,
         state: exchange_core::SchedulerState,
+        /// Live clock/order commits carry their training update atomically.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        training: Option<Box<exchange_core::TrainingRun>>,
     },
     TrainingProgress {
         run: Box<exchange_core::TrainingRun>,
@@ -953,6 +956,8 @@ struct StatusChangedMutationPayload {
 struct SchedulerProgressMutationPayload {
     clock_steps: u64,
     state: exchange_core::SchedulerState,
+    #[serde(default)]
+    training: Option<Box<exchange_core::TrainingRun>>,
 }
 
 #[derive(Deserialize)]
@@ -1034,6 +1039,7 @@ impl<'de> Deserialize<'de> for RoomMutation {
                 Ok(Self::SchedulerProgress {
                     clock_steps: payload.clock_steps,
                     state: payload.state,
+                    training: payload.training,
                 })
             }
             "training_progress" => {
@@ -6112,12 +6118,22 @@ fn validate_pending_mutation(mutation: &PendingJournalMutation) -> Result<(), Jo
             }
         }
         RoomMutation::StatusChanged { .. } => {}
-        RoomMutation::SchedulerProgress { state, .. } => {
+        RoomMutation::SchedulerProgress {
+            state, training, ..
+        } => {
             if state.room_id != mutation.room_id {
                 return Err(JournalError::Recovery(format!(
                     "scheduler progress room {} does not match mutation room {}",
                     state.room_id, mutation.room_id
                 )));
+            }
+            if training
+                .as_ref()
+                .is_some_and(|run| run.spec.room_id != mutation.room_id)
+            {
+                return Err(JournalError::Recovery(
+                    "scheduler training room mismatch".into(),
+                ));
             }
         }
         RoomMutation::TrainingProgress { run } => {

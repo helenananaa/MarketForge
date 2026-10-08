@@ -204,6 +204,7 @@ mod tests {
                     RoomMutation::SchedulerProgress {
                         clock_steps: 0,
                         state: scheduler,
+                        training: None,
                     },
                 ),
                 &[],

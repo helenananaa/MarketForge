@@ -17,6 +17,9 @@ pub mod auth;
 pub mod bot_plugins;
 mod historical_queries;
 pub mod journal;
+mod realtime;
+#[cfg(test)]
+mod realtime_tests;
 pub mod storage_audit;
 
 use axum::{
@@ -2458,7 +2461,12 @@ fn training_runs_from_recovery(
     let mut mutations = recovery.mutations.clone();
     mutations.sort_by_key(|mutation| mutation.mutation_seq);
     for mutation in mutations {
-        if let RoomMutation::TrainingProgress { run } = mutation.mutation {
+        if let RoomMutation::TrainingProgress { run }
+        | RoomMutation::SchedulerProgress {
+            training: Some(run),
+            ..
+        } = mutation.mutation
+        {
             runs.insert(run.spec.run_id.clone(), *run);
         }
     }
@@ -3614,11 +3622,19 @@ async fn stop_agents(
     Path(room_id): Path<String>,
 ) -> ApiResult<AgentWorkerStatus> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let mut state = lock_state(&state).await?;
-    if let Some(worker) = state.agent_workers.remove(&room_id) {
-        worker.stop();
-    }
-    Ok(Json(AgentWorkerStatus::stopped(room_id)))
+    run_durable_state_transaction(state.clone(), async move {
+        let mut app = lock_state(&state).await?;
+        if let Some(mut scheduler) = app.schedulers.get(&room_id).cloned() {
+            scheduler.bots_enabled = false;
+            install_scheduler(&mut app, scheduler).await?;
+        }
+        if let Some(worker) = app.agent_workers.get(&room_id) {
+            worker.bots_enabled.store(false, Ordering::Release);
+            worker.control.epoch.fetch_add(1, Ordering::AcqRel);
+        }
+        Ok(Json(agent_status_for_room(&app, &room_id)))
+    })
+    .await
 }
 
 async fn room_events(
@@ -6592,6 +6608,9 @@ async fn apply_room_status_control(
         for run in settled_runs {
             persist_training_progress(&mut state, &run, &[]).await?;
         }
+        if let Some(worker) = state.agent_workers.get(&room_id) {
+            worker.control.epoch.fetch_add(1, Ordering::AcqRel);
+        }
         state.rooms = candidate_rooms;
         Ok(Json(response))
     })
@@ -6650,6 +6669,7 @@ async fn install_scheduler(
                 RoomMutation::SchedulerProgress {
                     clock_steps: 0,
                     state: scheduler.clone(),
+                    training: None,
                 },
             ),
             &[],
@@ -6673,31 +6693,6 @@ async fn start_agent_worker_for_room(
         .room_lease_claim(&room_id)
         .map_err(api_error_from_journal)?;
     validate_agent_templates(&room_id, &request.agents, &state.bot_registry)?;
-
-    if request.agents.is_empty() {
-        if state.schedulers.get(&room_id).is_some_and(|existing| {
-            !matches!(
-                existing.phase,
-                exchange_core::SchedulerPhase::Idle
-                    | exchange_core::SchedulerPhase::StepComplete { .. }
-            )
-        }) {
-            return Err(api_error(
-                StatusCode::CONFLICT,
-                "finish the pending scheduler step before changing bots",
-            ));
-        }
-        let scheduler = exchange_core::SchedulerState::new(
-            &room_id,
-            Vec::new(),
-            exchange_core::SchedulerMode::Manual,
-        );
-        install_scheduler(state, scheduler).await?;
-        if let Some(worker) = state.agent_workers.remove(&room_id) {
-            worker.stop();
-        }
-        return Ok(AgentWorkerStatus::stopped(room_id));
-    }
 
     let interval_ms = request
         .interval_ms
@@ -6728,6 +6723,16 @@ async fn start_agent_worker_for_room(
         )
     };
     if let Some(existing) = state.schedulers.get(&room_id) {
+        if !matches!(
+            existing.phase,
+            exchange_core::SchedulerPhase::Idle
+                | exchange_core::SchedulerPhase::StepComplete { .. }
+        ) {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                "finish the pending manual scheduler step before starting live trading",
+            ));
+        }
         if existing
             .agents
             .iter()
@@ -6737,16 +6742,6 @@ async fn start_agent_worker_for_room(
             scheduler = existing.clone();
             scheduler.mode = exchange_core::SchedulerMode::Auto { interval_ms };
         } else {
-            if !matches!(
-                existing.phase,
-                exchange_core::SchedulerPhase::Idle
-                    | exchange_core::SchedulerPhase::StepComplete { .. }
-            ) {
-                return Err(api_error(
-                    StatusCode::CONFLICT,
-                    "finish the pending scheduler step before changing bots",
-                ));
-            }
             for agent in &mut scheduler.agents {
                 if let Some(previous) = existing
                     .agents
@@ -6758,6 +6753,7 @@ async fn start_agent_worker_for_room(
             }
         }
     }
+    scheduler.bots_enabled = true;
     let participant_ids = scheduler.participant_ids();
     let worker = AgentWorkerHandle::spawn(
         shared.clone(),
@@ -6780,9 +6776,12 @@ async fn start_agent_worker_for_room(
         previous.stop();
     }
 
+    let market_running = state.rooms.status(&room_id) == Ok(MarketStatus::Running);
     Ok(AgentWorkerStatus {
         room_id,
-        running: true,
+        running: !participant_ids.is_empty(),
+        market_running,
+        bot_errors: BTreeMap::new(),
         interval_ms,
         participants: participant_ids,
         last_error: None,
@@ -6832,11 +6831,13 @@ fn validate_agent_templates(
 }
 
 fn agent_status_for_room(state: &AppState, room_id: &str) -> AgentWorkerStatus {
-    state
+    let mut status = state
         .agent_workers
         .get(room_id)
         .map(|worker| worker.status(room_id.to_string()))
-        .unwrap_or_else(|| AgentWorkerStatus::stopped(room_id.to_string()))
+        .unwrap_or_else(|| AgentWorkerStatus::stopped(room_id.to_string()));
+    status.market_running &= state.rooms.status(room_id) == Ok(MarketStatus::Running);
+    status
 }
 
 fn api_error(status: StatusCode, error: impl Into<String>) -> (StatusCode, Json<ErrorResponse>) {
@@ -7268,6 +7269,10 @@ pub struct StartAgentsRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AgentWorkerStatus {
+    #[serde(default)]
+    pub market_running: bool,
+    #[serde(default)]
+    pub bot_errors: BTreeMap<String, String>,
     pub room_id: String,
     pub running: bool,
     pub interval_ms: u64,
@@ -7283,6 +7288,8 @@ impl AgentWorkerStatus {
         Self {
             room_id,
             running: false,
+            market_running: false,
+            bot_errors: BTreeMap::new(),
             interval_ms: 0,
             participants: Vec::new(),
             last_error: None,
@@ -8892,7 +8899,9 @@ fn observation_from_market_view(
 const DEFAULT_AGENT_INTERVAL_MS: u64 = 1_000;
 
 struct AgentWorkerHandle {
-    stop: Arc<AtomicBool>,
+    control: realtime::Control,
+    bots_enabled: Arc<AtomicBool>,
+    bot_errors: Arc<Mutex<BTreeMap<String, String>>>,
     last_error: Arc<Mutex<Option<String>>>,
     interval_ms: u64,
     participants: Vec<ParticipantId>,
@@ -8904,7 +8913,6 @@ struct AgentWorkerHandle {
 enum AgentWorkerLifecycle {
     Running,
     Paused,
-    Recovering,
     Failed,
     Stopped,
 }
@@ -8914,7 +8922,6 @@ impl AgentWorkerLifecycle {
         match self {
             Self::Running => "running",
             Self::Paused => "paused",
-            Self::Recovering => "recovering",
             Self::Failed => "failed",
             Self::Stopped => "stopped",
         }
@@ -8928,17 +8935,16 @@ impl AgentWorkerHandle {
         templates: Vec<AgentTemplate>,
         interval: Duration,
     ) -> Result<Self, AgentWorkerError> {
-        if templates.is_empty() {
-            return Err(AgentWorkerError::NoAgents);
-        }
-
         let interval_ms = interval.as_millis().try_into().unwrap_or(u64::MAX);
         let participants = templates
             .iter()
             .map(|template| template.participant_id().to_string())
             .collect::<Vec<_>>();
-        let stop = Arc::new(AtomicBool::new(false));
-        let worker_stop = Arc::clone(&stop);
+        let control = realtime::Control::default();
+        let worker_control = control.clone();
+        let bots_enabled = Arc::new(AtomicBool::new(true));
+        let bot_errors = Arc::new(Mutex::new(BTreeMap::new()));
+        let worker_bot_errors = bot_errors.clone();
         let last_error = Arc::new(Mutex::new(None));
         let worker_last_error = Arc::clone(&last_error);
         let lifecycle = Arc::new(Mutex::new(AgentWorkerLifecycle::Running));
@@ -8947,39 +8953,30 @@ impl AgentWorkerHandle {
         let join = thread::Builder::new()
             .name(format!("marketforge-agents-{room_id}"))
             .spawn(move || {
-                while !worker_stop.load(Ordering::Relaxed) {
-                    let room_id = room_id.clone();
-                    let shared = shared.clone();
-                    let runtime_lifecycle = shared.lifecycle.clone();
-                    let result = runtime.block_on(run_scheduler_catch_up(
-                        shared,
-                        room_id,
-                        worker_stop.clone(),
-                        worker_lifecycle.clone(),
-                    ));
-                    if let Err(error) = result {
-                        runtime_lifecycle.record_agent_error();
-                        if let Ok(mut last_error) = worker_last_error.lock() {
-                            *last_error = Some(error);
-                        }
-                        if let Ok(mut lifecycle) = worker_lifecycle.lock() {
-                            *lifecycle = AgentWorkerLifecycle::Failed;
-                        }
-                        worker_stop.store(true, Ordering::Relaxed);
-                        return;
-                    }
-                    sleep_until_next_step(interval, &worker_stop);
+                let result = runtime.block_on(realtime::run(
+                    shared.clone(),
+                    room_id,
+                    interval,
+                    worker_control.clone(),
+                    worker_lifecycle.clone(),
+                    worker_last_error.clone(),
+                    worker_bot_errors,
+                ));
+                if let Err(error) = result {
+                    shared.lifecycle.record_agent_error();
+                    *worker_last_error.lock().unwrap() = Some(error);
+                    *worker_lifecycle.lock().unwrap() = AgentWorkerLifecycle::Failed;
+                } else {
+                    *worker_lifecycle.lock().unwrap() = AgentWorkerLifecycle::Stopped;
                 }
-                if let Ok(mut lifecycle) = worker_lifecycle.lock()
-                    && *lifecycle != AgentWorkerLifecycle::Failed
-                {
-                    *lifecycle = AgentWorkerLifecycle::Stopped;
-                }
+                worker_control.stop.store(true, Ordering::Release);
             })
             .map_err(AgentWorkerError::Spawn)?;
 
         Ok(Self {
-            stop,
+            control,
+            bots_enabled,
+            bot_errors,
             last_error,
             interval_ms,
             participants,
@@ -8997,9 +8994,13 @@ impl AgentWorkerHandle {
             .unwrap_or_else(|| "running".to_string());
         AgentWorkerStatus {
             room_id,
-            running: !self.stop.load(Ordering::Relaxed)
+            running: !self.control.stop.load(Ordering::Acquire)
+                && self.bots_enabled.load(Ordering::Acquire)
+                && !self.participants.is_empty()
                 && lifecycle != "failed"
                 && lifecycle != "stopped",
+            market_running: !self.control.stop.load(Ordering::Acquire) && lifecycle == "running",
+            bot_errors: self.bot_errors.lock().unwrap().clone(),
             interval_ms: self.interval_ms,
             participants: self.participants.clone(),
             last_error: self
@@ -9007,12 +9008,16 @@ impl AgentWorkerHandle {
                 .lock()
                 .ok()
                 .and_then(|last_error| last_error.clone()),
-            lifecycle,
+            lifecycle: if !self.bots_enabled.load(Ordering::Acquire) {
+                "stopped".into()
+            } else {
+                lifecycle
+            },
         }
     }
 
     fn request_stop(&self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.control.stop.store(true, Ordering::Release);
     }
 
     fn stop(self) {
@@ -9029,95 +9034,7 @@ impl AgentWorkerHandle {
 
 impl Drop for AgentWorkerHandle {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-    }
-}
-
-async fn run_scheduler_catch_up(
-    shared: SharedState,
-    room_id: RoomId,
-    stop: Arc<AtomicBool>,
-    lifecycle: Arc<Mutex<AgentWorkerLifecycle>>,
-) -> Result<(), String> {
-    let mut steps_run = 0_u32;
-    loop {
-        if stop.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-        let action = {
-            let app = shared.app.lock().await;
-            if !shared.lifecycle.is_accepting_durable_writes() {
-                return Ok(());
-            }
-            if let Ok(mut lifecycle) = lifecycle.lock() {
-                *lifecycle = AgentWorkerLifecycle::Recovering;
-            }
-            if app
-                .room_lease_claim(&room_id)
-                .map_err(|error| error.to_string())?
-                .is_none()
-                && app
-                    .room_lease_runtime
-                    .as_ref()
-                    .is_some_and(|runtime| runtime.config.mode == RoomLeaseRuntimeMode::RoomLeased)
-            {
-                return Err(format!("lost writer lease for room {room_id}"));
-            }
-            match app.rooms.status(&room_id) {
-                Ok(MarketStatus::Closed) => return Ok(()),
-                Ok(MarketStatus::Paused) => {
-                    if let Ok(mut lifecycle) = lifecycle.lock() {
-                        *lifecycle = AgentWorkerLifecycle::Paused;
-                    }
-                    return Ok(());
-                }
-                Ok(MarketStatus::Running) => {}
-                Err(error) => return Err(format!("{error:?}")),
-            }
-            let scheduler = app
-                .schedulers
-                .get(&room_id)
-                .cloned()
-                .ok_or_else(|| format!("room {room_id} has no scheduler state"))?;
-            let catch_up_limit = scheduler.catch_up_limit;
-            if steps_run >= catch_up_limit {
-                if let Ok(mut lifecycle) = lifecycle.lock() {
-                    *lifecycle = AgentWorkerLifecycle::Running;
-                }
-                return Ok(());
-            }
-            drop(app);
-            Some(scheduler)
-        };
-        let Some(scheduler) = action else {
-            return Ok(());
-        };
-        if let Ok(mut lifecycle) = lifecycle.lock() {
-            *lifecycle = AgentWorkerLifecycle::Running;
-        }
-        commit_scheduler_step(
-            shared.clone(),
-            room_id.clone(),
-            Some(scheduler),
-            false,
-            None,
-        )
-        .await
-        .map_err(|(_, body)| body.0.error)?;
-        steps_run = steps_run.saturating_add(1);
-        if steps_run >= 1 {
-            // Auto-step runs one simulation step per wake; catch-up repeats
-            // until the limit without skipping the remaining steps.
-            let more = {
-                let app = shared.app.lock().await;
-                app.schedulers
-                    .get(&room_id)
-                    .is_some_and(|scheduler| scheduler.lagged)
-            };
-            if !more {
-                return Ok(());
-            }
-        }
+        self.control.stop.store(true, Ordering::Release);
     }
 }
 
@@ -9200,6 +9117,17 @@ async fn commit_scheduler_step(
     require_paused: bool,
     control: Option<ControlIdempotencyIntent>,
 ) -> Result<exchange_core::SchedulerState, (StatusCode, Json<ErrorResponse>)> {
+    commit_scheduler_work(shared, room_id, scheduler, require_paused, control, None).await
+}
+
+async fn commit_scheduler_work(
+    shared: SharedState,
+    room_id: RoomId,
+    scheduler: Option<exchange_core::SchedulerState>,
+    require_paused: bool,
+    control: Option<ControlIdempotencyIntent>,
+    realtime: Option<realtime::Work>,
+) -> Result<exchange_core::SchedulerState, ApiError> {
     run_durable_state_transaction(shared.clone(), async move {
         let mut state = lock_state(&shared).await?;
         if let Some(intent) = &control
@@ -9213,6 +9141,18 @@ async fn commit_scheduler_step(
             .await?
         {
             return Ok(Json(replayed));
+        }
+        if let Some(work) = &realtime {
+            let current = state
+                .schedulers
+                .get(&room_id)
+                .ok_or_else(|| api_error(StatusCode::CONFLICT, "room has no scheduler"))?;
+            if !work.is_current(current)
+                || state.rooms.status(&room_id).map_err(api_error_from_room)?
+                    != MarketStatus::Running
+            {
+                return Ok(Json(current.clone()));
+            }
         }
         state
             .room_lease_claim(&room_id)
@@ -9260,29 +9200,48 @@ async fn commit_scheduler_step(
             .find(|run| run.spec.room_id == room_id)
             .cloned();
         let training_run_id = training.as_ref().map(|run| run.spec.run_id.clone());
-        let (candidate, order_id, result, training) = tokio::task::spawn_blocking(move || {
+        let manual = realtime.is_none();
+        let clock_tick = manual || matches!(realtime, Some(realtime::Work::Clock(_)));
+        let mut submissions = BTreeMap::new();
+        let (candidate, order_id, result, training) = if let Some(work) = realtime {
             let mut policy = ServerBotPolicy { training };
-            let result = exchange_core::run_scheduler_step_with_policy(
+            let result = work.apply(
                 &mut candidate_rooms,
                 &mut next_order_id,
                 scheduler,
-                exchange_core::CrashPoint::None,
-                &registry,
                 &mut policy,
+                &mut submissions,
             );
             (candidate_rooms, next_order_id, result, policy.training)
-        })
-        .await
-        .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+        } else {
+            tokio::task::spawn_blocking(move || {
+                let mut policy = ServerBotPolicy { training };
+                let result = exchange_core::run_scheduler_step_with_policy(
+                    &mut candidate_rooms,
+                    &mut next_order_id,
+                    scheduler,
+                    exchange_core::CrashPoint::None,
+                    &registry,
+                    &mut policy,
+                );
+                (candidate_rooms, next_order_id, result, policy.training)
+            })
+            .await
+            .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        };
         let mut candidate_rooms = candidate;
         let next_order_id = order_id;
         let outcome = match result {
             Ok(outcome) => {
-                shared.lifecycle.record_scheduler_step(true);
+                if clock_tick {
+                    shared.lifecycle.record_scheduler_step(true);
+                }
                 outcome
             }
             Err(error) => {
-                shared.lifecycle.record_scheduler_step(false);
+                if clock_tick {
+                    shared.lifecycle.record_scheduler_step(false);
+                }
                 return Err(api_error(StatusCode::BAD_REQUEST, format!("{error:?}")));
             }
         };
@@ -9294,7 +9253,11 @@ async fn commit_scheduler_step(
         if let Some(run_id) = training_run_id.as_ref()
             && let Some(mut run) = training
         {
-            for _ in 0..clock_steps.max(1) {
+            for _ in 0..if manual {
+                clock_steps.max(1)
+            } else {
+                clock_steps
+            } {
                 run.on_step();
                 if run.is_finished() {
                     break;
@@ -9315,11 +9278,16 @@ async fn commit_scheduler_step(
                         format!("room {room_id} produced an unjournalable scheduler execution"),
                     )
                 })?;
-                let participant_id = execution_participant_id(&outcome.state, execution);
-                if let Some(participant_id) = participant_id {
+                let participant = if manual {
+                    execution_participant_id(&outcome.state, execution)
+                        .map(|id| (id, execution_account_id(execution).unwrap_or(0)))
+                } else {
+                    submissions.get(&execution.command_seq).cloned()
+                };
+                if let Some((participant_id, account_id)) = participant {
                     Ok(JournalExecution::submitted(
                         participant_id,
-                        execution_account_id(execution).unwrap_or(0),
+                        account_id,
                         command,
                         execution.clone(),
                     ))
@@ -9361,6 +9329,13 @@ async fn commit_scheduler_step(
             RoomMutation::SchedulerProgress {
                 clock_steps,
                 state: outcome.state.clone(),
+                training: if manual {
+                    None
+                } else {
+                    updated_training
+                        .as_ref()
+                        .map(|(_, run)| Box::new(run.clone()))
+                },
             },
         );
         let pending = match record {
@@ -9379,8 +9354,12 @@ async fn commit_scheduler_step(
             let replayed = serde_json::from_value(replay_json).map_err(api_error_from_json)?;
             return Ok(Json(replayed));
         }
-        if let Some((_, run)) = updated_training {
-            persist_training_progress(&mut state, &run, &[]).await?;
+        if let Some((run_id, run)) = updated_training {
+            if manual {
+                persist_training_progress(&mut state, &run, &[]).await?;
+            } else {
+                state.training_runs.insert(run_id, run);
+            }
         }
         state.append_room_executions(
             &room_id,
@@ -9430,26 +9409,14 @@ fn execution_account_id(execution: &exchange_core::ActorExecution) -> Option<Acc
     }
 }
 
-fn sleep_until_next_step(interval: Duration, stop: &AtomicBool) {
-    let mut slept = Duration::ZERO;
-    while slept < interval && !stop.load(Ordering::Relaxed) {
-        let remaining = interval - slept;
-        let chunk = remaining.min(Duration::from_millis(50));
-        thread::sleep(chunk);
-        slept += chunk;
-    }
-}
-
 #[derive(Debug)]
 enum AgentWorkerError {
-    NoAgents,
     Spawn(std::io::Error),
 }
 
 impl std::fmt::Display for AgentWorkerError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoAgents => formatter.write_str("agent worker needs at least one agent"),
             Self::Spawn(error) => write!(formatter, "failed to spawn agent worker: {error}"),
         }
     }

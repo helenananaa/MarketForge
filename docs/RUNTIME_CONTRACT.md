@@ -113,14 +113,12 @@ Duplicate order ids are rejected by the matching engine even after fill.
 
 | Clock | Used for | Must not be used for |
 | --- | --- | --- |
-| Wall clock | HTTP timeouts, SSE keep-alives, journal worker scheduling, room-lease duration/renewal/expiry (PostgreSQL clock), agent-worker sleep interval, readiness, metrics uptime, `created_at` | Strategy decisions, training deadlines, candle close, transfer delay completion, venue session windows |
+| Wall clock | HTTP timeouts, SSE keep-alives, journal worker scheduling, room-lease duration/renewal/expiry (PostgreSQL clock), automatic market tick interval, readiness, metrics uptime, `created_at` | Strategy decisions, training deadlines, candle close, transfer delay completion, venue session windows |
 | Simulation clock (`step`, `market_time_ms`) | Matching evaluation time stored on executions, venue session/price-limit/circuit rules, T+N settlement, transfer delays, CandleScope kline aggregation, future training deadlines and scenario actions | Lease expiry, process liveness |
 
-Current gap (closed in P1): `AgentRuntime` owns a **separate** `SimulationClock`
-that advances on `run_step`. The HTTP agent worker does **not** call
-`/clock/advance`; it sleeps `interval_ms` on the wall clock and submits orders
-against whatever room time currently is. Reproducible bot continuation therefore
-requires a single authoritative room clock (P1.3).
+The server uses the authoritative room clock. Automatic ticks persist clock
+advancement independently of trader decisions. The core `AgentRuntime` remains
+an offline simulation helper; it is not the live server's clock source.
 
 ## 3. Three consistency classes
 
@@ -141,15 +139,16 @@ shorten replay for newly persisted rooms.
 
 ### 3.2 Bot continuation (decision resume)
 
-After crash or takeover, the next bot actions must be the actions the
-uninterrupted run would have produced: same commands, fills, accounts, and
-later agent orders.
+Manual steps persist versioned bot state and unfinished actions; resuming a
+persisted decision does not run it again. Automatic trading persists each bot's
+updated state with its executed actions and training update in one transaction.
+Uncommitted automatic computations are discarded on restart. The operator
+restarts the automatic worker explicitly after server recovery.
 
-This is **not** implied by command replay. Current `NoiseTrader` /
-`DcaTrader` / `GridTrader` keep RNG, observed-step counters, and
-`has_seeded_grid` only in process memory. The worker HTTP-callbacks the server
-and is disabled in Bearer mode. Missing agent state on an old room must be
-marked non-continuous, never silently reset (P1.4).
+Automatic completion order is concurrent and is not reproducible from a seed
+alone. Command/time replay uses the actual journal order. Manual single steps
+and offline evaluation retain stable participant order. Legacy rooms without
+saved bot state remain non-continuous.
 
 ### 3.3 User-visible subscribe (stream apply)
 
@@ -166,53 +165,44 @@ filtered subsequence is still a contiguous global `command_seq`. They either
 use an independent stream cursor or document that the cursor is
 non-contiguous.
 
-## 4. Intra-step ordering
+## 4. Clock and trader ordering
 
-A **step** is one increment of the room `SimulationClock`. The contract for a
-step, once P1.3 is implemented, is:
+A **step** increments the room `SimulationClock`. In automatic mode a periodic
+clock task commits time and due settlement independently of bot computation.
+All venues advance before cross-venue transfer links are created. Clock commits
+also advance training deadlines. Human orders and completed bot decisions enter
+the same serialized writer lane, in actual commit order.
 
-1. Advance time and run due venue settlement / transfer completions for that
-   new step. Every venue in the room advances to the same global step **before**
-   any cross-venue transfer links are created. Linked deposits therefore cannot
-   complete in the same step that created them when delay is non-zero.
-2. Execute due scenario actions as ordinary trading/config commands (never by
-   writing last price).
-3. Observe and decide in **stable participant-id order** (lexicographic
-   `participant_id`). Later participants in that order may observe fills from
-   earlier submissions in the same step. Simultaneous-observe is a new
-   versioned scheduler if ever introduced.
-4. Submit decided actions in that same participant order, then in the order
-   the participant returned them. Each action is a normal gateway command:
-   identity, account authz, lease fence, risk, match, journal, install.
-5. Update training state from the resulting executions.
+Bot construction, decision and state snapshotting happen outside the market
+lock. Each bot has one in-flight decision at most; busy bots skip observation
+opportunities rather than accumulating work. An error suspends that bot,
+not the clock or other traders. Completed decisions are checked against the
+current account, book, lease, market status and training constraints. Returned
+actions keep their order within that bot's bounded transaction. Pause/resume,
+stop and replacement invalidate pending decisions.
 
-Human HTTP orders that arrive during a step are **not** merged by wall-clock
-arrival into the middle of (3)–(4). They are durable commands ordered by the
-single journal writer lane. A reproducibility claim must include that command
-order, not only the scenario seed.
+`/agents/stop` stops bots, not market time. `/pause` pauses the market. Applying
+an empty bot list leaves automatic time active. `interval_ms` controls the
+periodic tick and idle-bot observations; slow decisions do not extend it. Missed
+wall-clock wakeups are skipped, not replayed in a burst. Rooms that never enabled
+automatic scheduling continue to use explicit clock commands.
 
-Automatic liquidations and peer-cancels triggered by a command are appended in
-the same durable transaction, after the triggering command, in the order the
-actor produced them. A client disconnect cannot cancel the interval between
-journal commit and in-memory install.
+Manual `/clock/step` on a paused room retains the deterministic transaction:
+advance time, observe/decide/submit in stable participant-id order, then update
+training. Later manual participants observe earlier actions. This intentionally
+waits for decisions and is intended for single stepping / offline evaluation.
+Finish a recovered pending manual step before switching to automatic trading.
 
-### Example A — clock then agents then a human cancel
+Automatic liquidations and peer-cancels stay in the triggering transaction.
+Disconnecting the client cannot cancel journal commit and in-memory install.
 
-Room at `step=4`, `market_time_ms=4000`, `next_command_seq=10`.
-Participants `dca-1` then `noise-1`. Auto-step fires.
+### Example A - an order arrives while a bot is thinking
 
-1. Clock mutation `command_cursor=10`, `steps=1` → `step=5`, `market_time_ms=5000`.
-   A delayed deposit due at step 5 completes inside that mutation.
-2. `dca-1` observes the post-advance book (deposit already visible), decides a
-   buy, submits command 10.
-3. `noise-1` observes the book **after** command 10, may trade with `dca-1`’s
-   resting order, submits command 11.
-4. A human cancel that HTTP-arrived while (2) was in flight is journaled as
-   command 12 **after** both agent actions, because the writer lane serializes
-   commits. Replaying with a different wall-clock speed but the same commit
-   order yields the same books.
-
-Current HTTP worker does not perform (1). P1 must.
+At step 4, bot A receives a snapshot and starts computing. The market can
+advance to step 5, a human can cancel command 10, and bot B can submit command
+11 before A returns. A's eventual command 12 is checked against the resulting
+book at submission time. Replaying the recorded clock mutations and commands
+reproduces the committed market; replay does not rerun bot computations.
 
 ### Example B — fill-triggered liquidation in one transaction
 
