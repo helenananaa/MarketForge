@@ -1,0 +1,144 @@
+import { useCallback, useMemo, useRef } from "react";
+import { callChartSurface, EMPTY_CHART_SURFACE_VIEW } from "./chartSurfaceContract";
+import type { ExportSnapshot } from "../features/export/exportTypes.js";
+import type {
+  DrawingExportLease,
+  DrawingExportPrepareOptions,
+  DrawingStylePatch,
+} from "../features/drawings/drawingInteractionController.js";
+import type { SurfaceViewportSnapshot } from "../features/chart-representation/chartRepresentationTypes.js";
+import type { DrawingEngineApi } from "../features/drawings/DrawingEngineHost.js";
+
+export interface ChartSurfaceVisibleRange {
+  barSpacing?: number;
+  logical?: { from: number; to: number };
+  rightOffset?: number;
+  rightmostTime?: number;
+  time?: { from: number; to: number };
+}
+
+export interface ChartSurfaceLinkedTimeRange {
+  from: number;
+  to: number;
+}
+
+export interface ChartSurfaceHandle {
+  getDrawingPaneApis?(): ReadonlyMap<string, DrawingEngineApi>;
+  getVisibleRange(): ChartSurfaceVisibleRange | null;
+  setLinkedCrosshairTime(time: number | null): boolean;
+  setLinkedVisibleTimeAnchor(time: number): boolean;
+  setLinkedVisibleTimeRange(range: ChartSurfaceLinkedTimeRange): boolean;
+  subscribeLinkedViewportReady(listener: (generation: number) => void): () => void;
+  subscribeDrawingRevision(listener: (scopeKey: string, revision: number) => void): () => void;
+  setLinkedDrawingRevision(scopeKey: string, revision: number): boolean;
+  captureViewportTransfer(): SurfaceViewportSnapshot | null;
+  clearAllDrawings(): void;
+  setDrawingsHidden(hidden: boolean): void;
+  prepareExport(options?: DrawingExportPrepareOptions): Promise<DrawingExportLease | null>;
+  updateSelectedDrawingStyle(patch: DrawingStylePatch): void;
+  getExportSnapshot(): ExportSnapshot | null;
+}
+
+export function useChartSurfaceRuntime() {
+  const ref = useRef<ChartSurfaceHandle | null>(null);
+  const getDrawingPaneApis = useCallback(() => ref.current?.getDrawingPaneApis?.() ?? new Map<string, DrawingEngineApi>(), []);
+
+  const getVisibleRange = useCallback(() => (
+    callChartSurface(ref, "getVisibleRange", null)
+  ), []);
+
+  const setLinkedCrosshairTime = useCallback((time: number | null) => (
+    callChartSurface(ref, "setLinkedCrosshairTime", false, time)
+  ), []);
+
+  const setLinkedVisibleTimeAnchor = useCallback((time: number) => (
+    callChartSurface(ref, "setLinkedVisibleTimeAnchor", false, time)
+  ), []);
+
+  const setLinkedVisibleTimeRange = useCallback((range: ChartSurfaceLinkedTimeRange) => (
+    callChartSurface(ref, "setLinkedVisibleTimeRange", false, range)
+  ), []);
+
+  const subscribeLinkedViewportReady = useCallback((listener: (generation: number) => void) => (
+    callChartSurface(ref, "subscribeLinkedViewportReady", () => {}, listener)
+  ), []);
+
+  const subscribeDrawingRevision = useCallback((listener: (scopeKey: string, revision: number) => void) => (
+    callChartSurface(ref, "subscribeDrawingRevision", () => {}, listener)
+  ), []);
+
+  const setLinkedDrawingRevision = useCallback((scopeKey: string, revision: number) => (
+    callChartSurface(ref, "setLinkedDrawingRevision", false, scopeKey, revision)
+  ), []);
+
+  const captureViewportTransfer = useCallback(() => (
+    callChartSurface(ref, "captureViewportTransfer", null)
+  ), []);
+
+  const clearAllDrawings = useCallback(() => {
+    callChartSurface(ref, "clearAllDrawings");
+  }, []);
+
+  const setDrawingsHidden = useCallback((hidden: boolean) => {
+    callChartSurface(ref, "setDrawingsHidden", undefined, hidden);
+  }, []);
+
+  const prepareExport = useCallback((options?: DrawingExportPrepareOptions) => {
+    return callChartSurface(
+      ref,
+      "prepareExport",
+      Promise.resolve(null),
+      options,
+    );
+  }, []);
+
+  const updateSelectedDrawingStyle = useCallback((patch: DrawingStylePatch) => {
+    callChartSurface(ref, "updateSelectedDrawingStyle", undefined, patch);
+  }, []);
+
+  const getExportSnapshot = useCallback(() => (
+    callChartSurface(ref, "getExportSnapshot", null)
+  ), []);
+
+  const actions = useMemo(() => ({
+    getDrawingPaneApis,
+    getVisibleRange,
+    setLinkedCrosshairTime,
+    setLinkedVisibleTimeAnchor,
+    setLinkedVisibleTimeRange,
+    subscribeLinkedViewportReady,
+    subscribeDrawingRevision,
+    setLinkedDrawingRevision,
+    captureViewportTransfer,
+    clearAllDrawings,
+    setDrawingsHidden,
+    prepareExport,
+    updateSelectedDrawingStyle,
+    getExportSnapshot,
+  }), [
+    getDrawingPaneApis,
+    captureViewportTransfer,
+    clearAllDrawings,
+    getExportSnapshot,
+    getVisibleRange,
+    setLinkedCrosshairTime,
+    setLinkedVisibleTimeAnchor,
+    setLinkedVisibleTimeRange,
+    subscribeLinkedViewportReady,
+    subscribeDrawingRevision,
+    setLinkedDrawingRevision,
+    prepareExport,
+    setDrawingsHidden,
+    updateSelectedDrawingStyle,
+  ]);
+
+  return {
+    ref,
+    view: EMPTY_CHART_SURFACE_VIEW,
+    actions,
+    status: {},
+  };
+}
+
+export type ChartSurfaceRuntime = ReturnType<typeof useChartSurfaceRuntime>;
+export type ChartSurfaceActions = ChartSurfaceRuntime["actions"];

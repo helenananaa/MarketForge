@@ -371,7 +371,10 @@ impl VenueRuleEngine {
             // they make the order less aggressive, so keep those blocked
             // while the venue is halted or outside its trading session.
             Command::AmendOrder(amend) => amend.price_tick.is_some(),
-            Command::CancelOrder(_) | Command::SetMarkPrice(_) | Command::SettleFunding(_) => false,
+            Command::CancelOrder(_)
+            | Command::ExpireOrder { .. }
+            | Command::SetMarkPrice(_)
+            | Command::SettleFunding(_) => false,
         };
         if may_increase_risk && self.config.circuit_breaker.halted {
             return Err(VenueRuleRejectReason::CircuitBreakerHalted {
@@ -395,9 +398,10 @@ impl VenueRuleEngine {
                 )
             }
             Command::AmendOrder(amend) => self.check_price_limit(instrument_id, amend.price_tick),
-            Command::CancelOrder(_) | Command::SetMarkPrice(_) | Command::SettleFunding(_) => {
-                Ok(())
-            }
+            Command::CancelOrder(_)
+            | Command::ExpireOrder { .. }
+            | Command::SetMarkPrice(_)
+            | Command::SettleFunding(_) => Ok(()),
         }
     }
 
@@ -656,6 +660,7 @@ mod tests {
 
     fn test_new_order() -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id: 1,
             account_id: 20,
             side: Side::Buy,

@@ -77,6 +77,7 @@ mod tests {
 
     fn limit(order_id: u64, side: Side, price_tick: i64, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id: order_id + 1_000,
             side,
@@ -88,6 +89,7 @@ mod tests {
 
     fn market(order_id: u64, side: Side, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id: order_id + 1_000,
             side,

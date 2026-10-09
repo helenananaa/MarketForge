@@ -66,6 +66,16 @@ pub(crate) struct JournalCoordinatorMetricsSnapshot {
 }
 
 impl JournalCoordinator {
+    pub(crate) async fn commit_platform(
+        &self,
+        expected: u64,
+        candidate: crate::platform::PlatformData,
+        grants: Vec<crate::platform::MemberGrant>,
+    ) -> Result<(), JournalError> {
+        self.execute(move |store| store.commit_platform(expected, &candidate, &grants))
+            .await
+    }
+
     pub(crate) fn new(store: Box<dyn JournalStore>) -> Self {
         Self::with_capacity_and_read_stores(store, Vec::new(), DEFAULT_JOURNAL_QUEUE_CAPACITY)
     }
@@ -544,6 +554,15 @@ impl JournalCoordinator {
         let room_id = room_id.to_string();
         let user_id = user_id.to_string();
         self.execute(move |store| store.assign_account_owner(&room_id, account_id, &user_id))
+            .await
+    }
+
+    pub(crate) async fn list_room_members(
+        &self,
+        room_id: &str,
+    ) -> Result<std::collections::BTreeMap<String, String>, JournalError> {
+        let room_id = room_id.to_string();
+        self.execute_read(move |store| store.list_room_members(&room_id))
             .await
     }
 

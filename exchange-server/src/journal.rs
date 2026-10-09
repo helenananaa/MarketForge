@@ -35,6 +35,8 @@ pub const MAX_ROOM_LEASE_DURATION_MS: u64 = 300_000;
 const POSTGRES_RUNTIME_LOCK_NAMESPACE: i32 = i32::from_be_bytes(*b"MKTF");
 const POSTGRES_RUNTIME_LOCK_ID: i32 = i32::from_be_bytes(*b"RUN1");
 const POSTGRES_MIGRATION_LOCK_ID: i32 = i32::from_be_bytes(*b"MIGR");
+use crate::platform::{MemberGrant, PlatformData};
+
 const MIGRATIONS: &[SchemaMigration] = &[
     SchemaMigration {
         version: 1,
@@ -111,6 +113,16 @@ const MIGRATIONS: &[SchemaMigration] = &[
         name: "recovery_heads",
         sql: include_str!("../migrations/0015_recovery_heads.sql"),
     },
+    SchemaMigration {
+        version: 16,
+        name: "scheduler_deltas",
+        sql: include_str!("../migrations/0016_scheduler_deltas.sql"),
+    },
+    SchemaMigration {
+        version: 17,
+        name: "competition_platform",
+        sql: include_str!("../migrations/0017_competition_platform.sql"),
+    },
 ];
 
 pub const ROOM_MUTATION_SCHEMA_VERSION: u16 = 1;
@@ -153,6 +165,18 @@ pub struct RoomRoutingRecord {
 }
 
 pub trait JournalStore: Send {
+    fn load_platform(&mut self) -> Result<PlatformData, JournalError> {
+        Ok(PlatformData::default())
+    }
+    fn commit_platform(
+        &mut self,
+        _expected: u64,
+        _candidate: &PlatformData,
+        _grants: &[MemberGrant],
+    ) -> Result<(), JournalError> {
+        Err(JournalError::UnsupportedOperation("commit_platform"))
+    }
+
     fn storage_kind(&self) -> &'static str {
         "memory"
     }
@@ -405,6 +429,13 @@ pub trait JournalStore: Send {
         _user_id: &str,
     ) -> Result<(), JournalError> {
         Err(JournalError::UnsupportedOperation("assign_account_owner"))
+    }
+
+    fn list_room_members(
+        &mut self,
+        _room_id: &str,
+    ) -> Result<BTreeMap<String, String>, JournalError> {
+        Err(JournalError::UnsupportedOperation("list_room_members"))
     }
 
     fn user_room_role(
@@ -914,6 +945,12 @@ pub enum RoomMutation {
         #[serde(skip_serializing_if = "Option::is_none")]
         training: Option<Box<exchange_core::TrainingRun>>,
     },
+    SchedulerDelta {
+        clock_steps: u64,
+        delta: crate::scheduler_delta::SchedulerDelta,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        training: Option<Box<exchange_core::TrainingRun>>,
+    },
     TrainingProgress {
         run: Box<exchange_core::TrainingRun>,
     },
@@ -960,6 +997,14 @@ struct StatusChangedMutationPayload {
 struct SchedulerProgressMutationPayload {
     clock_steps: u64,
     state: exchange_core::SchedulerState,
+    #[serde(default)]
+    training: Option<Box<exchange_core::TrainingRun>>,
+}
+
+#[derive(Deserialize)]
+struct SchedulerDeltaMutationPayload {
+    clock_steps: u64,
+    delta: crate::scheduler_delta::SchedulerDelta,
     #[serde(default)]
     training: Option<Box<exchange_core::TrainingRun>>,
 }
@@ -1046,6 +1091,15 @@ impl<'de> Deserialize<'de> for RoomMutation {
                     training: payload.training,
                 })
             }
+            "scheduler_delta" => {
+                let payload: SchedulerDeltaMutationPayload =
+                    serde_json::from_value(payload).map_err(D::Error::custom)?;
+                Ok(Self::SchedulerDelta {
+                    clock_steps: payload.clock_steps,
+                    delta: payload.delta,
+                    training: payload.training,
+                })
+            }
             "training_progress" => {
                 let payload: TrainingProgressMutationPayload =
                     serde_json::from_value(payload).map_err(D::Error::custom)?;
@@ -1070,6 +1124,7 @@ impl RoomMutation {
             Self::VenueToVenueTransferSubmitted { .. } => "venue_to_venue_transfer_submitted",
             Self::StatusChanged { .. } => "status_changed",
             Self::SchedulerProgress { .. } => "scheduler_progress",
+            Self::SchedulerDelta { .. } => "scheduler_delta",
             Self::TrainingProgress { .. } => "training_progress",
         }
     }
@@ -1195,6 +1250,8 @@ pub struct MarketTickProjection {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AccountLedgerProjection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hedge_positions: Option<Box<exchange_core::HedgePositions>>,
     pub room_id: String,
     pub instrument_id: String,
     pub command_seq: i64,
@@ -1226,6 +1283,8 @@ pub struct AccountLedgerProjection {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PositionSnapshotProjection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hedge_positions: Option<Box<exchange_core::HedgePositions>>,
     pub room_id: String,
     pub instrument_id: String,
     pub command_seq: i64,
@@ -1257,22 +1316,48 @@ struct InMemoryRoomWriterLease {
 
 #[derive(Clone, Debug, Default)]
 pub struct InMemoryJournalStore {
+    platform: PlatformData,
     rooms: Vec<StoredRoom>,
     executions: Vec<JournalExecution>,
-    mutations: Vec<JournalMutation>,
+    // Historical scheduler states contain many JSON values. Keep their exact
+    // wire representation rather than thousands of independent allocation trees.
+    mutations: Vec<Vec<u8>>,
     next_mutation_seq: u64,
     transfers: BTreeMap<(String, u64), VenueTransfer>,
-    snapshots: Vec<JournalSnapshot>,
+    snapshots: BTreeMap<String, JournalSnapshot>,
     room_members: BTreeMap<(String, String), String>,
     account_owners: BTreeSet<(String, AccountId, String)>,
     room_writer_leases: BTreeMap<String, InMemoryRoomWriterLease>,
     control_idempotency: BTreeMap<(String, String, String), ControlIdempotencyRecord>,
     external_action_counts: BTreeMap<(String, String, u64), u32>,
+    projections: MemoryProjections,
 }
 
 impl InMemoryJournalStore {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    fn projected_append(
+        &self,
+        records: &[JournalExecution],
+    ) -> Result<Option<MemoryProjections>, JournalError> {
+        if records.is_empty() {
+            return Ok(None);
+        }
+        // Stage only rows this batch can read/replace. The candidate remains
+        // private until every validation and journal mutation succeeds.
+        let mut candidate = self.projections.patch_inputs(records)?;
+        candidate.append(records)?;
+        Ok(Some(candidate))
+    }
+
+    fn retain_latest_snapshot(&mut self, snapshot: &JournalSnapshot) {
+        let current = self.snapshots.get(&snapshot.room_id);
+        if current.is_none_or(|current| snapshot.command_seq >= current.command_seq) {
+            self.snapshots
+                .insert(snapshot.room_id.clone(), snapshot.clone());
+        }
     }
 
     #[cfg(test)]
@@ -1328,14 +1413,16 @@ impl InMemoryJournalStore {
             .next_mutation_seq
             .checked_add(1)
             .ok_or(JournalError::SequenceOutOfRange(u64::MAX))?;
-        self.next_mutation_seq = mutation_seq;
-        self.mutations.push(JournalMutation {
+        let record = JournalMutation {
             room_id: mutation.room_id.clone(),
             mutation_seq,
             command_cursor: mutation.command_cursor,
             schema_version: ROOM_MUTATION_SCHEMA_VERSION,
             mutation: mutation.mutation.clone(),
-        });
+        };
+        let encoded = serde_json::to_vec(&record).map_err(JournalError::Serialize)?;
+        self.next_mutation_seq = mutation_seq;
+        self.mutations.push(encoded);
         if let Some(record) = &mutation.control_idempotency {
             self.control_idempotency
                 .insert(control_idempotency_map_key(record), record.clone());
@@ -1399,6 +1486,43 @@ impl InMemoryJournalStore {
 }
 
 impl JournalStore for InMemoryJournalStore {
+    fn load_platform(&mut self) -> Result<PlatformData, JournalError> {
+        Ok(self.platform.clone())
+    }
+    fn commit_platform(
+        &mut self,
+        expected: u64,
+        candidate: &PlatformData,
+        grants: &[MemberGrant],
+    ) -> Result<(), JournalError> {
+        if self.platform.revision != expected || candidate.revision != expected + 1 {
+            return Err(JournalError::Recovery("platform revision conflict".into()));
+        }
+        let mut members = self.room_members.clone();
+        let mut owners = self.account_owners.clone();
+        for grant in grants {
+            if !is_known_member_role(&grant.role)
+                || grant.account_id.is_some() && !is_account_holder_role(&grant.role)
+            {
+                return Err(JournalError::Recovery(
+                    "invalid platform member grant".into(),
+                ));
+            }
+            members.insert(
+                (grant.room_id.clone(), grant.user_id.clone()),
+                grant.role.clone(),
+            );
+            if let Some(id) = grant.account_id {
+                owners.retain(|(room, account, _)| room != &grant.room_id || *account != id);
+                owners.insert((grant.room_id.clone(), id, grant.user_id.clone()));
+            }
+        }
+        self.platform = candidate.clone();
+        self.room_members = members;
+        self.account_owners = owners;
+        Ok(())
+    }
+
     fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
         let mut executions = self.executions.clone();
         executions.sort_by(|left, right| {
@@ -1418,7 +1542,11 @@ impl JournalStore for InMemoryJournalStore {
                 })
                 .collect(),
             executions,
-            mutations: self.mutations.clone(),
+            mutations: self
+                .mutations
+                .iter()
+                .map(|encoded| serde_json::from_slice(encoded).map_err(JournalError::Serialize))
+                .collect::<Result<Vec<_>, _>>()?,
             snapshots: self.latest_snapshots(),
         })
     }
@@ -1653,9 +1781,7 @@ impl JournalStore for InMemoryJournalStore {
         initial_snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
         let checkpoint_cursor = command_cursor_after_records(seed_records)?;
-        let mut projected_records = self.executions.clone();
-        projected_records.extend(seed_records.iter().cloned());
-        MemoryProjections::from_executions(&projected_records)?;
+        let projections = self.projected_append(seed_records)?;
         if let Some(snapshot) = initial_snapshot {
             validate_snapshot(snapshot)?;
         }
@@ -1666,8 +1792,11 @@ impl JournalStore for InMemoryJournalStore {
             status: MarketStatus::Running,
         });
         self.executions.extend(seed_records.iter().cloned());
+        if let Some(projections) = projections {
+            self.projections.merge_patch(projections);
+        }
         if let Some(snapshot) = initial_snapshot {
-            self.snapshots.push(snapshot.clone());
+            self.retain_latest_snapshot(snapshot);
             self.store_mutation(&PendingJournalMutation::new(
                 snapshot.room_id.clone(),
                 checkpoint_cursor,
@@ -1742,18 +1871,19 @@ impl JournalStore for InMemoryJournalStore {
         records: &[JournalExecution],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
-        let mut projected_records = self.executions.clone();
-        projected_records.extend(records.iter().cloned());
-        MemoryProjections::from_executions(&projected_records)?;
+        let projections = self.projected_append(records)?;
         if let Some(snapshot) = snapshot {
             validate_snapshot(snapshot)?;
         }
         self.ensure_execution_quotas(records)?;
 
         self.executions.extend(records.iter().cloned());
+        if let Some(projections) = projections {
+            self.projections.merge_patch(projections);
+        }
         self.apply_execution_quotas(records);
         if let Some(snapshot) = snapshot {
-            self.snapshots.push(snapshot.clone());
+            self.retain_latest_snapshot(snapshot);
         }
         Ok(())
     }
@@ -1787,14 +1917,14 @@ impl JournalStore for InMemoryJournalStore {
             );
         }
         if let Some(snapshot) = snapshot {
-            self.snapshots.push(snapshot.clone());
+            self.retain_latest_snapshot(snapshot);
         }
         Ok(())
     }
 
     fn append_snapshot(&mut self, snapshot: &JournalSnapshot) -> Result<(), JournalError> {
         validate_snapshot(snapshot)?;
-        self.snapshots.push(snapshot.clone());
+        self.retain_latest_snapshot(snapshot);
         Ok(())
     }
 
@@ -1807,9 +1937,9 @@ impl JournalStore for InMemoryJournalStore {
     ) -> Result<(), JournalError> {
         validate_pending_mutation(mutation)?;
         validate_mutation_execution_records(mutation, execution_records)?;
-        let mut projected_records = self.executions.clone();
-        projected_records.extend(execution_records.iter().cloned());
-        MemoryProjections::from_executions(&projected_records)?;
+        // Already committed executions were validated at append time. Clock and
+        // state-only mutations add no projection rows, so need no history replay.
+        let projections = self.projected_append(execution_records)?;
         for record in transfer_records {
             validate_transfer(record)?;
             if record.room_id != mutation.room_id {
@@ -1840,6 +1970,9 @@ impl JournalStore for InMemoryJournalStore {
         self.ensure_execution_quotas(execution_records)?;
         self.store_mutation(mutation)?;
         self.executions.extend(execution_records.iter().cloned());
+        if let Some(projections) = projections {
+            self.projections.merge_patch(projections);
+        }
         self.apply_execution_quotas(execution_records);
         for record in transfer_records {
             self.transfers.insert(
@@ -1848,7 +1981,7 @@ impl JournalStore for InMemoryJournalStore {
             );
         }
         if let Some(snapshot) = snapshot {
-            self.snapshots.push(snapshot.clone());
+            self.retain_latest_snapshot(snapshot);
         }
         if let RoomMutation::StatusChanged { status } = &mutation.mutation
             && let Some(room) = self
@@ -1920,6 +2053,18 @@ impl JournalStore for InMemoryJournalStore {
                 "user {user_id} is not a member of {room_id}"
             ))),
         }
+    }
+
+    fn list_room_members(
+        &mut self,
+        room_id: &str,
+    ) -> Result<BTreeMap<String, String>, JournalError> {
+        Ok(self
+            .room_members
+            .iter()
+            .filter(|((room, _), _)| room == room_id)
+            .map(|((_, user), role)| (user.clone(), role.clone()))
+            .collect())
     }
 
     fn user_room_role(
@@ -2126,18 +2271,7 @@ impl JournalStore for InMemoryJournalStore {
 
 impl InMemoryJournalStore {
     fn latest_snapshots(&self) -> Vec<JournalSnapshot> {
-        let mut snapshots = std::collections::BTreeMap::<&str, &JournalSnapshot>::new();
-        for snapshot in &self.snapshots {
-            let current = snapshots.get(snapshot.room_id.as_str());
-            if current.is_none_or(|current| snapshot.command_seq >= current.command_seq) {
-                snapshots.insert(snapshot.room_id.as_str(), snapshot);
-            }
-        }
-
-        snapshots
-            .values()
-            .map(|snapshot| (*snapshot).clone())
-            .collect()
+        self.snapshots.values().cloned().collect()
     }
 }
 
@@ -2164,6 +2298,18 @@ impl SharedInMemoryJournalStore {
 
 #[cfg(test)]
 impl JournalStore for SharedInMemoryJournalStore {
+    fn load_platform(&mut self) -> Result<PlatformData, JournalError> {
+        self.lock()?.load_platform()
+    }
+    fn commit_platform(
+        &mut self,
+        expected: u64,
+        candidate: &PlatformData,
+        grants: &[MemberGrant],
+    ) -> Result<(), JournalError> {
+        self.lock()?.commit_platform(expected, candidate, grants)
+    }
+
     fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
         self.lock()?.load_recovery()
     }
@@ -2384,6 +2530,13 @@ impl JournalStore for SharedInMemoryJournalStore {
     ) -> Result<(), JournalError> {
         self.lock()?
             .assign_account_owner(room_id, account_id, user_id)
+    }
+
+    fn list_room_members(
+        &mut self,
+        room_id: &str,
+    ) -> Result<BTreeMap<String, String>, JournalError> {
+        self.lock()?.list_room_members(room_id)
     }
 
     fn user_room_role(
@@ -2780,12 +2933,15 @@ impl PostgresJournalStore {
             let order_id = i64_from_u64(order.order_id, "order_id")?;
             let account_id = i64_from_u64(order.account_id, "account_id")?;
             let original_qty = i64_from_u64(order.qty, "qty")?;
-            let (base_order_type, limit_price_tick) = match order.kind {
+            let (base_order_type, limit_price_tick) = match order.kind.execution_kind() {
                 OrderKind::Limit { price_tick } => ("limit", Some(price_tick)),
                 OrderKind::Market => ("market", None),
                 OrderKind::PostOnly { price_tick } => ("post_only", Some(price_tick)),
                 OrderKind::ImmediateOrCancel { price_tick } => ("immediate_or_cancel", price_tick),
                 OrderKind::FillOrKill { price_tick } => ("fill_or_kill", price_tick),
+                OrderKind::Protected { .. } | OrderKind::TimedMarket { .. } => {
+                    unreachable!("execution_kind unwraps protection")
+                }
             };
             let order_type = if order.reduce_only {
                 format!("reduce_only_{base_order_type}")
@@ -3900,6 +4056,96 @@ fn query_recovery_rows(
 }
 
 impl JournalStore for PostgresJournalStore {
+    fn load_platform(&mut self) -> Result<PlatformData, JournalError> {
+        run_postgres(&mut self.client, |client| {
+            let mut tx = client.transaction().map_err(JournalError::Postgres)?;
+            let revision:i64=tx.query_one("SELECT revision FROM marketforge_platform_revision WHERE singleton=TRUE FOR SHARE",&[]).map_err(JournalError::Postgres)?.get(0);
+            let rows = tx
+                .query(
+                    "SELECT kind,record_id,body FROM marketforge_platform_records",
+                    &[],
+                )
+                .map_err(JournalError::Postgres)?
+                .into_iter()
+                .map(|r| (r.get(0), r.get(1), r.get(2)))
+                .collect();
+            let result = PlatformData::from_records(revision as u64, rows)?;
+            tx.commit().map_err(JournalError::Postgres)?;
+            Ok(result)
+        })
+    }
+    fn commit_platform(
+        &mut self,
+        expected: u64,
+        candidate: &PlatformData,
+        grants: &[MemberGrant],
+    ) -> Result<(), JournalError> {
+        let expected = i64_from_u64(expected, "platform revision")?;
+        let candidate = candidate.clone();
+        let grants = grants.to_vec();
+        run_postgres(&mut self.client, move |client| {
+            let mut tx = client.transaction().map_err(JournalError::Postgres)?;
+            let revision:i64=tx.query_one("SELECT revision FROM marketforge_platform_revision WHERE singleton=TRUE FOR UPDATE",&[]).map_err(JournalError::Postgres)?.get(0);
+            if revision != expected || candidate.revision != expected as u64 + 1 {
+                return Err(JournalError::Recovery("platform revision conflict".into()));
+            }
+            let mut previous = BTreeMap::new();
+            for row in tx
+                .query(
+                    "SELECT kind,record_id,body FROM marketforge_platform_records",
+                    &[],
+                )
+                .map_err(JournalError::Postgres)?
+            {
+                previous.insert(
+                    (row.get::<_, String>(0), row.get::<_, String>(1)),
+                    row.get::<_, Value>(2),
+                );
+            }
+            let records = candidate.records()?;
+            for ((kind, id), body) in &records {
+                if previous.get(&(kind.clone(), id.clone())) == Some(body) {
+                    continue;
+                }
+                tx.execute("INSERT INTO marketforge_platform_records(kind,record_id,body) VALUES($1,$2,$3) ON CONFLICT(kind,record_id) DO UPDATE SET body=EXCLUDED.body",&[kind,id,body]).map_err(JournalError::Postgres)?;
+                if kind == "users" {
+                    tx.execute(
+                        "INSERT INTO marketforge_users(user_id) VALUES($1) ON CONFLICT DO NOTHING",
+                        &[id],
+                    )
+                    .map_err(JournalError::Postgres)?;
+                }
+            }
+            for (kind, id) in previous.keys().filter(|key| !records.contains_key(*key)) {
+                tx.execute(
+                    "DELETE FROM marketforge_platform_records WHERE kind=$1 AND record_id=$2",
+                    &[kind, id],
+                )
+                .map_err(JournalError::Postgres)?;
+            }
+            for grant in &grants {
+                tx.execute("INSERT INTO marketforge_room_members(room_id,user_id,role) VALUES($1,$2,$3) ON CONFLICT(room_id,user_id) DO UPDATE SET role=EXCLUDED.role",&[&grant.room_id,&grant.user_id,&grant.role]).map_err(JournalError::Postgres)?;
+                if let Some(id) = grant.account_id {
+                    let id = i64_from_u64(id, "account_id")?;
+                    tx.execute(
+                        "DELETE FROM marketforge_account_owners WHERE room_id=$1 AND account_id=$2",
+                        &[&grant.room_id, &id],
+                    )
+                    .map_err(JournalError::Postgres)?;
+                    tx.execute("INSERT INTO marketforge_account_owners(room_id,account_id,user_id) VALUES($1,$2,$3)",&[&grant.room_id,&id,&grant.user_id]).map_err(JournalError::Postgres)?;
+                }
+            }
+            let next = i64_from_u64(candidate.revision, "platform revision")?;
+            tx.execute(
+                "UPDATE marketforge_platform_revision SET revision=$1 WHERE singleton=TRUE",
+                &[&next],
+            )
+            .map_err(JournalError::Postgres)?;
+            tx.commit().map_err(JournalError::Postgres)?;
+            Ok(())
+        })
+    }
+
     fn storage_kind(&self) -> &'static str {
         "postgresql"
     }
@@ -4736,6 +4982,17 @@ impl JournalStore for PostgresJournalStore {
         })
     }
 
+    fn list_room_members(
+        &mut self,
+        room_id: &str,
+    ) -> Result<BTreeMap<String, String>, JournalError> {
+        let room_id = room_id.to_string();
+        run_postgres(&mut self.client, move |client| {
+            Ok(client.query("SELECT user_id, role FROM marketforge_room_members WHERE room_id = $1 ORDER BY user_id", &[&room_id])
+                .map_err(JournalError::Postgres)?.into_iter().map(|row| (row.get(0), row.get(1))).collect())
+        })
+    }
+
     fn user_room_role(
         &mut self,
         user_id: &str,
@@ -5096,7 +5353,7 @@ impl JournalStore for PostgresJournalStore {
                            avg_entry_price_tick, realized_pnl_total, unrealized_pnl,
                            equity, initial_margin, maintenance_margin,
                            portfolio_initial_margin, portfolio_maintenance_margin,
-                           margin_status, fees_paid
+                           margin_status, fees_paid, payload_json
                     FROM marketforge_account_ledger
                     WHERE room_id = $1
                       AND ($2::TEXT IS NULL OR instrument_id = $2)
@@ -5135,6 +5392,7 @@ impl JournalStore for PostgresJournalStore {
                 .into_iter()
                 .map(|row| {
                     Ok(AccountLedgerProjection {
+                        hedge_positions: projected_hedge_positions(&row.get::<_, serde_json::Value>("payload_json"), row.get("account_id"), row.get("ledger_seq"))?,
                         room_id: row.get("room_id"),
                         instrument_id: row.get("instrument_id"),
                         command_seq: row.get("command_seq"),
@@ -5189,7 +5447,7 @@ impl JournalStore for PostgresJournalStore {
                            cash_balance, position_qty, avg_entry_price_tick, realized_pnl,
                            unrealized_pnl, equity, initial_margin, maintenance_margin,
                            portfolio_initial_margin, portfolio_maintenance_margin,
-                           margin_status, fees_paid
+                           margin_status, fees_paid, payload_json
                     FROM marketforge_position_snapshots
                     WHERE room_id = $1
                       AND ($2::TEXT IS NULL OR instrument_id = $2)
@@ -5228,6 +5486,7 @@ impl JournalStore for PostgresJournalStore {
                 .into_iter()
                 .map(|row| {
                     Ok(PositionSnapshotProjection {
+                        hedge_positions: projected_hedge_positions(&row.get::<_, serde_json::Value>("payload_json"), row.get("account_id"), row.get("ledger_seq"))?,
                         room_id: row.get("room_id"),
                         instrument_id: row.get("instrument_id"),
                         command_seq: row.get("command_seq"),
@@ -5320,25 +5579,126 @@ struct StoredRoom {
     status: MarketStatus,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct MemoryProjections {
     orders: BTreeMap<(String, String, i64), OrderProjection>,
     trades: BTreeMap<(String, String, i64), TradeProjection>,
     market_ticks: BTreeMap<(String, i64, i64), MarketTickProjection>,
     account_ledger: Vec<AccountLedgerProjection>,
     position_snapshots: Vec<PositionSnapshotProjection>,
+    execution_keys: BTreeSet<(String, u64)>,
+    idempotency_keys: BTreeSet<(String, String, String)>,
+    ledger_keys: BTreeSet<(String, i64, i64)>,
 }
 
 impl MemoryProjections {
+    fn patch_inputs(&self, records: &[JournalExecution]) -> Result<Self, JournalError> {
+        let mut patch = Self::default();
+        for record in records {
+            let room = &record.room_id;
+            let command_seq = i64_from_u64(record.command_seq, "command_seq")?;
+            let instrument = record
+                .execution
+                .instrument_id
+                .as_deref()
+                .unwrap_or("legacy-primary");
+            let execution_key = (room.clone(), record.command_seq);
+            if self.execution_keys.contains(&execution_key) {
+                patch.execution_keys.insert(execution_key);
+            }
+            if let (Some(user), Some(key)) = (&record.request_user_id, &record.idempotency_key) {
+                let key = (room.clone(), user.clone(), key.clone());
+                if self.idempotency_keys.contains(&key) {
+                    patch.idempotency_keys.insert(key);
+                }
+            }
+            let new_order = match &record.command {
+                Command::NewOrder(order) => Some(order.order_id),
+                _ => None,
+            };
+            for id in new_order.into_iter().chain(
+                record
+                    .execution
+                    .events
+                    .iter()
+                    .filter_map(|event| order_status_update(event).map(|v| v.0)),
+            ) {
+                let key = (
+                    room.clone(),
+                    instrument.to_string(),
+                    i64_from_u64(id, "order_id")?,
+                );
+                if let Some(row) = self.orders.get(&key) {
+                    patch.orders.insert(key, row.clone());
+                }
+            }
+            for event in &record.execution.events {
+                if let EventSummary::TradePrinted { trade_id, .. } = event {
+                    let key = (
+                        room.clone(),
+                        instrument.to_string(),
+                        i64_from_u64(*trade_id, "trade_id")?,
+                    );
+                    if let Some(row) = self.trades.get(&key) {
+                        patch.trades.insert(key, row.clone());
+                    }
+                    let key = (
+                        room.clone(),
+                        command_seq,
+                        i64_from_u64(event_seq(event), "event_seq")?,
+                    );
+                    if let Some(row) = self.market_ticks.get(&key) {
+                        patch.market_ticks.insert(key, row.clone());
+                    }
+                }
+            }
+            patch.ledger_keys.extend(
+                self.ledger_keys
+                    .range(
+                        (room.clone(), command_seq, i64::MIN)
+                            ..=(room.clone(), command_seq, i64::MAX),
+                    )
+                    .cloned(),
+            );
+        }
+        Ok(patch)
+    }
+
+    fn merge_patch(&mut self, patch: Self) {
+        self.orders.extend(patch.orders);
+        self.trades.extend(patch.trades);
+        self.market_ticks.extend(patch.market_ticks);
+        self.account_ledger.extend(patch.account_ledger);
+        self.position_snapshots.extend(patch.position_snapshots);
+        self.execution_keys.extend(patch.execution_keys);
+        self.idempotency_keys.extend(patch.idempotency_keys);
+        self.ledger_keys.extend(patch.ledger_keys);
+    }
+
     fn from_executions(records: &[JournalExecution]) -> Result<Self, JournalError> {
+        Self::from_execution_iter(records)
+    }
+
+    fn from_execution_iter<'a>(
+        records: impl IntoIterator<Item = &'a JournalExecution>,
+    ) -> Result<Self, JournalError> {
         let mut projected = Self::default();
-        let mut execution_keys = BTreeSet::new();
-        let mut idempotency_keys = BTreeSet::new();
-        let mut ledger_keys = BTreeSet::new();
+        projected.append(records)?;
+        Ok(projected)
+    }
+
+    fn append<'a>(
+        &mut self,
+        records: impl IntoIterator<Item = &'a JournalExecution>,
+    ) -> Result<(), JournalError> {
+        let mut ledger_keys = std::mem::take(&mut self.ledger_keys);
 
         for record in records {
             validate_execution_idempotency(record)?;
-            if !execution_keys.insert((record.room_id.clone(), record.command_seq)) {
+            if !self
+                .execution_keys
+                .insert((record.room_id.clone(), record.command_seq))
+            {
                 return Err(JournalError::DuplicateExecution {
                     room_id: record.room_id.clone(),
                     command_seq: record.command_seq,
@@ -5347,7 +5707,7 @@ impl MemoryProjections {
             if let (Some(user_id), Some(idempotency_key)) = (
                 record.request_user_id.as_deref(),
                 record.idempotency_key.as_deref(),
-            ) && !idempotency_keys.insert((
+            ) && !self.idempotency_keys.insert((
                 record.room_id.clone(),
                 user_id.to_string(),
                 idempotency_key.to_string(),
@@ -5362,10 +5722,11 @@ impl MemoryProjections {
             })?;
             record.command_json()?;
             record.execution_json()?;
-            projected.apply_execution(record, &mut ledger_keys)?;
+            self.apply_execution(record, &mut ledger_keys)?;
         }
 
-        Ok(projected)
+        self.ledger_keys = ledger_keys;
+        Ok(())
     }
 
     fn apply_execution(
@@ -5390,12 +5751,15 @@ impl MemoryProjections {
             let order_id = i64_from_u64(order.order_id, "order_id")?;
             let account_id = i64_from_u64(order.account_id, "account_id")?;
             let original_qty = i64_from_u64(order.qty, "qty")?;
-            let (base_order_type, limit_price_tick) = match order.kind {
+            let (base_order_type, limit_price_tick) = match order.kind.execution_kind() {
                 OrderKind::Limit { price_tick } => ("limit", Some(price_tick)),
                 OrderKind::Market => ("market", None),
                 OrderKind::PostOnly { price_tick } => ("post_only", Some(price_tick)),
                 OrderKind::ImmediateOrCancel { price_tick } => ("immediate_or_cancel", price_tick),
                 OrderKind::FillOrKill { price_tick } => ("fill_or_kill", price_tick),
+                OrderKind::Protected { .. } | OrderKind::TimedMarket { .. } => {
+                    unreachable!("execution_kind unwraps protection")
+                }
             };
             let order_type = if order.reduce_only {
                 format!("reduce_only_{base_order_type}")
@@ -5552,6 +5916,11 @@ impl MemoryProjections {
                     });
                 }
                 self.account_ledger.push(AccountLedgerProjection {
+                    hedge_positions: projected_hedge_positions(
+                        &row.payload_json,
+                        row.account_id,
+                        row.ledger_seq,
+                    )?,
                     room_id: record.room_id.clone(),
                     instrument_id: instrument_id.clone(),
                     command_seq,
@@ -5581,6 +5950,11 @@ impl MemoryProjections {
                     fees_paid: row.fees_paid,
                 });
                 self.position_snapshots.push(PositionSnapshotProjection {
+                    hedge_positions: projected_hedge_positions(
+                        &row.payload_json,
+                        row.account_id,
+                        row.ledger_seq,
+                    )?,
                     room_id: record.room_id.clone(),
                     instrument_id: instrument_id.clone(),
                     command_seq,
@@ -6060,9 +6434,51 @@ fn checked_neg_i128(value: i128, field: &'static str) -> Result<i128, JournalErr
         .ok_or(JournalError::ArithmeticOverflow { field })
 }
 
+// Match the JSON Value integer range used by durable recovery, while validating
+// a checkpoint without allocating another tree of its complete trade history.
+struct RecoveryJsonFormatter;
+
+impl serde_json::ser::Formatter for RecoveryJsonFormatter {
+    fn write_i128<W: ?Sized + std::io::Write>(
+        &mut self,
+        writer: &mut W,
+        value: i128,
+    ) -> std::io::Result<()> {
+        if i64::try_from(value).is_err() && u64::try_from(value).is_err() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "JSON recovery integer out of range",
+            ));
+        }
+        serde_json::ser::CompactFormatter.write_i128(writer, value)
+    }
+
+    fn write_u128<W: ?Sized + std::io::Write>(
+        &mut self,
+        writer: &mut W,
+        value: u128,
+    ) -> std::io::Result<()> {
+        if u64::try_from(value).is_err() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "JSON recovery integer out of range",
+            ));
+        }
+        serde_json::ser::CompactFormatter.write_u128(writer, value)
+    }
+}
+
+fn validate_recovery_json(value: &impl Serialize) -> Result<(), JournalError> {
+    let mut serializer =
+        serde_json::Serializer::with_formatter(std::io::sink(), RecoveryJsonFormatter);
+    value
+        .serialize(&mut serializer)
+        .map_err(JournalError::Serialize)
+}
+
 fn validate_snapshot(snapshot: &JournalSnapshot) -> Result<(), JournalError> {
     i64_from_u64(snapshot.command_seq, "command_seq")?;
-    serde_json::to_value(&snapshot.actor).map_err(JournalError::Serialize)?;
+    validate_recovery_json(&snapshot.actor)?;
     Ok(())
 }
 
@@ -6077,7 +6493,7 @@ fn command_cursor_after_records(records: &[JournalExecution]) -> Result<u64, Jou
 
 fn validate_pending_mutation(mutation: &PendingJournalMutation) -> Result<(), JournalError> {
     i64_from_u64(mutation.command_cursor, "command_cursor")?;
-    serde_json::to_value(&mutation.mutation).map_err(JournalError::Serialize)?;
+    validate_recovery_json(&mutation.mutation)?;
     match &mutation.mutation {
         RoomMutation::StateCheckpoint { actor, .. } => {
             if actor.room_id() != mutation.room_id {
@@ -6135,6 +6551,19 @@ fn validate_pending_mutation(mutation: &PendingJournalMutation) -> Result<(), Jo
                     state.room_id, mutation.room_id
                 )));
             }
+            if training
+                .as_ref()
+                .is_some_and(|run| run.spec.room_id != mutation.room_id)
+            {
+                return Err(JournalError::Recovery(
+                    "scheduler training room mismatch".into(),
+                ));
+            }
+        }
+        RoomMutation::SchedulerDelta {
+            delta, training, ..
+        } => {
+            delta.validate(&mutation.room_id)?;
             if training
                 .as_ref()
                 .is_some_and(|run| run.spec.room_id != mutation.room_id)
@@ -6278,6 +6707,59 @@ fn transfer_event_seq(transfer: &VenueTransfer) -> Result<i64, JournalError> {
         VenueTransferStatus::Completed => 1,
     };
     Ok(event_seq)
+}
+
+// The existing private JSON receipts retain both legs, including old rows
+// without hedge fields. Select only the account authorized for this row.
+fn projected_hedge_positions(
+    payload: &serde_json::Value,
+    account_id: i64,
+    ledger_seq: i64,
+) -> Result<Option<Box<exchange_core::HedgePositions>>, JournalError> {
+    let leg_index = (ledger_seq % 1_000) as usize;
+    if leg_index > 0 && payload.get("auto_deleveraging_allocations").is_some() {
+        let allocations: Vec<_> = payload["auto_deleveraging_allocations"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .chain(
+                payload["socialized_loss_allocations"]
+                    .as_array()
+                    .into_iter()
+                    .flatten(),
+            )
+            .collect();
+        if let Some(allocation) = allocations.get(leg_index - 1) {
+            return projected_hedge_positions(&allocation["account"], account_id, 0);
+        }
+        return Ok(None);
+    }
+    match payload {
+        serde_json::Value::Object(object) => {
+            if object.get("account_id").and_then(serde_json::Value::as_i64) == Some(account_id)
+                && let Some(positions) = object.get("hedge_positions")
+                && !positions.is_null()
+            {
+                return serde_json::from_value(positions.clone())
+                    .map(Some)
+                    .map_err(JournalError::Serialize);
+            }
+            for value in object.values() {
+                if let Some(positions) = projected_hedge_positions(value, account_id, 0)? {
+                    return Ok(Some(positions));
+                }
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                if let Some(positions) = projected_hedge_positions(value, account_id, 0)? {
+                    return Ok(Some(positions));
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(None)
 }
 
 fn clearing_ledger_rows(
@@ -6963,6 +7445,7 @@ fn command_account_id(command: &Command) -> Option<AccountId> {
     match command {
         Command::NewOrder(order) => Some(order.account_id),
         Command::CancelOrder(_)
+        | Command::ExpireOrder { .. }
         | Command::AmendOrder(_)
         | Command::SetMarkPrice(_)
         | Command::SettleFunding(_) => None,
@@ -7010,6 +7493,7 @@ mod tests {
         clearing_events: Vec<ClearingEventSummary>,
     ) -> JournalExecution {
         let command = Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id,
             account_id,
             side,
@@ -7049,6 +7533,7 @@ mod tests {
     fn spot_scenario(room_id: &str) -> ScenarioConfig {
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: VenueRuleConfig::default(),
             venue_asset_policy: VenueAssetPolicyConfig::default(),
@@ -7209,6 +7694,55 @@ mod tests {
         assert_eq!(
             after_expiry.claim.fencing_token,
             short_lease.claim.fencing_token + 1
+        );
+    }
+
+    #[test]
+    fn streaming_checkpoint_validation_preserves_recovery_number_bounds() {
+        #[derive(Serialize)]
+        struct Balance {
+            amount: i128,
+        }
+        for amount in [
+            i128::MIN,
+            i128::from(i64::MIN) - 1,
+            i128::from(i64::MIN),
+            -1,
+            0,
+            i128::from(u64::MAX),
+            i128::from(u64::MAX) + 1,
+            i128::MAX,
+        ] {
+            let value = Balance { amount };
+            assert_eq!(
+                validate_recovery_json(&value).is_ok(),
+                serde_json::to_value(&value).is_ok(),
+                "{amount}"
+            );
+        }
+        assert!(validate_recovery_json(&u128::from(u64::MAX)).is_ok());
+        assert!(validate_recovery_json(&(u128::from(u64::MAX) + 1)).is_err());
+        let mut scenario = spot_scenario("stream-validation");
+        if let exchange_core::ScenarioAccount::Spot { cash_balance, .. } = &mut scenario.accounts[0]
+        {
+            *cash_balance = i128::MAX;
+        } else {
+            panic!("expected spot account");
+        }
+        let actor = SimulationRoom::from_scenario(scenario).unwrap().room;
+        let mut store = InMemoryJournalStore::new();
+        assert!(
+            store
+                .append_snapshot(&JournalSnapshot {
+                    room_id: "stream-validation".into(),
+                    command_seq: 1,
+                    actor
+                })
+                .is_err()
+        );
+        assert!(
+            store.snapshots.is_empty(),
+            "invalid balance must not publish a checkpoint"
         );
     }
 
@@ -7422,7 +7956,7 @@ mod tests {
         assert!(external_action_quota.contains("marketforge_external_action_counts"));
         assert_eq!(
             MIGRATIONS.last().map(|migration| migration.version),
-            Some(15)
+            Some(17)
         );
     }
 
@@ -7639,6 +8173,7 @@ mod tests {
         let order_id = 300;
         let account_id = 20;
         let command = Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id,
             account_id,
             side: Side::Sell,
@@ -7704,7 +8239,7 @@ mod tests {
         let second = new_order_record(2, 200, 20, Side::Buy, Vec::new(), Vec::new());
         let conflicting = new_order_record(3, 100, 30, Side::Buy, Vec::new(), Vec::new());
         let error = store
-            .append_executions(&[second, conflicting], None)
+            .append_executions(&[second.clone(), conflicting], None)
             .unwrap_err();
 
         assert!(matches!(
@@ -7722,6 +8257,71 @@ mod tests {
                 .len(),
             1
         );
+        // Failed candidates must not poison incremental execution/order keys.
+        store.append_execution(&second, None).unwrap();
+        assert_eq!(store.executions.len(), 2);
+        assert_eq!(
+            format!("{:?}", store.projections),
+            format!(
+                "{:?}",
+                MemoryProjections::from_executions(&store.executions).unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn projection_patches_preserve_untouched_history_and_update_old_orders() {
+        let mut store = InMemoryJournalStore::new();
+        for id in 1..=64 {
+            let record = new_order_record(
+                id,
+                id,
+                10,
+                Side::Buy,
+                vec![EventSummary::OrderRested {
+                    seq: id,
+                    order_id: id,
+                    price_tick: 100,
+                    remaining_qty: 2,
+                }],
+                vec![],
+            );
+            store.append_execution(&record, None).unwrap();
+        }
+        for id in [2, 40, 1, 64] {
+            let seq = 100 + id;
+            let mut record = new_order_record(
+                seq,
+                id,
+                10,
+                Side::Buy,
+                vec![EventSummary::OrderCanceled {
+                    seq,
+                    order_id: id,
+                    remaining_qty: 2,
+                }],
+                vec![],
+            );
+            record.command = Command::CancelOrder(exchange_core::CancelOrder { order_id: id });
+            let inputs = store
+                .projections
+                .patch_inputs(std::slice::from_ref(&record))
+                .unwrap();
+            assert_eq!(inputs.orders.len(), 1, "only the changed order is staged");
+            assert!(inputs.account_ledger.is_empty());
+            store.append_execution(&record, None).unwrap();
+            assert_eq!(
+                format!("{:?}", store.projections),
+                format!(
+                    "{:?}",
+                    MemoryProjections::from_executions(&store.executions).unwrap()
+                )
+            );
+        }
+        let before = format!("{:?}", store.projections);
+        let duplicate = store.executions.last().unwrap().clone();
+        assert!(store.append_execution(&duplicate, None).is_err());
+        assert_eq!(format!("{:?}", store.projections), before);
     }
 
     #[test]
@@ -7878,6 +8478,36 @@ mod tests {
         assert_eq!(recovery.snapshots.len(), 1);
         assert_eq!(recovery.snapshots[0].command_seq, 7);
         assert_eq!(recovery.snapshots[0].actor.clock().step(), 1);
+        for seq in 8..108 {
+            store
+                .append_snapshot(&JournalSnapshot {
+                    room_id: "room-1".into(),
+                    command_seq: seq,
+                    actor: empty_room("room-1"),
+                })
+                .unwrap();
+        }
+        store
+            .append_snapshot(&JournalSnapshot {
+                room_id: "room-1".into(),
+                command_seq: 6,
+                actor: empty_room("room-1"),
+            })
+            .unwrap();
+        store
+            .append_snapshot(&JournalSnapshot {
+                room_id: "room-2".into(),
+                command_seq: 1,
+                actor: empty_room("room-2"),
+            })
+            .unwrap();
+        assert_eq!(store.snapshots.len(), 2, "storage is bounded by room count");
+        let recovery = store.load_recovery().unwrap();
+        assert_eq!(
+            recovery.snapshots[0].command_seq, 107,
+            "older arrival must not replace newer state"
+        );
+        assert_eq!(recovery.snapshots[1].room_id, "room-2");
     }
 
     #[test]

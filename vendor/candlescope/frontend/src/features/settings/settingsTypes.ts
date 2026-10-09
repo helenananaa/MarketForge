@@ -1,0 +1,72 @@
+export type SettingsActionType = "local_only" | "backend_endpoint";
+
+import type { MessageKey } from "../../i18n/index.js";
+import type { AboutSettingsPanelProps } from "../../components/settings/AboutSettingsPanel.js";
+import type { CacheDiagnosticsPanelProps } from "../../components/settings/CacheDiagnosticsPanel.js";
+import type { CacheLimitsPanelProps } from "../../components/settings/CacheLimitsPanel.js";
+import type { ChartAppearancePanelProps } from "../../components/settings/ChartAppearancePanel.js";
+import type { ExchangeSettingsPanelProps } from "../../components/settings/ExchangeSettingsPanel.js";
+import type { ProxySettingsPanelProps } from "../../components/settings/ProxySettingsPanel.js";
+import type { StorageMaintenancePanelProps } from "../../components/settings/StorageMaintenancePanel.js";
+
+export type SettingsCategory =
+  | "appearance"
+  | "network"
+  | "exchanges"
+  | "data"
+  | "plugins"
+  | "ai"
+  | "about";
+
+export interface SettingsActionDescriptor {
+  type: SettingsActionType;
+  label: string;
+  description: string;
+}
+
+export interface SettingsCategoryDescriptor {
+  key: SettingsCategory;
+  labelKey: MessageKey;
+  icon: string;
+}
+
+export interface SettingsRuntimeView {
+  appearance: ChartAppearancePanelProps;
+  proxy: Omit<ProxySettingsPanelProps,
+    "onProxyModeChange" | "onCustomProxyChange" | "onProxyTest" | "onProxySave" | "onProxyRoutesChange" | "onProxyStrategyChange">;
+  exchanges: Omit<ExchangeSettingsPanelProps, "onRefreshExchanges" | "onTestExchangeMarket">;
+  cacheLimits: Omit<CacheLimitsPanelProps, "onToggleAdvanced">;
+  cacheDiagnostics: CacheDiagnosticsPanelProps;
+  maintenance: Omit<StorageMaintenancePanelProps,
+    "onStorageRepair" | "onGapScan" | "onExchangeRefresh">;
+}
+
+export interface SettingsRuntimeActions {
+  proxy: Pick<ProxySettingsPanelProps,
+    "onProxyModeChange" | "onCustomProxyChange" | "onProxyTest" | "onProxySave" | "onProxyRoutesChange" | "onProxyStrategyChange">;
+  exchanges: Pick<ExchangeSettingsPanelProps, "onRefreshExchanges" | "onTestExchangeMarket">;
+  cacheLimits: Pick<CacheLimitsPanelProps, "onToggleAdvanced">;
+  cacheDiagnostics: Pick<CacheDiagnosticsPanelProps,
+    | "onPlanBackendMemoryGc"
+    | "onPlanFrontendGc"
+    | "onPlanStorageGc"
+    | "onRunBackendMemoryGc"
+    | "onRunFrontendGc"
+    | "onRunStorageGc"
+    | "onRefresh"
+    | "onVacuumStorage">;
+  maintenance: Pick<StorageMaintenancePanelProps,
+    "onStorageRepair" | "onGapScan" | "onExchangeRefresh">;
+}
+
+export interface SettingsPanelViewModel {
+  appearance: ChartAppearancePanelProps;
+  network: ProxySettingsPanelProps;
+  exchanges: ExchangeSettingsPanelProps;
+  data: {
+    cacheLimits: CacheLimitsPanelProps;
+    cacheDiagnostics: CacheDiagnosticsPanelProps;
+    maintenance: StorageMaintenancePanelProps;
+  };
+  about: AboutSettingsPanelProps;
+}

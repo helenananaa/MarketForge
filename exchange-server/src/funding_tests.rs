@@ -42,6 +42,7 @@ fn funding_scenario(room_id: &str, rate: i32, long_cash: i128) -> ScenarioConfig
         |(id, account, side, price, qty)| exchange_core::ScenarioSeedOrder {
             instrument_id: Some("V-BTC-PERP".into()),
             command: Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: id,
                 account_id: account,
                 side,

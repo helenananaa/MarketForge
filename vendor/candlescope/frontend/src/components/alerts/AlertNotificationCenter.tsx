@@ -1,0 +1,137 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useControlCommands } from "../../features/app-control/useControlCommands.js";
+import { command } from "../../features/app-control/commandRegistry.js";
+import { empty, object, text } from "../../features/app-control/commandSchema.js";
+import { t } from "../../i18n/index.js";
+import { useLocale } from "../../i18n/useLocale.js";
+
+import {
+  buildAlertEventStreamUrl,
+  recordAlertDispatchReceipt,
+} from "../../features/alerts/alertsClient.js";
+import {
+  ALERT_RULE_STATE_CHANGED_EVENT,
+  deliverAlertNotification,
+} from "../../features/alerts/alertDeliveryClient.js";
+import {
+  parseAlertNotificationMessage,
+} from "../../features/alerts/alertTypes.js";
+import type { AlertNotificationMessage } from "../../features/alerts/alertTypes.js";
+
+interface AlertToast {
+  id: string;
+  notification: AlertNotificationMessage;
+  deliveryError?: string;
+}
+
+export interface AlertNotificationCenterProps {
+  onOpenAlerts(): void;
+}
+
+const TOAST_LIFETIME_MS = 15_000;
+const MAX_TOASTS = 5;
+
+export default function AlertNotificationCenter({ onOpenAlerts }: AlertNotificationCenterProps) {
+  useLocale();
+  const [toasts, setToasts] = useState<AlertToast[]>([]);
+  const seenDispatchesRef = useRef(new Set<string>());
+  const seenEventsRef = useRef(new Set<string>());
+
+  const dismiss = useCallback((id: string) => {
+    setToasts((current) => current.filter((item) => item.id !== id));
+  }, []);
+
+  const publishToast = useCallback((notification: AlertNotificationMessage) => {
+    const toast: AlertToast = { id: notification.dispatchId, notification };
+    setToasts((current) => [...current.filter((item) => item.id !== toast.id), toast].slice(-MAX_TOASTS));
+    window.setTimeout(() => dismiss(toast.id), TOAST_LIFETIME_MS);
+  }, [dismiss]);
+
+  const publishDeliveryError = useCallback((notification: AlertNotificationMessage, detail: string) => {
+    const toast: AlertToast = {
+      id: `delivery-error-${notification.dispatchId}`,
+      notification,
+      deliveryError: detail,
+    };
+    setToasts((current) => [...current, toast].slice(-MAX_TOASTS));
+    window.setTimeout(() => dismiss(toast.id), TOAST_LIFETIME_MS);
+  }, [dismiss]);
+
+  useEffect(() => {
+    if (typeof EventSource === "undefined") return undefined;
+    const source = new EventSource(buildAlertEventStreamUrl());
+    const handleNotification = (event: MessageEvent<string>) => {
+      void (async () => {
+        let notification: AlertNotificationMessage;
+        try {
+          const value: unknown = JSON.parse(event.data);
+          notification = parseAlertNotificationMessage(value);
+        } catch (error: unknown) {
+          console.error("Invalid alert notification payload", error);
+          return;
+        }
+        if (seenDispatchesRef.current.has(notification.dispatchId)) return;
+        seenDispatchesRef.current.add(notification.dispatchId);
+        if (seenDispatchesRef.current.size > 512) {
+          seenDispatchesRef.current = new Set([notification.dispatchId]);
+        }
+        if (!seenEventsRef.current.has(notification.eventId)) {
+          seenEventsRef.current.add(notification.eventId);
+          if (seenEventsRef.current.size > 512) {
+            seenEventsRef.current = new Set([notification.eventId]);
+          }
+          window.dispatchEvent(new CustomEvent(ALERT_RULE_STATE_CHANGED_EVENT, {
+            detail: {
+              eventId: notification.eventId,
+              ruleId: notification.ruleId,
+            },
+          }));
+        }
+
+        const receipt = await deliverAlertNotification(notification, publishToast, onOpenAlerts);
+        if (receipt.status !== "delivered" && notification.action.type !== "in_app") {
+          publishDeliveryError(notification, receipt.detail);
+        }
+        try {
+          await recordAlertDispatchReceipt(
+            notification.eventId,
+            notification.dispatchId,
+            receipt.status,
+            receipt.detail,
+          );
+        } catch (error: unknown) {
+          console.warn("Failed to record alert delivery receipt", error);
+        }
+      })();
+    };
+    source.addEventListener("alert.notification", handleNotification as EventListener);
+    return () => {
+      source.removeEventListener("alert.notification", handleNotification as EventListener);
+      source.close();
+    };
+  }, [onOpenAlerts, publishDeliveryError, publishToast]);
+
+  useControlCommands(() => ({ id: "alert-notifications", title: "Alert notification center", context: () => toasts.map((toast) => toast.id), snapshot: () => ({ toasts }), commands: [
+    command("dismiss", "Dismiss a current notification toast.", object({ toastId: text(128) }), ({ toastId }) => { if (!toasts.some((toast) => toast.id === toastId)) throw new Error("TOAST_UNAVAILABLE"); dismiss(toastId); }),
+    command("openAlerts", "Open the existing alerts panel.", empty, onOpenAlerts),
+  ] }));
+  if (toasts.length === 0) return null;
+  return (
+    <div className="alert-toast-stack" role="region" aria-live="polite" aria-label={t("alert.toastRegion")}>
+      {toasts.map((toast) => {
+        const { notification } = toast;
+        const symbol = notification.target.symbol || "--";
+        return (
+          <div className={`alert-toast ${toast.deliveryError ? "is-error" : ""}`} key={toast.id}>
+            <button className="alert-toast-main" type="button" onClick={onOpenAlerts}>
+              <span className="alert-toast-kicker">{toast.deliveryError ? t("alert.toastFailed") : t("alert.toastHit", { symbol })}</span>
+              <strong>{notification.message || t("alert.toastDefault", { symbol })}</strong>
+              {toast.deliveryError && <small>{toast.deliveryError}</small>}
+            </button>
+            <button className="alert-toast-close" type="button" onClick={() => dismiss(toast.id)} aria-label={t("alert.toastClose")}>×</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

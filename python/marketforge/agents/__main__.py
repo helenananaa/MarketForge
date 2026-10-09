@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from .runtime import Runtime, identifier
+from .runtime import Runtime, TradingService, identifier
 
 
 def handler(runtime, token, origins):
@@ -45,20 +45,52 @@ def handler(runtime, token, origins):
             origin = self.headers.get("Origin")
             if origin and origin not in origins:
                 return self.reply(403, {"error": "origin is not allowed"})
-            if not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + token):
-                return self.reply(401, {"error": "agent service token required"})
             try:
                 url = urlsplit(self.path)
                 parts = url.path.strip("/").split("/")
+                authorization = self.headers.get("Authorization", "")
+                operator = hmac.compare_digest(authorization, "Bearer " + token)
+                scoped = len(parts) == 3 and parts[0] == "tools" and authorization.startswith("Bearer ") and runtime.authorized(parts[1], authorization[7:])
+                if not operator and not scoped:
+                    return self.reply(401, {"error": "appropriate service or trader tool token required"})
                 args = {}
                 if write:
                     length = int(self.headers.get("Content-Length", "0"))
-                    if not 0 < length <= 131072:
-                        raise ValueError("request body must be 1-131072 bytes")
+                    if not 0 < length <= 262144:
+                        raise ValueError("request body must be 1-262144 bytes")
                     args = json.loads(self.rfile.read(length))
                     if not isinstance(args, dict):
                         raise ValueError("expected JSON object")
-                if parts == ["status"] and not write:
+                if len(parts) == 3 and parts[0] == "tools":
+                    trader = identifier(parts[1])
+                    runtime.config(trader)
+                    if parts[2] == "schema" and not write:
+                        result = runtime.tool_schemas()
+                    elif parts[2] == "connection" and write:
+                        result = runtime.connection_update(trader, args)
+                    elif parts[2] == "runtime" and not write:
+                        result = runtime.runtime_status(trader)
+                    elif parts[2] == "model" and write:
+                        result = runtime.model_control(trader, args)
+                    elif parts[2] == "call" and write:
+                        if set(args) != {"name", "arguments"} or not isinstance(args["arguments"], dict):
+                            raise ValueError("expected name and arguments")
+                        result = runtime.external_call(trader, args["name"], args["arguments"], connection_id=self.headers.get("X-MarketForge-Connection"))
+                    elif parts[2] == "events" and not write:
+                        query = parse_qs(url.query)
+                        after = max(0, int(query.get("after", [0])[0]))
+                        # Durable cursor API is also an event subscription via bounded long polling.
+                        wait = min(20, max(0, float(query.get("wait", [0])[0])))
+                        import time
+                        deadline = time.monotonic() + wait
+                        while True:
+                            result = runtime.store.events(trader, after, tail=query.get("tail") == ["1"])
+                            if result or time.monotonic() >= deadline:
+                                break
+                            time.sleep(0.1)
+                    else:
+                        return self.reply(404, {"error": "unknown tool endpoint"})
+                elif parts == ["status"] and not write:
                     result = {"protocol_version": "agent.v1", "exchange_url": runtime.exchange_url,
                               "sandbox": runtime.sandbox.check(), "plugins": [p[0] for p in runtime.plugins.values()],
                               "connections": [{"id": k, "model": v["model"], "plugin_id": v["plugin_id"]} for k, v in runtime.connections.items()]}
@@ -86,6 +118,18 @@ def handler(runtime, token, origins):
                         result = runtime.store.events(trader, after, tail=query.get("tail") == ["1"], until=until)
                     elif parts[2] == "strategies" and not write:
                         result = runtime.strategies(trader)
+                    elif parts[2] == "alerts" and not write:
+                        result = runtime.alerts.list(trader)
+                    elif parts[2] == "runtime" and not write:
+                        result = runtime.runtime_status(trader)
+                    elif parts[2] == "policy":
+                        result = runtime.policy_update(trader, args) if write else runtime.policy_status(trader)
+                    elif parts[2] == "access" and write:
+                        result = runtime.issue_access(trader)
+                    elif parts[2] == "backend" and write:
+                        if args != {"backend": "external"}:
+                            raise ValueError("only explicit migration to external backend is supported")
+                        result = runtime.migrate_external(trader)
                     else:
                         return self.reply(404, {"error": "unknown endpoint"})
                 else:
@@ -105,6 +149,7 @@ def main():
     parser.add_argument("--exchange-url", default="http://127.0.0.1:57305")
     parser.add_argument("--data-dir", default=".local/agents")
     parser.add_argument("--plugin-dir", default="agent-plugins")
+    parser.add_argument("--enable-legacy-model-loop", action="store_true", help="opt in to the old model harness instead of the model-free service")
     parser.add_argument("--origin", action="append", default=["http://127.0.0.1:57304", "http://localhost:57304"])
     args = parser.parse_args()
     directory = Path(args.data_dir)
@@ -126,7 +171,7 @@ def main():
         raise ValueError("operator token must have at least 24 characters")
     token_path.write_text(token)
     token_path.chmod(0o600)
-    runtime = Runtime(directory, args.plugin_dir, args.exchange_url)
+    runtime = Runtime(directory, args.plugin_dir, args.exchange_url) if args.enable_legacy_model_loop else TradingService(directory, None, args.exchange_url)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler(runtime, token, set(args.origin)))
     server.daemon_threads = True
     print(f"Agent service: http://127.0.0.1:{args.port}; operator token: {token_path.resolve()}", flush=True)

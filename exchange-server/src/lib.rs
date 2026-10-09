@@ -16,11 +16,15 @@ use std::{
 pub mod auth;
 mod bot_history;
 pub mod bot_plugins;
+mod competition;
 mod historical_queries;
 pub mod journal;
+pub mod platform;
 mod realtime;
 #[cfg(test)]
 mod realtime_tests;
+mod room_portal;
+mod scheduler_delta;
 mod simulation_ws;
 pub mod storage_audit;
 
@@ -67,6 +71,8 @@ type SharedState = Arc<ServerState>;
 type ApiError = (StatusCode, Json<ErrorResponse>);
 type ApiResult<T> = Result<Json<T>, ApiError>;
 const SNAPSHOT_INTERVAL_COMMANDS: u64 = 100;
+const LIVE_SNAPSHOT_INTERVAL_COMMANDS: u64 = 1000;
+const LIVE_SNAPSHOT_INTERVAL_STEPS: u64 = 100;
 const ROOM_EVENT_CHANNEL_CAPACITY: usize = 1_024;
 const ROOM_EVENT_CACHE_CAPACITY: usize = 1_024;
 const IDEMPOTENCY_KEY_HEADER: &str = "idempotency-key";
@@ -125,6 +131,7 @@ struct RuntimeLifecycleInner {
     agent_errors_total: AtomicU64,
     checkpoint_writes_total: AtomicU64,
     checkpoint_duration_ms_total: AtomicU64,
+    scheduler_phase_us_total: [AtomicU64; 5],
     replayed_commands_total: AtomicU64,
     drained: Notify,
     shutdown: watch::Sender<bool>,
@@ -168,6 +175,7 @@ impl RuntimeLifecycle {
                 agent_errors_total: AtomicU64::new(0),
                 checkpoint_writes_total: AtomicU64::new(0),
                 checkpoint_duration_ms_total: AtomicU64::new(0),
+                scheduler_phase_us_total: std::array::from_fn(|_| AtomicU64::new(0)),
                 replayed_commands_total: AtomicU64::new(0),
                 drained: Notify::new(),
                 shutdown,
@@ -276,6 +284,13 @@ impl RuntimeLifecycle {
         self.inner
             .checkpoint_duration_ms_total
             .fetch_add(duration_ms, Ordering::Relaxed);
+    }
+
+    fn record_scheduler_phase(&self, index: usize, started: Instant) {
+        self.inner.scheduler_phase_us_total[index].fetch_add(
+            u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
     }
 
     fn record_replayed_commands(&self, count: u64) {
@@ -506,6 +521,7 @@ struct AppState {
     agent_workers: BTreeMap<RoomId, AgentWorkerHandle>,
     schedulers: BTreeMap<RoomId, exchange_core::SchedulerState>,
     training_runs: BTreeMap<String, exchange_core::TrainingRun>,
+    platform: platform::PlatformData,
     journal: JournalCoordinator,
     auth_policy: AuthPolicy,
     room_lease_runtime: Option<RoomLeaseRuntimeState>,
@@ -579,6 +595,7 @@ impl AppState {
             agent_workers: BTreeMap::new(),
             schedulers: BTreeMap::new(),
             training_runs: BTreeMap::new(),
+            platform: platform::PlatformData::default(),
             journal,
             auth_policy,
             room_lease_runtime: None,
@@ -591,6 +608,17 @@ impl AppState {
         auth_policy: AuthPolicy,
         room_lease_config: Option<RoomLeaseRuntimeConfig>,
     ) -> Result<Self, JournalError> {
+        if auth_policy.is_accounts()
+            && room_lease_config
+                .as_ref()
+                .is_some_and(|c| c.mode == RoomLeaseRuntimeMode::RoomLeased)
+        {
+            return Err(JournalError::Recovery(
+                "account competitions currently require the single-active runtime".into(),
+            ));
+        }
+        let platform = journal.writer.load_platform()?;
+        auth_policy.install_sessions(&platform.sessions);
         let mut recovery = journal.writer.load_recovery()?;
         let next_order_id = next_order_id_from_recovery(&recovery)?;
         let room_lease_runtime = room_lease_config
@@ -604,7 +632,7 @@ impl AppState {
             retain_recovery_rooms(&mut recovery, &runtime.leases);
         }
         let mut rooms = recover_rooms(&recovery)?;
-        let schedulers = scheduler_states_from_recovery(&recovery);
+        let schedulers = scheduler_states_from_recovery(&recovery)?;
         let bot_registry = bot_plugins::bot_registry_from_env()
             .map_err(|error| JournalError::Recovery(error.to_string()))?;
         bot_history::restore(&mut rooms, &schedulers, &bot_registry, &mut *journal.writer)?;
@@ -625,6 +653,7 @@ impl AppState {
             agent_workers: BTreeMap::new(),
             schedulers,
             training_runs: training_runs_from_recovery(&recovery),
+            platform,
             journal,
             auth_policy,
             room_lease_runtime,
@@ -651,6 +680,20 @@ impl AppState {
         records: &[JournalExecution],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
+        if !competition::market_allowed(self, room_id) {
+            return Err(JournalError::Recovery(
+                "competition trading deadline reached".into(),
+            ));
+        }
+        if self.platform.competitions.contains_key(room_id)
+            && records
+                .iter()
+                .any(|r| matches!(r.command, Command::SetMarkPrice(_)))
+        {
+            return Err(JournalError::Recovery(
+                "competition manual price control is frozen".into(),
+            ));
+        }
         match self.room_lease_claim(room_id)? {
             Some(claim) => {
                 self.journal
@@ -668,6 +711,20 @@ impl AppState {
         transfer_records: &[JournalTransfer],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
+        if self.platform.competitions.contains_key(&mutation.room_id)
+            && matches!(
+                &mutation.mutation,
+                RoomMutation::ClockAdvanced { .. }
+                    | RoomMutation::DepositSubmitted { .. }
+                    | RoomMutation::WithdrawalSubmitted { .. }
+                    | RoomMutation::VenueToVenueTransferSubmitted { .. }
+                    | RoomMutation::TrainingProgress { .. }
+            )
+        {
+            return Err(JournalError::Recovery(
+                "competition room configuration is frozen".into(),
+            ));
+        }
         match self.room_lease_claim(&mutation.room_id)? {
             Some(claim) => {
                 self.journal
@@ -1281,7 +1338,23 @@ pub async fn serve_from_env() -> Result<(), io::Error> {
 }
 
 pub async fn serve_listener(listener: tokio::net::TcpListener) -> Result<(), std::io::Error> {
-    serve_listener_with_shutdown(listener, shutdown_signal()).await
+    let shutdown_file = optional_env("MARKETFORGE_SHUTDOWN_FILE")?.map(std::path::PathBuf::from);
+    if shutdown_file
+        .as_ref()
+        .is_some_and(|p| !p.is_absolute() || p.exists())
+    {
+        return Err(invalid_env_error(
+            "MARKETFORGE_SHUTDOWN_FILE must be an absolute path to a new local file".into(),
+        ));
+    }
+    serve_listener_with_shutdown(listener, async move {
+        if let Some(path)=shutdown_file {
+            tokio::select! {
+                _=shutdown_signal()=>{},
+                _=async move {loop {tokio::time::sleep(Duration::from_millis(200)).await;if path.exists(){break;}}}=>{},
+            }
+        } else {shutdown_signal().await;}
+    }).await
 }
 
 pub async fn serve_listener_with_shutdown<F>(
@@ -1309,16 +1382,20 @@ where
     .map_err(|error| io::Error::other(error.to_string()))?;
     simulation_ws::restore_auto_workers(&state).await?;
     let lease_renewer = tokio::spawn(run_room_lease_renewer(state.clone()));
+    let competition_worker = tokio::spawn(competition::run(state.clone()));
     let app = app_with_cors_origins(state.clone(), cors_origins);
     let lifecycle = state.lifecycle.clone();
     let shutdown_lifecycle = lifecycle.clone();
     println!("exchange-server listening on http://{addr}");
-    let result = axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            shutdown.await;
-            shutdown_lifecycle.begin_shutdown();
-        })
-        .await;
+    let result = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        shutdown.await;
+        shutdown_lifecycle.begin_shutdown();
+    })
+    .await;
 
     // Also enter shutdown when the listener exits unexpectedly. Axum waits for
     // request tasks, while this explicit drain additionally covers durable
@@ -1338,6 +1415,9 @@ where
     })
     .await
     .map_err(|error| io::Error::other(format!("agent shutdown worker failed: {error}")))?;
+    competition_worker
+        .await
+        .map_err(|error| io::Error::other(format!("competition worker failed: {error}")))?;
     lifecycle.wait_for_durable_writes().await;
     lease_renewer
         .await
@@ -1558,6 +1638,35 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
     let ws_origins = Arc::new(cors_origins.clone());
     Router::new()
         .route("/runtime", get(simulation_ws::runtime_info))
+        .route("/identity", get(room_portal::identity))
+        .route("/auth/config", get(platform::config))
+        .route("/auth/register", post(platform::register))
+        .route("/auth/login", post(platform::login))
+        .route("/auth/logout", post(platform::logout))
+        .route("/auth/me", get(platform::me))
+        .route("/invitations/redeem", post(platform::redeem))
+        .route("/rooms/{room_id}/invitations", post(platform::invite))
+        .route(
+            "/rooms/{room_id}/competition",
+            get(competition::get).post(competition::setup),
+        )
+        .route(
+            "/rooms/{room_id}/competition/ready",
+            post(competition::ready),
+        )
+        .route(
+            "/rooms/{room_id}/competition/start",
+            post(competition::start),
+        )
+        .route(
+            "/rooms/{room_id}/competition/abort",
+            post(competition::abort),
+        )
+        .route(
+            "/rooms/{room_id}/session",
+            get(room_portal::context).post(room_portal::context),
+        )
+        .route("/rooms/{room_id}/workbench", get(room_portal::overview))
         .route(
             "/rooms/{room_id}/ws",
             get(move |state, headers, path, query, upgrade| {
@@ -1580,7 +1689,10 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
         .route("/training/runs/{run_id}/result", get(training_run_result))
         .route("/training/runs/{run_id}/report", get(training_run_report))
         .route("/rooms/{room_id}/replay", get(replay_room_isolated))
-        .route("/rooms/{room_id}/members", post(upsert_room_member))
+        .route(
+            "/rooms/{room_id}/members",
+            post(upsert_room_member).get(room_portal::members),
+        )
         .route(
             "/rooms/{room_id}/members/{user_id}",
             post(remove_room_member),
@@ -1686,6 +1798,10 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
         .route("/rooms/{room_id}/pause", post(pause_room))
         .route("/rooms/{room_id}/resume", post(resume_room))
         .route("/rooms/{room_id}/close", post(close_room))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            competition::protect,
+        ))
         .layer(cors)
         .with_state(state)
 }
@@ -1913,6 +2029,32 @@ async fn metrics(State(state): State<SharedState>) -> Response {
         "counter",
         lifecycle.checkpoint_duration_ms_total,
     );
+    for (index, phase) in ["wait", "clone", "apply", "snapshot", "journal"]
+        .iter()
+        .enumerate()
+    {
+        append_prometheus_metric(
+            &mut body,
+            &format!("marketforge_scheduler_{phase}_us_total"),
+            "Cumulative scheduler phase microseconds; phases are disjoint, not request latency percentiles.",
+            "counter",
+            state.lifecycle.inner.scheduler_phase_us_total[index].load(Ordering::Relaxed),
+        );
+    }
+    for (name, (calls, micros)) in exchange_core::performance::PHASES
+        .iter()
+        .zip(exchange_core::performance::snapshot())
+    {
+        for (suffix, value) in [("calls_total", calls), ("us_total", micros)] {
+            append_prometheus_metric(
+                &mut body,
+                &format!("marketforge_core_{name}_{suffix}"),
+                "Process-wide core work; timings may nest and are not latency percentiles.",
+                "counter",
+                value,
+            );
+        }
+    }
     append_prometheus_metric(
         &mut body,
         "marketforge_replayed_commands_total",
@@ -2183,6 +2325,15 @@ async fn create_room(
                 },
             )
             .await?;
+        } else if !request.agents.is_empty() {
+            // Preserve pre-entry bot configuration even when creation does not start it.
+            let mut scheduler = exchange_core::SchedulerState::new(
+                room_id.clone(),
+                request.agents,
+                exchange_core::SchedulerMode::Manual,
+            );
+            scheduler.bots_enabled = false;
+            install_scheduler(&mut state, scheduler).await?;
         }
 
         Ok(Json(CreateRoomResponse {
@@ -2499,6 +2650,10 @@ fn training_runs_from_recovery(
         | RoomMutation::SchedulerProgress {
             training: Some(run),
             ..
+        }
+        | RoomMutation::SchedulerDelta {
+            training: Some(run),
+            ..
         } = mutation.mutation
         {
             runs.insert(run.spec.run_id.clone(), *run);
@@ -2509,7 +2664,7 @@ fn training_runs_from_recovery(
 
 fn scheduler_states_from_recovery(
     recovery: &JournalRecovery,
-) -> BTreeMap<RoomId, exchange_core::SchedulerState> {
+) -> Result<BTreeMap<RoomId, exchange_core::SchedulerState>, JournalError> {
     let mut mutations_by_room = BTreeMap::<&str, Vec<&JournalMutation>>::new();
     for mutation in &recovery.mutations {
         mutations_by_room
@@ -2520,18 +2675,34 @@ fn scheduler_states_from_recovery(
     let mut schedulers = BTreeMap::new();
     for (room_id, mut mutations) in mutations_by_room {
         mutations.sort_by_key(|mutation| mutation.mutation_seq);
-        if let Some(state) = mutations
+        let base = mutations
             .iter()
-            .rev()
-            .find_map(|mutation| match &mutation.mutation {
-                RoomMutation::SchedulerProgress { state, .. } => Some(state.clone()),
-                _ => None,
-            })
-        {
+            .rposition(|m| matches!(m.mutation, RoomMutation::SchedulerProgress { .. }));
+        let mut current = None;
+        for mutation in mutations.iter().skip(base.unwrap_or(0)) {
+            match &mutation.mutation {
+                RoomMutation::SchedulerProgress { state, .. } => {
+                    if state.room_id != room_id {
+                        return Err(JournalError::Recovery(
+                            "scheduler checkpoint room mismatch".into(),
+                        ));
+                    }
+                    current = Some(state.clone());
+                }
+                RoomMutation::SchedulerDelta { delta, .. } => {
+                    let prior = current.as_mut().ok_or_else(|| {
+                        JournalError::Recovery("scheduler delta without full checkpoint".into())
+                    })?;
+                    delta.apply(prior)?;
+                }
+                _ => {}
+            }
+        }
+        if let Some(state) = current {
             schedulers.insert(room_id.to_string(), state);
         }
     }
-    schedulers
+    Ok(schedulers)
 }
 
 fn replay_room_mutation(
@@ -2618,7 +2789,8 @@ fn replay_room_mutation(
         RoomMutation::StatusChanged { status } => rooms
             .restore_room_status(&record.room_id, *status)
             .map_err(|error| JournalError::Recovery(format!("{error:?}"))),
-        RoomMutation::SchedulerProgress { clock_steps, .. } => {
+        RoomMutation::SchedulerProgress { clock_steps, .. }
+        | RoomMutation::SchedulerDelta { clock_steps, .. } => {
             if *clock_steps == 0 {
                 return Ok(());
             }
@@ -2896,7 +3068,7 @@ fn command_from_actor_execution(execution: &ActorExecution) -> Option<Command> {
         ActorExecutionResult::Accepted(MarketExecution::Perp(execution)) => {
             Some(execution.command.command.clone())
         }
-        ActorExecutionResult::Rejected(_) => None,
+        ActorExecutionResult::Rejected(_) => execution.rejected_command.clone(),
     }
 }
 
@@ -3421,10 +3593,9 @@ async fn upsert_room_member(
     Json(request): Json<RoomMemberRequest>,
 ) -> ApiResult<RoomMemberResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let journal = {
-        let app = lock_state(&state).await?;
-        app.journal.clone()
-    };
+    let app = lock_state(&state).await?;
+    competition::guard_management(&app, &room_id)?;
+    let journal = { app.journal.clone() };
     journal
         .upsert_room_member(&room_id, &request.user_id, &request.role)
         .await
@@ -3443,10 +3614,9 @@ async fn remove_room_member(
     Json(_): Json<serde_json::Value>,
 ) -> ApiResult<RoomMemberResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let journal = {
-        let app = lock_state(&state).await?;
-        app.journal.clone()
-    };
+    let app = lock_state(&state).await?;
+    competition::guard_management(&app, &room_id)?;
+    let journal = { app.journal.clone() };
     journal
         .remove_room_member(&room_id, &user_id)
         .await
@@ -3465,8 +3635,9 @@ async fn assign_account_owner(
     Json(request): Json<AssignAccountRequest>,
 ) -> ApiResult<AssignAccountResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let app = lock_state(&state).await?;
+    competition::guard_management(&app, &room_id)?;
     let journal = {
-        let app = lock_state(&state).await?;
         if training_assignment_frozen(&app, &room_id) {
             return Err(api_error(
                 StatusCode::CONFLICT,
@@ -3496,7 +3667,7 @@ async fn observe_room(
         &state,
         &headers,
         &room_id,
-        RoomReadAccess::Account(query.account_id),
+        RoomReadAccess::ViewAccount(query.account_id),
     )
     .await?;
     let app = lock_state(&state).await?;
@@ -3506,10 +3677,11 @@ async fn observe_room(
             .map(|room| room.primary_instrument_id().to_string())
             .unwrap_or_default()
     });
-    let observation = app
+    let mut observation = app
         .rooms
         .participant_observation(&room_id, &instrument_id, query.account_id)
         .map_err(api_error_from_room)?;
+    room_portal::public_observation(&mut observation, query.account_id);
     Ok(Json(ObservationResponse {
         api_version: STRATEGY_PROTOCOL_VERSION.to_string(),
         observation,
@@ -3625,6 +3797,7 @@ async fn start_agents(
     let _ = authorization;
     run_durable_state_transaction(state.clone(), async move {
         let mut app = lock_state(&state).await?;
+        competition::guard_management(&app, &room_id)?;
         start_agent_worker_for_room(&state, &mut app, room_id, request)
             .await
             .map(Json)
@@ -3660,6 +3833,7 @@ async fn stop_agents(
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
     run_durable_state_transaction(state.clone(), async move {
         let mut app = lock_state(&state).await?;
+        competition::guard_management(&app, &room_id)?;
         if let Some(mut scheduler) = app.schedulers.get(&room_id).cloned() {
             scheduler.bots_enabled = false;
             install_scheduler(&mut app, scheduler).await?;
@@ -4379,6 +4553,7 @@ enum RoomReadAccess {
     Room,
     Admin,
     Account(AccountId),
+    ViewAccount(AccountId),
 }
 
 impl RoomReadAccess {
@@ -4414,6 +4589,21 @@ async fn authorize_room_read(
     let allowed = match access {
         RoomReadAccess::Room => journal.user_can_access_room(&user_id, room_id).await,
         RoomReadAccess::Admin => journal.user_can_administer_room(&user_id, room_id).await,
+        RoomReadAccess::ViewAccount(0) => journal.user_can_access_room(&user_id, room_id).await,
+        RoomReadAccess::ViewAccount(account_id) => {
+            let role = journal
+                .user_room_role(&user_id, room_id)
+                .await
+                .map_err(api_error_from_journal)?;
+            if role.as_deref() == Some("spectator") {
+                let app = lock_state(state).await?;
+                Ok(competition::spectator_can_view_accounts(&app, room_id))
+            } else {
+                journal
+                    .user_can_access_account(&user_id, room_id, account_id)
+                    .await
+            }
+        }
         RoomReadAccess::Account(account_id) => {
             journal
                 .user_can_access_account(&user_id, room_id, account_id)
@@ -4431,7 +4621,7 @@ async fn authorize_room_read(
     let message = match access {
         RoomReadAccess::Room => format!("user {user_id} cannot access room {room_id}"),
         RoomReadAccess::Admin => format!("user {user_id} cannot administer room {room_id}"),
-        RoomReadAccess::Account(account_id) => {
+        RoomReadAccess::Account(account_id) | RoomReadAccess::ViewAccount(account_id) => {
             format!("user {user_id} cannot access account {account_id} in room {room_id}")
         }
     };
@@ -4551,7 +4741,7 @@ async fn ensure_room_owned(state: &SharedState, room_id: &str) -> Result<(), Api
             )));
         }
         let rooms = recover_rooms(&recovery)?;
-        let scheduler = scheduler_states_from_recovery(&recovery).remove(room_id);
+        let scheduler = scheduler_states_from_recovery(&recovery)?.remove(room_id);
         let room = rooms
             .simulation_room(room_id)
             .map_err(|error| JournalError::Recovery(format!("{error:?}")))?
@@ -4771,6 +4961,8 @@ pub struct TickerResponse {
 pub struct CandleQuery {
     pub interval_ms: Option<u64>,
     pub after_open_time_ms: Option<u64>,
+    pub before_open_time_ms: Option<u64>,
+    pub limit: Option<usize>,
     pub instrument_id: Option<InstrumentId>,
 }
 
@@ -4917,6 +5109,18 @@ async fn candles_response(
     };
     if let Some(after) = query.after_open_time_ms {
         candles.retain(|candle| candle.open_time_ms > after);
+    }
+    if let Some(before) = query.before_open_time_ms {
+        candles.retain(|candle| candle.open_time_ms < before);
+    }
+    if let Some(limit) = query.limit {
+        if !(1..=2_000).contains(&limit) {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "candle limit must be 1..2000",
+            ));
+        }
+        candles.drain(..candles.len().saturating_sub(limit));
     }
     let next_after_open_time_ms = candles.last().map(|candle| candle.open_time_ms);
     Ok(Json(CandleResponse {
@@ -6083,7 +6287,7 @@ async fn submit_order_response(
     instrument_id: Option<InstrumentId>,
     request: SubmitOrderRequest,
 ) -> ApiResult<OrderResponse> {
-    let authorization = authorize_room_read(
+    let _authorization = authorize_room_read(
         &state,
         &headers,
         &room_id,
@@ -6095,7 +6299,8 @@ async fn submit_order_response(
     }
     run_durable_state_transaction(state.clone(), async move {
         let mut state = lock_state(&state).await?;
-        let user_id = authorization.user_id;
+        let user_id = current_user_id(&headers,&state.auth_policy)?;
+        competition::guard_order(&state,&room_id,&user_id,request.account_id)?;
         let is_admin = state
             .journal
             .user_can_administer_room(&user_id, &room_id)
@@ -6283,7 +6488,9 @@ async fn submit_order_response(
 
 fn order_action_side(action: &OrderAction) -> Option<exchange_core::Side> {
     match action {
-        OrderAction::PlaceLimit { side, .. }
+        OrderAction::PlaceUnboundedMarket { side, .. }
+        | OrderAction::PlaceProtected { side, .. }
+        | OrderAction::PlaceLimit { side, .. }
         | OrderAction::PlaceMarket { side, .. }
         | OrderAction::PlacePostOnly { side, .. }
         | OrderAction::PlaceImmediateOrCancel { side, .. }
@@ -6297,7 +6504,9 @@ fn order_action_side(action: &OrderAction) -> Option<exchange_core::Side> {
 
 fn order_action_qty(action: &OrderAction) -> Option<u64> {
     match action {
-        OrderAction::PlaceLimit { qty, .. }
+        OrderAction::PlaceUnboundedMarket { qty, .. }
+        | OrderAction::PlaceProtected { qty, .. }
+        | OrderAction::PlaceLimit { qty, .. }
         | OrderAction::PlaceMarket { qty, .. }
         | OrderAction::PlacePostOnly { qty, .. }
         | OrderAction::PlaceImmediateOrCancel { qty, .. }
@@ -6315,7 +6524,8 @@ fn order_action_precision_error(action: &OrderAction) -> Option<String> {
         return Some("qty must be a positive integer".to_string());
     }
     let price_tick = match action {
-        OrderAction::PlaceLimit { price_tick, .. }
+        OrderAction::PlaceProtected { price_tick, .. }
+        | OrderAction::PlaceLimit { price_tick, .. }
         | OrderAction::PlacePostOnly { price_tick, .. } => Some(*price_tick),
         OrderAction::PlaceImmediateOrCancel { price_tick, .. }
         | OrderAction::PlaceFillOrKill { price_tick, .. }
@@ -6329,7 +6539,8 @@ fn order_action_precision_error(action: &OrderAction) -> Option<String> {
             }
             *price_tick
         }
-        OrderAction::PlaceMarket { .. }
+        OrderAction::PlaceUnboundedMarket { .. }
+        | OrderAction::PlaceMarket { .. }
         | OrderAction::PlaceReduceOnlyMarket { .. }
         | OrderAction::Cancel { .. } => None,
     };
@@ -6631,6 +6842,7 @@ async fn apply_room_status_control(
     let fingerprint = control_fingerprint(operation, serde_json::json!({}));
     run_durable_state_transaction(state.clone(), async move {
         let mut state = lock_state(&state).await?;
+        competition::guard_management(&state, &room_id)?;
         if let Some(key) = idempotency_key.as_deref()
             && let Some(replayed) =
                 load_control_replay(&state, &user_id, &room_id, key, &fingerprint).await?
@@ -6758,9 +6970,15 @@ where
 
 async fn install_scheduler(
     state: &mut AppState,
-    scheduler: exchange_core::SchedulerState,
+    mut scheduler: exchange_core::SchedulerState,
 ) -> Result<(), ApiError> {
     let room_id = scheduler.room_id.clone();
+    scheduler.revision = state
+        .schedulers
+        .get(&room_id)
+        .map_or(0, |s| s.revision)
+        .checked_add(1)
+        .ok_or_else(|| api_error(StatusCode::CONFLICT, "scheduler revision exhausted"))?;
     let cursor = next_persisted_command_cursor(state, &room_id).map_err(api_error_from_journal)?;
     state
         .append_room_mutation(
@@ -7509,6 +7727,15 @@ fn summarize_market_execution(
 
 fn reject_reason_to_string(reason: ActorRejectReason) -> String {
     match reason {
+        ActorRejectReason::InvalidOrderProtection => {
+            "invalid order protection: only resting orders accept an expiry".into()
+        }
+        ActorRejectReason::OrderProtectionExpired {
+            deadline_market_time_ms,
+            market_time_ms,
+        } => format!(
+            "order protection expired: market_time_ms={market_time_ms}, deadline_market_time_ms={deadline_market_time_ms}; refresh observations and reconsider"
+        ),
         ActorRejectReason::MarketPaused => "market paused".to_string(),
         ActorRejectReason::MarketClosed => "market closed".to_string(),
         ActorRejectReason::InstrumentNotFound { instrument_id } => {
@@ -7707,6 +7934,8 @@ impl SpotAccountStateSummary {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PerpAccountStateSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hedge_positions: Option<Box<exchange_core::HedgePositions>>,
     pub account_id: AccountId,
     #[serde(with = "json_i128")]
     pub cash_balance: i128,
@@ -7756,6 +7985,8 @@ pub struct PerpSocializedLossAllocationSummary {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PerpAutoDeleveragingAllocationSummary {
+    #[serde(default, skip_serializing_if = "exchange_core::PositionSide::is_both")]
+    pub position_side: exchange_core::PositionSide,
     pub account_id: AccountId,
     #[serde(with = "json_i128")]
     pub position_delta: i128,
@@ -7771,6 +8002,7 @@ pub struct PerpAutoDeleveragingAllocationSummary {
 impl PerpAccountStateSummary {
     fn from_snapshot(snapshot: PerpAccountSnapshot) -> Self {
         Self {
+            hedge_positions: snapshot.hedge_positions,
             account_id: snapshot.account_id,
             cash_balance: snapshot.cash_balance,
             position_qty: snapshot.position_qty,
@@ -7898,6 +8130,7 @@ impl ClearingEventSummary {
                 auto_deleveraging_allocations: auto_deleveraging_allocations
                     .into_iter()
                     .map(|allocation| PerpAutoDeleveragingAllocationSummary {
+                        position_side: allocation.position_side,
                         account_id: allocation.account_id,
                         position_delta: allocation.position_delta,
                         price_tick: allocation.price_tick,
@@ -9046,6 +9279,8 @@ fn observation_from_market_view(
         public_trades: Vec::new(),
         own_orders: Vec::new(),
         own_account,
+        related_markets: vec![],
+        market_events: vec![],
         bot_market_data: None,
         perp_price: view.perp_price.clone(),
     }
@@ -9202,15 +9437,20 @@ struct ControlIdempotencyIntent {
 struct ServerBotPolicy {
     training: Option<exchange_core::TrainingRun>,
 }
+
+fn validate_bot_action_precision(request: &GatewayRequest) -> Result<(), exchange_core::BotError> {
+    match order_action_precision_error(&request.action) {
+        Some(error) => Err(exchange_core::BotError(error)),
+        None => Ok(()),
+    }
+}
 impl exchange_core::BotExecutionPolicy for ServerBotPolicy {
     fn before_action(
         &self,
         request: &GatewayRequest,
         observation: &ParticipantObservation,
     ) -> Result<(), exchange_core::BotError> {
-        if let Some(error) = order_action_precision_error(&request.action) {
-            return Err(exchange_core::BotError(error));
-        }
+        validate_bot_action_precision(request)?;
         let Some(run) = &self.training else {
             return Ok(());
         };
@@ -9283,8 +9523,16 @@ async fn commit_scheduler_work(
     control: Option<ControlIdempotencyIntent>,
     realtime: Option<realtime::Work>,
 ) -> Result<exchange_core::SchedulerState, ApiError> {
+    let wait_started = Instant::now();
     run_durable_state_transaction(shared.clone(), async move {
         let mut state = lock_state(&shared).await?;
+        shared.lifecycle.record_scheduler_phase(0, wait_started);
+        if !competition::market_allowed(&state, &room_id) {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                "competition market is not running",
+            ));
+        }
         if let Some(intent) = &control
             && let Some(replayed) = load_control_replay(
                 &state,
@@ -9339,7 +9587,9 @@ async fn commit_scheduler_work(
             })?;
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
+        let clone_started = Instant::now();
         let mut candidate_rooms = state.rooms.clone();
+        shared.lifecycle.record_scheduler_phase(1, clone_started);
         let previous_history_len = candidate_rooms
             .execution_history(&room_id)
             .map_err(api_error_from_room)?
@@ -9358,6 +9608,7 @@ async fn commit_scheduler_work(
         let manual = realtime.is_none();
         let clock_tick = manual || matches!(realtime, Some(realtime::Work::Clock(_)));
         let mut submissions = BTreeMap::new();
+        let apply_started = Instant::now();
         let (candidate, order_id, result, training) = if let Some(work) = realtime {
             let mut policy = ServerBotPolicy { training };
             let result = work.apply(
@@ -9385,8 +9636,9 @@ async fn commit_scheduler_work(
             .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
         };
         let mut candidate_rooms = candidate;
+        shared.lifecycle.record_scheduler_phase(2, apply_started);
         let next_order_id = order_id;
-        let outcome = match result {
+        let mut outcome = match result {
             Ok(outcome) => {
                 if clock_tick {
                     shared.lifecycle.record_scheduler_step(true);
@@ -9452,20 +9704,46 @@ async fn commit_scheduler_work(
             })
             .collect::<Result<Vec<_>, _>>()?;
         let checkpoint_started = Instant::now();
-        let snapshot = current_room_snapshot(
-            &candidate_rooms,
-            &room_id,
-            execution_records
-                .last()
-                .map(|record| record.command_seq)
-                .or_else(|| latest_persisted_command_seq(&state, &room_id))
-                .unwrap_or(0),
-        );
+        // Each mutation and execution remains durable. Live recovery replays
+        // the ordered tail, so a full actor checkpoint is not needed for every
+        // clock tick or ready wave. Preserve manual crash-phase checkpoints.
+        let snapshot_due = manual
+            || (clock_tick
+                && clock_after
+                    .step()
+                    .is_multiple_of(LIVE_SNAPSHOT_INTERVAL_STEPS))
+            || execution_records.iter().any(|record| {
+                record
+                    .command_seq
+                    .is_multiple_of(LIVE_SNAPSHOT_INTERVAL_COMMANDS)
+            });
+        let snapshot = if snapshot_due {
+            current_room_snapshot(
+                &candidate_rooms,
+                &room_id,
+                execution_records
+                    .last()
+                    .map(|record| record.command_seq)
+                    .or_else(|| latest_persisted_command_seq(&state, &room_id))
+                    .unwrap_or(0),
+            )
+        } else {
+            None
+        };
         if snapshot.is_some() {
             shared.lifecycle.record_checkpoint(
                 u64::try_from(checkpoint_started.elapsed().as_millis()).unwrap_or(u64::MAX),
             );
         }
+        shared
+            .lifecycle
+            .record_scheduler_phase(3, checkpoint_started);
+        outcome.state.revision = state
+            .schedulers
+            .get(&room_id)
+            .map_or(0, |s| s.revision)
+            .checked_add(1)
+            .ok_or_else(|| api_error(StatusCode::CONFLICT, "scheduler revision exhausted"))?;
         let record = control
             .as_ref()
             .map(|intent| {
@@ -9478,34 +9756,55 @@ async fn commit_scheduler_work(
                 )
             })
             .transpose()?;
-        let pending = PendingJournalMutation::new(
-            room_id.clone(),
-            command_cursor,
-            RoomMutation::SchedulerProgress {
+        let training_progress = if manual {
+            None
+        } else {
+            updated_training
+                .as_ref()
+                .map(|(_, run)| Box::new(run.clone()))
+        };
+        let delta = if manual || snapshot_due || outcome.state.revision.is_multiple_of(100) {
+            None
+        } else {
+            state
+                .schedulers
+                .get(&room_id)
+                .and_then(|prior| scheduler_delta::SchedulerDelta::between(prior, &outcome.state))
+        };
+        let progress = match delta {
+            Some(delta) => RoomMutation::SchedulerDelta {
+                clock_steps,
+                delta,
+                training: training_progress,
+            },
+            None => RoomMutation::SchedulerProgress {
                 clock_steps,
                 state: outcome.state.clone(),
-                training: if manual {
-                    None
-                } else {
-                    updated_training
-                        .as_ref()
-                        .map(|(_, run)| Box::new(run.clone()))
-                },
+                training: training_progress,
             },
-        );
+        };
+        let pending = PendingJournalMutation::new(room_id.clone(), command_cursor, progress);
         let pending = match record {
             Some(record) => pending.with_control_idempotency(record),
             None => pending,
         };
-        if let Some(replay_json) = append_control_mutation(
+        let journal_started = Instant::now();
+        if !competition::market_allowed(&state, &room_id) {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                "competition trading deadline reached",
+            ));
+        }
+        let append_result = append_control_mutation(
             &mut state,
             pending,
             &execution_records,
             &[],
             snapshot.as_ref(),
         )
-        .await?
-        {
+        .await;
+        shared.lifecycle.record_scheduler_phase(4, journal_started);
+        if let Some(replay_json) = append_result? {
             let replayed = serde_json::from_value(replay_json).map_err(api_error_from_json)?;
             return Ok(Json(replayed));
         }
@@ -9552,6 +9851,7 @@ fn execution_account_id(execution: &exchange_core::ActorExecution) -> Option<Acc
             match &result.command.command {
                 Command::NewOrder(order) => Some(order.account_id),
                 Command::CancelOrder(_)
+                | Command::ExpireOrder { .. }
                 | Command::AmendOrder(_)
                 | Command::SetMarkPrice(_)
                 | Command::SettleFunding(_) => None,
@@ -9584,6 +9884,7 @@ impl std::error::Error for AgentWorkerError {}
 
 #[cfg(test)]
 mod tests {
+    include!("market_behavior_server_tests.rs");
     include!("price_link_tests.rs");
     include!("funding_tests.rs");
     use super::*;
@@ -9660,9 +9961,13 @@ mod tests {
         ([(CONTENT_TYPE, "text/event-stream")], body).into_response()
     }
 
+    include!("order_protection_tests.rs");
+    include!("hedge_tests.rs");
+
     fn spot_scenario(room_id: &str) -> ScenarioConfig {
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: exchange_core::VenueRuleConfig::default(),
             venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
@@ -10139,6 +10444,7 @@ mod tests {
     fn seeded_spot_scenario(room_id: &str) -> ScenarioConfig {
         let mut scenario = spot_scenario(room_id);
         scenario.seed_orders = vec![Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: 10_000,
             account_id: 10,
             side: Side::Sell,
@@ -10152,6 +10458,7 @@ mod tests {
     fn spot_perp_scenario(room_id: &str) -> ScenarioConfig {
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: exchange_core::VenueRuleConfig::default(),
             venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
@@ -10190,6 +10497,7 @@ mod tests {
             routed_seed_orders: vec![exchange_core::ScenarioSeedOrder {
                 instrument_id: Some("V-BTC-PERP".to_string()),
                 command: Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 10_000,
                     account_id: 20,
                     side: Side::Sell,
@@ -10228,6 +10536,7 @@ mod tests {
 
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: exchange_core::VenueRuleConfig::default(),
             venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
@@ -10262,6 +10571,7 @@ mod tests {
     ) -> ScenarioConfig {
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: exchange_core::VenueRuleConfig::default(),
             venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
@@ -10566,6 +10876,7 @@ mod tests {
     fn reserved_and_max_order_ids_are_rejected_without_overflow() {
         let command_with_id = |order_id| {
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id,
                 account_id: 10,
                 side: Side::Sell,
@@ -10589,6 +10900,7 @@ mod tests {
         let mut system_record = record.clone();
         system_record.participant_id = None;
         system_record.command = Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: SYSTEM_LIQUIDATION_ORDER_ID_BASE,
             account_id: 10,
             side: Side::Sell,
@@ -10629,6 +10941,7 @@ mod tests {
 
         let commands = [
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 1,
                 account_id: 30,
                 side: Side::Buy,
@@ -10637,6 +10950,7 @@ mod tests {
                 reduce_only: false,
             }),
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 2,
                 account_id: 10,
                 side: Side::Sell,
@@ -10645,6 +10959,7 @@ mod tests {
                 reduce_only: false,
             }),
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 3,
                 account_id: 20,
                 side: Side::Buy,
@@ -10801,6 +11116,7 @@ mod tests {
         };
         let scenario = ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: exchange_core::VenueRuleConfig::default(),
             venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
@@ -10837,6 +11153,7 @@ mod tests {
                 "seller",
                 10,
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 1,
                     account_id: 10,
                     side: Side::Sell,
@@ -10850,6 +11167,7 @@ mod tests {
                 "distressed",
                 20,
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 2,
                     account_id: 20,
                     side: Side::Buy,
@@ -10863,6 +11181,7 @@ mod tests {
                 "distressed",
                 20,
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 3,
                     account_id: 20,
                     side: Side::Buy,
@@ -10876,6 +11195,7 @@ mod tests {
                 "liquidator",
                 30,
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 4,
                     account_id: 30,
                     side: Side::Buy,
@@ -11121,6 +11441,7 @@ mod tests {
         source.create_room(scenario.clone()).unwrap();
         source.advance_clock(room_id, 1).unwrap();
         let command = Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: 1,
             account_id: 20,
             side: Side::Buy,
@@ -11182,6 +11503,7 @@ mod tests {
         assert_eq!(snapshot.actor.next_command_seq(), 0);
 
         let command = Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: 1,
             account_id: 20,
             side: Side::Buy,
@@ -11258,6 +11580,7 @@ mod tests {
                     room_id,
                     instrument_id,
                     Command::NewOrder(NewOrder {
+                        position_side: Default::default(),
                         order_id,
                         account_id: 20,
                         side: Side::Buy,
@@ -11342,6 +11665,7 @@ mod tests {
             .apply(
                 room_id,
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 1,
                     account_id: 10,
                     side: Side::Sell,
@@ -11355,6 +11679,7 @@ mod tests {
             .apply(
                 room_id,
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 2,
                     account_id: 20,
                     side: Side::Buy,
@@ -11375,6 +11700,7 @@ mod tests {
             .simulation_room_mut(room_id)
             .unwrap()
             .apply(Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 3,
                 account_id: 30,
                 side: Side::Buy,
@@ -12840,6 +13166,7 @@ mod tests {
         let mut scenario = spot_scenario("train-room");
         scenario.seed_orders = vec![
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 1,
                 account_id: 10,
                 side: Side::Buy,
@@ -12848,6 +13175,7 @@ mod tests {
                 reduce_only: false,
             }),
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 2,
                 account_id: 10,
                 side: Side::Sell,
@@ -12912,6 +13240,7 @@ mod tests {
         let mut scenario = spot_scenario(room_id);
         scenario.seed_orders = vec![
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 1,
                 account_id: 10,
                 side: Side::Buy,
@@ -12920,6 +13249,7 @@ mod tests {
                 reduce_only: false,
             }),
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 2,
                 account_id: 10,
                 side: Side::Sell,
@@ -13996,6 +14326,7 @@ mod tests {
         let mut scenario = spot_scenario("freeze-room");
         scenario.seed_orders = vec![
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 1,
                 account_id: 10,
                 side: Side::Buy,
@@ -14004,6 +14335,7 @@ mod tests {
                 reduce_only: false,
             }),
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 2,
                 account_id: 10,
                 side: Side::Sell,

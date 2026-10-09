@@ -239,6 +239,9 @@ pub trait BotFactory: Send + Sync {
     ) -> Result<Option<BotMarketDataRequest>, BotError> {
         Ok(None)
     }
+    fn related_instruments(&self, _template: &AgentTemplate) -> Result<Vec<String>, BotError> {
+        Ok(vec![])
+    }
     fn create(
         &self,
         template: &AgentTemplate,
@@ -316,7 +319,20 @@ impl BotRegistry {
         }
         factory.create(&normalized, state)
     }
+    pub fn related_instruments(&self, template: &AgentTemplate) -> Result<Vec<String>, BotError> {
+        let factory = self
+            .factories
+            .get(template.bot_id())
+            .ok_or_else(|| BotError("unknown bot".into()))?;
+        let instruments = factory.related_instruments(template)?;
+        if instruments.len() > 8 || instruments.iter().any(|i| i.is_empty() || i.len() > 256) {
+            return Err(BotError("invalid related instruments".into()));
+        }
+        Ok(instruments)
+    }
+
     pub fn validate_template(&self, template: &AgentTemplate) -> Result<(), BotError> {
+        self.related_instruments(template)?;
         self.market_data_request(template)?;
         self.create(template, &template.initial_state()).map(|_| ())
     }
@@ -377,7 +393,7 @@ mod tests {
     #[test]
     fn all_builtins_accept_unified_config_and_legacy_state_still_serializes() {
         let registry = BotRegistry::with_builtins();
-        assert_eq!(registry.descriptors().len(), 10);
+        assert_eq!(registry.descriptors().len(), 15);
         for descriptor in registry.descriptors() {
             let template = AgentTemplate::Plugin(BotConfig {
                 participant: participant(),

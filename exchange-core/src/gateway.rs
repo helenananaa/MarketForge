@@ -15,6 +15,30 @@ pub type ParticipantId = String;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum OrderAction {
+    PlaceUnboundedMarket {
+        side: Side,
+        #[serde(default, skip_serializing_if = "crate::model::PositionSide::is_both")]
+        position_side: crate::model::PositionSide,
+        qty: Qty,
+        #[serde(default)]
+        reduce_only: bool,
+        #[serde(default)]
+        valid_until_market_time_ms: Option<u64>,
+    },
+    PlaceProtected {
+        side: Side,
+        #[serde(default, skip_serializing_if = "crate::model::PositionSide::is_both")]
+        position_side: crate::model::PositionSide,
+        qty: Qty,
+        order_type: crate::model::ProtectedOrderType,
+        price_tick: PriceTick,
+        #[serde(default)]
+        reduce_only: bool,
+        #[serde(default)]
+        valid_until_market_time_ms: Option<u64>,
+        #[serde(default)]
+        expires_at_market_time_ms: Option<u64>,
+    },
     PlaceLimit {
         side: Side,
         price_tick: PriceTick,
@@ -148,11 +172,55 @@ impl<'a> OrderGateway<'a> {
 
     fn action_to_command(&mut self, account_id: AccountId, action: &OrderAction) -> Command {
         match action {
+            OrderAction::PlaceUnboundedMarket {
+                side,
+                position_side,
+                qty,
+                reduce_only,
+                valid_until_market_time_ms,
+            } => Command::NewOrder(NewOrder {
+                position_side: *position_side,
+                order_id: self.take_order_id(),
+                account_id,
+                side: *side,
+                qty: *qty,
+                reduce_only: *reduce_only,
+                kind: match valid_until_market_time_ms {
+                    Some(deadline) => OrderKind::TimedMarket {
+                        valid_until_market_time_ms: *deadline,
+                    },
+                    None => OrderKind::Market,
+                },
+            }),
+            OrderAction::PlaceProtected {
+                side,
+                position_side,
+                qty,
+                order_type,
+                price_tick,
+                reduce_only,
+                valid_until_market_time_ms,
+                expires_at_market_time_ms,
+            } => Command::NewOrder(NewOrder {
+                position_side: *position_side,
+                order_id: self.take_order_id(),
+                account_id,
+                side: *side,
+                qty: *qty,
+                reduce_only: *reduce_only,
+                kind: OrderKind::Protected {
+                    order_type: *order_type,
+                    price_tick: *price_tick,
+                    valid_until_market_time_ms: *valid_until_market_time_ms,
+                    expires_at_market_time_ms: *expires_at_market_time_ms,
+                },
+            }),
             OrderAction::PlaceLimit {
                 side,
                 price_tick,
                 qty,
             } => Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: self.take_order_id(),
                 account_id,
                 side: *side,
@@ -163,6 +231,7 @@ impl<'a> OrderGateway<'a> {
                 reduce_only: false,
             }),
             OrderAction::PlaceMarket { side, qty } => Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: self.take_order_id(),
                 account_id,
                 side: *side,
@@ -175,6 +244,7 @@ impl<'a> OrderGateway<'a> {
                 price_tick,
                 qty,
             } => Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: self.take_order_id(),
                 account_id,
                 side: *side,
@@ -189,6 +259,7 @@ impl<'a> OrderGateway<'a> {
                 price_tick,
                 qty,
             } => Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: self.take_order_id(),
                 account_id,
                 side: *side,
@@ -203,6 +274,7 @@ impl<'a> OrderGateway<'a> {
                 price_tick,
                 qty,
             } => Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: self.take_order_id(),
                 account_id,
                 side: *side,
@@ -213,6 +285,7 @@ impl<'a> OrderGateway<'a> {
                 reduce_only: false,
             }),
             OrderAction::PlaceReduceOnlyMarket { side, qty } => Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: self.take_order_id(),
                 account_id,
                 side: *side,
@@ -225,6 +298,7 @@ impl<'a> OrderGateway<'a> {
                 price_tick,
                 qty,
             } => Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: self.take_order_id(),
                 account_id,
                 side: *side,
@@ -239,6 +313,7 @@ impl<'a> OrderGateway<'a> {
                 price_tick,
                 qty,
             } => Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: self.take_order_id(),
                 account_id,
                 side: *side,
@@ -373,7 +448,9 @@ impl TradingApi for OrderGateway<'_> {
 fn existing_order_id(action: &OrderAction) -> Option<OrderId> {
     match action {
         OrderAction::Cancel { order_id } | OrderAction::Amend { order_id, .. } => Some(*order_id),
-        OrderAction::PlaceLimit { .. }
+        OrderAction::PlaceUnboundedMarket { .. }
+        | OrderAction::PlaceProtected { .. }
+        | OrderAction::PlaceLimit { .. }
         | OrderAction::PlaceMarket { .. }
         | OrderAction::PlacePostOnly { .. }
         | OrderAction::PlaceImmediateOrCancel { .. }
@@ -398,6 +475,7 @@ mod tests {
     fn spot_scenario() -> ScenarioConfig {
         ScenarioConfig {
             room_id: "room-1".to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: crate::VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -557,6 +635,7 @@ mod tests {
         assert_eq!(
             execution.command,
             Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: 10,
                 account_id: 20,
                 side: Side::Buy,
@@ -589,6 +668,7 @@ mod tests {
         assert_eq!(
             execution.command,
             Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: 20,
                 account_id: 20,
                 side: Side::Sell,

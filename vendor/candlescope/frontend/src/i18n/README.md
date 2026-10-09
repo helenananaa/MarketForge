@@ -1,0 +1,103 @@
+# App Locale
+
+`src/i18n` owns the host locale, message catalogs, and `t()` used by shell
+chrome. It is app-wide infrastructure, not a business feature.
+
+## Public Contract
+
+- Default locale is `zh-CN`. Supported locales are `zh-CN`, `en`, `es`, `fr`,
+  `ja`, `ko`, `pt-BR`, `ru`, `zh-TW`, `de`, `it`, `id`, `tr`, `vi`, `pl`, `th`, `nl`, `uk`, `hi`, `ar`, `he`, `ms`,
+  `cs`, `ro`, `hu`, `sv`, `pt-PT`, `zh-HK`, `zh-MO`, and `zh-Hant`.
+- Bare `pt` is not an alias of `pt-BR` or `pt-PT`. Locale matching still walks
+  BCP 47 parents, so `pt-BR` and case variants such as `pt-br` resolve to
+  Brazilian Portuguese, and `pt-PT` / `pt-pt` resolve to the dedicated European
+  Portuguese catalog. Bare `pt` falls back to the product default. This is a
+  product decision: CLDR treats `pt` as Brazil, but CandleScope must not mix
+  European Portuguese with Brazilian Portuguese.
+- Traditional Chinese (`zh-TW`) keeps the native label 繁體中文 and the alias
+  `zh-Hant-TW` only. `zh-HK`, `zh-MO`, and bare `zh-Hant` are first-class
+  catalogs and are not mapped to `zh-TW`. `zh-Hant-TW` still resolves to
+  `zh-TW` via that alias before the parent `zh-Hant` catalog is considered.
+- `ar` and `he` set `document.documentElement.dir` to `rtl`. Other locales stay
+  `ltr`. First-party plugins currently ship owned copy for `th` and `nl` in
+  addition to the previous set; other new Host languages fall back to plugin
+  English defaults.
+- `registry.ts` is the single registration point for catalogs, native labels,
+  aliases and optional date/number format locales. `LocaleId`, the settings
+  options, locale normalization and catalog checks are derived from it.
+- Persistence lives in `features/settings` (`candlescope-settings.locale`).
+- The default Chinese and English catalogs are bundled with startup; all other
+  catalogs load on demand. Entry points await `initializeLocale(savedLocale)`
+  before mounting. Settings await `setLocaleAsync(locale)` before persisting a
+  selection. Failed loads preserve the current language. Settings provide a
+  page refresh action because browsers can cache failed module imports;
+  refresh before retrying a failed download. Only the latest requested
+  language can become active. Newly mounted charts do not repeat hydration;
+  actual setting changes, including storage events, request a language change.
+- Synchronous `hydrateLocale` / `setLocale` require a loaded catalog (use
+  `loadLocaleCatalog` first when needed). Locale changes write `document.documentElement.lang` so plugin
+  sandbox snapshots stay in sync, and apply the registered text direction.
+- `bindDocumentLocale` also writes CSS custom properties used by `content:`
+  fallbacks in `index.css`, so chrome that lives in stylesheets follows locale.
+- Components call `useLocale()` from `useLocale.ts` plus `t(key)` from this
+  folder. Non-React modules import `t()` from `index.ts` and must not import
+  the React hook.
+
+## Rules
+
+- Do not import features, services, or app shell internals.
+- Do not persist storage keys here.
+- Do not translate identifiers: symbols, intervals, indicator tickers, plugin
+  error codes, or exchange ids.
+- Missing keys must surface as the key itself; do not silently mix catalogs.
+- Use `getDateTimeLocale()` / `getNumberLocale()` when formatting localized
+  dates and numbers. English retains its existing `en-GB` date and `en-US`
+  number preferences. Other languages use their registered tag unless overridden.
+- Market-price fixed precision, protocol timestamps, and compact numerical
+  notation remain domain formatting; do not localize values used in calculations
+  or interchange formats.
+
+## Adding a Language
+
+1. Add `catalogs/<locale>.ts`, exporting an object that `satisfies MessageCatalog`
+   from `messageCatalog.ts`. Translate every reference key, including the manual
+   history messages. Keep interpolation tokens such as `{count}` unchanged.
+2. Add its BCP 47 locale tag, `nativeLabel`, and a dynamic `loadMessages` import
+   to `registry.ts`. Optional `aliases` handle alternative tags;
+   optional `dateTimeLocale`, `numberLocale` and `direction` customize formatting.
+   The picker, saved settings and runtime translation lookup need no changes.
+3. `tPlural()` uses `Intl.PluralRules`. An unsuffixed key is the `other` form;
+   existing `.one` keys define plural families. Add `.zero`, `.two`, `.few` or
+   `.many` as required by the new language. These variants are local to the
+   target catalog and need not be added to Chinese. The checker validates all
+   required categories and compares every variant's placeholders with its base.
+4. Run `npx tsx scripts/sync-workspace-name-aliases.mts` to update the small
+   legacy workspace-name migration table, then `npm run check:i18n`,
+   `npm run typecheck` and the locale/UI tests. Check
+   translated layouts, number/date presentation and switching in the app;
+   right-to-left languages also need layout review beyond the `dir` attribute.
+5. Add plugin-owned translations in each plugin's resources and manifest.
+   Plugins may support a smaller language set than the Host.
+
+Locale matching tries exact tags, then aliases and successively less specific
+parents, case-insensitively. Unsupported or malformed stored locales use the
+product default. `check:i18n` visits every registered catalog, checks required
+keys and placeholders, and keeps English-specific checks scoped to English.
+
+## Plugin Boundary
+
+- The Host translates plugin platform chrome, permission/risk copy, status,
+  errors, dates, numbers, and locale selection.
+- A plugin owns its contribution title, command/settings schema labels,
+  declarative-view fields and empty state, and provider/account display names.
+- The Host validates plugin `localizations`, selects exact locale then parent
+  language, and falls back to the manifest's default text. Plugin text never
+  enters the Host message catalogs.
+- Sandboxed plugin UIs receive the current locale through the existing UI
+  bridge and own all content rendered inside their frame.
+- The bundled Pyne sandbox and Market Scanner resolve their own registered
+  resources and retain English defaults for unsupported Host languages.
+- The legacy v1 Pyne Monaco intelligence remains a Host compatibility adapter
+  until a bounded editor-intelligence ABI exists. New plugins must not add
+  plugin-domain completion text to the Host catalogs or depend on that adapter.
+  Its legacy Chinese/English documentation uses English for other Host languages.

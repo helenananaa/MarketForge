@@ -1,6 +1,7 @@
 pub mod account;
 pub mod actor;
 pub mod agents;
+pub mod bot_risk;
 pub mod bots;
 pub mod candles;
 pub mod clock;
@@ -9,13 +10,22 @@ pub mod funding;
 #[cfg(test)]
 mod funding_tests;
 pub mod gateway;
+#[cfg(test)]
+mod hedge_tests;
+mod history;
 pub mod jsonl;
 pub mod log;
 pub mod market;
+#[cfg(test)]
+mod market_behavior_integration_tests;
 pub mod market_bots;
+pub mod market_events;
+#[cfg(test)]
+mod market_microstructure_integration_tests;
 pub mod model;
 pub mod observation;
 pub mod participant;
+pub mod performance;
 pub mod perp;
 pub mod population;
 pub mod portfolio;
@@ -70,7 +80,7 @@ pub use market::{
 };
 pub use model::{
     BookLevel, BookSnapshot, CancelOrder, Command, Event, NewOrder, Order, OrderId, OrderKind,
-    PriceTick, Qty, RejectReason, SetMarkPrice, Side, Trade,
+    PositionSide, PriceTick, Qty, RejectReason, SetMarkPrice, Side, Trade,
 };
 pub use observation::{
     BotMarketData, EXTERNAL_ACTIONS_PER_STEP, MAX_PUBLIC_TRADES_IN_OBSERVATION,
@@ -78,8 +88,8 @@ pub use observation::{
 };
 pub use participant::{Participant, ParticipantConfig, ParticipantKind, run_participant_once};
 pub use perp::{
-    PerpAccount, PerpAccountSnapshot, PerpAccountStore, PerpClearingConfig, PerpClearingEvent,
-    PerpMarginStatus,
+    HedgePositions, PerpAccount, PerpAccountSnapshot, PerpAccountStore, PerpClearingConfig,
+    PerpClearingEvent, PerpMarginStatus, PerpPositionLeg, PositionMode,
 };
 pub use portfolio::{
     PortfolioAccountSnapshot, PortfolioAssetBalance, PortfolioBalanceSnapshot, PortfolioError,

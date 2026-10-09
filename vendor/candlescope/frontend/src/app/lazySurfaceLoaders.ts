@@ -1,0 +1,23 @@
+export function loadSettingsModal(): Promise<typeof import("../features/settings/SettingsModal")> {
+  return import("../features/settings/SettingsModal");
+}
+
+export function loadIndicatorPanel(): Promise<typeof import("../features/indicators/IndicatorPanel")> {
+  return import("../features/indicators/IndicatorPanel");
+}
+
+export function loadAlertsPanel(): Promise<typeof import("../components/alerts/AlertsPanel")> {
+  return import("../components/alerts/AlertsPanel");
+}
+
+export function loadWorkspacePanel(): Promise<
+  typeof import("../features/chart-workspace/WorkspacePanel")
+> {
+  return import("../features/chart-workspace/WorkspacePanel");
+}
+
+export function loadReplayLauncherDialog(): Promise<
+  typeof import("../features/replay-launcher/ReplayLauncherDialog")
+> {
+  return import("../features/replay-launcher/ReplayLauncherDialog");
+}

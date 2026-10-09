@@ -47,7 +47,7 @@ pub(crate) fn candles(
     let rows = tx.query(
         r#"
         WITH ticks AS (
-          SELECT price_tick,qty,market_time_ms,command_seq,event_seq,
+          SELECT price_tick,qty,taker_side,market_time_ms,command_seq,event_seq,
                  floor(market_time_ms::numeric / $4::text::numeric) * $4::text::numeric AS bucket
           FROM marketforge_market_ticks
           WHERE room_id=$1 AND instrument_id=$2
@@ -66,8 +66,10 @@ pub(crate) fn candles(
           max(price_tick) FILTER (WHERE last_row=1) AS close,
           least(sum(qty)::numeric,18446744073709551615)::text AS volume,
           sum(price_tick::numeric * qty::numeric)::text AS quote_volume,
-          count(*)::text AS trades
-        FROM ranked GROUP BY bucket ORDER BY bucket
+          count(*)::text AS trades,
+          least(coalesce(sum(qty) FILTER (WHERE taker_side='buy'),0)::numeric,18446744073709551615)::text AS taker_buy_base,
+          coalesce(sum(price_tick::numeric * qty::numeric) FILTER (WHERE taker_side='buy'),0)::text AS taker_buy_quote
+        FROM ranked GROUP BY ranked.bucket ORDER BY ranked.bucket
         "#,
         &[&room_id, &instrument_id, &user_id, &interval, &now, &after],
     ).map_err(JournalError::Postgres)?;
@@ -94,6 +96,10 @@ pub(crate) fn candles(
                     JournalError::Recovery("candle quote volume overflow".to_string())
                 })?,
                 trades: parse("trades")?,
+                taker_buy_base: Some(parse("taker_buy_base")?),
+                taker_buy_quote: Some(row.get::<_, String>("taker_buy_quote").parse().map_err(
+                    |_| JournalError::Recovery("candle taker quote overflow".to_string()),
+                )?),
                 is_final: now_ms >= close_time_ms,
             })
         })

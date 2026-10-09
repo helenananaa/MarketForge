@@ -24,6 +24,16 @@
 .agent-roster { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
 .agent-roster article { padding: 12px; border: 1px solid #344453; border-radius: 8px; min-width: 300px; }
 .agent-roster article.selected { border-color: #63b5e5; }
+.agent-runtime { padding: 14px; margin: 14px 0; border: 1px solid #344453; border-radius: 8px; }
+.agent-runtime-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+.agent-runtime p { overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .agent-traders { max-width: 100vw; padding: 12px; box-sizing: border-box; }
+  .agent-grid { grid-template-columns: 1fr; }
+  .agent-connect { flex-wrap: wrap; }
+  .agent-roster article { min-width: 0; width: 100%; }
+  .agent-runtime-grid { grid-template-columns: 1fr; }
+}
 .agent-events { max-height: 420px; overflow: auto; }
 .agent-events details { padding: 8px; border-bottom: 1px solid #29313c; }
 .agent-events summary { cursor: pointer; }
@@ -89,7 +99,7 @@ input:focus {
 .terminal {
   min-height: 100vh;
   display: grid;
-  grid-template-rows: 48px auto 54px minmax(680px, 1fr);
+  grid-template-rows: 48px auto minmax(54px, auto) minmax(680px, 1fr);
   background: #050608;
 }
 
@@ -176,7 +186,7 @@ input:focus {
   grid-template-columns: 190px repeat(5, minmax(86px, 1fr)) minmax(360px, 520px);
   gap: 18px;
   align-items: center;
-  padding: 0 14px;
+  padding: 8px 14px;
   border-width: 0 0 1px;
   background: #07090c;
 }
@@ -219,7 +229,7 @@ input:focus {
 }
 
 .terminal.has-perp-price {
-  grid-template-rows: 48px auto 54px auto minmax(680px, 1fr);
+  grid-template-rows: 48px auto minmax(54px, auto) auto minmax(680px, 1fr);
 }
 
 .linked-price-strip {
@@ -259,11 +269,14 @@ input:focus {
 }
 
 .room-controls {
-  display: grid;
-  grid-template-columns: minmax(100px, 1fr) auto auto auto 36px auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
+
+.room-controls > input { width: 110px; min-width: 100px; flex: 1 1 110px; }
+.room-controls .auto-toggle { white-space: nowrap; flex: 0 0 auto; }
 
 .room-controls button {
   white-space: nowrap;
@@ -748,3 +761,6 @@ input:focus {
 .bot-instance { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: 11px; overflow-wrap: anywhere; }
 .bot-instance button { flex-shrink: 0; }
 .bot-error { color: #f07878; overflow-wrap: anywhere; font-size: 12px; }
+.agent-policy fieldset { display: grid; gap: 8px; margin: 12px 0; border: 1px solid #344453; }
+.agent-policy label { display: grid; gap: 4px; }
+.agent-policy input { max-width: 100%; min-width: 0; }

@@ -984,6 +984,7 @@ mod tests {
 
         let execution = engine
             .apply(Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: 1,
                 account_id: 1,
                 side: Side::Buy,
@@ -1017,6 +1018,7 @@ mod tests {
 
         let execution = engine
             .apply(Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: 1,
                 account_id: 1,
                 side: Side::Buy,
@@ -1056,6 +1058,7 @@ mod tests {
 
         let execution = engine
             .apply(Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: 1,
                 account_id: 1,
                 side: Side::Buy,

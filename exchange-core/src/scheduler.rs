@@ -86,6 +86,9 @@ pub struct PersistedAgent {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SchedulerState {
     pub version: u16,
+    /// Durable server progress revision. Legacy full-state journals start at zero.
+    #[serde(default)]
+    pub revision: u64,
     pub room_id: String,
     pub mode: SchedulerMode,
     /// Automatic market time continues when trading bots are stopped.
@@ -119,6 +122,7 @@ impl SchedulerState {
         });
         Self {
             version: SCHEDULER_STATE_VERSION,
+            revision: 0,
             room_id: room_id.into(),
             mode,
             bots_enabled: true,
@@ -351,7 +355,7 @@ pub fn run_scheduler_step_with_policy(
                     crash_point: crash_at,
                 });
             }
-            let observation = rooms
+            let mut observation = rooms
                 .bot_observation(
                     &room_id,
                     &instrument_id,
@@ -359,6 +363,15 @@ pub fn run_scheduler_step_with_policy(
                     registry
                         .market_data_request(&state.agents[participant_index].template)
                         .map_err(SchedulerError::Bot)?,
+                )
+                .map_err(SchedulerError::Room)?;
+            rooms
+                .enrich_bot_observation(
+                    &mut observation,
+                    &registry
+                        .related_instruments(&state.agents[participant_index].template)
+                        .map_err(SchedulerError::Bot)?,
+                    account_id,
                 )
                 .map_err(SchedulerError::Room)?;
             let actions = agents[participant_index]
@@ -520,6 +533,7 @@ mod tests {
     fn scenario() -> ScenarioConfig {
         ScenarioConfig {
             room_id: "sched-room".to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: crate::VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -725,6 +739,7 @@ mod tests {
             .apply(
                 "sched-room",
                 crate::Command::NewOrder(crate::NewOrder {
+                    position_side: crate::model::PositionSide::Both,
                     order_id: 1,
                     account_id: 20,
                     side: Side::Buy,

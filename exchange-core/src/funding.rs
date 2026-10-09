@@ -162,17 +162,47 @@ pub(crate) fn sample_rate(
 /// Payers round down. Receivers split the actual paid total by position size,
 /// with largest remainder and ascending account id as the deterministic tie-break.
 /// Cash is conserved even when small positions round differently.
+#[cfg(test)]
 pub(crate) fn funding_allocations(
     accounts: &[PerpAccountSnapshot],
     settlement: &mut FundingSettlement,
 ) -> Result<BTreeMap<u64, Money>, ClearingError> {
+    let legs = funding_leg_allocations(accounts, settlement)?;
+    let mut totals = BTreeMap::<u64, Money>::new();
+    for ((id, _), delta) in legs {
+        let total = totals.entry(id).or_default();
+        *total = total
+            .checked_add(delta)
+            .ok_or(ClearingError::BalanceOverflow)?;
+    }
+    Ok(totals)
+}
+
+pub(crate) fn funding_leg_allocations(
+    accounts: &[PerpAccountSnapshot],
+    settlement: &mut FundingSettlement,
+) -> Result<BTreeMap<(u64, crate::PositionSide), Money>, ClearingError> {
+    use crate::PositionSide;
+    let legs: Vec<_> = accounts
+        .iter()
+        .flat_map(|account| {
+            if let Some(p) = &account.hedge_positions {
+                vec![
+                    (account.account_id, PositionSide::Long, p.long.qty),
+                    (account.account_id, PositionSide::Short, -p.short.qty),
+                ]
+            } else {
+                vec![(account.account_id, PositionSide::Both, account.position_qty)]
+            }
+        })
+        .collect();
     let mut net = 0i128;
     let mut open = false;
-    for account in accounts {
+    for (_, _, qty) in &legs {
         net = net
-            .checked_add(account.position_qty)
+            .checked_add(*qty)
             .ok_or(ClearingError::BalanceOverflow)?;
-        open |= account.position_qty != 0;
+        open |= *qty != 0;
     }
     if !open {
         settlement.status = FundingStatus::NoPositions;
@@ -189,12 +219,11 @@ pub(crate) fn funding_allocations(
     let mut receivers = Vec::new();
     let mut receiver_qty = 0i128;
     let mut total = 0i128;
-    for account in accounts.iter().filter(|account| account.position_qty != 0) {
-        let qty = account
-            .position_qty
+    for (id, side, signed_qty) in legs.into_iter().filter(|(_, _, qty)| *qty != 0) {
+        let qty = signed_qty
             .checked_abs()
             .ok_or(ClearingError::NotionalOverflow)?;
-        let pays = (account.position_qty > 0) == (settlement.rate_ppm >= 0);
+        let pays = (signed_qty > 0) == (settlement.rate_ppm >= 0);
         if pays {
             let payment = qty
                 .checked_mul(i128::from(settlement.mark_price_tick))
@@ -204,12 +233,12 @@ pub(crate) fn funding_allocations(
             total = total
                 .checked_add(payment)
                 .ok_or(ClearingError::BalanceOverflow)?;
-            allocations.insert(account.account_id, -payment);
+            allocations.insert((id, side), -payment);
         } else {
             receiver_qty = receiver_qty
                 .checked_add(qty)
                 .ok_or(ClearingError::NotionalOverflow)?;
-            receivers.push((account.account_id, qty));
+            receivers.push(((id, side), qty));
         }
     }
     let mut allocated = 0i128;

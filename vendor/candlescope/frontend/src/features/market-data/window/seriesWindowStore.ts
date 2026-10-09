@@ -1,0 +1,720 @@
+import type {
+  WindowDelta,
+  WindowChangedRange,
+  WindowDeltaDetail,
+  WindowDeltaType,
+} from "../klineContracts.js";
+import type {
+  DataRevision,
+  EpochSeconds,
+  KlineBar,
+  KlineBarInput,
+  SeriesCoverage,
+  SeriesDescription,
+  SeriesKey,
+  SeriesWindowIndexRef,
+  SeriesWindowSegment,
+} from "../marketDataTypes.js";
+import {
+  asDataRevision,
+  asSeriesKey,
+  toEpochSeconds,
+} from "../marketDataTypes.js";
+import {
+  MAX_SERIES_BARS,
+  trimRowsToMaxBars,
+  type SeriesWindowRetention,
+} from "../phase1WindowPolicy.js";
+import { createWindowDelta, WINDOW_DELTA_TYPES } from "./windowDeltas.js";
+
+export type RightTruncatedFuturePolicy = "allow" | "reject";
+
+interface SeriesWindowStoreOptions {
+  maxBars?: number;
+  intervalSeconds?: number | null;
+  seriesKey?: SeriesKey | string | null;
+  rightTruncatedFuturePolicy?: RightTruncatedFuturePolicy;
+}
+interface SnapshotOptions {
+  force?: boolean;
+}
+
+interface TrimResult {
+  trimmedLeft: number;
+  trimmedRight: number;
+}
+
+export type SeriesWindowListener = (
+  delta: WindowDelta,
+  store: SeriesWindowStore,
+) => void;
+
+function finiteTime(row: KlineBarInput | null | undefined): EpochSeconds | null {
+  return toEpochSeconds(row?.time);
+}
+
+function sameRow(
+  left: Record<string, unknown> | null | undefined,
+  right: Record<string, unknown> | null | undefined,
+): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  const leftKeys = Object.keys(left);
+  if (leftKeys.length !== Object.keys(right).length) return false;
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key) || left[key] !== right[key]) return false;
+  }
+  return true;
+}
+
+function normalizeRows(rows: readonly KlineBarInput[] | null | undefined): KlineBar[] {
+  const normalized: KlineBar[] = [];
+  let strictlyAscending = true;
+  let previousTime: EpochSeconds | null = null;
+  for (const row of rows || []) {
+    const time = finiteTime(row);
+    if (time == null) continue;
+    if (previousTime !== null && time <= previousTime) strictlyAscending = false;
+    normalized.push({ ...row, time });
+    previousTime = time;
+  }
+  if (strictlyAscending) return normalized;
+  const byTime = new Map<EpochSeconds, KlineBar>();
+  for (const row of normalized) byTime.set(row.time, row);
+  return Array.from(byTime.values()).sort((a, b) => a.time - b.time);
+}
+
+function inferIntervalSeconds(rows: readonly KlineBar[]): number | null {
+  let best: number | null = null;
+  for (let index = 1; index < rows.length; index += 1) {
+    const current = rows[index];
+    const previous = rows[index - 1];
+    if (!current || !previous) continue;
+    const diff = current.time - previous.time;
+    if (diff <= 0) continue;
+    best = best == null ? diff : Math.min(best, diff);
+  }
+  return best;
+}
+
+function buildSegments(
+  rows: readonly KlineBar[],
+  intervalSeconds: number | null = null,
+): SeriesWindowSegment[] {
+  if (!rows.length) return [];
+  const step = intervalSeconds || inferIntervalSeconds(rows);
+  const threshold = step ? step * 1.5 : null;
+  const segments: SeriesWindowSegment[] = [];
+  const firstRow = rows[0];
+  if (!firstRow) return [];
+  let current: KlineBar[] = [firstRow];
+  let previous = firstRow;
+  for (let index = 1; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (!row) continue;
+    if (threshold != null && row.time - previous.time > threshold) {
+      segments.push({ bars: current });
+      current = [row];
+    } else {
+      current.push(row);
+    }
+    previous = row;
+  }
+  segments.push({ bars: current });
+  return segments;
+}
+
+export class SeriesWindowStore {
+  seriesKey: SeriesKey | null;
+  maxBars: number;
+  intervalSeconds: number | null;
+  private _segments: SeriesWindowSegment[];
+  private _timeIndex: Map<EpochSeconds, SeriesWindowIndexRef>;
+  private _snapshot: KlineBar[];
+  private _snapshotDirty: boolean;
+  private _timeSet: Set<EpochSeconds>;
+  private _version: number;
+  private _axisRevision: number;
+  private _listeners: Set<SeriesWindowListener>;
+  private _rightTruncated: boolean;
+  private readonly rightTruncatedFuturePolicy: RightTruncatedFuturePolicy;
+
+  constructor({
+    maxBars = MAX_SERIES_BARS,
+    intervalSeconds = null,
+    seriesKey = null,
+    rightTruncatedFuturePolicy = "allow",
+  }: SeriesWindowStoreOptions = {}) {
+    this.seriesKey = typeof seriesKey === "string" ? asSeriesKey(seriesKey) : seriesKey;
+    this.maxBars = maxBars;
+    this.intervalSeconds = intervalSeconds;
+    this._segments = [];
+    this._timeIndex = new Map();
+    this._snapshot = [];
+    this._snapshotDirty = false;
+    this._timeSet = new Set();
+    this._version = 0;
+    this._axisRevision = 0;
+    this._listeners = new Set();
+    this._rightTruncated = false;
+    this.rightTruncatedFuturePolicy = rightTruncatedFuturePolicy;
+  }
+
+  get version(): DataRevision {
+    return asDataRevision(this._version);
+  }
+
+  /**
+   * Revision of the ordered time axis only. Replacing the values of the
+   * current candle leaves this stable so consumers that only project onto bar
+   * timestamps do not re-render for every realtime price tick.
+   */
+  get axisRevision(): DataRevision {
+    return asDataRevision(this._axisRevision);
+  }
+
+  /** Newer rows were evicted while this bounded window moved into history. */
+  get rightTruncated(): boolean {
+    return this._rightTruncated;
+  }
+
+  get segments(): SeriesWindowSegment[] {
+    return this._segments.map((segment) => ({ bars: segment.bars.slice() }));
+  }
+
+  get barCount(): number {
+    let count = 0;
+    for (const segment of this._segments) count += segment.bars.length;
+    return count;
+  }
+
+  isEmpty(): boolean {
+    return this.barCount === 0;
+  }
+
+  snapshot({ force = false }: SnapshotOptions = {}): KlineBar[] {
+    if (force || this._snapshotDirty) {
+      this._snapshot = this._segments.flatMap((segment) => segment.bars);
+      this._snapshotDirty = false;
+    }
+    return this._snapshot;
+  }
+
+  timeSet(): ReadonlySet<EpochSeconds> {
+    return this._timeSet;
+  }
+
+  hasTime(time: unknown): boolean {
+    const normalized = toEpochSeconds(time);
+    return normalized != null && this._timeIndex.has(normalized);
+  }
+
+  getByTime(time: unknown): KlineBar | null {
+    const normalized = toEpochSeconds(time);
+    if (normalized == null) return null;
+    const ref = this._timeIndex.get(normalized);
+    if (!ref) return null;
+    return this._segments[ref.segmentIndex]?.bars?.[ref.rowIndex] || null;
+  }
+
+  indexOfTime(time: unknown): number {
+    const normalized = toEpochSeconds(time);
+    if (normalized == null) return -1;
+    const ref = this._timeIndex.get(normalized);
+    if (!ref) return -1;
+    let offset = 0;
+    for (let segmentIndex = 0; segmentIndex < ref.segmentIndex; segmentIndex += 1) {
+      const segment = this._segments[segmentIndex];
+      if (!segment) return -1;
+      offset += segment.bars.length;
+    }
+    return offset + ref.rowIndex;
+  }
+
+  first(): KlineBar | null {
+    return this.snapshot().at(0) ?? null;
+  }
+
+  last(): KlineBar | null {
+    const rows = this.snapshot();
+    return rows.at(-1) ?? null;
+  }
+
+  coverage(): SeriesCoverage {
+    const rows = this.snapshot();
+    if (!rows.length) {
+      return {
+        firstTime: null,
+        lastTime: null,
+        bars: 0,
+        gaps: [],
+      };
+    }
+    const gaps: SeriesCoverage["gaps"] = [];
+    for (let index = 1; index < this._segments.length; index += 1) {
+      const previous = this._segments[index - 1]?.bars;
+      const next = this._segments[index]?.bars;
+      if (!previous || !next) continue;
+      const from = previous[previous.length - 1]?.time;
+      const to = next[0]?.time;
+      if (from == null || to == null) continue;
+      const missingBars = this.intervalSeconds
+        ? Math.max(0, Math.round((to - from) / this.intervalSeconds) - 1)
+        : null;
+      gaps.push({ from, to, missingBars });
+    }
+    const firstRow = rows.at(0);
+    const lastRow = rows.at(-1);
+    if (!firstRow || !lastRow) {
+      return { firstTime: null, lastTime: null, bars: 0, gaps: [] };
+    }
+    return {
+      firstTime: firstRow.time,
+      lastTime: lastRow.time,
+      bars: rows.length,
+      gaps,
+    };
+  }
+
+  describe(): SeriesDescription {
+    const coverage = this.coverage();
+    return {
+      seriesKey: this.seriesKey,
+      bars: coverage.bars,
+      firstTime: coverage.firstTime,
+      lastTime: coverage.lastTime,
+      coverage,
+      version: this.version,
+    };
+  }
+
+  subscribe(listener: SeriesWindowListener): () => boolean {
+    this._listeners.add(listener);
+    return () => this._listeners.delete(listener);
+  }
+
+  clear(meta: WindowDeltaDetail = {}): WindowDelta {
+    if (this.barCount === 0) return createWindowDelta(WINDOW_DELTA_TYPES.NOOP);
+    const originalBars = this.barCount;
+    this._segments = [];
+    this._timeIndex.clear();
+    this._timeSet = new Set();
+    this._snapshot = [];
+    this._snapshotDirty = false;
+    this._rightTruncated = false;
+    this._version += 1;
+    this._axisRevision += 1;
+    const delta = createWindowDelta(WINDOW_DELTA_TYPES.CLEAR, {
+      originalBars,
+      bars: 0,
+      ...meta,
+    });
+    this._emit(delta);
+    return delta;
+  }
+
+  replace(
+    rows: readonly KlineBarInput[] | null | undefined,
+    meta: WindowDeltaDetail = {},
+  ): WindowDelta {
+    const normalized = normalizeRows(rows);
+    const originalBars = normalized.length;
+    this._replaceRows(normalized);
+    const trim = this.trimToBudget();
+    this._rightTruncated = false;
+    this._version += 1;
+    this._axisRevision += 1;
+    const delta = createWindowDelta(WINDOW_DELTA_TYPES.REPLACE, {
+      bars: this.barCount,
+      originalBars,
+      trimmedLeft: trim.trimmedLeft,
+      trimmedRight: trim.trimmedRight,
+      ...meta,
+    });
+    this._emit(delta);
+    return delta;
+  }
+
+  applyRange(
+    rows: readonly KlineBarInput[] | null | undefined,
+    meta: WindowDeltaDetail = {},
+  ): WindowDelta {
+    return this._applyRange(rows, meta, false);
+  }
+
+  /**
+   * Merge one explicitly requested chronological page to the right of a
+   * bounded historical window. Ordinary range/tick writers remain fenced so
+   * realtime traffic cannot impersonate this navigation authority.
+   */
+  applyForwardPage(
+    rows: readonly KlineBarInput[] | null | undefined,
+    meta: WindowDeltaDetail = {},
+  ): WindowDelta {
+    if (!this._rightTruncated) {
+      return createWindowDelta(WINDOW_DELTA_TYPES.NOOP, {
+        ...meta,
+        rejectedForwardPage: true,
+      });
+    }
+    return this._applyRange(rows, meta, true);
+  }
+
+  /** Mark a verified forward traversal as reattached to the current tail. */
+  markRightEdgeCurrent(): boolean {
+    if (!this._rightTruncated) return false;
+    this._rightTruncated = false;
+    return true;
+  }
+
+  private _applyRange(
+    rows: readonly KlineBarInput[] | null | undefined,
+    meta: WindowDeltaDetail,
+    allowFutureRows: boolean,
+  ): WindowDelta {
+    let incoming = normalizeRows(rows);
+    if (!incoming.length) return createWindowDelta(WINDOW_DELTA_TYPES.NOOP);
+    const originalIncomingBars = incoming.length;
+    const rightBoundaryTime = this._rightTruncated
+      && this.rightTruncatedFuturePolicy === "reject"
+      && !allowFutureRows
+      ? this._lastTime()
+      : null;
+    if (rightBoundaryTime != null) {
+      incoming = incoming.filter((row) => row.time <= rightBoundaryTime);
+      if (!incoming.length) {
+        return createWindowDelta(WINDOW_DELTA_TYPES.NOOP, {
+          ...meta,
+          incomingBars: 0,
+          originalIncomingBars,
+          ignoredRightTruncatedRows: originalIncomingBars,
+          rightBoundaryTime,
+        });
+      }
+    }
+    const ignoredRightTruncatedRows = originalIncomingBars - incoming.length;
+    const rightFenceMeta = ignoredRightTruncatedRows > 0
+      ? {
+          originalIncomingBars,
+          ignoredRightTruncatedRows,
+          ...(rightBoundaryTime == null ? {} : { rightBoundaryTime }),
+        }
+      : {};
+    const incomingFirst = incoming.at(0)?.time;
+    const incomingLast = incoming.at(-1)?.time;
+    if (incomingFirst == null || incomingLast == null) {
+      return createWindowDelta(WINDOW_DELTA_TYPES.NOOP);
+    }
+
+    if (this.barCount === 0) {
+      return this.replace(incoming, meta);
+    }
+
+    const previousRows = this.snapshot();
+    const previousFirst = previousRows.at(0)?.time;
+    const previousLast = previousRows.at(-1)?.time;
+    if (previousFirst == null || previousLast == null) return this.replace(incoming, meta);
+    let alreadyPresent = true;
+    for (const row of incoming) {
+      const ref = this._timeIndex.get(row.time);
+      const existing = ref
+        ? this._segments[ref.segmentIndex]?.bars[ref.rowIndex]
+        : undefined;
+      if (!existing || !sameRow(existing, row)) {
+        alreadyPresent = false;
+        break;
+      }
+    }
+    if (alreadyPresent) {
+      return createWindowDelta(WINDOW_DELTA_TYPES.NOOP, {
+        ...meta,
+        incomingBars: incoming.length,
+        ...rightFenceMeta,
+      });
+    }
+
+    const nextRows: KlineBar[] = [];
+    let addedLeft = 0;
+    let addedRight = 0;
+    let changed = false;
+    let axisChanged = false;
+    const changedTimes = new Set<EpochSeconds>();
+    let previousIndex = 0;
+    let incomingIndex = 0;
+    while (previousIndex < previousRows.length || incomingIndex < incoming.length) {
+      const previous = previousRows[previousIndex];
+      const row = incoming[incomingIndex];
+      if (!row || (previous && previous.time < row.time)) {
+        if (previous) nextRows.push(previous);
+        previousIndex += 1;
+        continue;
+      }
+      if (!previous || row.time < previous.time) {
+        nextRows.push(row);
+        if (row.time < previousFirst) addedLeft += 1;
+        if (row.time > previousLast) addedRight += 1;
+        changed = true;
+        axisChanged = true;
+        changedTimes.add(row.time);
+        incomingIndex += 1;
+        continue;
+      }
+      nextRows.push(row);
+      if (!sameRow(previous, row)) {
+        changed = true;
+        changedTimes.add(row.time);
+      }
+      previousIndex += 1;
+      incomingIndex += 1;
+    }
+
+    if (!changed) return createWindowDelta(WINDOW_DELTA_TYPES.NOOP);
+
+    const changedKinds = new Set(Array.from(changedTimes, (time) => (
+      time < previousFirst
+        ? WINDOW_DELTA_TYPES.PREPEND
+        : time > previousLast
+          ? WINDOW_DELTA_TYPES.APPEND
+          : WINDOW_DELTA_TYPES.MID_MERGE
+    )));
+    const type: WindowDeltaType = changedKinds.size === 1
+      ? (changedKinds.values().next().value || WINDOW_DELTA_TYPES.MID_MERGE)
+      : WINDOW_DELTA_TYPES.MID_MERGE;
+
+    this._replaceRows(nextRows);
+    // A before-page must move the active window into history. Keeping the
+    // default newest-side retention here would immediately discard every
+    // newly prepended row once the 10k budget is full.
+    const trim = this.trimToBudget(
+      type === WINDOW_DELTA_TYPES.PREPEND ? "oldest" : "newest",
+    );
+    if (type === WINDOW_DELTA_TYPES.PREPEND && trim.trimmedRight > 0) {
+      this._rightTruncated = true;
+    }
+    this._version += 1;
+    if (axisChanged || trim.trimmedLeft > 0 || trim.trimmedRight > 0) {
+      this._axisRevision += 1;
+    }
+
+    const retainedTimes = this._timeSet;
+    let retainedIncomingRows = 0;
+    for (const row of incoming) {
+      if (retainedTimes.has(row.time)) retainedIncomingRows += 1;
+    }
+    const changedRanges = this._retainedChangedRanges(
+      changedTimes,
+      previousFirst,
+      previousLast,
+    );
+
+    const delta = createWindowDelta(type, {
+      bars: this.barCount,
+      incomingBars: incoming.length,
+      addedLeft,
+      addedRight,
+      originalBars: nextRows.length,
+      trimmedLeft: trim.trimmedLeft,
+      trimmedRight: trim.trimmedRight,
+      retainedIncomingRows,
+      changedRanges,
+      ...meta,
+      ...rightFenceMeta,
+    });
+    this._emit(delta);
+    return delta;
+  }
+
+  applyTick(
+    row: KlineBarInput | null | undefined,
+    meta: WindowDeltaDetail = {},
+  ): WindowDelta {
+    const time = finiteTime(row);
+    if (time == null || this.barCount === 0 || !row) {
+      return createWindowDelta(WINDOW_DELTA_TYPES.NOOP);
+    }
+
+    const tick: KlineBar = { ...row, time };
+    const firstTime = this._firstTime();
+    const lastTime = this._lastTime();
+    if (firstTime == null || lastTime == null || time < firstTime) {
+      return createWindowDelta(WINDOW_DELTA_TYPES.NOOP);
+    }
+    if (
+      this._rightTruncated
+      && this.rightTruncatedFuturePolicy === "reject"
+      && time > lastTime
+    ) {
+      return createWindowDelta(WINDOW_DELTA_TYPES.NOOP, {
+        ...meta,
+        incomingBars: 0,
+        originalIncomingBars: 1,
+        ignoredRightTruncatedRows: 1,
+        rightBoundaryTime: lastTime,
+      });
+    }
+
+    const existingRef = this._timeIndex.get(time);
+    let replaced = false;
+    let appended = false;
+
+    if (existingRef) {
+      const segment = this._segments[existingRef.segmentIndex];
+      const existing = segment?.bars[existingRef.rowIndex];
+      if (!segment || !existing) return createWindowDelta(WINDOW_DELTA_TYPES.NOOP);
+      if (sameRow(existing, tick)) {
+        return createWindowDelta(WINDOW_DELTA_TYPES.NOOP);
+      }
+      segment.bars[existingRef.rowIndex] = tick;
+      if (time !== lastTime) {
+        // Mid-window correction: positions are unchanged, so the time index
+        // stays valid; only the flattened snapshot must be rebuilt lazily.
+        this._snapshotDirty = true;
+        this._version += 1;
+        const delta = createWindowDelta(WINDOW_DELTA_TYPES.MID_MERGE, {
+          bars: this.barCount,
+          incomingBars: 1,
+          addedLeft: 0,
+          addedRight: 0,
+          originalBars: this.barCount,
+          trimmedLeft: 0,
+          trimmedRight: 0,
+          ...meta,
+        });
+        this._emit(delta);
+        return delta;
+      }
+      // Replace-last fast path: patch the cached snapshot in place so the
+      // realtime tick stays O(1) and keeps the snapshot identity stable.
+      if (!this._snapshotDirty && this._snapshot.length > 0) {
+        this._snapshot[this._snapshot.length - 1] = tick;
+      } else {
+        this._snapshotDirty = true;
+      }
+      replaced = true;
+    } else if (time > lastTime) {
+      const lastSegmentIndex = this._segments.length - 1;
+      const lastSegment = this._segments[lastSegmentIndex];
+      const lastBar = lastSegment?.bars.at(-1);
+      if (!lastSegment || !lastBar) return createWindowDelta(WINDOW_DELTA_TYPES.NOOP);
+      const shouldExtend = !this.intervalSeconds
+        || time - lastBar.time <= this.intervalSeconds * 1.5;
+      if (shouldExtend) {
+        lastSegment.bars.push(tick);
+        this._timeIndex.set(time, {
+          segmentIndex: lastSegmentIndex,
+          rowIndex: lastSegment.bars.length - 1,
+        });
+      } else {
+        this._segments.push({ bars: [tick] });
+        this._timeIndex.set(time, {
+          segmentIndex: this._segments.length - 1,
+          rowIndex: 0,
+        });
+      }
+      this._timeSet.add(time);
+      if (!this._snapshotDirty) {
+        this._snapshot.push(tick);
+      }
+      appended = true;
+    } else {
+      return createWindowDelta(WINDOW_DELTA_TYPES.NOOP);
+    }
+
+    const trim = this.barCount > this.maxBars
+      ? this.trimToBudget()
+      : { trimmedLeft: 0, trimmedRight: 0 };
+    this._version += 1;
+    if (appended || trim.trimmedLeft > 0 || trim.trimmedRight > 0) {
+      this._axisRevision += 1;
+    }
+    const delta = createWindowDelta(WINDOW_DELTA_TYPES.TICK, {
+      bar: tick,
+      bars: this.barCount,
+      appended,
+      replaced,
+      originalBars: this.barCount + trim.trimmedLeft + trim.trimmedRight,
+      trimmedLeft: trim.trimmedLeft,
+      trimmedRight: trim.trimmedRight,
+      ...meta,
+    });
+    this._emit(delta);
+    return delta;
+  }
+
+  trimToBudget(retain: SeriesWindowRetention = "newest"): TrimResult {
+    const count = this.barCount;
+    if (count <= this.maxBars) return { trimmedLeft: 0, trimmedRight: 0 };
+
+    const trimmed = trimRowsToMaxBars(this.snapshot(), this.maxBars, retain);
+    this._replaceRows(trimmed.rows);
+    return {
+      trimmedLeft: trimmed.trimmedLeft,
+      trimmedRight: trimmed.trimmedRight,
+    };
+  }
+
+  private _retainedChangedRanges(
+    changedTimes: ReadonlySet<EpochSeconds>,
+    previousFirst: EpochSeconds,
+    previousLast: EpochSeconds,
+  ): WindowChangedRange[] {
+    const ranges: WindowChangedRange[] = [];
+    for (const segment of this._segments) {
+      let followsChangedRow = false;
+      for (const row of segment.bars) {
+        if (!changedTimes.has(row.time)) {
+          followsChangedRow = false;
+          continue;
+        }
+        const type: WindowChangedRange["type"] = row.time < previousFirst
+          ? WINDOW_DELTA_TYPES.PREPEND
+          : row.time > previousLast
+            ? WINDOW_DELTA_TYPES.APPEND
+            : WINDOW_DELTA_TYPES.MID_MERGE;
+        const previousRange = ranges.at(-1);
+        if (followsChangedRow && previousRange?.type === type) {
+          previousRange.end = row.time;
+          continue;
+        }
+        ranges.push({ start: row.time, end: row.time, type });
+        followsChangedRow = true;
+      }
+    }
+    return ranges;
+  }
+
+  private _replaceRows(rows: KlineBar[]): void {
+    if (!this.intervalSeconds) {
+      this.intervalSeconds = inferIntervalSeconds(rows);
+    }
+    this._segments = buildSegments(rows, this.intervalSeconds);
+    this._snapshot = rows;
+    this._snapshotDirty = false;
+    this._rebuildTimeIndex();
+  }
+
+  private _firstTime(): EpochSeconds | null {
+    return this._segments[0]?.bars[0]?.time ?? null;
+  }
+
+  private _lastTime(): EpochSeconds | null {
+    const lastSegment = this._segments.at(-1);
+    return lastSegment?.bars.at(-1)?.time ?? null;
+  }
+
+  private _rebuildTimeIndex(): void {
+    this._timeIndex.clear();
+    this._segments.forEach((segment, segmentIndex) => {
+      segment.bars.forEach((row, rowIndex) => {
+        this._timeIndex.set(row.time, { segmentIndex, rowIndex });
+      });
+    });
+    this._timeSet = new Set(this._timeIndex.keys());
+  }
+
+  private _emit(delta: WindowDelta): void {
+    for (const listener of this._listeners) {
+      listener(delta, this);
+    }
+  }
+}

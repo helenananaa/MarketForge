@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +14,12 @@ use crate::{
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct OrderBook {
+    // Derived from the live book, never trusted from a checkpoint. Cloned
+    // candidates share the immutable index until their first book mutation.
+    #[serde(skip)]
+    account_orders: OnceLock<Arc<BTreeMap<AccountId, Vec<Order>>>>,
+    #[serde(default)]
+    order_expirations: BTreeMap<OrderId, u64>,
     bids: BTreeMap<PriceTick, VecDeque<Order>>,
     asks: BTreeMap<PriceTick, VecDeque<Order>>,
     order_index: HashMap<OrderId, OrderLocation>,
@@ -36,12 +43,17 @@ impl OrderBook {
         match command {
             Command::NewOrder(order) => self.place_order(order),
             Command::CancelOrder(cancel) => self.cancel_order(cancel),
+            Command::ExpireOrder {
+                order_id,
+                market_time_ms,
+            } => self.expire_order(order_id, market_time_ms),
             Command::AmendOrder(amend) => self.amend_order(amend),
             Command::SetMarkPrice(_) | Command::SettleFunding(_) => Vec::new(),
         }
     }
 
     pub fn place_order(&mut self, order: NewOrder) -> Vec<Event> {
+        self.account_orders.take();
         let mut events = Vec::new();
 
         if order.qty == 0 {
@@ -97,6 +109,7 @@ impl OrderBook {
             order_id: order.order_id,
             account_id: order.account_id,
             side: order.side,
+            position_side: order.position_side,
             limit_price,
             remaining_qty: order.qty,
         };
@@ -118,12 +131,16 @@ impl OrderBook {
         if order.kind.rests_remainder()
             && let Some(price_tick) = incoming.limit_price
         {
+            if let Some(deadline) = order.kind.expires_at_market_time_ms() {
+                self.order_expirations.insert(order.order_id, deadline);
+            }
             let seq = self.take_seq();
             self.rest_order(
                 Order {
                     order_id: incoming.order_id,
                     account_id: incoming.account_id,
                     side: incoming.side,
+                    position_side: incoming.position_side,
                     price_tick,
                     remaining_qty: incoming.remaining_qty,
                     seq,
@@ -141,6 +158,7 @@ impl OrderBook {
     }
 
     pub fn cancel_order(&mut self, cancel: CancelOrder) -> Vec<Event> {
+        self.account_orders.take();
         let Some(location) = self.order_index.remove(&cancel.order_id) else {
             return vec![Event::CancelRejected {
                 order_id: cancel.order_id,
@@ -172,6 +190,7 @@ impl OrderBook {
         if queue.is_empty() {
             book_side.remove(&location.price_tick);
         }
+        self.order_expirations.remove(&cancel.order_id);
 
         vec![Event::OrderCanceled {
             order_id: removed.order_id,
@@ -179,7 +198,43 @@ impl OrderBook {
         }]
     }
 
+    pub fn expiring_order_ids(&self, market_time_ms: u64) -> Vec<OrderId> {
+        self.order_expirations
+            .iter()
+            .filter_map(|(&id, &deadline)| {
+                (deadline <= market_time_ms && self.order_index.contains_key(&id)).then_some(id)
+            })
+            .collect()
+    }
+
+    fn expire_order(&mut self, order_id: OrderId, market_time_ms: u64) -> Vec<Event> {
+        if !self
+            .order_expirations
+            .get(&order_id)
+            .is_some_and(|&deadline| deadline <= market_time_ms)
+        {
+            return vec![Event::CancelRejected {
+                order_id,
+                reason: CancelRejectReason::UnknownOrder,
+            }];
+        }
+        self.cancel_order(CancelOrder { order_id })
+            .into_iter()
+            .map(|event| match event {
+                Event::OrderCanceled {
+                    order_id,
+                    remaining_qty,
+                } => Event::OrderExpired {
+                    order_id,
+                    unfilled_qty: remaining_qty,
+                },
+                other => other,
+            })
+            .collect()
+    }
+
     pub fn amend_order(&mut self, amend: AmendOrder) -> Vec<Event> {
+        self.account_orders.take();
         let Some(location) = self.order_index.get(&amend.order_id).copied() else {
             return vec![Event::AmendRejected {
                 order_id: amend.order_id,
@@ -287,13 +342,26 @@ impl OrderBook {
     }
 
     pub fn resting_orders_for_account(&self, account_id: AccountId) -> Vec<Order> {
-        self.order_ids_for_account(account_id)
-            .into_iter()
-            .filter_map(|order_id| {
-                let location = *self.order_index.get(&order_id)?;
-                self.resting_order(location, order_id).cloned()
-            })
-            .collect()
+        self.orders_by_account()
+            .get(&account_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn orders_by_account(&self) -> &BTreeMap<AccountId, Vec<Order>> {
+        self.account_orders.get_or_init(|| {
+            let mut accounts: BTreeMap<AccountId, Vec<Order>> = BTreeMap::new();
+            for order in self.bids.values().chain(self.asks.values()).flatten() {
+                accounts
+                    .entry(order.account_id)
+                    .or_default()
+                    .push(order.clone());
+            }
+            for orders in accounts.values_mut() {
+                orders.sort_unstable_by_key(|order| order.order_id);
+            }
+            Arc::new(accounts)
+        })
     }
 
     pub(crate) fn cancel_orders_for_account(&mut self, account_id: AccountId) -> Vec<Event> {
@@ -306,14 +374,12 @@ impl OrderBook {
     }
 
     pub(crate) fn order_ids_for_account(&self, account_id: AccountId) -> Vec<OrderId> {
-        let mut order_ids = self
-            .order_index
-            .keys()
-            .copied()
-            .filter(|order_id| self.order_owner(*order_id) == Some(account_id))
-            .collect::<Vec<_>>();
-        order_ids.sort_unstable();
-        order_ids
+        self.orders_by_account()
+            .get(&account_id)
+            .into_iter()
+            .flatten()
+            .map(|order| order.order_id)
+            .collect()
     }
 
     pub(crate) fn order_ids_for_account_on_side(
@@ -321,15 +387,13 @@ impl OrderBook {
         account_id: AccountId,
         side: Side,
     ) -> Vec<OrderId> {
-        let mut order_ids = self
-            .order_index
-            .iter()
-            .filter(|(_, location)| location.side == side)
-            .map(|(order_id, _)| *order_id)
-            .filter(|order_id| self.order_owner(*order_id) == Some(account_id))
-            .collect::<Vec<_>>();
-        order_ids.sort_unstable();
-        order_ids
+        self.orders_by_account()
+            .get(&account_id)
+            .into_iter()
+            .flatten()
+            .filter(|order| order.side == side)
+            .map(|order| order.order_id)
+            .collect()
     }
 
     pub fn fill_quote(
@@ -409,10 +473,13 @@ impl OrderBook {
                 price_tick: resting.price_tick,
                 qty: fill_qty,
                 taker_side: incoming.side,
+                maker_position_side: resting.position_side,
+                taker_position_side: incoming.position_side,
             }));
 
             if resting.remaining_qty == 0 {
                 self.order_index.remove(&resting.order_id);
+                self.order_expirations.remove(&resting.order_id);
                 events.push(Event::OrderFilled {
                     order_id: resting.order_id,
                 });
@@ -604,6 +671,7 @@ struct IncomingOrder {
     order_id: OrderId,
     account_id: u64,
     side: Side,
+    position_side: crate::model::PositionSide,
     limit_price: Option<PriceTick>,
     remaining_qty: Qty,
 }
@@ -635,11 +703,46 @@ fn price_increases_aggression(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn account_lookup_survives_fills_amends_cancel_and_restore() {
+        let mut book = OrderBook::new();
+        let mut first = limit(1, Side::Sell, 100, 8);
+        first.account_id = 7;
+        let mut second = limit(2, Side::Sell, 101, 6);
+        second.account_id = 7;
+        book.place_order(first);
+        book.place_order(second);
+        assert_eq!(book.order_ids_for_account(7), vec![1, 2]);
+        let frozen = book.clone();
+        book.place_order(market(3, Side::Buy, 3));
+        assert_eq!(book.resting_orders_for_account(7)[0].remaining_qty, 5);
+        assert_eq!(frozen.resting_orders_for_account(7)[0].remaining_qty, 8);
+        book.amend_order(AmendOrder {
+            order_id: 2,
+            price_tick: Some(102),
+            qty: Some(4),
+        });
+        assert_eq!(book.resting_orders_for_account(7)[1].price_tick, 102);
+        book.place_order(market(4, Side::Buy, 5));
+        assert_eq!(book.order_ids_for_account(7), vec![2]);
+        let json = serde_json::to_value(&book).unwrap();
+        assert!(json.get("account_orders").is_none());
+        let mut restored: OrderBook = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            restored.resting_orders_for_account(7),
+            book.resting_orders_for_account(7)
+        );
+        restored.cancel_order(CancelOrder { order_id: 2 });
+        assert!(restored.resting_orders_for_account(7).is_empty());
+        assert_eq!(book.order_ids_for_account(7), vec![2]);
+    }
+
     use super::*;
     use crate::model::{AmendOrder, CancelRejectReason, OrderKind, RejectReason};
 
     fn limit(order_id: OrderId, side: Side, price_tick: PriceTick, qty: Qty) -> NewOrder {
         NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id: order_id + 1_000,
             side,
@@ -651,6 +754,7 @@ mod tests {
 
     fn market(order_id: OrderId, side: Side, qty: Qty) -> NewOrder {
         NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id: order_id + 1_000,
             side,
@@ -662,6 +766,7 @@ mod tests {
 
     fn post_only(order_id: OrderId, side: Side, price_tick: PriceTick, qty: Qty) -> NewOrder {
         NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id: order_id + 1_000,
             side,
@@ -673,6 +778,7 @@ mod tests {
 
     fn ioc(order_id: OrderId, side: Side, price_tick: Option<PriceTick>, qty: Qty) -> NewOrder {
         NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id: order_id + 1_000,
             side,
@@ -684,6 +790,7 @@ mod tests {
 
     fn fok(order_id: OrderId, side: Side, price_tick: Option<PriceTick>, qty: Qty) -> NewOrder {
         NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id: order_id + 1_000,
             side,
@@ -752,6 +859,8 @@ mod tests {
         assert_eq!(
             trades,
             vec![Trade {
+                maker_position_side: Default::default(),
+                taker_position_side: Default::default(),
                 trade_id: 0,
                 maker_order_id: 1,
                 maker_account_id: 1001,

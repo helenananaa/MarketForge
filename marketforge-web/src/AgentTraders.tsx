@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
+import { AgentRuntimePanel, type AgentRuntime } from "./AgentRuntimePanel";
+import { AgentPolicyPanel } from "./AgentPolicyPanel";
 
-type Trader = { id: string; room: string; account_id: number; instruments: string[]; status: string; error: string | null; model_calls: number; max_model_calls: number };
+type Trader = { id: string; room: string; account_id: number; instruments: string[]; status: string; error: string | null; model_calls: number; max_model_calls: number; backend?: string };
 type Receipt = { seq: number; kind: string; time: number; data: unknown };
 type Strategy = { name: string; version: string; running: boolean; tested: boolean; error: string | null; state: unknown; dependency_status?: string; requirements?: string[]; files?: string[] };
+type Alert = { name: string; status: string; reason: string; match: string; repeat: boolean; pause_strategies: boolean; trigger_count: number; priority?: string; sustain_seconds?: number; hysteresis?: number; interrupt_min_interval_seconds?: number; conditions: { instrument: string; metric: string; op: string; value: number }[] };
 type Project = { project: { files: Record<string, string>; entrypoint: string; requirements: string[]; system_packages: string[] }; state: { installation: { status: string; packages?: string[]; log?: string; error?: string } } };
 type Status = { exchange_url: string; sandbox: { available: boolean; detail: string }; plugins: { id: string; name: string }[] };
 
 const phases: Record<string, string> = { running: "运行中", paused: "已暂停", error: "需要处理" };
 const buildNames: Record<string, string> = { not_requested: "未安装额外依赖", queued: "等待安装", running: "依赖安装中", ready: "依赖已就绪", failed: "安装失败，可修正后重试", cancelled: "安装已取消", interrupted: "安装被中断，可重试" };
 const eventNames: Record<string, string> = { created: "选手已创建", started: "开始交易", paused: "已暂停", model_request: "查询模型", model_response: "模型回复", tool_request: "执行操作", tool_result: "操作结果", strategy_tick: "策略执行", strategy_error: "策略错误", session_error: "交易员停止", account_wakeup: "账户变化唤醒", strategy_tick_aborted: "策略剩余动作已取消" };
+const alertNames: Record<string, string> = { armed: "监控中", triggered: "已触发", cancelled: "已取消" };
+const metricNames: Record<string, string> = { best_bid: "买一价格", best_ask: "卖一价格", spread: "价差", last_price: "最新成交价", bid_qty: "买一数量", ask_qty: "卖一数量", cash_balance: "现金余额", available_cash: "可用资金", position_qty: "持仓数量", equity: "权益", own_order_count: "自身挂单数", market_time_ms: "市场时间(ms)" };
+const comparisons: Record<string, string> = { gt: ">", gte: "≥", lt: "<", lte: "≤", eq: "=", ne: "≠" };
+Object.assign(eventNames, { alert_set: "AI 设置警报", alert_cancelled: "警报已取消", alert_triggered: "警报触发 · 中断并重新决策", alert_monitor_error: "警报监控暂时失败", alert_monitor_recovered: "警报监控已恢复" });
 function eventLabel(receipt: Receipt) {
   if (receipt.kind === "dependencies_installed") return "策略依赖安装结果";
   if (receipt.kind === "dependency_error") return "策略依赖安装未完成";
@@ -25,6 +32,8 @@ export function AgentTraders({ room, instrument }: { room: string; instrument: s
   const [selected, setSelected] = useState("");
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [runtime, setRuntime] = useState<AgentRuntime | null>(null);
   const [projectName, setProjectName] = useState("");
   const [project, setProject] = useState<Project | null>(null);
   const [error, setError] = useState("");
@@ -40,8 +49,11 @@ export function AgentTraders({ room, instrument }: { room: string; instrument: s
   const [prompt, setPrompt] = useState("自主研究现货与合约，管理自己的资产。你可以直接交易，也可以编写、测试和运行自己的策略。适时发布简短交易声明。");
   const [calls, setCalls] = useState(100);
   const [maxQty, setMaxQty] = useState(100);
+  const [leaseSeconds, setLeaseSeconds] = useState(120);
   const [exchangeTokenEnv, setExchangeTokenEnv] = useState("");
   const [connected, setConnected] = useState("");
+  const [backend, setBackend] = useState("external");
+  const [toolAccess, setToolAccess] = useState<{ trader: string; token: string } | null>(null);
   const api = useCallback(async <T,>(path: string, body?: unknown): Promise<T> => {
     const response = await fetch(`http://127.0.0.1:57306${path}`, {
       method: body === undefined ? "GET" : "POST",
@@ -70,12 +82,13 @@ export function AgentTraders({ room, instrument }: { room: string; instrument: s
     const poll = async () => {
       try {
         const list = await api<Trader[]>("/traders");
-        let events: Receipt[] = [], bots: Strategy[] = [];
+        let events: Receipt[] = [], bots: Strategy[] = [], alarms: Alert[] = [];
+        let nextRuntime: AgentRuntime | null = null;
         if (selected) {
-          [events, bots] = await Promise.all([api<Receipt[]>(`/traders/${selected}/events?tail=1`), api<Strategy[]>(`/traders/${selected}/strategies`)]);
+          [events, bots, alarms, nextRuntime] = await Promise.all([api<Receipt[]>(`/traders/${selected}/events?tail=1`), api<Strategy[]>(`/traders/${selected}/strategies`), api<Alert[]>(`/traders/${selected}/alerts`), api<AgentRuntime>(`/traders/${selected}/runtime`)]);
         }
         const nextProject = selected && projectName ? await api<Project>(`/traders/${selected}/projects/${encodeURIComponent(projectName)}`) : null;
-        if (!cancelled) { setTraders(list); setReceipts(events); setStrategies(bots); setProject(nextProject); }
+        if (!cancelled) { setTraders(list); setReceipts(events); setStrategies(bots); setAlerts(alarms); setProject(nextProject); setRuntime(nextRuntime); }
       } catch (e) { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); }
       if (!cancelled) timer = setTimeout(poll, 2500);
     };
@@ -102,7 +115,7 @@ export function AgentTraders({ room, instrument }: { room: string; instrument: s
   return <section className="agent-traders">
     <button className="agent-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>AI 交易员 · 模型与自编策略 {open ? "收起" : "打开"}</button>
     {open && <>
-      <p>每位交易员使用独立参赛账户。模型可以查询行情、联网研究、交易，并编写多文件 Python 工程、安装依赖和部署自己的策略。</p>
+      <p>每位交易员使用独立参赛账户。默认由 Codex、OpenCode 等外部框架管理模型会话，MarketForge 提供行情、交易、策略与警报工具。</p>
       <div className="agent-connect">
         <label>运行服务令牌<input type="password" autoComplete="off" value={token} onChange={e => { setToken(e.target.value); setStatus(null); }} /></label>
         <button disabled={busy || !token} onClick={() => void action(async () => { setStatus(await api<Status>("/status")); await refresh(); })}>连接运行服务</button>
@@ -112,7 +125,7 @@ export function AgentTraders({ room, instrument }: { room: string; instrument: s
       {status && <>
         <p>交易所：{status.exchange_url} · 自编策略：{status.sandbox.available ? "隔离环境就绪" : "隔离环境不可用；直接交易仍可用"}</p>
         <div className="agent-grid">
-          <fieldset><legend>1 · 接入模型</legend>
+          {backend === "legacy" && <fieldset><legend>1 · 接入兼容模型</legend>
             <label>连接名称<input value={connection} onChange={e => { setConnection(e.target.value); setConnected(""); }} /></label>
             <label>交易员插件<select value={plugin} onChange={e => { setPlugin(e.target.value); setConnected(""); }}>{status.plugins.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
             <label>模型服务地址<input value={endpoint} onChange={e => { setEndpoint(e.target.value); setConnected(""); }} /></label>
@@ -121,32 +134,50 @@ export function AgentTraders({ room, instrument }: { room: string; instrument: s
             <small>使用兼容 Chat Completions 工具调用的服务。密钥仅保存在当前服务进程内；测试会发起一次模型请求。</small>
             <button disabled={busy || !model} onClick={() => void action(async () => { await api("/connections/test", { id: connection, plugin_id: plugin, base_url: endpoint, model, api_key: key }); setKey(""); setConnected(connection); })}>测试并连接模型</button>
             {connected && <p role="status">{connected} 已连接</p>}
-          </fieldset>
+          </fieldset>}
           <fieldset><legend>2 · 创建交易员</legend>
+            <label>Agent 接入<select value={backend} onChange={e => setBackend(e.target.value)}><option value="external">外部框架 · MCP 工具（推荐）</option><option value="legacy" disabled={!status.plugins.length}>旧模型循环 · 兼容模式</option></select></label>
+            {backend === "external" && <p>模型和密钥在外部框架配置。创建并启动交易员后，生成账户工具令牌，再启动 Codex / OpenCode 会话连接器。</p>}
             <label>选手名称<input value={name} onChange={e => setName(e.target.value)} /></label>
             <label>已分配的账户 ID<input type="number" min="1" value={account} onChange={e => setAccount(Number(e.target.value))} /></label>
             <label>允许交易的品种（逗号分隔）<input value={markets} onChange={e => setMarkets(e.target.value)} /></label>
             <label>交易目标<textarea value={prompt} onChange={e => setPrompt(e.target.value)} /></label>
-            <label>模型请求总预算<input type="number" min="1" value={calls} onChange={e => setCalls(Number(e.target.value))} /></label>
+            {backend === "legacy" && <label>模型请求总预算<input type="number" min="1" value={calls} onChange={e => setCalls(Number(e.target.value))} /></label>}
             <label>每笔最大数量<input type="number" min="1" value={maxQty} onChange={e => setMaxQty(Number(e.target.value))} /></label>
+            {backend === "external" && <label>决策凭证有效期（现实秒）<input type="number" min="10" max="600" value={leaseSeconds} onChange={e => setLeaseSeconds(Number(e.target.value))} /><small>到期后重新评估，可继续原计划。</small></label>}
             <label>交易身份令牌环境变量（可选）<input placeholder="MARKETFORGE_TRADER_TOKEN_A" value={exchangeTokenEnv} onChange={e => setExchangeTokenEnv(e.target.value)} /></label>
             <small>房间：{room || "先载入房间"}。账户需预先出资并授权；本地模式的身份为 agent-选手名称。</small>
-            <button disabled={busy || !room || connected !== connection} onClick={() => void action(async () => {
-              await api("/traders", { id: name, room, account_id: account, instruments: markets.split(",").map(s => s.trim()).filter(Boolean), connection, prompt, max_model_calls: calls, max_order_qty: maxQty, exchange_token_env: exchangeTokenEnv });
+            <button disabled={busy || !room || (backend === "legacy" && connected !== connection)} onClick={() => void action(async () => {
+              await api("/traders", { id: name, room, account_id: account, instruments: markets.split(",").map(s => s.trim()).filter(Boolean), backend, connection, prompt, max_model_calls: calls, max_order_qty: maxQty, decision_lease_seconds: leaseSeconds, exchange_token_env: exchangeTokenEnv });
               setSelected(name); await refresh();
             })}>创建交易员</button>
           </fieldset>
         </div>
         <div className="agent-roster">{traders.map(t => <article className={selected === t.id ? "selected" : ""} key={t.id}>
-          <button onClick={() => { setSelected(t.id); setProjectName(""); setProject(null); }}><strong>{t.id}</strong> · {phases[t.status] ?? t.status}</button>
+          <button onClick={() => { setSelected(t.id); setProjectName(""); setProject(null); setRuntime(null); }}><strong>{t.id}</strong> · {phases[t.status] ?? t.status}</button>
           <p>{t.room} · 账户 {t.account_id} · {t.instruments.join(" / ")}</p>
-          <p>模型请求 {t.model_calls} / {t.max_model_calls}</p>
+          <p>{t.backend === "external" ? "外部 Agent 框架 · 账户工具接口" : `兼容模型请求 ${t.model_calls} / ${t.max_model_calls}`}</p>
+          {t.backend === "external" && <button disabled={busy} onClick={() => void action(async () => { setToolAccess(await api(`/traders/${t.id}/access`, {})); })}>生成 / 轮换工具令牌</button>}
+          {t.backend !== "external" && <button disabled={busy || t.status === "running"} onClick={() => void action(async () => { await api(`/traders/${t.id}/backend`, { backend: "external" }); await refresh(); })}>保留账户，改用外部框架</button>}
           {t.error && <p className="bot-error">{t.error}</p>}
           <button disabled={busy || t.status === "running"} onClick={() => void action(async () => { await api(`/traders/${t.id}/start`, {}); await refresh(); })}>开始 / 恢复</button>
           <button disabled={busy || t.status !== "running"} onClick={() => void action(async () => { await api(`/traders/${t.id}/stop`, {}); await refresh(); })}>暂停决策与策略</button>
           <small>暂停保留已有挂单。</small>
         </article>)}</div>
+        {toolAccess && <div className="agent-connect"><label>{toolAccess.trader} · 账户工具令牌（本次显示，轮换后旧令牌失效）<input type="password" readOnly value={toolAccess.token} onFocus={e => e.target.select()} /></label><button onClick={() => setToolAccess(null)}>隐藏令牌</button><p>连接器使用 MARKETFORGE_TOOL_TOKEN。请按 docs/AGENT_FRAMEWORKS.md 配置；不要向外部框架提供运营令牌。</p></div>}
         {selected && <div className="agent-records"><h3>{selected} · 策略与执行记录</h3>
+          <AgentRuntimePanel runtime={runtime} />
+          <AgentPolicyPanel key={selected} instruments={traders.find(t => t.id === selected)?.instruments ?? []} policy={runtime?.policy} save={async rules => { await api(`/traders/${selected}/policy`, rules); setRuntime(await api<AgentRuntime>(`/traders/${selected}/runtime`)); }} />
+          <h4>AI 自设警报</h4>
+          <p>AI 自主设置条件。紧急警报中断当前决策；普通警报在下一轮合并处理。支持持续条件、回差与中断间隔。暂停交易员也会暂停监控。</p>
+          {alerts.length === 0 && <p>暂未设置警报。</p>}
+          {alerts.map(a => <div key={a.name}>
+            <p><strong>{a.name}</strong> · {alertNames[a.status] ?? a.status} · 已触发 {a.trigger_count} 次 · {a.repeat ? "重复（退出条件后重新布防）" : "单次"} · {a.pause_strategies ? "触发时暂停策略" : "保留策略部署"}</p>
+            <small>{a.priority === "normal" ? "普通 · 排队通知" : "紧急 · 立即中断"} · 持续 {a.sustain_seconds ?? 0} 秒 · 回差 {a.hysteresis ?? 0} · 中断间隔 {a.interrupt_min_interval_seconds ?? 0} 秒</small>
+            <p>{a.conditions.map(c => `${c.instrument} ${metricNames[c.metric] ?? c.metric} ${comparisons[c.op] ?? c.op} ${c.value}`).join(a.match === "all" ? " 且 " : " 或 ")}</p>
+            {a.reason && <p>{a.reason}</p>}
+          </div>)}
+          <h4>策略</h4>
           {strategies.map(s => <div key={s.name}><p>{s.name} · {s.version.slice(0, 10)} · {s.running ? "已启用（随交易员暂停）" : "停止"} · {s.tested ? "已测试" : "未测试"} · {buildNames[s.dependency_status ?? "not_requested"]} {s.error}</p>
             <small>{s.files?.length ?? 1} 个文件 · {s.requirements?.join(", ") || "Python 标准库"}</small>
             <button onClick={() => setProjectName(s.name)}>查看工程与安装日志</button></div>)}

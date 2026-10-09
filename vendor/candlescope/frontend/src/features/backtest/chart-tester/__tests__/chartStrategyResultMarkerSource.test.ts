@@ -1,0 +1,140 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import test from "node:test";
+
+import { SeriesWindowStore } from "../../../market-data/window/seriesWindowStore.js";
+import type { BacktestChartData, TradeExplanationV1 } from "../../backtestTypes.js";
+import {
+  CHART_STRATEGY_VISIBLE_MARKER_LIMIT,
+  boundVisibleBacktestMarkers,
+  createChartStrategyResultMarkerSource,
+} from "../chartStrategyResultMarkerSource.js";
+
+const labels = { actions: { OPEN_LONG: "open" }, rejection: "rejected" };
+
+function explanation(): TradeExplanationV1 {
+  const fixture = JSON.parse(readFileSync(resolve(
+    process.cwd(),
+    "../backend/tests/fixtures/backtest/trade_explanation_v1_jcs.json",
+  ), "utf8")) as { payload: TradeExplanationV1 };
+  return fixture.payload;
+}
+
+test("marker source publishes only visible range plus overscan and clears synchronously", () => {
+  const seriesStore = new SeriesWindowStore({ maxBars: 10_000, intervalSeconds: 60 });
+  seriesStore.replace(Array.from({ length: 500 }, (_value, index) => ({
+    time: index * 60,
+    open: 100,
+    high: 101,
+    low: 99,
+    close: 100,
+    volume: 1,
+  })));
+  const chart: BacktestChartData = {
+    run_id: "bt_markers_12345678",
+    chart_hash: "sha256:markers",
+    symbol: "BTCUSDT",
+    interval: "1m",
+    bars: [],
+    fills: Array.from({ length: 500 }, (_value, index) => ({
+      order_id: `order-${index}`,
+      event_time_ms: String(index * 60_000),
+      side: "BUY",
+      action: "OPEN_LONG",
+      price: "100",
+    })),
+    equity_curve: [],
+    truncated: false,
+  };
+  const source = createChartStrategyResultMarkerSource({ seriesStore, labels });
+  source.setResult(chart);
+  source.setVisibleRange({ time: { from: 12_000, to: 12_600 } });
+  const snapshot = source.getSnapshot();
+  assert.strictEqual(source.getSnapshot(), snapshot);
+  assert.strictEqual(source.getSnapshot().markers, snapshot.markers);
+  assert.ok(snapshot.markers.length > 10);
+  assert.ok(snapshot.markers.length < chart.fills.length);
+  assert.ok(snapshot.markers.every((marker) => Number(marker.time) >= 10_800 && Number(marker.time) <= 13_800));
+  source.clear();
+  const cleared = source.getSnapshot();
+  assert.notStrictEqual(cleared, snapshot);
+  assert.equal(cleared.markers.length, 0);
+  assert.strictEqual(source.getSnapshot(), cleared);
+  source.dispose();
+});
+
+test("visible marker budgeting is deterministic under dense results", () => {
+  const markers = Array.from({ length: 100_000 }, (_value, index) => ({
+    id: String(index),
+    time: index,
+    position: "aboveBar" as const,
+    color: "#fff",
+    shape: "square" as const,
+  }));
+  const first = boundVisibleBacktestMarkers(markers, null, 1);
+  const second = boundVisibleBacktestMarkers(markers, null, 1);
+  assert.equal(first.length, CHART_STRATEGY_VISIBLE_MARKER_LIMIT);
+  assert.deepEqual(first.map((item) => item.id), second.map((item) => item.id));
+  assert.equal(first.at(0)?.id, "0");
+  assert.equal(first.at(-1)?.id, "99999");
+});
+
+test("fill and rejection marker activation returns only their bound explanation", () => {
+  const seriesStore = new SeriesWindowStore({ maxBars: 100, intervalSeconds: 60 });
+  seriesStore.replace([{ time: 0, open: 100, high: 101, low: 99, close: 100, volume: 1 }]);
+  const evidence = explanation();
+  const activated: Array<{ kind: string; markerId: string; evidenceHash: string }> = [];
+  const source = createChartStrategyResultMarkerSource({
+    seriesStore,
+    labels,
+    onActivate: (item) => activated.push({
+      kind: item.kind,
+      markerId: item.markerId,
+      evidenceHash: item.explanation.evidenceHash,
+    }),
+  });
+  source.setResult({
+    run_id: "bt_evidence",
+    chart_hash: "sha256:evidence",
+    symbol: "BTCUSDT",
+    interval: "1m",
+    bars: [],
+    fills: [{ order_id: "order-1", event_time_ms: "0", side: "BUY", price: "100", explanation: evidence }],
+    rejected_orders: [{ sequence: "2", event_time_ms: "0", explanation: { ...evidence, action: "REJECT" } }],
+    equity_curve: [],
+    truncated: false,
+  });
+  const markers = source.getSnapshot().markers;
+  assert.deepEqual(markers.map((marker) => marker.id), [
+    "backtest:order-1:0",
+    "backtest:rejected:2:0",
+  ]);
+  assert.equal(source.activate?.("backtest:order-1:0"), true);
+  assert.equal(source.activate?.("backtest:rejected:2:0"), true);
+  assert.equal(source.activate?.("backtest:missing:8"), false);
+  assert.deepEqual(activated, [
+    { kind: "FILL", markerId: "backtest:order-1:0", evidenceHash: evidence.evidenceHash },
+    { kind: "REJECTION", markerId: "backtest:rejected:2:0", evidenceHash: evidence.evidenceHash },
+  ]);
+  source.dispose();
+});
+
+test("unused renders create no subscriptions and last observer releases the series listener", () => {
+  const seriesStore = new SeriesWindowStore({ maxBars: 100, intervalSeconds: 60 });
+  const original = seriesStore.subscribe.bind(seriesStore);
+  let live = 0;
+  seriesStore.subscribe = (listener) => { live++; const off = original(listener); return () => { live--; return off(); }; };
+  for (let index = 0; index < 100; index++) createChartStrategyResultMarkerSource({ seriesStore, labels });
+  assert.equal(live, 0);
+  const source = createChartStrategyResultMarkerSource({ seriesStore, labels });
+  const off1 = source.subscribe(() => {});
+  const off2 = source.subscribe(() => {});
+  assert.equal(live, 1);
+  off1(); assert.equal(live, 1);
+  off2(); assert.equal(live, 0);
+  const off3 = source.subscribe(() => {});
+  assert.equal(live, 1);
+  source.dispose(); assert.equal(live, 0);
+  off3(); assert.equal(live, 0);
+});

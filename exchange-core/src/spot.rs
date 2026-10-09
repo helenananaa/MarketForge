@@ -89,6 +89,8 @@ pub enum SpotClearingEvent {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SpotAccountStore {
+    #[serde(skip)]
+    pub(crate) reservation_changes: crate::account::ReservationChanges,
     accounts: BTreeMap<AccountId, SpotAccount>,
     #[serde(default)]
     order_reservations: BTreeMap<OrderId, SpotOrderReservation>,
@@ -108,6 +110,7 @@ struct SpotOrderReservation {
 impl SpotAccountStore {
     pub fn new(config: SpotClearingConfig) -> Self {
         Self {
+            reservation_changes: crate::account::ReservationChanges::default(),
             accounts: BTreeMap::new(),
             order_reservations: BTreeMap::new(),
             config,
@@ -128,6 +131,7 @@ impl SpotAccountStore {
         cash_balance: Money,
         position_qty: PositionQty,
     ) -> SpotAccountSnapshot {
+        self.reservation_changes.mark(account_id);
         let account = self.accounts.entry(account_id).or_insert(SpotAccount {
             account_id,
             cash_balance: 0,
@@ -172,6 +176,18 @@ impl SpotAccountStore {
 
     pub fn snapshots(&self) -> Vec<SpotAccountSnapshot> {
         self.accounts.values().map(SpotAccount::snapshot).collect()
+    }
+
+    pub(crate) fn reservation_balances(
+        &self,
+    ) -> impl Iterator<Item = (AccountId, Money, PositionQty)> + '_ {
+        self.accounts.values().map(|account| {
+            (
+                account.account_id,
+                account.reserved_cash,
+                account.reserved_position,
+            )
+        })
     }
 
     pub fn reserve_resting_order(
@@ -392,6 +408,7 @@ impl SpotAccountStore {
     }
 
     fn account_mut(&mut self, account_id: AccountId) -> &mut SpotAccount {
+        self.reservation_changes.mark(account_id);
         self.accounts.entry(account_id).or_insert(SpotAccount {
             account_id,
             cash_balance: 0,
@@ -445,6 +462,8 @@ mod tests {
 
         let event = accounts
             .settle_trade(&Trade {
+                maker_position_side: Default::default(),
+                taker_position_side: Default::default(),
                 trade_id: 1,
                 maker_order_id: 100,
                 maker_account_id: 10,
@@ -500,6 +519,8 @@ mod tests {
 
         accounts
             .settle_trade(&Trade {
+                maker_position_side: Default::default(),
+                taker_position_side: Default::default(),
                 trade_id: 1,
                 maker_order_id: 100,
                 maker_account_id: 10,

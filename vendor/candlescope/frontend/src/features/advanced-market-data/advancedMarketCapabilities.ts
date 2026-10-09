@@ -1,0 +1,90 @@
+import { t } from "../../i18n/index.js";
+import {
+  ADVANCED_MARKET_CHANNELS,
+  type AdvancedMarketChannel,
+} from "./advancedMarketDataTypes.js";
+
+export interface AdvancedMarketCapabilityInput {
+  marketType: string;
+  raw: Record<string, unknown> | null;
+}
+
+export interface AdvancedMarketChannelSupport {
+  supported: boolean;
+  realtime: boolean;
+  history: boolean;
+  reason: string | null;
+}
+
+export interface AdvancedMarketCapabilitySnapshot {
+  channels: Record<AdvancedMarketChannel, AdvancedMarketChannelSupport>;
+  summarySupported: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function unavailableReason(marketType: string, raw: Record<string, unknown> | null): string {
+  if (!raw) return t("market.cap.notReady");
+  if (marketType.trim().toLowerCase() === "spot") return t("market.cap.futuresOnly");
+  return t("market.cap.unsupported");
+}
+
+function unsupported(reason: string): AdvancedMarketChannelSupport {
+  return {
+    supported: false,
+    realtime: false,
+    history: false,
+    reason,
+  };
+}
+
+export function resolveAdvancedMarketCapabilities({
+  marketType,
+  raw,
+}: AdvancedMarketCapabilityInput): AdvancedMarketCapabilitySnapshot {
+  const reason = unavailableReason(marketType, raw);
+  const channels = Object.fromEntries(
+    ADVANCED_MARKET_CHANNELS.map((channel) => [channel, unsupported(reason)]),
+  ) as Record<AdvancedMarketChannel, AdvancedMarketChannelSupport>;
+
+  if (!raw) return { channels, summarySupported: false };
+
+  const normalizedMarketType = marketType.trim().toLowerCase();
+  const rawChannels = Array.isArray(raw.channels) ? raw.channels : [];
+  for (const item of rawChannels) {
+    if (!isRecord(item) || typeof item.channel !== "string") continue;
+    const channel = item.channel.trim().toLowerCase() as AdvancedMarketChannel;
+    if (!ADVANCED_MARKET_CHANNELS.includes(channel)) continue;
+    const marketTypes = Array.isArray(item.market_types)
+      ? item.market_types.map((value) => String(value).trim().toLowerCase())
+      : [];
+    if (!marketTypes.includes(normalizedMarketType)) continue;
+
+    const realtime = item.realtime === true;
+    const history = item.history === true;
+    const supported = realtime || history;
+    channels[channel] = {
+      supported,
+      realtime,
+      history,
+      reason: supported ? null : t("market.cap.noRealtime"),
+    };
+  }
+
+  const summarySupported = (
+    channels.mark_price.realtime
+    && channels.index_price.realtime
+  );
+  channels.basis = summarySupported
+    ? {
+        supported: true,
+        realtime: true,
+        history: false,
+        reason: null,
+      }
+    : unsupported(reason);
+
+  return { channels, summarySupported };
+}

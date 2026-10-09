@@ -3,6 +3,12 @@ use crate::{
     BookLevel, BookSnapshot, BotConfig, Order, ParticipantConfig, ParticipantKind, SpotAccount,
 };
 
+#[path = "market_behaviors_tests.rs"]
+mod behaviors;
+
+#[path = "market_microstructure_tests.rs"]
+mod microstructure;
+
 fn template(id: &str, params: serde_json::Value) -> AgentTemplate {
     let mut config = json!({"decision_interval_ms":1000,"jitter_ms":0});
     config
@@ -47,6 +53,8 @@ fn view(time: u64, mid: i64, position: i128) -> ParticipantObservation {
         },
         public_trades: vec![],
         own_orders: vec![],
+        related_markets: vec![],
+        market_events: vec![],
         bot_market_data: None,
         perp_price: None,
         own_account: Some(AccountSnapshot::Spot(
@@ -79,6 +87,7 @@ fn state(bot: &dyn ScheduledBot) -> State {
 
 fn resting(id: u64, side: Side, price: i64, qty: u64) -> Order {
     Order {
+        position_side: Default::default(),
         order_id: id,
         account_id: 20,
         side,
@@ -383,19 +392,27 @@ fn sell_execution_and_start_delay_are_bounded_by_acquired_inventory() {
 #[test]
 fn state_roundtrip_preserves_randomness_history_order_ages_and_execution_progress() {
     let registry = BotRegistry::with_builtins();
-    for id in MARKET_BOT_IDS {
+    for id in MARKET_BOT_IDS
+        .into_iter()
+        .filter(|id| *id != "BasisArbitrageTrader")
+    {
         let t = template(id, json!({"jitter_ms":1000}));
+        let observe = |step: u64| {
+            if matches!(id, "FundingRateTrader" | "LeveragedTrendTrader") {
+                behaviors::perp_view(step * 1000, 100 + step as i64 % 4, 20)
+            } else {
+                view(step * 1000, 100 + step as i64 % 4, 20)
+            }
+        };
         let mut uninterrupted = registry.create(&t, &t.initial_state()).unwrap();
         for step in 1..10 {
-            uninterrupted
-                .decide(&view(step * 1000, 100 + step as i64 % 4, 20))
-                .unwrap();
+            uninterrupted.decide(&observe(step)).unwrap();
         }
         let encoded = serde_json::to_vec(&uninterrupted.snapshot()).unwrap();
         let saved = serde_json::from_slice(&encoded).unwrap();
         let mut recovered = registry.create(&t, &saved).unwrap();
         for step in 10..30 {
-            let observation = view(step * 1000, 100 + step as i64 % 4, 20);
+            let observation = observe(step);
             assert_eq!(
                 uninterrupted.decide(&observation).unwrap(),
                 recovered.decide(&observation).unwrap(),

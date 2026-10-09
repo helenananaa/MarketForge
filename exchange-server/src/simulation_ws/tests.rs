@@ -99,6 +99,90 @@ async fn authenticate(url: &str, token: &str) -> Client {
 }
 
 #[tokio::test]
+async fn spectator_and_public_sockets_are_readable_and_membership_revocation_closes_them() {
+    let server = setup().await;
+    assert_eq!(
+        call(
+            &server.app,
+            "/rooms/socket-test/members",
+            Some(serde_json::json!({"user_id":"outsider","role":"spectator"}))
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let mut private = authenticate(&server.url, "outsider-secret").await;
+    assert!(
+        frame(&mut private).await["data"]["observation"]["observation"]["own_account"]["Spot"]
+            .is_object()
+    );
+    let mut public = authenticate(
+        &server.url.replace("account_id=20", "account_id=0"),
+        "outsider-secret",
+    )
+    .await;
+    let observation = frame(&mut public).await;
+    assert!(observation["data"]["observation"]["observation"]["own_account"].is_null());
+    assert_eq!(
+        observation["data"]["observation"]["observation"]["own_orders"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        call(
+            &server.app,
+            "/rooms/socket-test/members/outsider",
+            Some(serde_json::json!({}))
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(frame(&mut private).await["status"], 403);
+    assert_eq!(frame(&mut public).await["status"], 403);
+}
+
+#[tokio::test]
+async fn custom_interval_socket_and_bounded_candle_history_use_authoritative_flow() {
+    let server = setup().await;
+    let order = serde_json::json!({"participant_id":"analysis-test","account_id":20,"action":{"PlaceMarket":{"side":"Buy","qty":1}}});
+    assert_eq!(
+        call(&server.app, "/rooms/socket-test/orders", Some(order))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let mut client =
+        authenticate(&format!("{}&interval_ms=3000", server.url), "owner-secret").await;
+    let snapshot = frame(&mut client).await;
+    assert_eq!(snapshot["data"]["candles"]["interval_ms"], 3000);
+    let (status, response) = call(
+        &server.app,
+        "/rooms/socket-test/candles?interval_ms=3000&limit=1",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let bars = response["candles"].as_array().unwrap();
+    assert_eq!(bars.len(), 1);
+    assert_eq!(bars[0]["taker_buy_base"], 1);
+    assert!(bars[0]["taker_buy_quote"].as_i64().unwrap() > 0);
+    let (_, history) = call(
+        &server.app,
+        "/rooms/socket-test/candles?interval_ms=3000&before_open_time_ms=0&limit=500",
+        None,
+    )
+    .await;
+    assert!(history["candles"].as_array().unwrap().is_empty());
+    assert_eq!(
+        call(&server.app, "/rooms/socket-test/candles?limit=2001", None)
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    client.close(None).await.unwrap();
+}
+
+#[tokio::test]
 async fn socket_origin_and_authentication_fail_before_private_data() {
     let server = setup().await;
     let mut request = server.url.clone().into_client_request().unwrap();

@@ -19,6 +19,7 @@ pub fn background_market(room_id: &str, seed: u64) -> BackgroundMarket {
     let instrument_id = "V-BTC-SPOT";
     let mut scenario = ScenarioConfig {
         room_id: room_id.into(),
+        market_events: Vec::new(),
         venue_preset: None,
         venue_rules: Default::default(),
         venue_asset_policy: Default::default(),
@@ -61,6 +62,7 @@ pub fn background_market(room_id: &str, seed: u64) -> BackgroundMarket {
             .enumerate()
             .map(|(i, side)| {
                 Command::NewOrder(NewOrder {
+                    position_side: crate::model::PositionSide::Both,
                     order_id: 10_000 + i as u64,
                     account_id: 10,
                     side,

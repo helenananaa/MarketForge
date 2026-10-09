@@ -1,0 +1,72 @@
+/* The page, toolbar, intervals and rail use CandleScope's existing shared layout. */
+.simulation-page { height: 100%; color: var(--text-primary); background: var(--bg-primary); }
+.simulation-identity { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 12px; }
+.simulation-identity span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+.simulation-theme-button { margin-left: auto; flex-shrink: 0; }
+.simulation-chart { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.simulation-chart-heading { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 6px 10px; color: var(--text-secondary); font-size: 11px; border-bottom: 1px solid var(--border-color); }
+.simulation-chart-heading strong { color: var(--text-primary); }
+.simulation-chart-heading label { margin-left: auto; display: flex; align-items: center; gap: 5px; }
+.simulation-chart-surface { flex: 1; min-width: 0; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.simulation-chart-notice { position: absolute; top: 45%; left: 8%; right: 8%; text-align: center; color: var(--text-muted); pointer-events: none; }
+.simulation-stale { position: absolute; top: 6px; left: 12px; padding: 8px; background: var(--bg-secondary); color: var(--candle-down); pointer-events: none; }
+.simulation-page :is(.simulation-rail-content, .simulation-chart-heading, .simulation-theme-button) { font: 12px var(--font-sans); }
+.simulation-page :is(.simulation-rail-content, .simulation-chart-heading) button, .simulation-theme-button { cursor: pointer; border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 9px; color: var(--text-primary); background: var(--bg-tertiary); font: inherit; }
+.simulation-page :is(.simulation-rail-content, .simulation-chart-heading) button:hover:not(:disabled), .simulation-theme-button:hover { background: var(--bg-hover); }
+.simulation-page :is(.simulation-rail-content, .simulation-chart-heading) button:disabled { opacity: .45; cursor: default; }
+.simulation-rail-content { min-height: 0; overflow: auto; padding: 12px; }
+.simulation-rail-content input:not([type='checkbox']) { width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+.simulation-rail-content input:focus-visible, .simulation-rail-content button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.simulation-rail-content label { display: grid; gap: 5px; color: var(--text-secondary); font-size: 11px; }
+.simulation-connection { display: grid; gap: 10px; }
+.simulation-connect-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.simulation-page .simulation-primary { background: var(--accent-blue); color: white; }
+.simulation-configuration { margin-top: 12px; }
+.simulation-configuration summary { cursor: pointer; }
+.simulation-configuration p, .simulation-panel p { color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
+.simulation-configuration textarea { display: block; width: 100%; min-height: 220px; margin-top: 10px; padding: 8px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); font: 11px var(--font-mono); }
+.simulation-status { display: flex; flex-wrap: wrap; gap: 8px; color: var(--text-secondary); font-size: 11px; }
+.simulation-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; align-self: center; }
+.simulation-dot.live { background: var(--candle-up); }
+.simulation-dot.error { background: var(--candle-down); }
+.simulation-market-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.simulation-panel h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; }
+.simulation-ticket { margin-bottom: 16px; }
+.simulation-ticket h2 { display: flex; justify-content: space-between; }
+.simulation-ticket h2 small { color: var(--text-muted); }
+.simulation-order-kind { display: flex; gap: 6px; margin-bottom: 12px; }
+.simulation-order-kind button[aria-pressed='true'] { color: var(--accent-blue); border-color: var(--accent-blue); }
+.simulation-ticket label { margin-bottom: 10px; }
+.simulation-trade-actions { display: flex; gap: 8px; }
+.simulation-trade-actions > button { flex: 1; border: 0; font-weight: 600; padding: 9px; }
+.simulation-page .simulation-buy { background: var(--candle-up); color: #06120c; }
+.simulation-page .simulation-sell { background: var(--candle-down); color: #fff; }
+.simulation-page .simulation-buy:hover:not(:disabled), .simulation-page .simulation-sell:hover:not(:disabled) { filter: brightness(.92); }
+.simulation-buy-text { color: var(--candle-up); }
+.simulation-sell-text { color: var(--candle-down); }
+.simulation-account dl { margin: 0; }
+.simulation-account dl > div { display: flex; justify-content: space-between; margin-bottom: 10px; gap: 10px; font-size: 11px; }
+.simulation-account dt { color: var(--text-secondary); }
+.simulation-account dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere; }
+.simulation-orders { margin-bottom: 16px; }
+.simulation-open-order { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--border-color); padding: 8px 0; font: 11px var(--font-mono); }
+.simulation-open-order button { margin-left: auto; }
+.simulation-trades [data-testid] > div { display: flex; justify-content: space-between; padding: 5px 0; font: 11px var(--font-mono); }
+.simulation-error { position: absolute; bottom: 28px; left: 48px; right: 48px; z-index: 100; border: 1px solid var(--candle-down); background: var(--bg-secondary); color: var(--candle-down); padding: 10px; overflow-wrap: anywhere; }
+.simulation-error span { display: block; margin-top: 6px; font-size: 11px; }
+@media (max-width: 760px) {
+  .simulation-page .top-bar .workspace-navigation { display: none; }
+  .simulation-page .simulation-identity span { display: none; }
+  .simulation-page .right-market-rail:not(.panel-collapsed) { position: absolute; right: 0; top: 0; bottom: 0; max-width: 100%; }
+  .simulation-page .main-content-area { position: relative; }
+  .simulation-page .status-right { display: none; }
+  .simulation-page .status-bar { white-space: nowrap; }
+  .simulation-page .status-left { min-width: 0; overflow: hidden; }
+  .simulation-page .status-left > * { flex-shrink: 0; }
+}
+
+.simulation-rail-content select, .simulation-page .top-bar select { padding:6px; background:var(--bg-primary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; max-width:180px; font:inherit; }
+
+.simulation-room-navigation { display:flex; gap:6px; flex-shrink:0; }
+.simulation-room-navigation .simulation-theme-button { margin-left:0; }
+@media(max-width:760px) { .simulation-page .simulation-identity, .simulation-room-navigation .simulation-manage-button { display:none; } }

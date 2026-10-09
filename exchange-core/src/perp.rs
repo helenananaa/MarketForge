@@ -1,16 +1,71 @@
+use std::sync::{Arc, OnceLock};
 use std::{cmp::Reverse, collections::BTreeMap};
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
     account::{ClearingError, FeeRatePpm, Money, PositionQty, fee_for, notional},
-    model::{AccountId, OrderId, PriceTick, Qty, Side, Trade},
+    model::{AccountId, OrderId, PositionSide, PriceTick, Qty, Side, Trade},
 };
 
 pub const DEFAULT_MAINTENANCE_MARGIN_PPM: FeeRatePpm = 50_000;
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum PositionMode {
+    #[default]
+    OneWay,
+    Hedge,
+}
+
+impl PositionMode {
+    pub fn is_one_way(&self) -> bool {
+        *self == Self::OneWay
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PerpPositionLeg {
+    #[serde(with = "crate::funding::json_money")]
+    pub qty: PositionQty,
+    pub avg_entry_price_tick: PriceTick,
+    #[serde(with = "crate::funding::json_money")]
+    pub realized_pnl: Money,
+    #[serde(with = "crate::funding::json_money")]
+    pub fees_paid: Money,
+    #[serde(default, with = "crate::funding::json_money")]
+    pub funding_pnl: Money,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct HedgePositions {
+    pub long: PerpPositionLeg,
+    pub short: PerpPositionLeg,
+}
+
+impl HedgePositions {
+    pub fn gross_qty(&self) -> PositionQty {
+        self.long.qty + self.short.qty
+    }
+    pub fn leg(&self, side: PositionSide) -> Option<&PerpPositionLeg> {
+        match side {
+            PositionSide::Long => Some(&self.long),
+            PositionSide::Short => Some(&self.short),
+            PositionSide::Both => None,
+        }
+    }
+    fn leg_mut(&mut self, side: PositionSide) -> Option<&mut PerpPositionLeg> {
+        match side {
+            PositionSide::Long => Some(&mut self.long),
+            PositionSide::Short => Some(&mut self.short),
+            PositionSide::Both => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PerpClearingConfig {
+    #[serde(default, skip_serializing_if = "PositionMode::is_one_way")]
+    pub position_mode: PositionMode,
     pub maker_fee_ppm: FeeRatePpm,
     pub taker_fee_ppm: FeeRatePpm,
     #[serde(default)]
@@ -29,6 +84,7 @@ pub struct PerpClearingConfig {
 impl Default for PerpClearingConfig {
     fn default() -> Self {
         Self {
+            position_mode: PositionMode::OneWay,
             maker_fee_ppm: 0,
             taker_fee_ppm: 0,
             liquidation_fee_ppm: 0,
@@ -77,6 +133,8 @@ impl PerpMarginStatus {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PerpAccount {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hedge_positions: Option<Box<HedgePositions>>,
     pub account_id: AccountId,
     pub cash_balance: Money,
     pub position_qty: PositionQty,
@@ -89,6 +147,44 @@ pub struct PerpAccount {
 }
 
 impl PerpAccount {
+    fn position_in_direction(
+        &self,
+        direction: PositionQty,
+    ) -> (PositionQty, PriceTick, PositionSide) {
+        if let Some(p) = &self.hedge_positions {
+            if direction > 0 {
+                (p.long.qty, p.long.avg_entry_price_tick, PositionSide::Long)
+            } else {
+                (
+                    -p.short.qty,
+                    p.short.avg_entry_price_tick,
+                    PositionSide::Short,
+                )
+            }
+        } else if self.position_qty.signum() == direction.signum() {
+            (
+                self.position_qty,
+                self.avg_entry_price_tick,
+                PositionSide::Both,
+            )
+        } else {
+            (0, 0, PositionSide::Both)
+        }
+    }
+    pub fn has_open_position(&self) -> bool {
+        self.hedge_positions
+            .as_ref()
+            .map_or(self.position_qty != 0, |p| p.gross_qty() != 0)
+    }
+    fn initial_margin(&self, config: PerpClearingConfig) -> Money {
+        self.hedge_positions.as_ref().map_or_else(
+            || initial_margin(self.position_qty, self.avg_entry_price_tick, config),
+            |p| {
+                initial_margin(p.long.qty, p.long.avg_entry_price_tick, config)
+                    + initial_margin(p.short.qty, p.short.avg_entry_price_tick, config)
+            },
+        )
+    }
     pub fn snapshot(
         &self,
         config: PerpClearingConfig,
@@ -96,9 +192,14 @@ impl PerpAccount {
     ) -> PerpAccountSnapshot {
         let unrealized_pnl = self.unrealized_pnl_at_mark(mark_price_tick).unwrap_or(0);
         let equity = self.cash_balance + unrealized_pnl;
-        let initial_margin = initial_margin(self.position_qty, self.avg_entry_price_tick, config);
-        let maintenance_margin = maintenance_margin(self.position_qty, mark_price_tick, config);
+        let initial_margin = self.initial_margin(config);
+        let gross_qty = self
+            .hedge_positions
+            .as_ref()
+            .map_or(self.position_qty, |p| p.gross_qty());
+        let maintenance_margin = maintenance_margin(gross_qty, mark_price_tick, config);
         PerpAccountSnapshot {
+            hedge_positions: self.hedge_positions.clone(),
             account_id: self.account_id,
             cash_balance: self.cash_balance,
             position_qty: self.position_qty,
@@ -110,12 +211,7 @@ impl PerpAccount {
             maintenance_margin,
             portfolio_initial_margin: initial_margin,
             portfolio_maintenance_margin: maintenance_margin,
-            margin_status: margin_status(
-                self.position_qty,
-                equity,
-                initial_margin,
-                maintenance_margin,
-            ),
+            margin_status: margin_status(gross_qty, equity, initial_margin, maintenance_margin),
             reserved_margin: self.reserved_margin,
             available_cash: self.available_cash(),
             fees_paid: self.fees_paid,
@@ -131,12 +227,24 @@ impl PerpAccount {
         if mark_price_tick < 0 || self.avg_entry_price_tick < 0 {
             return None;
         }
-        Some(self.position_qty * Money::from(mark_price_tick - self.avg_entry_price_tick))
+        if let Some(p) = &self.hedge_positions {
+            let long = p.long.qty.checked_mul(
+                Money::from(mark_price_tick) - Money::from(p.long.avg_entry_price_tick),
+            )?;
+            let short = p.short.qty.checked_mul(
+                Money::from(p.short.avg_entry_price_tick) - Money::from(mark_price_tick),
+            )?;
+            return long.checked_add(short);
+        }
+        self.position_qty
+            .checked_mul(Money::from(mark_price_tick) - Money::from(self.avg_entry_price_tick))
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PerpAccountSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hedge_positions: Option<Box<HedgePositions>>,
     pub account_id: AccountId,
     pub cash_balance: Money,
     pub position_qty: PositionQty,
@@ -162,6 +270,14 @@ pub struct PerpAccountSnapshot {
     pub funding_pnl: Money,
 }
 
+impl PerpAccountSnapshot {
+    pub fn has_open_position(&self) -> bool {
+        self.hedge_positions
+            .as_ref()
+            .map_or(self.position_qty != 0, |p| p.gross_qty() != 0)
+    }
+}
+
 fn default_perp_margin_status() -> PerpMarginStatus {
     PerpMarginStatus::Flat
 }
@@ -175,6 +291,8 @@ pub struct PerpSocializedLossAllocation {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PerpAutoDeleveragingAllocation {
+    #[serde(default, skip_serializing_if = "PositionSide::is_both")]
+    pub position_side: PositionSide,
     pub account_id: AccountId,
     pub position_delta: PositionQty,
     pub price_tick: PriceTick,
@@ -233,6 +351,14 @@ pub enum PerpClearingEvent {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PerpAccountStore {
+    #[serde(skip)]
+    pub(crate) reservation_changes: crate::account::ReservationChanges,
+    // Exact successful inputs, not a relaxed risk policy. Every account is
+    // still checked; only identical account/order/mark/context inputs reuse work.
+    #[serde(skip)]
+    sync_checks: BTreeMap<AccountId, Arc<MarginSyncCheck>>,
+    #[serde(skip)]
+    reservation_index: OnceLock<Arc<BTreeMap<AccountId, Vec<OrderId>>>>,
     accounts: BTreeMap<AccountId, PerpAccount>,
     #[serde(default)]
     order_reservations: BTreeMap<OrderId, PerpOrderReservation>,
@@ -244,6 +370,36 @@ pub struct PerpAccountStore {
     cross_margin_contexts: BTreeMap<AccountId, PerpCrossMarginContext>,
     config: PerpClearingConfig,
     mark_price_tick: PriceTick,
+}
+
+/// Account-local inputs needed by peer markets. No portfolio projection or
+/// cloned hedge legs: those are only needed by public account snapshots.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PerpMarginInputs {
+    pub account_id: AccountId,
+    pub unrealized_pnl: Money,
+    pub initial_margin: Money,
+    pub maintenance_margin: Money,
+    pub reserved_margin: Money,
+    pub position_open: bool,
+}
+
+impl PerpMarginInputs {
+    pub fn collateral_reservation(self) -> Result<Money, ClearingError> {
+        self.initial_margin
+            .checked_add(self.reserved_margin)
+            .ok_or(ClearingError::BalanceOverflow)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct MarginSyncCheck {
+    account: PerpAccount,
+    orders: Vec<(OrderId, PerpOrderReservation)>,
+    context: PerpCrossMarginContext,
+    config: PerpClearingConfig,
+    mark: PriceTick,
+    snapshot: PerpAccountSnapshot,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -337,8 +493,11 @@ impl PerpAccountStore {
         }
 
         Ok(Self {
+            reservation_changes: crate::account::ReservationChanges::default(),
             accounts: BTreeMap::new(),
             order_reservations: BTreeMap::new(),
+            reservation_index: OnceLock::new(),
+            sync_checks: BTreeMap::new(),
             margin_statuses: BTreeMap::new(),
             insurance_fund_balance: config.initial_insurance_fund,
             cross_margin_contexts: BTreeMap::new(),
@@ -352,7 +511,10 @@ impl PerpAccountStore {
         account_id: AccountId,
         cash_balance: Money,
     ) -> PerpAccountSnapshot {
+        self.reservation_changes.mark(account_id);
         let account = self.accounts.entry(account_id).or_insert(PerpAccount {
+            hedge_positions: (self.config.position_mode == PositionMode::Hedge)
+                .then(|| Box::new(HedgePositions::default())),
             account_id,
             cash_balance: 0,
             position_qty: 0,
@@ -382,7 +544,29 @@ impl PerpAccountStore {
         if settlement.mark_price_tick != self.mark_price_tick {
             return Err(ClearingError::InvalidPrice);
         }
-        let allocations = crate::funding::funding_allocations(&self.snapshots(), settlement)?;
+        self.reservation_changes.invalidate();
+        let leg_allocations =
+            crate::funding::funding_leg_allocations(&self.snapshots(), settlement)?;
+        let mut allocations = BTreeMap::<AccountId, Money>::new();
+        for ((id, side), delta) in leg_allocations {
+            if let Some(positions) = self
+                .accounts
+                .get_mut(&id)
+                .and_then(|a| a.hedge_positions.as_mut())
+            {
+                let leg = positions
+                    .leg_mut(side)
+                    .ok_or(ClearingError::WrongMarketKind)?;
+                leg.funding_pnl = leg
+                    .funding_pnl
+                    .checked_add(delta)
+                    .ok_or(ClearingError::BalanceOverflow)?;
+            }
+            let total = allocations.entry(id).or_default();
+            *total = total
+                .checked_add(delta)
+                .ok_or(ClearingError::BalanceOverflow)?;
+        }
         for (id, delta) in &allocations {
             let account = self
                 .accounts
@@ -427,19 +611,165 @@ impl PerpAccountStore {
         cash_balance: Money,
         context: PerpCrossMarginContext,
     ) -> Result<PerpAccountSnapshot, ClearingError> {
-        let mut staged = self.clone();
-        staged.account_mut(account_id).cash_balance = cash_balance;
-        staged.cross_margin_contexts.insert(account_id, context);
-        staged.refresh_reserved_margin_for(account_id)?;
-        let account = staged
-            .account(account_id)
-            .ok_or(ClearingError::AccountNotFound)?;
-        let snapshot = staged.checked_snapshot_with_cross_margin(account)?;
-        staged
-            .margin_statuses
-            .insert(account_id, snapshot.margin_status);
-        *self = staged;
-        Ok(snapshot)
+        self.sync_cross_margin_account_ref(account_id, cash_balance, context)
+            .cloned()
+    }
+
+    pub(crate) fn sync_cross_margin_account_in_place(
+        &mut self,
+        account_id: AccountId,
+        cash_balance: Money,
+        context: PerpCrossMarginContext,
+    ) -> Result<(), ClearingError> {
+        self.sync_cross_margin_account_ref(account_id, cash_balance, context)
+            .map(|_| ())
+    }
+
+    pub(crate) fn sync_cross_margin_accounts(
+        &mut self,
+        requests: &[(AccountId, Money, PerpCrossMarginContext)],
+    ) -> Result<(), ClearingError> {
+        // The actor submits each account once in ascending order. Keep scalar
+        // semantics for any other caller, including duplicate account updates.
+        if !requests.windows(2).all(|pair| pair[0].0 < pair[1].0) {
+            for &(id, cash, context) in requests {
+                self.sync_cross_margin_account_in_place(id, cash, context)?;
+            }
+            return Ok(());
+        }
+        fn next_value<'a, T>(
+            cursor: &mut std::iter::Peekable<std::collections::btree_map::Iter<'a, AccountId, T>>,
+            id: AccountId,
+        ) -> Option<&'a T> {
+            while cursor.peek().is_some_and(|(key, _)| **key < id) {
+                cursor.next();
+            }
+            if cursor.peek().is_some_and(|(key, _)| **key == id) {
+                cursor.next().map(|(_, value)| value)
+            } else {
+                None
+            }
+        }
+        // Small affected-account batches are faster with indexed lookups than
+        // with a scan from the start of every account table.
+        if requests.len() < self.accounts.len() / 4 {
+            for &(id, cash, context) in requests {
+                self.sync_cross_margin_account_in_place(id, cash, context)?;
+            }
+            return Ok(());
+        }
+        let misses = {
+            let mut accounts = self.accounts.iter().peekable();
+            let mut checks = self.sync_checks.iter().peekable();
+            let mut contexts = self.cross_margin_contexts.iter().peekable();
+            let mut statuses = self.margin_statuses.iter().peekable();
+            let mut misses = Vec::new();
+            for (index, &(id, cash, context)) in requests.iter().enumerate() {
+                let account = next_value(&mut accounts, id);
+                let check = next_value(&mut checks, id);
+                let current_context = next_value(&mut contexts, id);
+                let current_status = next_value(&mut statuses, id);
+                let unchanged = check.is_some_and(|check| {
+                    check.account.cash_balance == cash
+                        && account == Some(&check.account)
+                        && check.context == context
+                        && check.config == self.config
+                        && check.mark == self.mark_price_tick
+                        && current_context == Some(&context)
+                        && current_status == Some(&check.snapshot.margin_status)
+                        && self
+                            .reservations_for(id)
+                            .eq(check.orders.iter().map(|(id, order)| (id, order)))
+                });
+                if !unchanged {
+                    misses.push(index);
+                }
+            }
+            misses
+        };
+        // Synchronization only mutates the requested account and its own risk
+        // context/reserved margin. Earlier misses cannot invalidate another
+        // account's exact successful check. Errors preserve scalar order.
+        for index in misses {
+            let (id, cash, context) = requests[index];
+            self.sync_cross_margin_account_in_place(id, cash, context)?;
+        }
+        Ok(())
+    }
+
+    fn sync_cross_margin_account_ref(
+        &mut self,
+        account_id: AccountId,
+        cash_balance: Money,
+        context: PerpCrossMarginContext,
+    ) -> Result<&PerpAccountSnapshot, ClearingError> {
+        if let Some(check) = self.sync_checks.get(&account_id)
+            && check.account.cash_balance == cash_balance
+            && self.accounts.get(&account_id) == Some(&check.account)
+            && check.context == context
+            && check.config == self.config
+            && check.mark == self.mark_price_tick
+            && self.reservations_for(account_id).eq(check
+                .orders
+                .iter()
+                .map(|(id, reservation)| (id, reservation)))
+        {
+            let status = check.snapshot.margin_status;
+            // A previously successful check can survive other context/status
+            // writes. Restore them when needed, but avoid rewriting equal data.
+            if self.cross_margin_contexts.get(&account_id) != Some(&context) {
+                self.cross_margin_contexts.insert(account_id, context);
+            }
+            if self.margin_statuses.get(&account_id) != Some(&status) {
+                self.margin_statuses.insert(account_id, status);
+            }
+            return Ok(&self.sync_checks[&account_id].snapshot);
+        }
+        // Synchronization only changes this account and its context. Preserve
+        // those entries for rollback instead of copying every account and order
+        // once for each member of a venue-wide cross-margin refresh.
+        let previous_account = self.accounts.get(&account_id).cloned();
+        let previous_context = self.cross_margin_contexts.insert(account_id, context);
+        self.account_mut(account_id).cash_balance = cash_balance;
+        let result = (|| {
+            self.refresh_reserved_margin_for(account_id)?;
+            let account = self
+                .account(account_id)
+                .ok_or(ClearingError::AccountNotFound)?;
+            self.checked_snapshot_with_cross_margin(account)
+        })();
+        match result {
+            Ok(snapshot) => {
+                self.margin_statuses
+                    .insert(account_id, snapshot.margin_status);
+                let check = MarginSyncCheck {
+                    account: self.accounts[&account_id].clone(),
+                    orders: self
+                        .reservations_for(account_id)
+                        .map(|(&id, order)| (id, order.clone()))
+                        .collect(),
+                    context,
+                    config: self.config,
+                    mark: self.mark_price_tick,
+                    snapshot,
+                };
+                self.sync_checks.insert(account_id, Arc::new(check));
+                Ok(&self.sync_checks[&account_id].snapshot)
+            }
+            Err(error) => {
+                if let Some(account) = previous_account {
+                    self.accounts.insert(account_id, account);
+                } else {
+                    self.accounts.remove(&account_id);
+                }
+                if let Some(context) = previous_context {
+                    self.cross_margin_contexts.insert(account_id, context);
+                } else {
+                    self.cross_margin_contexts.remove(&account_id);
+                }
+                Err(error)
+            }
+        }
     }
 
     pub fn insurance_fund_balance(&self) -> Money {
@@ -453,6 +783,7 @@ impl PerpAccountStore {
         if mark_price_tick <= 0 {
             return Err(ClearingError::InvalidPrice);
         }
+        self.reservation_changes.invalidate();
         self.mark_price_tick = mark_price_tick;
         self.refresh_all_reserved_margins()?;
         Ok(self.refresh_all_margin_statuses())
@@ -476,6 +807,59 @@ impl PerpAccountStore {
             .values()
             .map(|account| self.snapshot_with_cross_margin(account))
             .collect()
+    }
+
+    pub(crate) fn margin_inputs(
+        &self,
+        affected: Option<&std::collections::BTreeSet<AccountId>>,
+    ) -> Vec<PerpMarginInputs> {
+        let project = |account: &PerpAccount| {
+            let gross_qty = account
+                .hedge_positions
+                .as_ref()
+                .map_or(account.position_qty, |p| p.gross_qty());
+            PerpMarginInputs {
+                account_id: account.account_id,
+                unrealized_pnl: account
+                    .unrealized_pnl_at_mark(self.mark_price_tick)
+                    .unwrap_or(0),
+                initial_margin: account.initial_margin(self.config),
+                maintenance_margin: maintenance_margin(
+                    gross_qty,
+                    self.mark_price_tick,
+                    self.config,
+                ),
+                reserved_margin: account.reserved_margin,
+                position_open: account.has_open_position(),
+            }
+        };
+        if let Some(ids) = affected {
+            ids.iter()
+                .filter_map(|id| self.accounts.get(id))
+                .map(project)
+                .collect()
+        } else {
+            self.accounts.values().map(project).collect()
+        }
+    }
+
+    pub(crate) fn reservation_balances(
+        &self,
+    ) -> impl Iterator<Item = Result<(AccountId, Money), ClearingError>> + '_ {
+        self.accounts.values().map(|account| {
+            account
+                .initial_margin(self.config)
+                .checked_add(account.reserved_margin)
+                .map(|amount| (account.account_id, amount))
+                .ok_or(ClearingError::BalanceOverflow)
+        })
+    }
+
+    pub(crate) fn open_position_accounts(&self) -> impl Iterator<Item = AccountId> + '_ {
+        self.accounts
+            .values()
+            .filter(|account| account.has_open_position())
+            .map(|account| account.account_id)
     }
 
     pub fn cross_margin_context(&self, account_id: AccountId) -> PerpCrossMarginContext {
@@ -509,7 +893,7 @@ impl PerpAccountStore {
             .saturating_sub(local_required_margin)
             .saturating_sub(context.other_required_margin);
         snapshot.margin_status = margin_status_for_portfolio(
-            snapshot.position_qty != 0 || context.other_position_open,
+            snapshot.has_open_position() || context.other_position_open,
             portfolio_equity,
             portfolio_initial_margin,
             portfolio_maintenance_margin,
@@ -549,7 +933,7 @@ impl PerpAccountStore {
             .checked_sub(required_margin)
             .ok_or(ClearingError::BalanceOverflow)?;
         snapshot.margin_status = margin_status_for_portfolio(
-            snapshot.position_qty != 0 || context.other_position_open,
+            snapshot.has_open_position() || context.other_position_open,
             portfolio_equity,
             portfolio_initial_margin,
             portfolio_maintenance_margin,
@@ -571,12 +955,14 @@ impl PerpAccountStore {
         self.release_order_reservation(order_id)?;
 
         let reservation = self.reservation_for_order(account_id, Some(side), price_tick, qty)?;
+        self.reservation_index.take();
         self.order_reservations.insert(order_id, reservation);
         self.refresh_reserved_margin_for(account_id)?;
         Ok(())
     }
 
     pub fn release_order_reservation(&mut self, order_id: OrderId) -> Result<(), ClearingError> {
+        self.reservation_index.take();
         let Some(reservation) = self.order_reservations.remove(&order_id) else {
             return Ok(());
         };
@@ -601,6 +987,7 @@ impl PerpAccountStore {
         } else {
             self.order_reservations.insert(order_id, next_reservation);
         }
+        self.reservation_index.take();
         self.refresh_reserved_margin_for(existing.account_id)?;
         Ok(())
     }
@@ -657,6 +1044,7 @@ impl PerpAccountStore {
             // A legacy reservation without a side is already modeled in both
             // directions. Preserve that conservative state during amendment.
             let mut staged = self.clone();
+            staged.reservation_index.take();
             if new_qty == 0 {
                 staged.order_reservations.remove(&order_id);
             } else {
@@ -701,17 +1089,23 @@ impl PerpAccountStore {
         let maker_fee = fee_for(notional, self.config.maker_fee_ppm)?;
         let taker_fee = fee_for(notional, self.config.taker_fee_ppm)?;
         let participants = PerpTradeParticipants::from_trade(trade, maker_fee, taker_fee);
+        let (buyer_side, seller_side) = match trade.taker_side {
+            Side::Buy => (trade.taker_position_side, trade.maker_position_side),
+            Side::Sell => (trade.maker_position_side, trade.taker_position_side),
+        };
 
         self.release_maker_fill_reservation(trade.maker_order_id, trade.qty)?;
 
         let mut buyer_result = self.apply_fill(
             participants.buyer_account_id,
+            buyer_side,
             PositionQty::from(trade.qty),
             trade.price_tick,
             participants.buyer_fee,
         )?;
         let mut seller_result = self.apply_fill(
             participants.seller_account_id,
+            seller_side,
             -PositionQty::from(trade.qty),
             trade.price_tick,
             participants.seller_fee,
@@ -755,6 +1149,23 @@ impl PerpAccountStore {
         liquidation_notional: Money,
         liquidated_position_qty: PositionQty,
     ) -> Result<Vec<PerpClearingEvent>, ClearingError> {
+        self.apply_liquidation_settlement_for_legs(
+            account_id,
+            order_id,
+            liquidation_notional,
+            liquidated_position_qty,
+            None,
+        )
+    }
+
+    pub(crate) fn apply_liquidation_settlement_for_legs(
+        &mut self,
+        account_id: AccountId,
+        order_id: OrderId,
+        liquidation_notional: Money,
+        liquidated_position_qty: PositionQty,
+        hedge_positions: Option<&HedgePositions>,
+    ) -> Result<Vec<PerpClearingEvent>, ClearingError> {
         if liquidation_notional == 0 {
             return Ok(Vec::new());
         }
@@ -777,7 +1188,7 @@ impl PerpAccountStore {
         let shortfall = self
             .accounts
             .get(&account_id)
-            .filter(|account| account.position_qty == 0 && account.cash_balance < 0)
+            .filter(|account| !account.has_open_position() && account.cash_balance < 0)
             .map(|account| -account.cash_balance)
             .unwrap_or(0);
 
@@ -787,11 +1198,22 @@ impl PerpAccountStore {
             let mut remaining_shortfall = shortfall - insurance_fund_payment;
 
             if self.config.auto_deleveraging_enabled && remaining_shortfall > 0 {
-                auto_deleveraging_allocations = self.allocate_auto_deleveraging_loss(
-                    account_id,
-                    liquidated_position_qty,
-                    remaining_shortfall,
-                )?;
+                let sides = hedge_positions.map_or_else(
+                    || vec![liquidated_position_qty],
+                    |p| vec![p.long.qty, -p.short.qty],
+                );
+                for side in sides {
+                    let remaining = remaining_shortfall
+                        - auto_deleveraging_allocations
+                            .iter()
+                            .map(|a: &PerpAutoDeleveragingAllocation| a.loss)
+                            .sum::<Money>();
+                    if remaining <= 0 {
+                        break;
+                    }
+                    auto_deleveraging_allocations
+                        .extend(self.allocate_auto_deleveraging_loss(account_id, side, remaining)?);
+                }
                 auto_deleveraging_loss = auto_deleveraging_allocations
                     .iter()
                     .map(|allocation| allocation.loss)
@@ -877,13 +1299,12 @@ impl PerpAccountStore {
             .accounts
             .iter()
             .filter_map(|(account_id, account)| {
-                if *account_id == liquidated_account_id
-                    || account.position_qty == 0
-                    || account.position_qty.signum() == liquidated_side
-                {
+                let (qty, entry, _) = account.position_in_direction(-liquidated_side);
+                if *account_id == liquidated_account_id || qty == 0 {
                     return None;
                 }
-                let unrealized_pnl = account.unrealized_pnl_at_mark(mark_price_tick)?;
+                let unrealized_pnl =
+                    qty.checked_mul(Money::from(mark_price_tick) - Money::from(entry))?;
                 if unrealized_pnl <= 0 {
                     return None;
                 }
@@ -901,23 +1322,24 @@ impl PerpAccountStore {
             let Some(account) = self.accounts.get(&account_id) else {
                 continue;
             };
-            let per_contract_profit = match account.position_qty.signum() {
-                1 => mark_price_tick - account.avg_entry_price_tick,
-                -1 => account.avg_entry_price_tick - mark_price_tick,
+            let (contributor_position, entry, contributor_side) =
+                account.position_in_direction(-liquidated_side);
+            let per_contract_profit = match contributor_position.signum() {
+                1 => mark_price_tick - entry,
+                -1 => entry - mark_price_tick,
                 _ => 0,
             };
             if per_contract_profit <= 0 {
                 continue;
             }
 
-            let contributor_position = account.position_qty;
-            let Some((counterparty_id, counterparty_position)) =
+            let Some((counterparty_id, counterparty_position, counterparty_side)) =
                 self.accounts.iter().find_map(|(candidate_id, candidate)| {
+                    let (qty, _, side) = candidate.position_in_direction(liquidated_side);
                     (*candidate_id != liquidated_account_id
                         && *candidate_id != account_id
-                        && candidate.position_qty.signum() == liquidated_side
-                        && candidate.position_qty != 0)
-                        .then_some((*candidate_id, candidate.position_qty))
+                        && qty != 0)
+                        .then_some((*candidate_id, qty, side))
                 })
             else {
                 continue;
@@ -943,7 +1365,13 @@ impl PerpAccountStore {
 
             let realized_pnl = {
                 let account = self.account_mut(account_id);
-                let realized_pnl = apply_position_fill(account, position_delta, mark_price_tick);
+                let realized_pnl = apply_selected_position_fill(
+                    account,
+                    contributor_side,
+                    position_delta,
+                    mark_price_tick,
+                    0,
+                )?;
                 account.cash_balance = account
                     .cash_balance
                     .checked_add(realized_pnl)
@@ -960,6 +1388,7 @@ impl PerpAccountStore {
                 .account_snapshot(account_id)
                 .ok_or(ClearingError::AccountNotFound)?;
             allocations.push(PerpAutoDeleveragingAllocation {
+                position_side: contributor_side,
                 account_id,
                 position_delta,
                 price_tick: mark_price_tick,
@@ -971,8 +1400,13 @@ impl PerpAccountStore {
 
             let counterparty_realized_pnl = {
                 let account = self.account_mut(counterparty_id);
-                let realized_pnl =
-                    apply_position_fill(account, counterparty_position_delta, mark_price_tick);
+                let realized_pnl = apply_selected_position_fill(
+                    account,
+                    counterparty_side,
+                    counterparty_position_delta,
+                    mark_price_tick,
+                    0,
+                )?;
                 account.cash_balance = account
                     .cash_balance
                     .checked_add(realized_pnl)
@@ -988,6 +1422,7 @@ impl PerpAccountStore {
                 .account_snapshot(counterparty_id)
                 .ok_or(ClearingError::AccountNotFound)?;
             allocations.push(PerpAutoDeleveragingAllocation {
+                position_side: counterparty_side,
                 account_id: counterparty_id,
                 position_delta: counterparty_position_delta,
                 price_tick: mark_price_tick,
@@ -1053,6 +1488,7 @@ impl PerpAccountStore {
     fn apply_fill(
         &mut self,
         account_id: AccountId,
+        position_side: PositionSide,
         fill_qty: PositionQty,
         price_tick: PriceTick,
         fee: Money,
@@ -1061,7 +1497,8 @@ impl PerpAccountStore {
         let mark_price_tick = self.mark_price_tick;
         let account = self.account_mut(account_id);
 
-        let realized_pnl_delta = apply_position_fill(account, fill_qty, price_tick);
+        let realized_pnl_delta =
+            apply_selected_position_fill(account, position_side, fill_qty, price_tick, fee)?;
         account.cash_balance = account
             .cash_balance
             .checked_add(realized_pnl_delta)
@@ -1087,6 +1524,7 @@ impl PerpAccountStore {
         order_id: OrderId,
         fill_qty: Qty,
     ) -> Result<(), ClearingError> {
+        self.reservation_index.take();
         let Some(mut reservation) = self.order_reservations.remove(&order_id) else {
             return Ok(());
         };
@@ -1139,6 +1577,24 @@ impl PerpAccountStore {
         })
     }
 
+    fn reservations_for(
+        &self,
+        account_id: AccountId,
+    ) -> impl Iterator<Item = (&OrderId, &PerpOrderReservation)> {
+        let index = self.reservation_index.get_or_init(|| {
+            let mut index: BTreeMap<AccountId, Vec<OrderId>> = BTreeMap::new();
+            for (&id, reservation) in &self.order_reservations {
+                index.entry(reservation.account_id).or_default().push(id);
+            }
+            Arc::new(index)
+        });
+        index
+            .get(&account_id)
+            .into_iter()
+            .flatten()
+            .map(|id| (id, &self.order_reservations[id]))
+    }
+
     fn risk_exposure_with(
         &self,
         account_id: AccountId,
@@ -1150,8 +1606,8 @@ impl PerpAccountStore {
             .get(&account_id)
             .ok_or(ClearingError::AccountNotFound)?;
         let mut orders = Vec::new();
-        for (order_id, reservation) in &self.order_reservations {
-            if reservation.account_id != account_id || Some(*order_id) == excluded_order_id {
+        for (order_id, reservation) in self.reservations_for(account_id) {
+            if Some(*order_id) == excluded_order_id {
                 continue;
             }
             let order_notional = notional(reservation.price_tick, reservation.qty)?;
@@ -1176,43 +1632,94 @@ impl PerpAccountStore {
             });
         }
 
-        let (buy_position_qty, buy_notional) = directional_risk_scenario(
-            account.position_qty,
-            self.mark_price_tick,
-            Side::Buy,
-            orders
-                .iter()
-                .copied()
-                .filter(|order| order.side.is_none_or(|side| side == Side::Buy)),
-        )?;
-        let (sell_position_qty, sell_notional) = directional_risk_scenario(
-            account.position_qty,
-            self.mark_price_tick,
-            Side::Sell,
-            orders
-                .iter()
-                .copied()
-                .filter(|order| order.side.is_none_or(|side| side == Side::Sell)),
-        )?;
-        let current_abs_position_qty = account
-            .position_qty
-            .checked_abs()
-            .ok_or(ClearingError::BalanceOverflow)?;
-        let current_notional = Money::from(self.mark_price_tick)
-            .checked_mul(current_abs_position_qty)
-            .ok_or(ClearingError::BalanceOverflow)?;
-        let max_abs_position_qty = current_abs_position_qty
-            .max(
-                buy_position_qty
+        let (max_abs_position_qty, buy_notional, sell_notional, worst_notional) =
+            if let Some(positions) = &account.hedge_positions {
+                let mut long_qty = positions.long.qty;
+                let mut short_qty = positions.short.qty;
+                let mark = Money::from(self.mark_price_tick);
+                let mut long_notional = long_qty
+                    .checked_mul(mark)
+                    .ok_or(ClearingError::BalanceOverflow)?;
+                let mut short_notional = short_qty
+                    .checked_mul(mark)
+                    .ok_or(ClearingError::BalanceOverflow)?;
+                for order in &orders {
+                    let qty = PositionQty::from(order.qty);
+                    let value = qty
+                        .checked_mul(Money::from(order.price_tick.max(self.mark_price_tick)))
+                        .ok_or(ClearingError::BalanceOverflow)?;
+                    if order.side.is_none_or(|side| side == Side::Buy) {
+                        long_qty = long_qty
+                            .checked_add(qty)
+                            .ok_or(ClearingError::BalanceOverflow)?;
+                        long_notional = long_notional
+                            .checked_add(value)
+                            .ok_or(ClearingError::BalanceOverflow)?;
+                    }
+                    if order.side.is_none_or(|side| side == Side::Sell) {
+                        short_qty = short_qty
+                            .checked_add(qty)
+                            .ok_or(ClearingError::BalanceOverflow)?;
+                        short_notional = short_notional
+                            .checked_add(value)
+                            .ok_or(ClearingError::BalanceOverflow)?;
+                    }
+                }
+                (
+                    long_qty
+                        .checked_add(short_qty)
+                        .ok_or(ClearingError::BalanceOverflow)?,
+                    long_notional,
+                    short_notional,
+                    long_notional
+                        .checked_add(short_notional)
+                        .ok_or(ClearingError::BalanceOverflow)?,
+                )
+            } else {
+                let (buy_position_qty, buy_notional) = directional_risk_scenario(
+                    account.position_qty,
+                    self.mark_price_tick,
+                    Side::Buy,
+                    orders
+                        .iter()
+                        .copied()
+                        .filter(|order| order.side.is_none_or(|side| side == Side::Buy)),
+                )?;
+                let (sell_position_qty, sell_notional) = directional_risk_scenario(
+                    account.position_qty,
+                    self.mark_price_tick,
+                    Side::Sell,
+                    orders
+                        .iter()
+                        .copied()
+                        .filter(|order| order.side.is_none_or(|side| side == Side::Sell)),
+                )?;
+                let current_abs_position_qty = account
+                    .position_qty
                     .checked_abs()
-                    .ok_or(ClearingError::BalanceOverflow)?,
-            )
-            .max(
-                sell_position_qty
-                    .checked_abs()
-                    .ok_or(ClearingError::BalanceOverflow)?,
-            );
-        let worst_notional = current_notional.max(buy_notional).max(sell_notional);
+                    .ok_or(ClearingError::BalanceOverflow)?;
+                let current_notional = Money::from(self.mark_price_tick)
+                    .checked_mul(current_abs_position_qty)
+                    .ok_or(ClearingError::BalanceOverflow)?;
+                let max_abs_position_qty = current_abs_position_qty
+                    .max(
+                        buy_position_qty
+                            .checked_abs()
+                            .ok_or(ClearingError::BalanceOverflow)?,
+                    )
+                    .max(
+                        sell_position_qty
+                            .checked_abs()
+                            .ok_or(ClearingError::BalanceOverflow)?,
+                    );
+                let worst_notional = current_notional.max(buy_notional).max(sell_notional);
+                (
+                    max_abs_position_qty,
+                    buy_notional,
+                    sell_notional,
+                    worst_notional,
+                )
+            };
         let order_fees = orders.iter().try_fold(0i128, |total, order| {
             total
                 .checked_add(order.fee)
@@ -1261,11 +1768,7 @@ impl PerpAccountStore {
             .accounts
             .get(&account_id)
             .ok_or(ClearingError::AccountNotFound)?;
-        let snapshot_initial_margin = initial_margin(
-            account.position_qty,
-            account.avg_entry_price_tick,
-            self.config,
-        );
+        let snapshot_initial_margin = account.initial_margin(self.config);
         // ExchangeActor reserves `initial_margin + reserved_margin`. Basing the
         // top-up on the same snapshot initial margin keeps that aggregate at
         // least as large as the mark-aware worst-case requirement.
@@ -1274,6 +1777,9 @@ impl PerpAccountStore {
             .checked_sub(snapshot_initial_margin)
             .ok_or(ClearingError::BalanceOverflow)?
             .max(0);
+        if account.reserved_margin != reserved_margin {
+            self.reservation_changes.mark(account_id);
+        }
         self.accounts
             .get_mut(&account_id)
             .ok_or(ClearingError::AccountNotFound)?
@@ -1290,7 +1796,10 @@ impl PerpAccountStore {
     }
 
     fn account_mut(&mut self, account_id: AccountId) -> &mut PerpAccount {
+        self.reservation_changes.mark(account_id);
         self.accounts.entry(account_id).or_insert(PerpAccount {
+            hedge_positions: (self.config.position_mode == PositionMode::Hedge)
+                .then(|| Box::new(HedgePositions::default())),
             account_id,
             cash_balance: 0,
             position_qty: 0,
@@ -1486,6 +1995,86 @@ fn apply_position_fill(
     realized_pnl
 }
 
+fn apply_selected_position_fill(
+    account: &mut PerpAccount,
+    position_side: PositionSide,
+    fill_qty: PositionQty,
+    price_tick: PriceTick,
+    fee: Money,
+) -> Result<Money, ClearingError> {
+    let Some(positions) = account.hedge_positions.as_mut() else {
+        if position_side != PositionSide::Both {
+            return Err(ClearingError::WrongMarketKind);
+        }
+        return Ok(apply_position_fill(account, fill_qty, price_tick));
+    };
+    let leg = positions
+        .leg_mut(position_side)
+        .ok_or(ClearingError::WrongMarketKind)?;
+    let direction = if position_side == PositionSide::Long {
+        1
+    } else {
+        -1
+    };
+    let delta = fill_qty
+        .checked_mul(direction)
+        .ok_or(ClearingError::BalanceOverflow)?;
+    let next_qty = leg
+        .qty
+        .checked_add(delta)
+        .ok_or(ClearingError::BalanceOverflow)?;
+    if next_qty < 0 {
+        return Err(ClearingError::InsufficientAvailableBalance);
+    }
+    let pnl = if delta < 0 {
+        (-delta)
+            .checked_mul(
+                (Money::from(price_tick) - Money::from(leg.avg_entry_price_tick)) * direction,
+            )
+            .ok_or(ClearingError::BalanceOverflow)?
+    } else {
+        0
+    };
+    if delta > 0 {
+        let weighted = leg
+            .qty
+            .checked_mul(Money::from(leg.avg_entry_price_tick))
+            .and_then(|old| {
+                delta
+                    .checked_mul(Money::from(price_tick))
+                    .and_then(|new| old.checked_add(new))
+            })
+            .ok_or(ClearingError::BalanceOverflow)?;
+        leg.avg_entry_price_tick =
+            PriceTick::try_from(weighted / next_qty).map_err(|_| ClearingError::BalanceOverflow)?;
+    } else if next_qty == 0 {
+        leg.avg_entry_price_tick = 0;
+    }
+    leg.qty = next_qty;
+    leg.realized_pnl = leg
+        .realized_pnl
+        .checked_add(pnl)
+        .ok_or(ClearingError::BalanceOverflow)?;
+    leg.fees_paid = leg
+        .fees_paid
+        .checked_add(fee)
+        .ok_or(ClearingError::BalanceOverflow)?;
+    // Check gross size as well as net size so hedges cannot hide overflow.
+    positions
+        .long
+        .qty
+        .checked_add(positions.short.qty)
+        .ok_or(ClearingError::BalanceOverflow)?;
+    account.position_qty = positions
+        .long
+        .qty
+        .checked_sub(positions.short.qty)
+        .ok_or(ClearingError::BalanceOverflow)?;
+    // A hedge has two entry prices; the legacy scalar must not masquerade as either.
+    account.avg_entry_price_tick = 0;
+    Ok(pnl)
+}
+
 fn open_or_add_position(account: &mut PerpAccount, fill_qty: PositionQty, price_tick: PriceTick) {
     let old_abs_qty = account.position_qty.abs();
     let fill_abs_qty = fill_qty.abs();
@@ -1561,6 +2150,269 @@ fn margin_status_for_portfolio(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cached_margin_sync_matches_cold_checks_after_every_risk_input_change() {
+        let mut store = PerpAccountStore::new(PerpClearingConfig::default(), 100).unwrap();
+        store.create_account(1, 10_000);
+        store.create_account(2, 10_000);
+        fn check(store: &mut PerpAccountStore, cash: Money, context: PerpCrossMarginContext) {
+            let mut cold: PerpAccountStore =
+                serde_json::from_value(serde_json::to_value(&*store).unwrap()).unwrap();
+            assert!(cold.sync_checks.is_empty());
+            let mut in_place = store.clone();
+            let expected = cold.sync_cross_margin_account(1, cash, context);
+            assert_eq!(store.sync_cross_margin_account(1, cash, context), expected);
+            assert_eq!(
+                in_place.sync_cross_margin_account_in_place(1, cash, context),
+                expected.map(|_| ())
+            );
+            assert_eq!(
+                serde_json::to_value(&in_place).unwrap(),
+                serde_json::to_value(&cold).unwrap()
+            );
+            assert_eq!(
+                serde_json::to_value(&*store).unwrap(),
+                serde_json::to_value(cold).unwrap()
+            );
+        }
+        let context = PerpCrossMarginContext::default();
+        check(&mut store, 10_000, context);
+        let first = store.sync_checks[&1].clone();
+        check(&mut store, 10_000, context);
+        assert!(Arc::ptr_eq(&first, &store.sync_checks[&1]));
+        store
+            .reserve_resting_order(10, 1, Side::Buy, 100, 8)
+            .unwrap();
+        check(&mut store, 10_000, context);
+        store.amend_order_reservation(10, 99, 5).unwrap();
+        check(&mut store, 10_000, context);
+        store.set_mark_price_tick(110).unwrap();
+        check(&mut store, 10_000, context);
+        store.release_maker_fill_reservation(10, 5).unwrap();
+        check(&mut store, 10_000, context);
+        store
+            .settle_trade(&trade(20, 2, 1, 110, 3, Side::Buy))
+            .unwrap();
+        check(&mut store, 9_900, context);
+        check(
+            &mut store,
+            9_900,
+            PerpCrossMarginContext {
+                other_required_margin: 50,
+                liquidation_pending: true,
+                ..context
+            },
+        );
+        check(
+            &mut store,
+            i128::MAX,
+            PerpCrossMarginContext {
+                other_unrealized_pnl: 1,
+                ..context
+            },
+        );
+        check(&mut store, 9_900, context);
+    }
+
+    #[test]
+    fn ordered_batch_sync_matches_scalar_with_misses_errors_and_duplicates() {
+        let context = PerpCrossMarginContext::default();
+        let requests = (1..=40).map(|id| (id, 10_000, context)).collect::<Vec<_>>();
+        let mut store = PerpAccountStore::new(PerpClearingConfig::default(), 100).unwrap();
+        for id in 1..=40 {
+            store.create_account(id, 10_000);
+        }
+        fn compare(
+            store: &mut PerpAccountStore,
+            requests: &[(AccountId, Money, PerpCrossMarginContext)],
+        ) {
+            let mut scalar = store.clone();
+            let expected = requests.iter().try_for_each(|&(id, cash, context)| {
+                scalar
+                    .sync_cross_margin_account(id, cash, context)
+                    .map(|_| ())
+            });
+            assert_eq!(store.sync_cross_margin_accounts(requests), expected);
+            assert_eq!(
+                serde_json::to_value(&*store).unwrap(),
+                serde_json::to_value(scalar).unwrap()
+            );
+        }
+        compare(&mut store, &requests); // All cold misses.
+        compare(&mut store, &requests); // All exact successful checks.
+        store
+            .reserve_resting_order(1, 3, Side::Buy, 100, 5)
+            .unwrap();
+        store.cross_margin_contexts.remove(&2);
+        store
+            .margin_statuses
+            .insert(1, PerpMarginStatus::Liquidatable);
+        compare(&mut store, &requests); // Mixed misses; restore absent/stale entries.
+        let mut changed = requests.clone();
+        changed[1].1 = 20_000;
+        changed[4].1 = i128::MAX;
+        changed[4].2.other_unrealized_pnl = 1;
+        compare(&mut store, &changed); // Earlier writes retained, later writes skipped.
+        compare(&mut store, &requests);
+        compare(&mut store, &[(30, 20_000, context)]); // Sparse indexed fallback.
+        compare(
+            &mut store,
+            &[
+                (30, 30_000, context),
+                (1, 20_000, context),
+                (30, 40_000, context),
+            ],
+        );
+        store.set_mark_price_tick(110).unwrap();
+        compare(&mut store, &requests);
+        let mut restored: PerpAccountStore =
+            serde_json::from_value(serde_json::to_value(&store).unwrap()).unwrap();
+        compare(&mut restored, &requests);
+    }
+
+    #[test]
+    fn compact_margin_inputs_match_full_projection_and_selected_accounts() {
+        for mode in [PositionMode::OneWay, PositionMode::Hedge] {
+            let mut store = PerpAccountStore::new(
+                PerpClearingConfig {
+                    position_mode: mode,
+                    leverage: 10,
+                    ..PerpClearingConfig::default()
+                },
+                100,
+            )
+            .unwrap();
+            for id in 1..=3 {
+                store.create_account(id, 10_000);
+            }
+            let account = store.accounts.get_mut(&2).unwrap();
+            if let Some(legs) = &mut account.hedge_positions {
+                legs.long.qty = 4;
+                legs.long.avg_entry_price_tick = 95;
+                legs.short.qty = 4;
+                legs.short.avg_entry_price_tick = 110;
+            } else {
+                account.position_qty = -4;
+                account.avg_entry_price_tick = 110;
+            }
+            store.reserve_resting_order(1, 2, Side::Buy, 99, 3).unwrap();
+            store.cross_margin_contexts.insert(
+                2,
+                PerpCrossMarginContext {
+                    other_unrealized_pnl: -500,
+                    other_required_margin: 500,
+                    other_initial_margin: 400,
+                    other_maintenance_margin: 100,
+                    other_position_open: true,
+                    liquidation_pending: true,
+                },
+            );
+            for mark in [80, 100, 125] {
+                store.set_mark_price_tick(mark).unwrap();
+                let restored: PerpAccountStore =
+                    serde_json::from_value(serde_json::to_value(&store).unwrap()).unwrap();
+                for source in [&store, &restored] {
+                    let all = source.margin_inputs(None);
+                    assert_eq!(all.len(), 3);
+                    for input in &all {
+                        let snapshot = source.account_snapshot(input.account_id).unwrap();
+                        assert_eq!(
+                            (
+                                input.unrealized_pnl,
+                                input.initial_margin,
+                                input.maintenance_margin,
+                                input.reserved_margin,
+                                input.position_open
+                            ),
+                            (
+                                snapshot.unrealized_pnl,
+                                snapshot.initial_margin,
+                                snapshot.maintenance_margin,
+                                snapshot.reserved_margin,
+                                snapshot.has_open_position()
+                            )
+                        );
+                        assert_eq!(
+                            input.collateral_reservation().unwrap(),
+                            snapshot.initial_margin + snapshot.reserved_margin
+                        );
+                    }
+                    assert!(all[1].position_open); // Includes zero-net hedge exposure.
+                    let ids = std::collections::BTreeSet::from([2, 99]);
+                    assert_eq!(source.margin_inputs(Some(&ids)), vec![all[1]]);
+                    assert!(
+                        source
+                            .margin_inputs(Some(&std::collections::BTreeSet::new()))
+                            .is_empty()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reservation_lookup_tracks_mutations_and_old_snapshot_restore() {
+        let mut accounts = PerpAccountStore::new(PerpClearingConfig::default(), 100).unwrap();
+        for id in 1..=20 {
+            accounts.create_account(id, 100_000);
+            accounts
+                .reserve_resting_order(id, id, Side::Buy, 100, 10)
+                .unwrap();
+        }
+        // Compare the lazy index with a checkpoint rebuild after every mutation,
+        // including partial/full maker fills and legacy side-less reservations.
+        fn verify(accounts: &PerpAccountStore) {
+            let json = serde_json::to_value(accounts).unwrap();
+            assert!(json.get("reservation_index").is_none());
+            let restored: PerpAccountStore = serde_json::from_value(json).unwrap();
+            for id in 1..=20 {
+                assert_eq!(accounts.risk_exposure(id), restored.risk_exposure(id));
+                let expected: Vec<_> = accounts
+                    .order_reservations
+                    .iter()
+                    .filter(|(_, r)| r.account_id == id)
+                    .map(|(&id, _)| id)
+                    .collect();
+                assert_eq!(
+                    accounts
+                        .reservation_index
+                        .get()
+                        .unwrap()
+                        .get(&id)
+                        .cloned()
+                        .unwrap_or_default(),
+                    expected
+                );
+            }
+        }
+        verify(&accounts);
+        let frozen = accounts.clone();
+        accounts.amend_order_reservation(1, 99, 7).unwrap();
+        verify(&accounts);
+        accounts.release_maker_fill_reservation(1, 3).unwrap();
+        verify(&accounts);
+        accounts.release_maker_fill_reservation(1, 4).unwrap();
+        verify(&accounts);
+        accounts.release_order_reservation(2).unwrap();
+        verify(&accounts);
+        accounts.amend_order_reservation(3, 100, 0).unwrap();
+        verify(&accounts);
+        verify(&frozen);
+        let mut json = serde_json::to_value(&accounts).unwrap();
+        json["order_reservations"]["4"]
+            .as_object_mut()
+            .unwrap()
+            .remove("side");
+        let legacy: PerpAccountStore = serde_json::from_value(json).unwrap();
+        legacy.risk_exposure(4).unwrap();
+        let (before, after) = legacy
+            .amend_order_risk_exposures(4, None, Some(0))
+            .unwrap()
+            .unwrap();
+        assert_ne!(before, after);
+        verify(&legacy);
+    }
+
     use super::*;
 
     fn trade(
@@ -1572,6 +2424,8 @@ mod tests {
         taker_side: Side,
     ) -> Trade {
         Trade {
+            maker_position_side: Default::default(),
+            taker_position_side: Default::default(),
             trade_id,
             maker_order_id: trade_id * 10,
             maker_account_id,
@@ -1605,6 +2459,7 @@ mod tests {
         assert_eq!(
             accounts.account_snapshot(20),
             Some(PerpAccountSnapshot {
+                hedge_positions: None,
                 account_id: 20,
                 cash_balance: 9_999,
                 position_qty: 10,
@@ -1626,6 +2481,7 @@ mod tests {
         assert_eq!(
             accounts.account_snapshot(10),
             Some(PerpAccountSnapshot {
+                hedge_positions: None,
                 account_id: 10,
                 cash_balance: 10_000,
                 position_qty: -10,
@@ -1673,6 +2529,7 @@ mod tests {
         assert_eq!(
             accounts.account_snapshot(20),
             Some(PerpAccountSnapshot {
+                hedge_positions: None,
                 account_id: 20,
                 cash_balance: 80,
                 position_qty: 6,
@@ -1707,6 +2564,7 @@ mod tests {
         assert_eq!(
             accounts.account_snapshot(20),
             Some(PerpAccountSnapshot {
+                hedge_positions: None,
                 account_id: 20,
                 cash_balance: -50,
                 position_qty: -3,
@@ -1766,6 +2624,8 @@ mod tests {
     fn cross_margin_sync_rejects_overflow_without_mutating_account() {
         let mut accounts = PerpAccountStore::new(PerpClearingConfig::default(), 100).unwrap();
         accounts.create_account(20, 1);
+        accounts.create_account(30, 1000);
+        let before = serde_json::to_value(&accounts).unwrap();
 
         assert_eq!(
             accounts.sync_cross_margin_account(
@@ -1783,6 +2643,21 @@ mod tests {
             accounts.cross_margin_context(20),
             PerpCrossMarginContext::default()
         );
+        assert_eq!(serde_json::to_value(&accounts).unwrap(), before);
+        // A failed synchronization must also remove entries created for an
+        // account that did not exist before the transaction.
+        assert_eq!(
+            accounts.sync_cross_margin_account(
+                99,
+                Money::MAX,
+                PerpCrossMarginContext {
+                    other_unrealized_pnl: 1,
+                    ..PerpCrossMarginContext::default()
+                }
+            ),
+            Err(ClearingError::BalanceOverflow)
+        );
+        assert_eq!(serde_json::to_value(&accounts).unwrap(), before);
     }
 
     #[test]

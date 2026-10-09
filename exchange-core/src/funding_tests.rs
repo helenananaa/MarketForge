@@ -1,7 +1,7 @@
 use crate::*;
 use serde_json::json;
 
-fn scenario(base_rate_ppm: i32) -> ScenarioConfig {
+pub(super) fn scenario(base_rate_ppm: i32) -> ScenarioConfig {
     serde_json::from_value(json!({
         "room_id": "funded", "market": {"Spot": {
             "instrument": {"symbol": "V-USD-SPOT", "base_asset": "V", "quote_asset": "USD", "tick_size": 1, "lot_size": 1},
@@ -24,6 +24,7 @@ fn scenario(base_rate_ppm: i32) -> ScenarioConfig {
 
 fn limit(id: u64, account: u64, side: Side, price: i64, qty: u64) -> Command {
     Command::NewOrder(NewOrder {
+        position_side: crate::model::PositionSide::Both,
         order_id: id,
         account_id: account,
         side,
@@ -208,6 +209,7 @@ fn funding_missing_or_stale_prices_skip_without_deferred_charges() {
 fn funding_rounding_preserves_cash_and_detects_unbalanced_positions_and_overflow() {
     let snapshot = |id, qty| {
         PerpAccount {
+            hedge_positions: None,
             account_id: id,
             cash_balance: 1000,
             position_qty: qty,

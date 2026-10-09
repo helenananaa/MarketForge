@@ -15,6 +15,8 @@ import {
 import "./styles.css";
 import { AgentTraders } from "./AgentTraders";
 import backgroundMarket from "../../scripts/fixtures/background_market.json";
+import behaviorMarket from "../../scripts/fixtures/behavior_market.json";
+import microstructureMarket from "../../scripts/fixtures/microstructure_market.json";
 import linkedMarket from "../../scripts/fixtures/linked_market.json";
 
 type Side = "Buy" | "Sell";
@@ -57,6 +59,7 @@ type SpotAccount = {
   available_cash?: number;
 };
 type PerpAccount = SpotAccount & {
+  hedge_positions?: { long: { qty: number; avg_entry_price_tick: number }; short: { qty: number; avg_entry_price_tick: number } };
   equity: number;
   realized_pnl: number;
   unrealized_pnl: number;
@@ -143,6 +146,8 @@ function App() {
   const [view, setView] = useState<MarketView | null>(null);
   const [activeInstrument, setActiveInstrument] = useState("");
   const [linkedMarkets, setLinkedMarkets] = useState(true);
+  const [enhancedBehaviors, setEnhancedBehaviors] = useState(true);
+  const [microstructureBehaviors, setMicrostructureBehaviors] = useState(false);
   const refreshRequest = useRef(0);
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [roomEvents, setRoomEvents] = useState<RoomExecutionSummary[]>([]);
@@ -150,6 +155,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [side, setSide] = useState<Side>("Buy");
+  const [positionSide, setPositionSide] = useState<"Long" | "Short">("Long");
   const [orderKind, setOrderKind] = useState<"Limit" | "Market">("Limit");
   const [price, setPrice] = useState(100);
   const [qty, setQty] = useState(2);
@@ -166,6 +172,8 @@ function App() {
 
   const accounts = useMemo(() => flattenAccounts(view?.accounts), [view]);
   const selectedAccount = accounts.find((account) => account.account_id === accountId);
+  const hedgePositions = selectedAccount && isPerpAccount(selectedAccount) ? selectedAccount.hedge_positions : undefined;
+  const closingLeg = !!hedgePositions && ((positionSide === "Long" && side === "Sell") || (positionSide === "Short" && side === "Buy"));
   const quantityUnit = view && "Perp" in view.accounts ? "张" : "单位";
   const funding = view?.perp_price?.funding;
   const bestBid = view?.book.bids[0]?.price_tick;
@@ -274,12 +282,19 @@ function App() {
     if (!activeRoom || !autoRefresh || busy) {
       return;
     }
-    const handle = window.setInterval(() => {
-      refresh().catch((error: Error) =>
-        pushLog({ level: "warn", text: error.message }),
-      );
-    }, 900);
-    return () => window.clearInterval(handle);
+    let cancelled = false;
+    let handle: ReturnType<typeof window.setTimeout>;
+    const poll = async () => {
+      try {
+        await refresh();
+      } catch (error) {
+        if (!cancelled) pushLog({ level: "warn", text: error instanceof Error ? error.message : String(error) });
+      } finally {
+        if (!cancelled) handle = window.setTimeout(poll, 900);
+      }
+    };
+    handle = window.setTimeout(poll, 900);
+    return () => { cancelled = true; window.clearTimeout(handle); };
   }, [activeRoom, autoRefresh, busy, pushLog, refresh]);
 
   const loadSavedBots = async (room: string) => {
@@ -291,7 +306,7 @@ function App() {
     const nextRoom = roomId.trim() || ROOM_DEFAULT;
     setBusy(true);
     try {
-      const payload = sampleRoomPayload(nextRoom, linkedMarkets);
+      const payload = sampleRoomPayload(nextRoom, linkedMarkets, enhancedBehaviors, microstructureBehaviors);
       await api("/rooms", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -336,8 +351,11 @@ function App() {
     }
     setBusy(true);
     try {
-      const action =
-        orderKind === "Market"
+      const action = hedgePositions
+        ? orderKind === "Market"
+          ? { PlaceUnboundedMarket: { side, qty, position_side: positionSide, reduce_only: closingLeg } }
+          : { PlaceProtected: { side, qty, position_side: positionSide, price_tick: price, order_type: closingLeg ? "ImmediateOrCancel" : "Limit", reduce_only: closingLeg } }
+        : orderKind === "Market"
           ? { PlaceMarket: { side, qty } }
           : { PlaceLimit: { side, price_tick: price, qty } };
       const response = await api<OrderResponse>(`/rooms/${activeRoom}/orders`, {
@@ -487,6 +505,14 @@ function App() {
             <input type="checkbox" checked={linkedMarkets} onChange={(event) => setLinkedMarkets(event.target.checked)} />
             绑定永续
           </label>
+          <label className="auto-toggle">
+            <input type="checkbox" checked={enhancedBehaviors} disabled={!linkedMarkets} onChange={(event) => setEnhancedBehaviors(event.target.checked)} />
+            增强行为
+          </label>
+          <label className="auto-toggle">
+            <input type="checkbox" checked={microstructureBehaviors} disabled={!linkedMarkets || !enhancedBehaviors} onChange={(event) => setMicrostructureBehaviors(event.target.checked)} />
+            盘口反馈与杠杆
+          </label>
           <button onClick={loadRoom} disabled={busy || !roomId.trim()}>载入</button>
           <button onClick={() => refresh()} disabled={!activeRoom || busy}>
             <RefreshCw size={16} aria-hidden="true" />
@@ -551,15 +577,19 @@ function App() {
           </div>
           <div className="buy-sell-tabs">
             <button className={side === "Buy" ? "active" : ""} onClick={() => setSide("Buy")}>
-              买入
+              {hedgePositions ? positionSide === "Long" ? "开多" : "平空" : "买入"}
             </button>
             <button className={side === "Sell" ? "active sell" : ""} onClick={() => setSide("Sell")}>
-              卖出
+              {hedgePositions ? positionSide === "Long" ? "平多" : "开空" : "卖出"}
             </button>
           </div>
+          {hedgePositions && <div className="order-type-row" aria-label="选择持仓方向">
+            <button className={positionSide === "Long" ? "active" : ""} onClick={() => setPositionSide("Long")}>多仓</button>
+            <button className={positionSide === "Short" ? "active" : ""} onClick={() => setPositionSide("Short")}>空仓</button>
+          </div>}
           <div className="order-type-row">
             <button className={orderKind === "Limit" ? "active" : ""} onClick={() => setOrderKind("Limit")}>
-              限价委托
+              {closingLeg ? "限价平仓（IOC）" : "限价委托"}
             </button>
             <button className={orderKind === "Market" ? "active" : ""} onClick={() => setOrderKind("Market")}>
               市价委托
@@ -587,8 +617,12 @@ function App() {
           <div className="balance-lines">
             <span>可用现金</span>
             <strong>{selectedAccount?.available_cash ?? selectedAccount?.cash_balance ?? "-"}</strong>
-            <span>持仓数量</span>
+            <span>{hedgePositions ? "净持仓数量" : "持仓数量"}</span>
             <strong>{selectedAccount?.position_qty ?? "-"} {quantityUnit}</strong>
+            {hedgePositions && <>
+              <span>多仓 / 开仓均价</span><strong>{hedgePositions.long.qty} / {hedgePositions.long.avg_entry_price_tick}</strong>
+              <span>空仓 / 开仓均价</span><strong>{hedgePositions.short.qty} / {hedgePositions.short.avg_entry_price_tick}</strong>
+            </>}
             {selectedAccount && "funding_pnl" in selectedAccount && <>
               <span>累计资金费收付</span>
               <strong>{selectedAccount.funding_pnl ?? 0}</strong>
@@ -596,7 +630,7 @@ function App() {
           </div>
           <button className={side === "Buy" ? "submit buy" : "submit sell"} onClick={submitOrder} disabled={busy || !activeRoom}>
             <Send size={17} aria-hidden="true" />
-            {side === "Buy" ? "买入" : "卖出"} {quantityUnit}
+            {hedgePositions ? positionSide === "Long" ? side === "Buy" ? "开多" : "平多" : side === "Buy" ? "平空" : "开空" : side === "Buy" ? "买入" : "卖出"} {quantityUnit}
           </button>
           <div className="ai-box">
             <div className="ai-state">
@@ -929,7 +963,7 @@ function AccountTable({ accounts }: { accounts: AnyAccount[] }) {
           <div className="data-row" key={account.account_id}>
             <strong>{account.account_id}</strong>
             <span>{account.cash_balance}</span>
-            <span>{account.position_qty}</span>
+            <span>{isPerpAccount(account) && account.hedge_positions ? `多 ${account.hedge_positions.long.qty} / 空 ${account.hedge_positions.short.qty}` : account.position_qty}</span>
             <span>{accountEquity(account)}</span>
           </div>
         ))
@@ -956,8 +990,8 @@ function isPerpAccount(account: AnyAccount): account is PerpAccount {
   return Object.prototype.hasOwnProperty.call(account, "equity");
 }
 
-function sampleRoomPayload(roomId: string, linked: boolean) {
-  const recipe = structuredClone(linked ? linkedMarket : backgroundMarket);
+function sampleRoomPayload(roomId: string, linked: boolean, enhanced: boolean, microstructure: boolean) {
+  const recipe = structuredClone(linked ? (enhanced ? (microstructure ? microstructureMarket : behaviorMarket) : linkedMarket) : backgroundMarket);
   recipe.scenario.room_id = roomId;
   for (const bot of recipe.agents) bot.Plugin.participant.room_id = roomId;
   return recipe;

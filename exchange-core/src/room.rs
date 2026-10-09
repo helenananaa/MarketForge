@@ -36,6 +36,16 @@ pub struct RoomManager {
 }
 
 impl RoomManager {
+    /// A borrow-scoped observation wave: public data is built once per market.
+    /// Holding this immutable borrow prevents mutations from making the cache stale.
+    pub fn observation_batch<'a>(&'a self, room_id: &'a str) -> RoomObservationBatch<'a> {
+        RoomObservationBatch {
+            rooms: self,
+            room_id,
+            public: BTreeMap::new(),
+        }
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -80,6 +90,8 @@ impl RoomManager {
 
         let exchange = ExchangeActor::from_market(actor).map_err(RoomManagerError::MarketConfig)?;
         let mut room = SimulationRoom::from_exchange(exchange);
+        room.validate_market_events()
+            .map_err(|e| RoomManagerError::Scenario(ScenarioError::InvalidMarketEvents(e)))?;
         room.normalize_after_restore()
             .map_err(RoomManagerError::Actor)?;
         self.rooms.insert(room_id.clone(), room);
@@ -101,6 +113,8 @@ impl RoomManager {
         }
 
         let mut room = SimulationRoom::from_exchange(exchange);
+        room.validate_market_events()
+            .map_err(|e| RoomManagerError::Scenario(ScenarioError::InvalidMarketEvents(e)))?;
         room.normalize_after_restore()
             .map_err(RoomManagerError::Actor)?;
         self.rooms.insert(room_id.clone(), room);
@@ -121,6 +135,8 @@ impl RoomManager {
             return Err(RoomManagerError::RoomAlreadyExists { room_id });
         }
 
+        room.validate_market_events()
+            .map_err(|e| RoomManagerError::Scenario(ScenarioError::InvalidMarketEvents(e)))?;
         room.normalize_after_restore()
             .map_err(RoomManagerError::Actor)?;
         self.rooms.insert(room_id.clone(), room);
@@ -357,6 +373,7 @@ impl RoomManager {
     }
 
     fn refresh_pending_liquidations(&mut self, room_id: &str) -> Result<(), RoomManagerError> {
+        let _timer = crate::performance::Timer::start(3);
         let instrument_ids = {
             let room = self.simulation_room(room_id)?;
             let mut instrument_ids = Vec::new();
@@ -400,7 +417,7 @@ impl RoomManager {
                     accounts
                         .into_iter()
                         .filter(|account| {
-                            account.position_qty != 0
+                            account.has_open_position()
                                 && account.margin_status == crate::PerpMarginStatus::Liquidatable
                         })
                         .map(|account| account.account_id),
@@ -654,7 +671,32 @@ impl RoomManager {
                 }
             }
         }
-        public_trades.reverse();
+        // A durable engine checkpoint can omit the command history. The restored
+        // receipt projection still supplies actual recent trades; don't make a
+        // restart look like a market with no trades, or duplicate replayed ones.
+        if public_trades.len() < MAX_PUBLIC_TRADES_IN_OBSERVATION
+            && let Some((receipts, _)) = self.restored_bot_history.get(room_id)
+        {
+            let mut seen = public_trades
+                .iter()
+                .map(|trade| trade.trade_id)
+                .collect::<BTreeSet<_>>();
+            for receipt in receipts
+                .iter()
+                .rev()
+                .filter(|receipt| receipt.instrument_id == instrument_id)
+            {
+                if seen.insert(receipt.trade.trade_id) {
+                    public_trades.push(receipt.trade.clone());
+                    if public_trades.len() == MAX_PUBLIC_TRADES_IN_OBSERVATION {
+                        break;
+                    }
+                }
+            }
+        }
+        // Restored receipts may overlap the replay tail. Trade IDs are monotonic
+        // within one instrument, so sorting gives the same chronological window.
+        public_trades.sort_by_key(|trade| trade.trade_id);
 
         Ok(crate::observation::ParticipantObservation {
             version: PARTICIPANT_OBSERVATION_VERSION,
@@ -668,11 +710,34 @@ impl RoomManager {
             public_trades,
             own_orders,
             own_account,
+            related_markets: vec![],
+            market_events: room.visible_market_events(instrument_id),
             bot_market_data: None,
             perp_price: room
                 .perp_price_snapshot(instrument_id)
                 .map_err(RoomManagerError::Actor)?,
         })
+    }
+
+    /// Public peer markets and this caller's account only, under one room lock.
+    pub fn enrich_bot_observation(
+        &self,
+        observation: &mut crate::ParticipantObservation,
+        instruments: &[String],
+        account_id: AccountId,
+    ) -> Result<(), RoomManagerError> {
+        for instrument in instruments {
+            if instrument != &observation.instrument_id {
+                observation
+                    .related_markets
+                    .push(self.participant_observation(
+                        &observation.room_id,
+                        instrument,
+                        account_id,
+                    )?);
+            }
+        }
+        Ok(())
     }
 
     /// Build history under the same room lock as the participant snapshot.
@@ -705,6 +770,13 @@ impl RoomManager {
             if candles.len() > request.max_bars {
                 candles.drain(..candles.len() - request.max_bars);
             }
+            let external_volume_qty = receipts
+                .iter()
+                .filter(|r| {
+                    r.trade.maker_account_id != account_id && r.trade.taker_account_id != account_id
+                })
+                .fold(0u128, |n, r| n.saturating_add(u128::from(r.trade.qty)))
+                .to_string();
             let mut fills = Vec::new();
             let mut details = Vec::new();
             for receipt in receipts {
@@ -733,6 +805,7 @@ impl RoomManager {
                 fills.drain(..fills.len() - 4096);
             }
             observation.bot_market_data = Some(crate::BotMarketData {
+                external_volume_qty,
                 interval_ms: request.interval_ms,
                 candles,
                 own_fills: fills,
@@ -977,6 +1050,11 @@ impl RoomManager {
                 .simulation_room_mut(room_id)?
                 .advance_clock(steps)
                 .map_err(RoomManagerError::Simulation)?;
+            let clock_executions = self.simulation_room_mut(room_id)?.take_clock_executions();
+            self.executions
+                .entry(room_id.to_string())
+                .or_default()
+                .extend(clock_executions);
             self.advance_pending_liquidations(room_id, usize::MAX)?;
             return Ok(transfers);
         }
@@ -1005,7 +1083,7 @@ impl RoomManager {
                 room.advance_clock(1)
                     .map_err(RoomManagerError::Simulation)?,
             );
-            let funding = room.take_funding_executions();
+            let funding = room.take_clock_executions();
             self.executions
                 .entry(room_id.to_string())
                 .or_default()
@@ -1078,6 +1156,67 @@ impl RoomManager {
     }
 }
 
+pub struct RoomObservationBatch<'a> {
+    rooms: &'a RoomManager,
+    room_id: &'a str,
+    public: BTreeMap<String, crate::ParticipantObservation>,
+}
+
+impl RoomObservationBatch<'_> {
+    pub fn bot_observation(
+        &mut self,
+        instrument_id: &str,
+        account_id: AccountId,
+        request: Option<crate::bots::BotMarketDataRequest>,
+        related: &[String],
+    ) -> Result<crate::ParticipantObservation, RoomManagerError> {
+        // History-dependent bots retain their exact account-specific fill and
+        // volume projections. Ordinary bots only need the shared public view.
+        let mut view = if request.is_some() {
+            self.rooms
+                .bot_observation(self.room_id, instrument_id, account_id, request)?
+        } else {
+            self.participant(instrument_id, account_id)?
+        };
+        for instrument in related {
+            if instrument != instrument_id {
+                view.related_markets
+                    .push(self.participant(instrument, account_id)?);
+            }
+        }
+        Ok(view)
+    }
+
+    fn participant(
+        &mut self,
+        instrument: &str,
+        account: AccountId,
+    ) -> Result<crate::ParticipantObservation, RoomManagerError> {
+        if let Some(public) = self.public.get(instrument) {
+            let mut view = public.clone();
+            view.own_account = self
+                .rooms
+                .account_snapshot_for(self.room_id, instrument, account)?
+                .filter(|snapshot| match snapshot {
+                    crate::AccountSnapshot::Spot(value) => value.account_id == account,
+                    crate::AccountSnapshot::Perp(value) => value.account_id == account,
+                });
+            view.own_orders =
+                self.rooms
+                    .resting_orders_for_account(self.room_id, instrument, account)?;
+            return Ok(view);
+        }
+        let view = self
+            .rooms
+            .participant_observation(self.room_id, instrument, account)?;
+        let mut public = view.clone();
+        public.own_account = None;
+        public.own_orders.clear();
+        self.public.insert(instrument.to_string(), public);
+        Ok(view)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoomBootstrap {
     pub room_id: RoomId,
@@ -1143,9 +1282,12 @@ mod tests {
         transfer::{VenueTransferRejectReason, VenueTransferStatus},
     };
 
+    include!("order_protection_tests.rs");
+
     fn spot_scenario(room_id: &str) -> ScenarioConfig {
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: crate::VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -1178,6 +1320,7 @@ mod tests {
     fn pending_perp_liquidation_scenario(room_id: &str) -> ScenarioConfig {
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: crate::VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -1243,6 +1386,7 @@ mod tests {
         };
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: crate::VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -1322,6 +1466,7 @@ mod tests {
             .apply_to_instrument(
                 "V-ETH-PERP",
                 Command::NewOrder(NewOrder {
+                    position_side: crate::model::PositionSide::Both,
                     order_id: 2,
                     account_id: 20,
                     side: Side::Buy,
@@ -1351,6 +1496,7 @@ mod tests {
     fn perp_transfer_sync_scenario(room_id: &str, delay_steps: u64) -> ScenarioConfig {
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: crate::VenueRuleConfig {
                 transfers: crate::TransferPolicyConfig {
@@ -1399,6 +1545,7 @@ mod tests {
 
     fn limit(order_id: u64, account_id: u64, side: Side, price_tick: i64, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id,
             side,
@@ -1432,6 +1579,7 @@ mod tests {
     ) -> ScenarioConfig {
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: crate::VenueRuleConfig {
                 transfers: crate::TransferPolicyConfig {
@@ -1551,6 +1699,22 @@ mod tests {
             interval_ms: 1000,
             max_bars: 64,
         };
+        {
+            let mut batch = manager.observation_batch("history");
+            for account in [20, 30, 10, 999, 20] {
+                for history in [None, Some(request)] {
+                    assert_eq!(
+                        batch
+                            .bot_observation("V-BTC-SPOT", account, history, &[])
+                            .unwrap(),
+                        manager
+                            .bot_observation("history", "V-BTC-SPOT", account, history)
+                            .unwrap(),
+                        "shared public snapshots must not leak accounts or fills"
+                    );
+                }
+            }
+        }
         let view = manager
             .bot_observation("history", "V-BTC-SPOT", 20, Some(request))
             .unwrap();
@@ -1777,6 +1941,7 @@ mod tests {
     fn room_manager_records_perp_liquidation_execution() {
         let scenario = ScenarioConfig {
             room_id: "perp-liquidation-room".to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: crate::VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -1827,6 +1992,7 @@ mod tests {
             .apply(
                 "perp-liquidation-room",
                 Command::NewOrder(NewOrder {
+                    position_side: crate::model::PositionSide::Both,
                     order_id: 2,
                     account_id: 20,
                     side: Side::Buy,
@@ -1869,6 +2035,7 @@ mod tests {
             .apply(
                 "perp-retry-room",
                 Command::NewOrder(NewOrder {
+                    position_side: crate::model::PositionSide::Both,
                     order_id: 2,
                     account_id: 20,
                     side: Side::Buy,
@@ -1968,6 +2135,7 @@ mod tests {
             .apply(
                 room_id,
                 Command::NewOrder(NewOrder {
+                    position_side: crate::model::PositionSide::Both,
                     order_id: 2,
                     account_id: 20,
                     side: Side::Buy,
@@ -2020,6 +2188,7 @@ mod tests {
             .apply(
                 room_id,
                 Command::NewOrder(NewOrder {
+                    position_side: crate::model::PositionSide::Both,
                     order_id: 2,
                     account_id: 20,
                     side: Side::Buy,
@@ -2109,6 +2278,7 @@ mod tests {
                 room_id,
                 "V-BTC-PERP",
                 Command::NewOrder(NewOrder {
+                    position_side: crate::model::PositionSide::Both,
                     order_id: 2,
                     account_id: 20,
                     side: Side::Buy,
@@ -2418,6 +2588,7 @@ mod tests {
         balances.insert("USDT".to_string(), 1_000);
         let scenario = ScenarioConfig {
             room_id: "multi-venue-room".to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: crate::VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -2761,6 +2932,7 @@ mod tests {
         balances.insert("PENGUIN".to_string(), 1_000);
         let scenario = ScenarioConfig {
             room_id: "penguin-room".to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: crate::VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig {

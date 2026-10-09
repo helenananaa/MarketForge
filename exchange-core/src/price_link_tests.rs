@@ -21,6 +21,7 @@ fn scenario() -> ScenarioConfig {
 
 fn limit(id: u64, account: u64, side: Side, price: i64, qty: u64) -> Command {
     Command::NewOrder(NewOrder {
+        position_side: crate::model::PositionSide::Both,
         order_id: id,
         account_id: account,
         side,

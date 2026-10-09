@@ -1,0 +1,1285 @@
+"""
+L1: Transport Layer — the lowest-level I/O layer.
+
+Responsibilities:
+  * Open / close raw WebSocket connections (returns the connection object)
+  * Send HTTP GET requests to REST endpoints (returns raw JSON)
+  * Rotate through multiple base URLs on failure
+  * Support user-configured proxy
+  * Expose metrics: requests_sent, requests_failed, active_endpoint, etc.
+
+This layer knows NOTHING about market-data semantics — it just moves bytes.
+It is **stream-type agnostic**: the caller tells it which WS stream name
+to connect to and which REST endpoint + params to hit.
+"""
+
+from __future__ import annotations
+
+from app.core.config import getenv as app_getenv
+
+import asyncio
+import json
+import logging
+import sys
+import time
+from typing import Any
+
+import aiohttp
+import websockets
+
+from app.exchanges import (
+    HistoricalRequest,
+    RateLimitAdmission,
+    RateLimitDeferred,
+    bootstrap_default_adapters,
+    get_exchange_registry,
+    get_shared_rate_limit_manager,
+    get_shared_rate_limit_semaphore,
+)
+from app.exchanges.rate_limits import RateLimitReservation
+from app.exchanges.ws_protocol import (
+    WsConnectionContext,
+    WsSubscriptionMode,
+)
+from app.data_engine.market_data import TransportMode, market_channel_for_stream_type
+
+from .config import IngestionConfig
+from .metrics import LayerMetrics
+from .models import (
+    StreamDescriptor,
+    StreamType,
+    TransportRequest,
+    DataSource,
+    RawMessage,
+)
+
+logger = logging.getLogger("ingestion.L1_Transport")
+
+_NON_RETRYABLE_HTTP_BODY_CODES = frozenset({"-1130"})
+
+
+class _ProxyObservedWebSocket:
+    """Count native receives before handshake decoding or subscriber fanout."""
+
+    def __init__(self, connection: Any, pool: Any, lease: Any) -> None:
+        self._connection, self._pool, self._lease = connection, pool, lease
+        self._closing = False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)
+
+    def _received(self, payload: Any) -> None:
+        if not self._closing:
+            self._pool.record_ws_receive(self._lease, payload)
+
+    def _disconnected(self) -> None:
+        if not self._closing:
+            self._pool.mark_ws_disconnected(self._lease)
+
+    async def recv(self, *args: Any, **kwargs: Any) -> Any:
+        try:
+            payload = await self._connection.recv(*args, **kwargs)
+        except websockets.exceptions.ConnectionClosed:
+            self._disconnected()
+            raise
+        self._received(payload)
+        return payload
+
+    async def __aiter__(self):
+        try:
+            async for payload in self._connection:
+                self._received(payload)
+                yield payload
+        except Exception:
+            self._disconnected()
+            raise
+        else:
+            self._disconnected()
+
+    async def close(self, *args: Any, **kwargs: Any) -> Any:
+        self._closing = True
+        return await self._connection.close(*args, **kwargs)
+
+
+class TransportLayer:
+    """Async HTTP + WS transport with endpoint rotation.
+
+    Shared across all pipelines — one instance per ``MarketDataIngress``.
+    """
+
+    def __init__(self, config: IngestionConfig) -> None:
+        self._cfg = config
+        self._metrics = LayerMetrics("L1_Transport")
+        bootstrap_default_adapters()
+        self._registry = get_exchange_registry()
+        self._rate_limits = get_shared_rate_limit_manager()
+
+        # Endpoint rotation state
+        self._http_idx: dict[tuple[str, str], int] = {}
+        self._ws_idx: dict[tuple[str, str], int] = {}
+        self._last_http_base: str = ""
+        self._last_ws_base: str = ""
+
+        # Shared HTTP session (created lazily)
+        self._http_session: aiohttp.ClientSession | None = None
+        self._route_configs: dict[tuple[str, str, str], IngestionConfig] = {}
+        self._ws_contexts: dict[str, WsConnectionContext] = {}
+
+    def _bound_route_config(self, route: Any) -> IngestionConfig:
+        key = (route.id, route.url, route.egress_group)
+        config = self._route_configs.get(key)
+        if config is None:
+            config = route.bind(self._cfg)
+            self._route_configs[key] = config
+        return config
+
+    # ── Public: Proxy resolution ─────────────────────────────
+
+    def _resolve_proxy(self) -> str | None:
+        """Resolve the effective proxy URL based on proxy_mode.
+
+        Returns None when no proxy should be used.
+
+        On Windows, proxy tools like v2rayN / Clash set the system proxy
+        in the registry rather than environment variables.
+        ``urllib.request.getproxies()`` handles this transparently.
+        """
+
+        mode = getattr(self._cfg, "proxy_mode", "system")
+
+        if mode == "none":
+            return None
+
+        if mode == "custom":
+            proxy = self._cfg.http_proxy
+            return proxy if proxy else None
+        if mode == "pool":
+            routes = [route for route in self._cfg.proxy_routes if route.get("enabled", True)]
+            if not routes:
+                raise ValueError("no enabled proxy route")
+            return routes[0]["url"]
+
+        # mode == "system" (default) — env vars first, then OS-level settings
+        env_proxy = (
+            app_getenv("HTTPS_PROXY")
+            or app_getenv("HTTP_PROXY")
+            or app_getenv("https_proxy")
+            or app_getenv("http_proxy")
+            or app_getenv("ALL_PROXY")
+            or app_getenv("all_proxy")
+        )
+        if env_proxy:
+            return env_proxy
+
+        # Fallback: read from Windows registry / macOS scutil / etc.
+        # Note: getproxies() short-circuits when getproxies_environment()
+        # returns any entry (e.g. no_proxy), skipping the registry reader.
+        # Call getproxies_registry() directly on Windows to avoid this.
+        import sys
+
+        if sys.platform == "win32":
+            from urllib.request import getproxies_registry
+
+            proxies = getproxies_registry()
+        else:
+            from urllib.request import getproxies
+
+            proxies = getproxies()
+        os_proxy = proxies.get("https") or proxies.get("http")
+        if os_proxy:
+            return os_proxy
+
+        return self._cfg.http_proxy or None
+
+    # ── Public: Metrics ──────────────────────────────────────
+
+    @property
+    def config(self) -> IngestionConfig:
+        return self._cfg
+
+    @property
+    def metrics(self) -> LayerMetrics:
+        return self._metrics
+
+    def snapshot(self) -> dict:
+        return {
+            "layer": "L1_Transport",
+            "active_http_endpoint": self.current_http_base,
+            "active_ws_endpoint": self.current_ws_base,
+            "active_http_endpoints": {
+                f"{exchange}:{market_type}": self._current_http_base(
+                    exchange, market_type, urls
+                )
+                for (
+                    exchange,
+                    market_type,
+                ), urls in self._diagnostic_http_url_map().items()
+            },
+            "active_ws_endpoints": {
+                f"{exchange}:{market_type}": self._current_ws_base(
+                    exchange, market_type, urls
+                )
+                for (
+                    exchange,
+                    market_type,
+                ), urls in self._diagnostic_ws_url_map().items()
+            },
+            "metrics": self._metrics.snapshot(),
+            "exchange_rate_limits": self._rate_limits.snapshot(),
+            "provider_history_transports": self._provider_history_snapshots(),
+        }
+
+    def _provider_history_snapshots(self) -> dict[str, dict[str, Any]]:
+        snapshots: dict[str, dict[str, Any]] = {}
+        for plugin in self._registry.list_plugins():
+            snapshot = getattr(plugin, "history_transport_snapshot", None)
+            if not callable(snapshot):
+                continue
+            try:
+                value = snapshot(self._cfg)
+            except Exception as exc:
+                value = {"diagnostic_error": f"{type(exc).__name__}: {exc}"}
+            if isinstance(value, dict):
+                if self._route_configs:
+                    value = {**value, "proxy_routes": {
+                        route_id: snapshot(config)
+                        for (route_id, _url, _group), config in self._route_configs.items()
+                    }}
+                snapshots[str(plugin.id)] = value
+        return snapshots
+
+    # ── Public: Lifecycle ────────────────────────────────────
+
+    async def start(self) -> None:
+        """Initialize shared resources (HTTP session)."""
+        if self._http_session is None or self._http_session.closed:
+            timeout = aiohttp.ClientTimeout(total=self._cfg.http_timeout)
+            connector = None
+            if sys.platform == "win32":
+                # aiohttp prefers aiodns when it is installed.  On the
+                # CandleScope Windows host that resolver cannot reach the OS
+                # DNS configuration, while getaddrinfo succeeds.  Keep the
+                # workaround local to this owned session.
+                connector = aiohttp.TCPConnector(
+                    resolver=aiohttp.ThreadedResolver(),
+                )
+            self._http_session = aiohttp.ClientSession(
+                timeout=timeout,
+                connector=connector,
+            )
+            logger.info("HTTP session created (timeout=%ss)", self._cfg.http_timeout)
+
+    async def stop(self) -> None:
+        """Release shared resources."""
+        for plugin in self._registry.list_plugins():
+            close_history_transport = getattr(
+                plugin,
+                "close_history_transport",
+                None,
+            )
+            if not callable(close_history_transport):
+                continue
+            try:
+                for config in (self._cfg, *self._route_configs.values()):
+                    await close_history_transport(config)
+            except Exception:
+                logger.warning(
+                    "Failed to close %s provider history transport",
+                    plugin.id,
+                    exc_info=True,
+                )
+        self._route_configs.clear()
+        for context in list(self._ws_contexts.values()):
+            await self.ws_close(context)
+        if self._http_session and not self._http_session.closed:
+            await self._http_session.close()
+            self._http_session = None
+            logger.info("HTTP session closed")
+
+    async def restart_http_session(self) -> None:
+        """Restart the HTTP session (e.g. after proxy config change)."""
+        await self.stop()
+        await self.start()
+        proxy = self._resolve_proxy()
+        logger.info("HTTP session restarted (proxy=%s)", proxy or "none")
+
+    # ── Public: HTTP ─────────────────────────────────────────
+
+    async def http_fetch(self, req: TransportRequest) -> list[RawMessage]:
+        from app.core.proxy_pool import get_proxy_pool
+
+        if getattr(self._cfg, "proxy_mode", "system") != "pool" and req.proxy_route is None:
+            return await self._http_fetch(req)
+        pool = get_proxy_pool()
+        reservation = req.quota_reservation
+        if reservation is not None and reservation.proxy_route is not None:
+            req.proxy_route = reservation.proxy_route
+        if req.proxy_route is None:
+            admission = await self.http_admission(req)
+            if req.defer_on_rate_limit and not admission.allowed:
+                raise RateLimitDeferred(admission)
+        route = req.proxy_route
+        started = time.monotonic()
+        entered = False
+        try:
+            while not entered:
+                try:
+                    pool.begin(route, req.descriptor.exchange)
+                    entered = True
+                except RateLimitDeferred as exc:
+                    if req.defer_on_rate_limit:
+                        raise
+                    await asyncio.sleep(exc.retry_after_seconds)
+            result = await self._http_fetch(req)
+            pool.record(route, req.descriptor.exchange, elapsed=time.monotonic() - started)
+            return result
+        except RateLimitDeferred:
+            if reservation is not None and not reservation.settled:
+                reservation.record_response(response_unknown=True)
+            raise
+        except asyncio.CancelledError:
+            if reservation is not None and not reservation.settled:
+                reservation.record_response(response_unknown=True)
+            raise
+        except Exception as exc:
+            pool.record(route, req.descriptor.exchange, error=exc)
+            raise
+        finally:
+            if entered:
+                pool.end(route)
+
+    async def _http_fetch(self, req: TransportRequest) -> list[RawMessage]:
+        """Fetch data via REST API for any stream type.
+
+        Tries each endpoint on failure.
+        Returns a list of ``RawMessage`` with raw payloads.
+        Raises ``TransportError`` if ALL endpoints fail.
+        """
+        desc = req.descriptor
+        exchange = getattr(desc, "exchange", "binance")
+        market_type = getattr(desc, "market_type", "spot")
+        quota_acquired = bool(req.quota_acquired)
+        quota_semaphore_held = bool(req.quota_semaphore_held)
+        quota_reservation = req.quota_reservation
+        req.quota_acquired = False
+        req.quota_semaphore_held = False
+        req.quota_reservation = None
+
+        try:
+            plugin = self._registry.get_plugin(exchange)
+        except Exception:
+            if quota_reservation is not None:
+                quota_reservation.record_response(response_unknown=True)
+            raise
+        configured_provider_fetch = getattr(
+            plugin,
+            "fetch_history_with_config",
+            None,
+        )
+        provider_fetch = getattr(plugin, "fetch_history", None)
+        if callable(configured_provider_fetch):
+            async def provider_fetch(request: TransportRequest) -> list[RawMessage]:
+                config = self._bound_route_config(request.proxy_route) if request.proxy_route else self._cfg
+                return await configured_provider_fetch(request, config)
+        if callable(provider_fetch):
+            provider_gate = None
+            provider_gate_held = False
+            try:
+                if req.proxy_route is not None and quota_reservation is None:
+                    from app.exchanges.rate_limits import scope_rate_limit_rule
+                    endpoint = plugin.provider_rate_limit_endpoint(req)
+                    quota_request = HistoricalRequest(exchange=exchange, market_type=market_type,
+                        endpoint=endpoint, symbol=desc.symbol, interval=desc.interval, limit=req.limit)
+                    rule = scope_rate_limit_rule(plugin.rate_limit_policy(self._cfg).rule_for(quota_request),
+                                                 req.proxy_route.egress_group)
+                    await self._wait_for_http_admission(rule, quota_request,
+                                                      defer=req.defer_on_rate_limit)
+                    provider_gate = get_shared_rate_limit_semaphore(rule)
+                    await provider_gate.acquire()
+                    provider_gate_held = True
+                    await self._rate_limits.acquire_nowait(rule, quota_request)
+                    quota_reservation = RateLimitReservation(self._rate_limits, rule, quota_request,
+                                                            proxy_route=req.proxy_route)
+                self._metrics.inc("plugin_requests_sent")
+                messages = await provider_fetch(req)
+                if quota_reservation is not None:
+                    # Raw providers preserve quota headers when available.
+                    # An empty successful page still settles the probe lease.
+                    feedback = {"status_code": 200}
+                    if messages and messages[0].http_headers:
+                        feedback["headers"] = messages[0].http_headers
+                    quota_reservation.record_response(**feedback)
+                self._metrics.inc("plugin_requests_ok")
+                self._metrics.mark("plugin_last_success_at")
+                return messages
+            except asyncio.CancelledError:
+                if quota_reservation is not None:
+                    quota_reservation.record_response(
+                        response_unknown=True,
+                    )
+                raise
+            except RateLimitDeferred:
+                raise
+            except TransportError as exc:
+                if quota_reservation is not None:
+                    quota_reservation.record_response(
+                        status_code=exc.status_code,
+                        headers=exc.headers,
+                        body_code=exc.body_code,
+                        retry_after=exc.retry_after,
+                        fallback_cooldown_seconds=(
+                            quota_reservation.rule.cooldown_seconds
+                        ),
+                    )
+                    exc.rate_limit_recorded = True
+                raise
+            except Exception as exc:
+                # CCXT quota errors must cool the selected exit rather than
+                # being mistaken for an ordinary proxy transport failure.
+                import ccxt
+                import re
+                status = getattr(exc, "status_code", None)
+                if isinstance(exc, ccxt.RateLimitExceeded):
+                    status = 429
+                if isinstance(exc, ccxt.BaseError):
+                    match = re.search(r"(?:^|\s)(418|429)(?:\s|:|$)", str(exc))
+                    if match:
+                        status = int(match.group(1))
+                headers = getattr(exc, "headers", None) or {}
+                body = str(exc)
+                body_code = _extract_body_code(body[body.find("{"):]) if "{" in body else None
+                if quota_reservation is not None:
+                    quota_reservation.record_response(
+                        status_code=status, headers=headers, body_code=body_code,
+                        retry_after=_parse_retry_after(headers.get("Retry-After") or headers.get("retry-after")),
+                        fallback_cooldown_seconds=quota_reservation.rule.cooldown_seconds,
+                    )
+                self._metrics.inc("plugin_requests_failed")
+                self._metrics.mark("plugin_last_error_at")
+                wrapped = TransportError(
+                    f"Provider fetch failed for {desc.key}: [{type(exc).__name__}] {exc}",
+                    status_code=status, headers=headers, body_code=body_code,
+                    retry_after=_parse_retry_after(headers.get("Retry-After") or headers.get("retry-after")),
+                )
+                wrapped.rate_limit_recorded = quota_reservation is not None
+                raise wrapped from exc
+            finally:
+                if provider_gate_held:
+                    provider_gate.release()
+
+        try:
+            await self._ensure_http_session()
+            protocol = plugin.protocol()
+            spec = protocol.rest_request(req, config=self._cfg)
+            if spec is None:
+                raise TransportError(
+                    f"No REST endpoint for stream type: {desc.stream_type}"
+                )
+
+            params = spec.params
+            actual_quota_request = HistoricalRequest(
+                exchange=exchange,
+                market_type=market_type,
+                endpoint=spec.path,
+                symbol=desc.symbol,
+                interval=desc.interval,
+                start_ms=req.start_ms,
+                end_ms=req.end_ms,
+                limit=req.limit,
+                params=dict(params),
+            )
+            if quota_reservation is not None:
+                # The admitting caller already selected the exact policy
+                # context. Rebuilding it from this transport's config can
+                # silently change the bucket, cost, or concurrency owner.
+                quota_manager = quota_reservation.manager
+                quota_rule = quota_reservation.rule
+                quota_request = quota_reservation.request
+                quota_concurrency = max(1, int(quota_rule.max_concurrency or 1))
+            else:
+                quota_policy = plugin.rate_limit_policy(self._cfg)
+                quota_manager = self._rate_limits
+                quota_rule = quota_policy.rule_for(actual_quota_request)
+                if req.proxy_route is not None:
+                    from app.exchanges.rate_limits import scope_rate_limit_rule
+                    quota_rule = scope_rate_limit_rule(quota_rule, req.proxy_route.egress_group)
+                quota_request = actual_quota_request
+                quota_concurrency = quota_policy.concurrency_for(market_type)
+            quota_semaphore = get_shared_rate_limit_semaphore(
+                quota_rule,
+                fallback=quota_concurrency,
+            )
+            http_urls = spec.base_urls
+            total = len(http_urls)
+            if total == 0:
+                raise TransportError(
+                    f"No HTTP endpoints configured for exchange: {exchange}"
+                )
+        except BaseException:
+            # Transport consumed the one-shot handoff above. If setup fails or
+            # is cancelled before a physical attempt takes ownership, release
+            # any strict probe conservatively instead of leaking its lease.
+            if quota_reservation is not None and not quota_reservation.settled:
+                quota_reservation.record_response(response_unknown=True)
+            raise
+
+        last_exc: Exception | None = None
+        tried = 0
+
+        while tried < total:
+            base = self._current_http_base(exchange, market_type, http_urls)
+            url = f"{base}{spec.path}"
+            # A caller-owned reservation defines the authoritative quota
+            # context for the complete request.  Its ownership applies only to
+            # the first physical attempt; each failover attempt acquires and
+            # settles a fresh reservation on the same manager/rule/request.
+            attempt_reservation: RateLimitReservation | None = (
+                quota_reservation if tried == 0 else None
+            )
+            active_manager = quota_manager
+            active_rule = quota_rule
+            active_request = quota_request
+            active_semaphore = quota_semaphore
+
+            def record_active_response(**kwargs: Any) -> bool:
+                if attempt_reservation is not None:
+                    return attempt_reservation.record_response(**kwargs)
+                return active_manager.record_response(active_rule, **kwargs)
+
+            acquired_here = False
+            response_headers_accounted = False
+            response_completed = False
+            try:
+                needs_quota = not (quota_acquired and tried == 0)
+                if needs_quota:
+                    # Wait/return before taking the scarce endpoint gate, but
+                    # do not consume yet. A queued request must re-check after
+                    # the gate because another in-flight request may have
+                    # opened a shared 418 circuit in the meantime.
+                    await self._wait_for_http_admission(
+                        active_rule,
+                        active_request,
+                        defer=req.defer_on_rate_limit,
+                        manager=active_manager,
+                    )
+                if not quota_semaphore_held:
+                    await active_semaphore.acquire()
+                    acquired_here = True
+                if needs_quota:
+                    try:
+                        await active_manager.acquire_nowait(
+                            active_rule,
+                            active_request,
+                        )
+                        attempt_reservation = RateLimitReservation(
+                            manager=active_manager,
+                            rule=active_rule,
+                            request=active_request,
+                        )
+                    except RateLimitDeferred:
+                        if req.defer_on_rate_limit:
+                            raise
+                        # The circuit/budget changed while waiting for the
+                        # semaphore. Release it and repeat the non-consuming
+                        # wait; never sleep while monopolizing the gate.
+                        if acquired_here:
+                            active_semaphore.release()
+                            acquired_here = False
+                        continue
+
+                self._metrics.inc("http_requests_sent")
+                self._metrics.set("http_active_endpoint", base)
+                self._metrics.mark("http_last_request_at")
+
+                proxy = req.proxy_route.url if req.proxy_route else self._resolve_proxy()
+                async with self._http_session.get(
+                    url, params=params, headers=spec.headers, proxy=proxy
+                ) as resp:  # type: ignore[union-attr]
+                    headers = {str(k): str(v) for k, v in resp.headers.items()}
+                    if resp.status != 200:
+                        body = ""
+                        body_error: Exception | None = None
+                        try:
+                            body = await resp.text()
+                        except asyncio.CancelledError:
+                            # The response head is already authoritative even
+                            # when cancellation interrupts the body. Preserve
+                            # Retry-After/used-limit metadata before the outer
+                            # cancellation path settles an unknown body.
+                            record_active_response(
+                                status_code=resp.status,
+                                headers=headers,
+                                retry_after=_parse_retry_after(
+                                    resp.headers.get("Retry-After")
+                                ),
+                                response_complete=False,
+                            )
+                            response_headers_accounted = True
+                            raise
+                        except Exception as exc:
+                            # Status and headers are already authoritative.  In
+                            # particular, a reset while reading a 418/429 body
+                            # must not erase Retry-After or turn one exchange
+                            # warning into failover traffic against every host.
+                            body_error = exc
+                        if resp.status == 400 and body_error is None:
+                            logger.error(
+                                "HTTP 400 from %s — params=%r url=%s body=%s",
+                                base,
+                                params,
+                                resp.url,
+                                body[:300],
+                            )
+                        raise TransportError(
+                            (
+                                f"HTTP {resp.status}: {body[:200]}"
+                                if body_error is None
+                                else (
+                                    f"HTTP {resp.status}: response body unavailable: "
+                                    f"{body_error}"
+                                )
+                            ),
+                            status_code=resp.status,
+                            retry_after=_parse_retry_after(
+                                resp.headers.get("Retry-After")
+                            ),
+                            headers=headers,
+                            body_code=_extract_body_code(body),
+                        )
+                    # Exchange quota headers are authoritative as soon as the
+                    # response head arrives.  Account them before consuming or
+                    # decoding the body so a truncated/malformed HTTP 200 does
+                    # not erase used-weight and invite an oversized failover.
+                    record_active_response(
+                        status_code=resp.status,
+                        headers=headers,
+                        response_complete=False,
+                    )
+                    response_headers_accounted = True
+                    data = await resp.json()
+                    body_code = _extract_body_code(data)
+                    record_active_response(
+                        status_code=resp.status,
+                        headers=headers,
+                        body_code=body_code,
+                        retry_after=_parse_retry_after(resp.headers.get("Retry-After")),
+                        fallback_cooldown_seconds=active_rule.cooldown_seconds,
+                    )
+                    response_completed = True
+                    if body_code not in (None, "0"):
+                        raise TransportError(
+                            f"Exchange error {body_code}: {str(data)[:200]}",
+                            status_code=resp.status,
+                            retry_after=_parse_retry_after(
+                                resp.headers.get("Retry-After")
+                            ),
+                            headers=headers,
+                            body_code=body_code,
+                        )
+
+                self._metrics.inc("http_requests_ok")
+                self._metrics.mark("http_last_success_at")
+                self._last_http_base = base
+                now_ms = int(time.time() * 1000)
+
+                rows = protocol.extract_http_rows(data, desc)
+
+                return [
+                    RawMessage(
+                        payload=row,
+                        source=DataSource.HTTP,
+                        stream_type=desc.stream_type,
+                        received_at_ms=now_ms,
+                        endpoint=base,
+                        http_status=200,
+                        http_headers=headers,
+                        http_body_code=body_code,
+                        request_limit=req.limit,
+                    )
+                    for row in rows
+                ]
+
+            except asyncio.CancelledError:
+                if not response_completed and attempt_reservation is not None:
+                    record_active_response(response_unknown=True)
+                raise
+            except RateLimitDeferred:
+                # No physical request was made.  Preserve the typed scheduler
+                # control signal and never rotate endpoints for shared budget.
+                raise
+            except Exception as exc:
+                last_exc = exc
+                # A successful response head may already have accounted the
+                # physical request before JSON/body parsing failed. Preserve
+                # that status/used-weight, but complete any strict probe as an
+                # unknown result so its next admission ramps safely from zero.
+                if response_headers_accounted and not response_completed:
+                    record_active_response(
+                        response_unknown=True,
+                    )
+                elif not response_completed:
+                    record_active_response(
+                        status_code=getattr(exc, "status_code", None),
+                        headers=getattr(exc, "headers", None),
+                        body_code=getattr(exc, "body_code", None),
+                        retry_after=getattr(exc, "retry_after", None),
+                        fallback_cooldown_seconds=active_rule.cooldown_seconds,
+                    )
+                self._metrics.inc("http_requests_failed")
+                self._metrics.mark("http_last_error_at")
+                if isinstance(exc, TransportError):
+                    exc.rate_limit_recorded = True
+                if _is_rate_limit_http_error(exc):
+                    # Alternate Binance/OKX hostnames share the same IP quota;
+                    # failover would multiply the warning into a temporary ban.
+                    if req.defer_on_rate_limit:
+                        raise await active_manager.deferred_error(
+                            active_rule,
+                            active_request,
+                        ) from exc
+                    raise
+                if _is_non_retryable_http_error(exc):
+                    raise
+                logger.warning(
+                    "HTTP fetch failed (%s): [%s] %s",
+                    base,
+                    type(exc).__name__,
+                    exc,
+                )
+                self._rotate_http(exchange, market_type, len(http_urls))
+                tried += 1
+            finally:
+                if acquired_here:
+                    active_semaphore.release()
+
+        if isinstance(last_exc, TransportError):
+            wrapped = TransportError(
+                f"All {total} HTTP endpoints failed; last error: "
+                f"[{type(last_exc).__name__}] {last_exc}",
+                status_code=last_exc.status_code,
+                retry_after=last_exc.retry_after,
+                headers=last_exc.headers,
+                body_code=last_exc.body_code,
+            )
+            wrapped.rate_limit_recorded = last_exc.rate_limit_recorded
+            raise wrapped from last_exc
+        raise TransportError(
+            f"All {total} HTTP endpoints failed; last error: [{type(last_exc).__name__}] {last_exc}"
+        ) from last_exc
+
+    async def http_admission(self, req: TransportRequest) -> RateLimitAdmission:
+        """Inspect REST quota for ``req`` without consuming it or doing I/O."""
+
+        desc = req.descriptor
+        exchange = getattr(desc, "exchange", "binance")
+        market_type = getattr(desc, "market_type", "spot")
+        plugin = self._registry.get_plugin(exchange)
+        protocol = plugin.protocol()
+        spec = protocol.rest_request(req, config=self._cfg)
+        params: dict[str, Any]
+        if spec is None:
+            provider_endpoint = getattr(
+                plugin,
+                "provider_rate_limit_endpoint",
+                None,
+            )
+            endpoint = provider_endpoint(req) if callable(provider_endpoint) else None
+            if not endpoint:
+                raise TransportError(
+                    f"No REST endpoint for stream type: {desc.stream_type}"
+                )
+            params = {}
+        else:
+            endpoint = spec.path
+            params = dict(spec.params)
+        quota_request = HistoricalRequest(
+            exchange=exchange,
+            market_type=market_type,
+            endpoint=endpoint,
+            symbol=desc.symbol,
+            interval=desc.interval,
+            start_ms=req.start_ms,
+            end_ms=req.end_ms,
+            limit=req.limit,
+            params=params,
+        )
+        quota_rule = plugin.rate_limit_policy(self._cfg).rule_for(quota_request)
+        if getattr(self._cfg, "proxy_mode", "system") == "pool":
+            from app.core.proxy_pool import get_proxy_pool
+            from app.exchanges.rate_limits import scope_rate_limit_rule
+            req.proxy_route = await get_proxy_pool().select_rest(
+                self._cfg, quota_request, quota_rule, self._rate_limits,
+            )
+            quota_request.egress_group = req.proxy_route.egress_group
+            quota_rule = scope_rate_limit_rule(quota_rule, quota_request.egress_group)
+        return await self._rate_limits.inspect(quota_rule, quota_request)
+
+    async def _wait_for_http_admission(
+        self,
+        rule: Any,
+        request: HistoricalRequest,
+        *,
+        defer: bool,
+        manager: Any | None = None,
+    ) -> RateLimitAdmission:
+        """Wait outside the endpoint gate, or return typed scheduler control."""
+
+        rate_limits = manager or self._rate_limits
+        while True:
+            admission = await rate_limits.inspect(rule, request)
+            if admission.allowed:
+                return admission
+            if defer:
+                raise RateLimitDeferred(admission)
+            await asyncio.sleep(max(0.001, admission.retry_after_seconds))
+
+    # ── Public: WebSocket ────────────────────────────────────
+
+    async def ws_connect(
+        self, descriptor: StreamDescriptor, *, quiet: bool = False,
+        shared_descriptors: list[StreamDescriptor] | None = None,
+    ) -> WsConnectionContext:
+        from app.core.proxy_pool import get_proxy_pool
+        pool = get_proxy_pool()
+        lease = pool.acquire_ws(self._cfg, shared_descriptors or [descriptor])
+        route = lease.route if lease else None
+        try:
+            context = await self._ws_connect(descriptor, quiet=quiet, route=route)
+            context.proxy_route = route
+            context.proxy_ws_lease = lease
+            if lease:
+                context.connection = _ProxyObservedWebSocket(context.connection, pool, lease)
+                self._ws_contexts[lease.token] = context
+                pool.mark_ws_connected(lease)
+            return context
+        except BaseException as exc:
+            if isinstance(exc, Exception):
+                pool.record(route, descriptor.exchange, error=exc, kind="ws")
+            pool.release_ws(lease)
+            raise
+
+    async def ws_close(self, ctx: WsConnectionContext) -> None:
+        """Close owned native sockets and settle their capacity even on cancellation."""
+        try:
+            try:
+                await asyncio.wait_for(self.ws_unsubscribe(ctx), timeout=2)
+            except Exception:
+                pass
+        finally:
+            try:
+                await asyncio.wait_for(ctx.connection.close(), timeout=2)
+            except Exception:
+                pass
+            finally:
+                lease = getattr(ctx, "proxy_ws_lease", None)
+                if lease:
+                    from app.core.proxy_pool import get_proxy_pool
+                    get_proxy_pool().release_ws(lease)
+                    self._ws_contexts.pop(lease.token, None)
+                    ctx.proxy_ws_lease = None
+
+    async def _ws_connect(
+        self,
+        descriptor: StreamDescriptor,
+        *,
+        quiet: bool = False,
+        route: Any | None = None,
+    ) -> WsConnectionContext:
+        """Open a raw WebSocket connection for the given stream.
+
+        Returns the ``websockets`` connection object.
+        The caller (L2 Session) is responsible for reading messages.
+        Raises ``TransportError`` if ALL endpoints fail.
+        """
+        exchange = getattr(descriptor, "exchange", "binance")
+        market_type = getattr(descriptor, "market_type", "spot")
+        protocol = self._registry.get_plugin(exchange).protocol()
+        spec = protocol.ws_connection(descriptor, config=self._cfg)
+        subscription = spec.subscription
+        ws_urls = spec.base_urls
+        last_exc: Exception | None = None
+        tried = 0
+        total = len(ws_urls)
+
+        if total == 0:
+            raise TransportError(f"No WS endpoints configured for exchange: {exchange}")
+
+        while tried < total:
+            base = self._current_ws_base(exchange, market_type, ws_urls)
+            if subscription.mode == WsSubscriptionMode.PATH:
+                if not subscription.stream_name:
+                    raise TransportError(f"Missing WS stream name for {descriptor.key}")
+                url = f"{base}/{subscription.stream_name}"
+            else:
+                url = base
+            try:
+                self._metrics.inc("ws_connect_attempts")
+                self._metrics.set("ws_active_endpoint", base)
+                self._metrics.mark("ws_last_connect_at")
+
+                connect_kwargs: dict[str, Any] = {
+                    "open_timeout": self._cfg.ws_open_timeout,
+                    "close_timeout": 2,
+                    "ping_interval": self._cfg.ws_ping_interval,
+                    "ping_timeout": self._cfg.ws_ping_timeout,
+                }
+                # websockets ≥15 supports proxy natively.
+                # When proxy_mode == "none", pass proxy=None to
+                # disable the library's automatic system-proxy detection.
+                proxy = route.url if route else self._resolve_proxy()
+                proxy_mode = getattr(self._cfg, "proxy_mode", "system")
+                if proxy:
+                    connect_kwargs["proxy"] = proxy
+                elif proxy_mode == "none":
+                    connect_kwargs["proxy"] = None
+                # else: proxy_mode == "system" with no proxy detected →
+                #        let websockets auto-detect (do NOT pass proxy kwarg)
+
+                conn = await websockets.connect(url, **connect_kwargs)
+
+                self._metrics.inc("ws_connect_ok")
+                self._metrics.mark("ws_last_success_at")
+                self._last_ws_base = base
+                logger.info("WS connected: %s", url)
+                return WsConnectionContext(
+                    connection=conn,
+                    endpoint=base,
+                    subscription=subscription,
+                )
+
+            except Exception as exc:
+                last_exc = exc
+                self._metrics.inc("ws_connect_failed")
+                self._metrics.mark("ws_last_error_at")
+                if quiet:
+                    logger.debug("WS connect failed (%s): %s", url, exc)
+                else:
+                    logger.warning("WS connect failed (%s): %s", url, exc)
+                self._rotate_ws(exchange, market_type, len(ws_urls))
+                tried += 1
+
+        raise TransportError(f"All {total} WS endpoints failed") from last_exc
+
+    async def ws_subscribe(
+        self,
+        ctx: WsConnectionContext,
+        *,
+        quiet: bool = False,
+    ) -> None:
+        """Perform post-connect subscription handshake when required."""
+        spec = ctx.subscription
+        if spec.mode != WsSubscriptionMode.MESSAGE or spec.subscribe_payload is None:
+            return
+
+        try:
+            await ctx.connection.send(json.dumps(spec.subscribe_payload))
+        except Exception as exc:
+            raise TransportError(f"WS subscribe send failed: {exc}") from exc
+
+        if not spec.requires_subscribe_ack:
+            return
+
+        while True:
+            try:
+                raw_msg = await asyncio.wait_for(
+                    ctx.connection.recv(),
+                    timeout=self._cfg.ws_open_timeout,
+                )
+            except Exception as exc:
+                raise TransportError(f"WS subscribe ack failed: {exc}") from exc
+
+            try:
+                payload = (
+                    json.loads(raw_msg)
+                    if isinstance(raw_msg, (str, bytes))
+                    else raw_msg
+                )
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            if isinstance(payload, dict):
+                event = str(payload.get("event", "")).lower()
+                if event == "subscribe":
+                    return
+                if event == "error":
+                    raise TransportError(f"WS subscription rejected: {payload}")
+
+            ctx.prefetched_payloads.append(payload)
+
+    async def ws_unsubscribe(self, ctx: WsConnectionContext) -> None:
+        """Attempt a graceful unsubscribe for message-based protocols."""
+        spec = ctx.subscription
+        if spec.mode != WsSubscriptionMode.MESSAGE or spec.unsubscribe_payload is None:
+            return
+        try:
+            await ctx.connection.send(json.dumps(spec.unsubscribe_payload))
+        except Exception:
+            return
+
+    def supports_ws(self, descriptor: StreamDescriptor) -> bool:
+        """Return whether the current stack can stream this descriptor over WebSocket."""
+        exchange = getattr(descriptor, "exchange", "binance")
+        market_type = getattr(descriptor, "market_type", "spot")
+        plugin = self._registry.get_plugin(exchange)
+        supports_provider_stream = getattr(plugin, "supports_provider_stream", None)
+        if callable(supports_provider_stream) and supports_provider_stream(descriptor):
+            provider_enabled = getattr(plugin, "provider_stream_enabled", None)
+            if not callable(provider_enabled) or provider_enabled(
+                self._cfg,
+                descriptor,
+            ):
+                return True
+        protocol_support = getattr(plugin.protocol(), "supports_ws", None)
+        if callable(protocol_support) and not protocol_support(descriptor):
+            return False
+
+        capabilities = plugin.capabilities()
+        channel = market_channel_for_stream_type(descriptor.stream_type)
+        if (
+            channel is not None
+            and getattr(capabilities, "capability_schema_version", 1) >= 2
+        ):
+            capability = capabilities.channel_capability(channel, market_type)
+            if capability is not None:
+                return capability.supports_transport(TransportMode.WEBSOCKET)
+        return capabilities.ws_connection_model != "polling_only"
+
+    def create_provider_session(
+        self,
+        descriptor: StreamDescriptor,
+    ) -> Any | None:
+        """Return a Host-owned sidecar session when this exchange is provider-backed."""
+
+        plugin = self._registry.get_plugin(descriptor.exchange)
+        create_session = getattr(plugin, "create_stream_session", None)
+        supports = getattr(plugin, "supports_provider_stream", None)
+        if (
+            not callable(create_session)
+            or not callable(supports)
+            or not supports(descriptor)
+        ):
+            return None
+        return create_session(self._cfg, descriptor)
+
+    # ── Public: probe (used by L3 to test WS connectivity) ───
+
+    async def ws_probe(self, descriptor: StreamDescriptor) -> bool:
+        """Quick connectivity probe — open + close immediately.
+
+        Returns True if connection succeeds, False otherwise.
+        """
+        ctx = None
+        try:
+            ctx = await self.ws_connect(descriptor, quiet=True)
+            await self.ws_subscribe(ctx, quiet=True)
+            return True
+        except (TransportError, RateLimitDeferred):
+            return False
+        finally:
+            if ctx is not None:
+                await self.ws_close(ctx)
+
+    # ── Public: current endpoints ────────────────────────────
+
+    @property
+    def current_http_base(self) -> str:
+        """Most recent HTTP base URL used by this transport."""
+        if self._last_http_base:
+            return self._last_http_base
+        url_map = self._diagnostic_http_url_map()
+        for (exchange, market_type), urls in url_map.items():
+            if urls:
+                return self._current_http_base(exchange, market_type, urls)
+        return ""
+
+    @property
+    def current_ws_base(self) -> str:
+        """Most recent WS base URL used by this transport."""
+        if self._last_ws_base:
+            return self._last_ws_base
+        url_map = self._diagnostic_ws_url_map()
+        for (exchange, market_type), urls in url_map.items():
+            if urls:
+                return self._current_ws_base(exchange, market_type, urls)
+        return ""
+
+    # ── Internal: endpoint rotation ──────────────────────────
+
+    def _current_http_base(
+        self,
+        exchange: str,
+        market_type: str,
+        urls: list[str],
+    ) -> str:
+        key = (exchange, market_type)
+        idx = self._http_idx.get(key, 0)
+        return urls[idx % len(urls)] if urls else ""
+
+    def _current_ws_base(
+        self,
+        exchange: str,
+        market_type: str,
+        urls: list[str],
+    ) -> str:
+        key = (exchange, market_type)
+        idx = self._ws_idx.get(key, 0)
+        return urls[idx % len(urls)] if urls else ""
+
+    def _rotate_http(self, exchange: str, market_type: str, total: int) -> None:
+        key = (exchange, market_type)
+        self._http_idx[key] = (self._http_idx.get(key, 0) + 1) % max(total, 1)
+        protocol = self._registry.get_plugin(exchange).protocol()
+        urls = protocol.rest_base_urls(market_type, config=self._cfg)
+        logger.debug(
+            "HTTP endpoint rotated → %s",
+            self._current_http_base(exchange, market_type, urls),
+        )
+
+    def _rotate_ws(self, exchange: str, market_type: str, total: int) -> None:
+        key = (exchange, market_type)
+        self._ws_idx[key] = (self._ws_idx.get(key, 0) + 1) % max(total, 1)
+        protocol = self._registry.get_plugin(exchange).protocol()
+        descriptor = StreamDescriptor(
+            "",
+            StreamType.KLINE,
+            interval="1m",
+            exchange=exchange,
+            market_type=market_type,
+        )
+        urls = protocol.ws_base_urls(descriptor, config=self._cfg)
+        logger.debug(
+            "WS endpoint rotated → %s",
+            self._current_ws_base(exchange, market_type, urls),
+        )
+
+    def _diagnostic_http_url_map(self) -> dict[tuple[str, str], list[str]]:
+        result: dict[tuple[str, str], list[str]] = {}
+        for plugin in self._registry.list_plugins():
+            protocol = plugin.protocol()
+            for market in plugin.capabilities().markets:
+                result[(plugin.id, market.market_type)] = protocol.rest_base_urls(
+                    market.market_type,
+                    config=self._cfg,
+                )
+        return result
+
+    def _diagnostic_ws_url_map(self) -> dict[tuple[str, str], list[str]]:
+        result: dict[tuple[str, str], list[str]] = {}
+        for plugin in self._registry.list_plugins():
+            protocol = plugin.protocol()
+            for market in plugin.capabilities().markets:
+                descriptor = StreamDescriptor(
+                    "",
+                    StreamType.KLINE,
+                    interval="1m",
+                    exchange=plugin.id,
+                    market_type=market.market_type,
+                )
+                result[(plugin.id, market.market_type)] = protocol.ws_base_urls(
+                    descriptor,
+                    config=self._cfg,
+                )
+        return result
+
+    def _get_ws_base_urls_for_descriptor(
+        self,
+        adapter: Any,
+        descriptor: StreamDescriptor,
+        market_type: str,
+    ) -> list[str]:
+        get_descriptor_ws_urls = getattr(
+            adapter, "get_ws_base_urls_for_descriptor", None
+        )
+        if callable(get_descriptor_ws_urls):
+            urls = list(
+                get_descriptor_ws_urls(
+                    descriptor,
+                    market_type=market_type,
+                    config=self._cfg,
+                )
+                or []
+            )
+            if urls:
+                return urls
+
+        if descriptor.stream_type in (StreamType.TICKER, StreamType.MINI_TICKER):
+            get_ticker_ws_urls = getattr(adapter, "get_ticker_ws_urls", None)
+            if callable(get_ticker_ws_urls):
+                urls = list(get_ticker_ws_urls(market_type) or [])
+                if urls:
+                    return urls
+        return list(adapter.get_ws_base_urls(market_type, config=self._cfg))
+
+    # ── Internal: HTTP session ───────────────────────────────
+
+    async def _ensure_http_session(self) -> None:
+        if self._http_session is None or self._http_session.closed:
+            await self.start()
+
+
+# ─── Exceptions ──────────────────────────────────────────────
+
+
+class TransportError(Exception):
+    """Raised when all transport endpoints fail."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        retry_after: float | None = None,
+        headers: dict[str, str] | None = None,
+        body_code: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after = retry_after
+        self.headers = headers or {}
+        self.body_code = body_code
+        self.rate_limit_recorded = False
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _extract_body_code(body: object) -> str | None:
+    if isinstance(body, dict):
+        raw = body.get("code")
+        return str(raw) if raw is not None else None
+    if not isinstance(body, str):
+        return None
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("code")
+    return str(raw) if raw is not None else None
+
+
+def _is_non_retryable_http_error(exc: Exception) -> bool:
+    return (
+        isinstance(exc, TransportError)
+        and exc.status_code == 400
+        and exc.body_code in _NON_RETRYABLE_HTTP_BODY_CODES
+    )
+
+
+def _is_rate_limit_http_error(exc: Exception) -> bool:
+    if not isinstance(exc, TransportError):
+        return False
+    return (
+        exc.status_code in {418, 429}
+        or exc.body_code in {"-1003", "50011"}
+        or "HTTP 418" in str(exc)
+        or "HTTP 429" in str(exc)
+    )

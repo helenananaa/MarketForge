@@ -15,6 +15,7 @@ const EPOCH_MS: u64 = 1_700_000_040_000;
 fn scenario() -> ScenarioConfig {
     ScenarioConfig {
         room_id: "candlescope-room".to_string(),
+        market_events: Vec::new(),
         venue_preset: None,
         venue_rules: VenueRuleConfig::default(),
         venue_asset_policy: VenueAssetPolicyConfig::default(),
@@ -50,6 +51,7 @@ fn scenario() -> ScenarioConfig {
         ],
         seed_orders: vec![
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 1,
                 account_id: 10,
                 side: Side::Sell,
@@ -58,6 +60,7 @@ fn scenario() -> ScenarioConfig {
                 reduce_only: false,
             }),
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 2,
                 account_id: 20,
                 side: Side::Buy,
@@ -73,6 +76,7 @@ fn scenario() -> ScenarioConfig {
 fn perp_liquidation_scenario() -> ScenarioConfig {
     ScenarioConfig {
         room_id: "liquidation-room".to_string(),
+        market_events: Vec::new(),
         venue_preset: None,
         venue_rules: VenueRuleConfig::default(),
         venue_asset_policy: VenueAssetPolicyConfig::default(),
@@ -141,6 +145,7 @@ fn apply_crossing_order(service: &mut PluginService) {
             "candlescope-room",
             "V-BTC-SPOT",
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 3,
                 account_id: 20,
                 side: Side::Buy,
@@ -558,6 +563,7 @@ fn projects_automatic_liquidation_executions_from_room_history() {
             "liquidation-room",
             "V-BTC-PERP",
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 1,
                 account_id: 10,
                 side: Side::Sell,
@@ -573,6 +579,7 @@ fn projects_automatic_liquidation_executions_from_room_history() {
             "liquidation-room",
             "V-BTC-PERP",
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 2,
                 account_id: 20,
                 side: Side::Buy,
@@ -632,6 +639,7 @@ fn projects_automatic_liquidation_executions_from_room_history() {
             "liquidation-room",
             "V-BTC-PERP",
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 3,
                 account_id: 30,
                 side: Side::Buy,

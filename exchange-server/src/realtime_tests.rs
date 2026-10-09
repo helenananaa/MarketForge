@@ -195,6 +195,54 @@ async fn shutdown(shared: &SharedState) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn realtime_large_wave_yields_between_bounded_durable_batches() {
+    let (shared, _, mut store) = setup("bounded").await;
+    let mut names: Vec<_> = (0..200).map(|i| format!("fast-{i}")).collect();
+    names.sort();
+    let ids: Vec<_> = names.iter().map(String::as_str).collect();
+    start(&shared, "bounded", &ids, 1000).await;
+    eventually(&shared, |app| {
+        ids.iter().all(|id| count(app, "bounded", id) >= 1)
+    })
+    .await;
+    shutdown(&shared).await;
+    let recovery = store.load_recovery().unwrap();
+    let mut previous = BTreeMap::new();
+    let mut nonempty_batches = 0;
+    for mutation in &recovery.mutations {
+        if let RoomMutation::SchedulerDelta { delta, .. } = &mutation.mutation {
+            assert!(delta.changes.len() <= 64);
+            for change in &delta.changes {
+                if let PersistedAgentKindState::Plugin { data, .. } = &change.kind_state {
+                    previous.insert(names[change.index].clone(), data.as_u64().unwrap_or(0));
+                }
+            }
+            nonempty_batches += usize::from(!delta.changes.is_empty());
+        }
+        if let RoomMutation::SchedulerProgress { state, .. } = &mutation.mutation {
+            let mut changed = 0;
+            for agent in &state.agents {
+                if let PersistedAgentKindState::Plugin { data, .. } = &agent.kind_state {
+                    let value = data.as_u64().unwrap_or(0);
+                    let prior = previous
+                        .insert(agent.template.participant_id().to_owned(), value)
+                        .unwrap_or(0);
+                    changed += usize::from(value != prior);
+                }
+            }
+            assert!(changed <= 64, "one durable batch advanced {changed} bots");
+            nonempty_batches += usize::from(changed > 0);
+        }
+    }
+    assert!(nonempty_batches >= 4);
+    let restored = scheduler_states_from_recovery(&recovery).unwrap();
+    assert_eq!(restored["bounded"].agents.len(), 200);
+    assert!(restored["bounded"].agents.iter().all(|agent| matches!(
+        &agent.kind_state, PersistedAgentKindState::Plugin { data, .. } if data.as_u64().unwrap_or(0) >= 1
+    )));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn realtime_slow_bot_does_not_block_clock_other_bot_http_or_other_room() {
     use axum::body::Body;
     use tower::ServiceExt;
@@ -425,6 +473,245 @@ async fn commit(
     commit_scheduler_work(shared.clone(), room.into(), None, false, None, Some(work)).await
 }
 
+async fn prepare_wave(
+    shared: &SharedState,
+    room: &str,
+) -> (realtime::Control, Vec<PersistedAgent>) {
+    let _ = pause_room(State(shared.clone()), HeaderMap::new(), Path(room.into()))
+        .await
+        .unwrap();
+    start(shared, room, &["fast-a", "fast-b"], 60_000).await;
+    eventually(shared, |app| {
+        app.agent_workers[room].status(room.into()).lifecycle == "paused"
+    })
+    .await;
+    let _ = resume_room(State(shared.clone()), HeaderMap::new(), Path(room.into()))
+        .await
+        .unwrap();
+    let app = shared.app.lock().await;
+    (
+        app.agent_workers[room].control.clone(),
+        app.schedulers[room].agents.clone(),
+    )
+}
+
+fn ready_wave(
+    control: &realtime::Control,
+    priors: &[PersistedAgent],
+    bad_second: bool,
+) -> realtime::Work {
+    let epoch = control.epoch.load(Ordering::Acquire);
+    let decisions = priors
+        .iter()
+        .enumerate()
+        .map(|(i, prior)| {
+            let actions = vec![
+                OrderAction::PlaceLimit {
+                    side: Side::Buy,
+                    price_tick: 90,
+                    qty: 1
+                };
+                if bad_second && i == 1 {
+                    exchange_core::MAX_BOT_ACTIONS + 1
+                } else {
+                    1
+                }
+            ];
+            let realtime::Work::Bot { decision, .. } = work(control, prior, epoch, actions) else {
+                unreachable!()
+            };
+            *decision
+        })
+        .collect();
+    realtime::Work::Bots {
+        control: control.clone(),
+        epoch,
+        decisions,
+    }
+}
+
+#[tokio::test]
+async fn realtime_ready_wave_has_one_mutation_and_recovers_all_bot_states_and_orders() {
+    use journal::JournalStore;
+    let (shared, _, mut store) = setup("wave").await;
+    let (control, priors) = prepare_wave(&shared, "wave").await;
+    let before = store.load_recovery().unwrap();
+    let clock = shared.app.lock().await.rooms.clock("wave").unwrap();
+    commit(&shared, "wave", ready_wave(&control, &priors, false))
+        .await
+        .unwrap();
+    let after = store.load_recovery().unwrap();
+    assert_eq!(after.mutations.len(), before.mutations.len() + 1);
+    assert_eq!(after.executions.len(), before.executions.len() + 2);
+    let recovered = recover_rooms(&after).unwrap();
+    let recovered_schedulers = scheduler_states_from_recovery(&after).unwrap();
+    let app = shared.app.lock().await;
+    assert_eq!(app.rooms.clock("wave").unwrap(), clock);
+    assert_eq!(count(&app, "wave", "fast-a"), 1);
+    assert_eq!(count(&app, "wave", "fast-b"), 1);
+    assert_eq!(
+        recovered.book_snapshot("wave").unwrap(),
+        app.rooms.book_snapshot("wave").unwrap()
+    );
+    assert_eq!(recovered_schedulers["wave"], app.schedulers["wave"]);
+    drop(app);
+    shutdown(&shared).await;
+}
+
+#[tokio::test]
+async fn realtime_periodic_checkpoint_replays_clock_and_order_tail() {
+    use journal::JournalStore;
+    let (shared, _, mut store) = setup("checkpoint-tail").await;
+    let (control, priors) = prepare_wave(&shared, "checkpoint-tail").await;
+    let initial_checkpoints = shared.lifecycle.metrics_snapshot().checkpoint_writes_total;
+    for _ in 0..99 {
+        commit(
+            &shared,
+            "checkpoint-tail",
+            realtime::Work::Clock(control.clone()),
+        )
+        .await
+        .unwrap();
+    }
+    assert_eq!(
+        shared.lifecycle.metrics_snapshot().checkpoint_writes_total,
+        initial_checkpoints
+    );
+    for expected in [99, 100, 101] {
+        if expected > 99 {
+            commit(
+                &shared,
+                "checkpoint-tail",
+                realtime::Work::Clock(control.clone()),
+            )
+            .await
+            .unwrap();
+        }
+        if expected == 101 {
+            commit(
+                &shared,
+                "checkpoint-tail",
+                ready_wave(&control, &priors, false),
+            )
+            .await
+            .unwrap();
+        }
+        let recovery = store.load_recovery().unwrap();
+        let recovered = recover_rooms(&recovery).unwrap();
+        let app = shared.app.lock().await;
+        assert_eq!(recovered.clock("checkpoint-tail").unwrap().step(), expected);
+        for account in [10, 20] {
+            assert_eq!(
+                recovered
+                    .participant_observation("checkpoint-tail", "V-BTC-SPOT", account)
+                    .unwrap(),
+                app.rooms
+                    .participant_observation("checkpoint-tail", "V-BTC-SPOT", account)
+                    .unwrap()
+            );
+        }
+        assert_eq!(
+            scheduler_states_from_recovery(&recovery).unwrap()["checkpoint-tail"],
+            app.schedulers["checkpoint-tail"]
+        );
+    }
+    assert_eq!(
+        shared.lifecycle.metrics_snapshot().checkpoint_writes_total,
+        initial_checkpoints + 1
+    );
+    shutdown(&shared).await;
+}
+
+#[tokio::test]
+async fn realtime_bad_ready_wave_rolls_back_before_individual_retry() {
+    use journal::JournalStore;
+    let (shared, _, mut store) = setup("wave-bad").await;
+    let (control, priors) = prepare_wave(&shared, "wave-bad").await;
+    let before = store.load_recovery().unwrap();
+    let order_id = shared.app.lock().await.next_order_id;
+    let error = commit(&shared, "wave-bad", ready_wave(&control, &priors, true))
+        .await
+        .unwrap_err();
+    assert_eq!(error.0, StatusCode::BAD_REQUEST);
+    let after = store.load_recovery().unwrap();
+    assert_eq!(after.mutations.len(), before.mutations.len());
+    assert_eq!(after.executions.len(), before.executions.len());
+    assert_eq!(shared.app.lock().await.next_order_id, order_id);
+    let epoch = control.epoch.load(Ordering::Acquire);
+    commit(
+        &shared,
+        "wave-bad",
+        work(
+            &control,
+            &priors[0],
+            epoch,
+            vec![OrderAction::PlaceLimit {
+                side: Side::Buy,
+                price_tick: 90,
+                qty: 1,
+            }],
+        ),
+    )
+    .await
+    .unwrap();
+    let app = shared.app.lock().await;
+    assert_eq!(count(&app, "wave-bad", "fast-a"), 1);
+    assert_eq!(count(&app, "wave-bad", "fast-b"), 0);
+    assert_eq!(app.next_order_id, order_id + 1);
+    drop(app);
+    shutdown(&shared).await;
+}
+
+#[tokio::test]
+async fn realtime_ready_wave_skips_stale_members_and_fences_pause_epoch() {
+    let (shared, _, _) = setup("wave-fence").await;
+    let (control, priors) = prepare_wave(&shared, "wave-fence").await;
+    let epoch = control.epoch.load(Ordering::Acquire);
+    commit(
+        &shared,
+        "wave-fence",
+        work(
+            &control,
+            &priors[0],
+            epoch,
+            vec![OrderAction::PlaceLimit {
+                side: Side::Buy,
+                price_tick: 90,
+                qty: 1,
+            }],
+        ),
+    )
+    .await
+    .unwrap();
+    commit(&shared, "wave-fence", ready_wave(&control, &priors, false))
+        .await
+        .unwrap();
+    let app = shared.app.lock().await;
+    assert_eq!(count(&app, "wave-fence", "fast-a"), 1);
+    assert_eq!(count(&app, "wave-fence", "fast-b"), 1);
+    let current = app.schedulers["wave-fence"].agents.clone();
+    let order_id = app.next_order_id;
+    drop(app);
+    let stale = ready_wave(&control, &current, false);
+    let _ = pause_room(
+        State(shared.clone()),
+        HeaderMap::new(),
+        Path("wave-fence".into()),
+    )
+    .await
+    .unwrap();
+    let _ = resume_room(
+        State(shared.clone()),
+        HeaderMap::new(),
+        Path("wave-fence".into()),
+    )
+    .await
+    .unwrap();
+    commit(&shared, "wave-fence", stale).await.unwrap();
+    assert_eq!(shared.app.lock().await.next_order_id, order_id);
+    shutdown(&shared).await;
+}
+
 #[tokio::test]
 async fn realtime_pause_resume_and_replacement_fence_old_decisions() {
     let (shared, _, _) = setup("fence").await;
@@ -588,7 +875,7 @@ async fn realtime_decision_uses_current_book_and_state_recovers_without_duplicat
     assert_eq!(replayed.book_snapshot("receipt").unwrap(), expected);
     assert_eq!(replayed.execution_history("receipt").unwrap().len(), len);
     assert_eq!(
-        scheduler_states_from_recovery(&recovery)["receipt"].agents[1].kind_state,
+        scheduler_states_from_recovery(&recovery).unwrap()["receipt"].agents[1].kind_state,
         shared.app.lock().await.schedulers["receipt"].agents[1].kind_state
     );
     let observed = recovered
@@ -683,5 +970,6 @@ async fn realtime_training_deadline_advances_only_on_clock_and_late_orders_are_r
     );
     assert!(recovery.mutations.iter().any(|m| matches!(&m.mutation,
         RoomMutation::SchedulerProgress { clock_steps: 1, training: Some(run), .. }
+        | RoomMutation::SchedulerDelta { clock_steps: 1, training: Some(run), .. }
         if run.steps_elapsed == 2)));
 }

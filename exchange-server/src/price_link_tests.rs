@@ -19,6 +19,7 @@ fn linked_scenario(room_id: &str) -> ScenarioConfig {
     }
     scenario.seed_orders = vec![
         Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: 100,
             account_id: 10,
             side: Side::Buy,
@@ -27,6 +28,7 @@ fn linked_scenario(room_id: &str) -> ScenarioConfig {
             reduce_only: false,
         }),
         Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: 101,
             account_id: 10,
             side: Side::Sell,
@@ -129,6 +131,7 @@ fn price_link_journal_recovery_verifies_derived_receipts_and_snapshot_suffix() {
         .collect();
     let snapshot = current_room_snapshot(&rooms, room_id, 1).unwrap();
     let command = Command::NewOrder(NewOrder {
+        position_side: Default::default(),
         order_id: 102,
         account_id: 20,
         side: Side::Buy,
@@ -219,6 +222,7 @@ fn price_link_journal_recovery_replays_spot_triggered_liquidation() {
         .collect();
     let limit = |id, account, side, price, qty| {
         Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: id,
             account_id: account,
             side,

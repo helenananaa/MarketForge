@@ -400,6 +400,7 @@ mod tests {
     fn spec() -> TrainingSpec {
         let scenario = ScenarioConfig {
             room_id: "train-1".to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: crate::VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),

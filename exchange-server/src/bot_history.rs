@@ -162,6 +162,8 @@ fn from_summary(execution: &RoomExecutionSummary) -> (Vec<BotTradeReceipt>, bool
                 instrument_id: instrument.clone(),
                 market_time_ms: time,
                 trade: Trade {
+                    maker_position_side: Default::default(),
+                    taker_position_side: Default::default(),
                     trade_id: *trade_id,
                     maker_order_id: *maker_order_id,
                     maker_account_id: *maker_account_id,
@@ -195,6 +197,7 @@ mod tests {
             .apply(
                 "f6-batch",
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 3,
                     account_id: 20,
                     side: Side::Buy,

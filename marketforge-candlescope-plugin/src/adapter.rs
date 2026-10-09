@@ -1112,6 +1112,8 @@ fn trade_from_summary(event: &EventSummary) -> Option<Trade> {
         return None;
     };
     Some(Trade {
+        maker_position_side: Default::default(),
+        taker_position_side: Default::default(),
         trade_id: *trade_id,
         maker_order_id: *maker_order_id,
         maker_account_id: *maker_account_id,

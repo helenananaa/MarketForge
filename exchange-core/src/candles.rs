@@ -43,6 +43,10 @@ pub struct Candle {
     pub volume: Qty,
     pub quote_volume: i128,
     pub trades: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub taker_buy_base: Option<Qty>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub taker_buy_quote: Option<i128>,
     pub is_final: bool,
 }
 
@@ -96,6 +100,11 @@ pub fn aggregate_candles(
                 candle.volume = candle.volume.saturating_add(trade.qty);
                 candle.quote_volume += quote;
                 candle.trades = candle.trades.saturating_add(1);
+                if trade.taker_side == Side::Buy {
+                    candle.taker_buy_base =
+                        Some(candle.taker_buy_base.unwrap_or(0).saturating_add(trade.qty));
+                    candle.taker_buy_quote = Some(candle.taker_buy_quote.unwrap_or(0) + quote);
+                }
             }
             _ => candles.push(Candle {
                 schema_version: CANDLE_SCHEMA_VERSION,
@@ -108,6 +117,16 @@ pub fn aggregate_candles(
                 volume: trade.qty,
                 quote_volume: quote,
                 trades: 1,
+                taker_buy_base: Some(if trade.taker_side == Side::Buy {
+                    trade.qty
+                } else {
+                    0
+                }),
+                taker_buy_quote: Some(if trade.taker_side == Side::Buy {
+                    quote
+                } else {
+                    0
+                }),
                 is_final: now_ms >= close_time_ms,
             }),
         }
@@ -160,6 +179,8 @@ mod tests {
                 volume: 3,
                 quote_volume: 320,
                 trades: 2,
+                taker_buy_base: Some(3),
+                taker_buy_quote: Some(320),
                 is_final: true,
             }
         );
@@ -172,6 +193,31 @@ mod tests {
         assert!(!candles[1].is_final);
         let later = aggregate_candles(&trades, 1_000, 3_000).unwrap();
         assert!(later[1].is_final);
+    }
+
+    #[test]
+    fn mixed_aggressors_preserve_exact_order_flow_at_custom_intervals() {
+        let mut sell = trade(2_000, 99, 3);
+        sell.taker_side = Side::Sell;
+        let candles = aggregate_candles(
+            &[trade(0, 100, 2), sell, trade(3_000, 101, 1)],
+            3_000,
+            3_000,
+        )
+        .unwrap();
+        assert_eq!(candles.len(), 2);
+        assert_eq!(candles[0].volume, 5);
+        assert_eq!(candles[0].taker_buy_base, Some(2));
+        assert_eq!(candles[0].taker_buy_quote, Some(200));
+        assert_eq!(candles[0].quote_volume, 497);
+        assert!(candles[0].is_final);
+        assert!(!candles[1].is_final);
+        assert_eq!(candles[1].taker_buy_base, Some(1));
+        let mut legacy = serde_json::to_value(&candles[0]).unwrap();
+        legacy.as_object_mut().unwrap().remove("taker_buy_base");
+        legacy.as_object_mut().unwrap().remove("taker_buy_quote");
+        let legacy: Candle = serde_json::from_value(legacy).unwrap();
+        assert_eq!(legacy.taker_buy_base, None);
     }
 
     #[test]

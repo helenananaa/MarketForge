@@ -1,0 +1,585 @@
+/**
+ * ShapeDrawingPrimitive — Lightweight Charts v5 Plugin API (ISeriesPrimitive)
+ *
+ * Renders TradingView-style bounded shapes (rectangle / ellipse) directly in
+ * Lightweight Charts' native Canvas pipeline. Shape anchors are stored in
+ * data coordinates (time + price), so shapes follow pan/zoom and survive
+ * timeframe switches.
+ */
+
+import { drawingDataPointsToCoordinates } from "./coordinateUtils.js";
+import type {
+  DrawingAttachedParameter,
+  DrawingDataPoint,
+  DrawingHit,
+  PrimitiveCanvasTarget,
+  PrimitivePaneRenderer,
+  PrimitivePaneView,
+  ScreenPoint,
+  ShapeLineStyle,
+  ShapePrimitiveOptions,
+  ShapeType,
+} from "../drawingTypes.js";
+import {
+  accumulateDrawingPerfFrameWork,
+  drawingPerfCounters,
+} from "../performance/drawingPerfCounters.js";
+
+const HANDLE_KEYS = ["tl", "t", "tr", "r", "br", "b", "bl", "l"] as const;
+type ShapeHandleKey = typeof HANDLE_KEYS[number];
+type ShapeHandlePositions = Record<ShapeHandleKey, ScreenPoint>;
+
+function drawingPerfNow(): number {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+interface ShapeBox extends ScreenPoint {
+  width: number;
+  height: number;
+  right: number;
+  bottom: number;
+}
+
+interface ShapeRenderPoint {
+  x: number | null;
+  y: number | null;
+}
+
+interface ShapeRenderData {
+  points: ShapeRenderPoint[];
+  shapeType: ShapeType;
+  color: string;
+  lineWidth: number;
+  fillColor: string;
+  fillOpacity: number;
+  lineStyle: ShapeLineStyle;
+  selected: boolean;
+  hovered: boolean;
+  isPreview: boolean;
+  hidden: boolean;
+}
+
+function normalizeShapeType(value: unknown): ShapeType {
+  return value === "ellipse" ? "ellipse" : "rectangle";
+}
+
+function normalizeOpacity(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0.12;
+  return Math.max(0, Math.min(1, n));
+}
+
+function adjustAlpha(color: string, alpha: number): string {
+  if (!color || color === "transparent") return "transparent";
+  const a = Math.max(0, Math.min(1, Number(alpha)));
+
+  if (color.startsWith("rgba")) {
+    const match = color.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/);
+    if (match) {
+      const baseAlpha = Math.max(0, Math.min(1, Number(match[4])));
+      return `rgba(${match[1]},${match[2]},${match[3]},${baseAlpha * a})`;
+    }
+  }
+
+  if (color.startsWith("rgb")) {
+    const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    if (match) return `rgba(${match[1]},${match[2]},${match[3]},${a})`;
+  }
+
+  let r = 0, g = 0, b = 0;
+  if (color.length === 4) {
+    r = parseInt(color.charAt(1).repeat(2), 16);
+    g = parseInt(color.charAt(2).repeat(2), 16);
+    b = parseInt(color.charAt(3).repeat(2), 16);
+  } else if (color.length === 7) {
+    r = parseInt(color.slice(1, 3), 16);
+    g = parseInt(color.slice(3, 5), 16);
+    b = parseInt(color.slice(5, 7), 16);
+  } else {
+    return color;
+  }
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function drawShapePath(
+  ctx: CanvasRenderingContext2D,
+  shapeType: ShapeType,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  ctx.beginPath();
+  if (shapeType === "ellipse") {
+    ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w / 2), Math.abs(h / 2), 0, 0, Math.PI * 2);
+  } else {
+    ctx.rect(x, y, w, h);
+  }
+}
+
+function computeHandlePositions(x: number, y: number, w: number, h: number): ShapeHandlePositions {
+  return {
+    tl: { x, y },
+    t:  { x: x + w / 2, y },
+    tr: { x: x + w, y },
+    r:  { x: x + w, y: y + h / 2 },
+    br: { x: x + w, y: y + h },
+    b:  { x: x + w / 2, y: y + h },
+    bl: { x, y: y + h },
+    l:  { x, y: y + h / 2 },
+  };
+}
+
+function boxFromPoints(a: ScreenPoint, b: ScreenPoint): ShapeBox {
+  const left = Math.min(a.x, b.x);
+  const top = Math.min(a.y, b.y);
+  const right = Math.max(a.x, b.x);
+  const bottom = Math.max(a.y, b.y);
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+    right,
+    bottom,
+  };
+}
+
+function isPointInBox(x: number, y: number, box: ShapeBox, margin = 0): boolean {
+  return (
+    x >= box.x - margin && x <= box.right + margin &&
+    y >= box.y - margin && y <= box.bottom + margin
+  );
+}
+
+function isPointInEllipse(x: number, y: number, box: ShapeBox, margin = 0): boolean {
+  const rx = box.width / 2;
+  const ry = box.height / 2;
+  if (rx <= 0 || ry <= 0) return false;
+  const cx = box.x + rx;
+  const cy = box.y + ry;
+  const nx = (x - cx) / (rx + margin);
+  const ny = (y - cy) / (ry + margin);
+  return nx * nx + ny * ny <= 1;
+}
+
+class ShapeRenderer implements PrimitivePaneRenderer {
+  _data: ShapeRenderData | null;
+
+  constructor() {
+    this._data = null;
+  }
+
+  update(data: ShapeRenderData): void {
+    this._data = data;
+  }
+
+  draw(target: PrimitiveCanvasTarget): void {
+    const startedAt = drawingPerfNow();
+    const data = this._data;
+    if (!data || !data.points || data.points.length < 2) return;
+    if (data.hidden) return;
+
+    target.useBitmapCoordinateSpace((scope) => {
+      const ctx = scope.context;
+      const hRatio = scope.horizontalPixelRatio;
+      const vRatio = scope.verticalPixelRatio;
+      const minRatio = Math.min(hRatio, vRatio);
+      const {
+        points,
+        shapeType,
+        color,
+        lineWidth,
+        fillColor,
+        fillOpacity,
+        lineStyle,
+        selected,
+        hovered,
+        isPreview,
+      } = data;
+
+      const [a, b] = points;
+      if (!a || !b || a.x == null || a.y == null || b.x == null || b.y == null) return;
+
+      const ax = a.x * hRatio;
+      const ay = a.y * vRatio;
+      const bx = b.x * hRatio;
+      const by = b.y * vRatio;
+      const left = Math.min(ax, bx);
+      const top = Math.min(ay, by);
+      const width = Math.abs(bx - ax);
+      const height = Math.abs(by - ay);
+      if (width < 0.5 || height < 0.5) return;
+
+      ctx.save();
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+
+      const fillAlpha = normalizeOpacity(fillOpacity) * (isPreview ? 0.55 : 1);
+      if (fillColor && fillColor !== "transparent" && fillAlpha > 0) {
+        ctx.fillStyle = adjustAlpha(fillColor, fillAlpha);
+        drawShapePath(ctx, shapeType, left, top, width, height);
+        ctx.fill();
+      }
+
+      const scaledWidth = lineWidth * minRatio;
+      ctx.lineWidth = scaledWidth;
+      ctx.strokeStyle = hovered && !selected ? adjustAlpha(color, 0.85) : color;
+
+      if (isPreview) {
+        ctx.setLineDash([6 * hRatio, 4 * hRatio]);
+        ctx.globalAlpha = 0.85;
+      } else if (lineStyle === "dashed") {
+        ctx.setLineDash([6 * hRatio, 4 * hRatio]);
+      } else if (lineStyle === "dotted") {
+        ctx.setLineDash([1 * hRatio, 4 * hRatio]);
+      }
+
+      drawShapePath(ctx, shapeType, left, top, width, height);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+
+      if (hovered && !selected) {
+        ctx.strokeStyle = adjustAlpha(color, 0.18);
+        ctx.lineWidth = Math.max(scaledWidth + 10 * minRatio, 12 * minRatio);
+        drawShapePath(ctx, shapeType, left, top, width, height);
+        ctx.stroke();
+      }
+
+      if (selected) {
+        ctx.strokeStyle = "#3b82f6";
+        ctx.lineWidth = 1 * minRatio;
+        ctx.setLineDash([4 * hRatio, 3 * hRatio]);
+        ctx.strokeRect(left - 0.5 * hRatio, top - 0.5 * vRatio, width + hRatio, height + vRatio);
+        ctx.setLineDash([]);
+
+        const handles = computeHandlePositions(left, top, width, height);
+        const handleSize = 7 * minRatio;
+        ctx.fillStyle = "#ffffff";
+        ctx.strokeStyle = "#3b82f6";
+        ctx.lineWidth = 1.25 * minRatio;
+        ctx.shadowColor = "rgba(0,0,0,0.3)";
+        ctx.shadowBlur = 4 * minRatio;
+        for (const key of HANDLE_KEYS) {
+          const p = handles[key];
+          ctx.beginPath();
+          ctx.rect(p.x - handleSize / 2, p.y - handleSize / 2, handleSize, handleSize);
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      }
+
+      ctx.restore();
+    });
+    const durationMs = drawingPerfNow() - startedAt;
+    accumulateDrawingPerfFrameWork({
+      drawingMainThreadMs: durationMs,
+      sceneProjectPaintMs: durationMs,
+    });
+  }
+}
+
+class ShapePaneView implements PrimitivePaneView {
+  _source: ShapeDrawingPrimitive;
+  _renderer: ShapeRenderer;
+
+  constructor(source: ShapeDrawingPrimitive) {
+    this._source = source;
+    this._renderer = new ShapeRenderer();
+  }
+
+  update(): void {
+    const startedAt = drawingPerfNow();
+    const source = this._source;
+    const series = source._series;
+    const chart = source._chart;
+    if (!series || !chart) return;
+    if (source._hidden) {
+      this._renderer.update({
+        points: [],
+        shapeType: source._shapeType,
+        color: source._color,
+        lineWidth: source._lineWidth,
+        fillColor: source._fillColor,
+        fillOpacity: source._fillOpacity,
+        lineStyle: source._lineStyle,
+        selected: source._selected,
+        hovered: source._hovered,
+        isPreview: source._isPreview,
+        hidden: true,
+      });
+      const durationMs = drawingPerfNow() - startedAt;
+      drawingPerfCounters.recordSceneRebuild();
+      accumulateDrawingPerfFrameWork({
+        geometryKey: source._id,
+        drawingMainThreadMs: durationMs,
+        sceneProjectPaintMs: durationMs,
+        rawPoints: source._dataPoints.length,
+        renderedPoints: 0,
+        visibleEntities: 0,
+        culledEntities: 1,
+      });
+      return;
+    }
+
+    const points: ShapeRenderPoint[] = [];
+    const coordinateContext = {};
+    let projectedPointCount = 0;
+    const horizontalCoordinates = drawingDataPointsToCoordinates(
+      chart,
+      series,
+      source._dataPoints,
+      coordinateContext,
+      { cacheToken: source, geometryRevision: source._geometryRevision },
+    );
+
+    for (const [index, dp] of source._dataPoints.entries()) {
+      const x = horizontalCoordinates[index] ?? null;
+      const y = series.priceToCoordinate(dp.price);
+      points.push({ x, y });
+      if (Number.isFinite(x) && Number.isFinite(y)) projectedPointCount += 1;
+    }
+    if (projectedPointCount > 0) {
+      drawingPerfCounters.recordFinalProjection(projectedPointCount);
+    }
+
+    this._renderer.update({
+      points,
+      shapeType: source._shapeType,
+      color: source._color,
+      lineWidth: source._lineWidth,
+      fillColor: source._fillColor,
+      fillOpacity: source._fillOpacity,
+      lineStyle: source._lineStyle,
+      selected: source._selected,
+      hovered: source._hovered,
+      isPreview: source._isPreview,
+      hidden: source._hidden,
+    });
+    const durationMs = drawingPerfNow() - startedAt;
+    drawingPerfCounters.recordSceneRebuild();
+    accumulateDrawingPerfFrameWork({
+      geometryKey: source._id,
+      drawingMainThreadMs: durationMs,
+      sceneProjectPaintMs: durationMs,
+      rawPoints: source._dataPoints.length,
+      renderedPoints: projectedPointCount,
+      visibleEntities: projectedPointCount >= 2 ? 1 : 0,
+      culledEntities: projectedPointCount >= 2 ? 0 : 1,
+    });
+  }
+
+  renderer(): ShapeRenderer {
+    return this._renderer;
+  }
+
+  zOrder(): "top" {
+    return "top";
+  }
+}
+
+export class ShapeDrawingPrimitive {
+  _id: string;
+  _type: "shape";
+  _shapeType: ShapeType;
+  _dataPoints: DrawingDataPoint[];
+  _color: string;
+  _lineWidth: number;
+  _fillColor: string;
+  _fillOpacity: number;
+  _lineStyle: ShapeLineStyle;
+  _selected: boolean;
+  _hovered: boolean;
+  _isPreview: boolean;
+  _hidden: boolean;
+  _geometryRevision: number;
+  _series: DrawingAttachedParameter["series"] | null;
+  _chart: DrawingAttachedParameter["chart"] | null;
+  _paneView: ShapePaneView;
+  _requestUpdate: (() => void) | null;
+
+  constructor(opts: ShapePrimitiveOptions) {
+    this._id = opts.id;
+    this._type = "shape";
+    this._shapeType = normalizeShapeType(opts.shapeType);
+    this._dataPoints = opts.dataPoints || [];
+    this._color = opts.color || "#f59e0b";
+    this._lineWidth = opts.lineWidth || 2;
+    this._fillColor = opts.fillColor || this._color;
+    this._fillOpacity = normalizeOpacity(opts.fillOpacity);
+    this._lineStyle = opts.lineStyle || "solid";
+    this._selected = !!opts.selected;
+    this._hovered = !!opts.hovered;
+    this._isPreview = !!opts.isPreview;
+    this._hidden = !!opts.hidden;
+    this._geometryRevision = 1;
+
+    this._series = null;
+    this._chart = null;
+    this._paneView = new ShapePaneView(this);
+    this._requestUpdate = null;
+  }
+
+  attached({ chart, series, requestUpdate }: DrawingAttachedParameter): void {
+    this._chart = chart;
+    this._series = series;
+    this._requestUpdate = () => {
+      drawingPerfCounters.recordRequestUpdate();
+      requestUpdate();
+    };
+  }
+
+  detached(): void {
+    this._chart = null;
+    this._series = null;
+    this._requestUpdate = null;
+  }
+
+  updateAllViews(): void {
+    this._paneView.update();
+  }
+
+  paneViews(): readonly PrimitivePaneView[] {
+    return [this._paneView];
+  }
+
+  get id() { return this._id; }
+  get shapeType() { return this._shapeType; }
+  get dataPoints() { return this._dataPoints; }
+  get color() { return this._color; }
+  get lineWidth() { return this._lineWidth; }
+  get fillColor() { return this._fillColor; }
+  get fillOpacity() { return this._fillOpacity; }
+  get lineStyle() { return this._lineStyle; }
+  get selected() { return this._selected; }
+  get geometryRevision() { return this._geometryRevision; }
+
+  setDataPoints(points: DrawingDataPoint[]): void {
+    this._dataPoints = points;
+    this._geometryRevision += 1;
+    this._requestUpdate?.();
+  }
+
+  setSelected(v: boolean): void {
+    const next = !!v;
+    if (this._selected !== next) {
+      this._selected = next;
+      this._requestUpdate?.();
+    }
+  }
+
+  setHovered(v: boolean): void {
+    const next = !!v;
+    if (this._hovered !== next) {
+      this._hovered = next;
+      this._requestUpdate?.();
+    }
+  }
+
+  setColor(color: string): void {
+    this._color = color;
+    this._requestUpdate?.();
+  }
+
+  setLineWidth(width: number): void {
+    this._lineWidth = width;
+    this._requestUpdate?.();
+  }
+
+  setFillColor(color: string): void {
+    this._fillColor = color;
+    this._requestUpdate?.();
+  }
+
+  setFillOpacity(opacity: unknown): void {
+    this._fillOpacity = normalizeOpacity(opacity);
+    this._requestUpdate?.();
+  }
+
+  setLineStyle(style: ShapeLineStyle | null | undefined): void {
+    this._lineStyle = style || "solid";
+    this._requestUpdate?.();
+  }
+
+  setPreview(v: boolean): void {
+    this._isPreview = !!v;
+    this._requestUpdate?.();
+  }
+
+  setHidden(v: boolean, request = true): void {
+    const next = !!v;
+    if (this._hidden !== next) {
+      this._hidden = next;
+      if (request) this._requestUpdate?.();
+    }
+  }
+
+  requestUpdate(): void {
+    this._requestUpdate?.();
+  }
+
+  _screenPoints(): ScreenPoint[] | null {
+    if (!this._series || !this._chart || this._dataPoints.length < 2) return null;
+    const series = this._series;
+    const chart = this._chart;
+    const points: ScreenPoint[] = [];
+    const coordinateContext = {};
+    const horizontalCoordinates = drawingDataPointsToCoordinates(
+      chart,
+      series,
+      this._dataPoints,
+      coordinateContext,
+      { cacheToken: this, geometryRevision: this._geometryRevision },
+    );
+
+    for (const [index, dp] of this._dataPoints.entries()) {
+      const x = horizontalCoordinates[index] ?? null;
+      const y = series.priceToCoordinate(dp.price);
+      if (x == null || y == null || !isFinite(x) || !isFinite(y)) return null;
+      points.push({ x, y });
+    }
+
+    return points;
+  }
+
+  getBoundingBoxScreen(): ShapeBox | null {
+    const points = this._screenPoints();
+    if (!points || points.length < 2) return null;
+    const [first, second] = points;
+    return first && second ? boxFromPoints(first, second) : null;
+  }
+
+  hitTestGeometry(x: number, y: number): DrawingHit | null {
+    if (this._hidden) return null;
+    const box = this.getBoundingBoxScreen();
+    if (!box) return null;
+
+    const HANDLE_RADIUS = 7 + this._lineWidth;
+    if (this._selected) {
+      const handles = computeHandlePositions(box.x, box.y, box.width, box.height);
+      for (const key of HANDLE_KEYS) {
+        const p = handles[key];
+        if (Math.abs(x - p.x) <= HANDLE_RADIUS && Math.abs(y - p.y) <= HANDLE_RADIUS) {
+          return { zone: key, handle: key, pointIndex: -1 };
+        }
+      }
+    }
+
+    const HIT_RADIUS = 8 + this._lineWidth / 2;
+    if (this._shapeType === "ellipse") {
+      if (isPointInEllipse(x, y, box, HIT_RADIUS)) {
+        return { zone: "body", pointIndex: -1 };
+      }
+    } else if (isPointInBox(x, y, box, HIT_RADIUS)) {
+      return { zone: "body", pointIndex: -1 };
+    }
+
+    return null;
+  }
+}
+
+export default ShapeDrawingPrimitive;

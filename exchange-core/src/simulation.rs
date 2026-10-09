@@ -28,6 +28,8 @@ pub type UserId = String;
 pub struct SimulationRoom {
     room_id: RoomId,
     primary_venue_id: VenueId,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    market_events: Vec<crate::market_events::MarketEvent>,
     exchanges: BTreeMap<VenueId, ExchangeActor>,
     portfolios: PortfolioStore,
     #[serde(default)]
@@ -41,11 +43,17 @@ pub struct SimulationRoom {
     #[serde(default)]
     next_command_seq: ActorSeq,
     #[serde(skip)]
-    pending_funding_executions: Vec<ActorExecution>,
+    pending_clock_executions: Vec<ActorExecution>,
 }
 
 impl SimulationRoom {
     pub fn from_scenario(scenario: ScenarioConfig) -> Result<SimulationBootstrap, ScenarioError> {
+        let instruments = std::iter::once(&scenario.market)
+            .chain(scenario.extra_markets.iter())
+            .map(|m| m.instrument_id().to_string())
+            .collect::<Vec<_>>();
+        crate::market_events::validate_events(&scenario.market_events, &instruments)
+            .map_err(ScenarioError::InvalidMarketEvents)?;
         let room_id = scenario.room_id.clone();
         let primary_venue_id = scenario.market.venue_id().to_string();
         let mut markets_by_venue = BTreeMap::<VenueId, Vec<MarketConfig>>::new();
@@ -78,6 +86,7 @@ impl SimulationRoom {
         let mut room = Self {
             room_id: room_id.clone(),
             primary_venue_id,
+            market_events: scenario.market_events.clone(),
             exchanges,
             portfolios: PortfolioStore::new(),
             user_accounts: scenario_user_accounts(&scenario),
@@ -85,7 +94,7 @@ impl SimulationRoom {
             next_asset_ledger_seq: 0,
             pending_venue_transfers: Vec::new(),
             next_command_seq: 0,
-            pending_funding_executions: Vec::new(),
+            pending_clock_executions: Vec::new(),
         };
 
         for portfolio in &scenario.initial_portfolios {
@@ -133,6 +142,7 @@ impl SimulationRoom {
         Self {
             room_id,
             primary_venue_id,
+            market_events: Vec::new(),
             exchanges,
             portfolios,
             user_accounts: BTreeMap::new(),
@@ -140,8 +150,25 @@ impl SimulationRoom {
             next_asset_ledger_seq: 0,
             pending_venue_transfers: Vec::new(),
             next_command_seq,
-            pending_funding_executions: Vec::new(),
+            pending_clock_executions: Vec::new(),
         }
+    }
+
+    pub fn visible_market_events(
+        &self,
+        instrument: &str,
+    ) -> Vec<crate::market_events::MarketEvent> {
+        self.market_events
+            .iter()
+            .filter(|e| {
+                e.instrument_id == instrument && e.published_at_ms <= self.clock().market_time_ms()
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub fn validate_market_events(&self) -> Result<(), String> {
+        crate::market_events::validate_events(&self.market_events, &self.instrument_ids())
     }
 
     pub fn room_id(&self) -> &str {
@@ -468,8 +495,8 @@ impl SimulationRoom {
         Ok(completed)
     }
 
-    pub(crate) fn take_funding_executions(&mut self) -> Vec<ActorExecution> {
-        std::mem::take(&mut self.pending_funding_executions)
+    pub(crate) fn take_clock_executions(&mut self) -> Vec<ActorExecution> {
+        std::mem::take(&mut self.pending_clock_executions)
     }
 
     fn advance_clock_inner(
@@ -492,11 +519,11 @@ impl SimulationRoom {
                 let due = exchange
                     .advance_clock_venue_only(1)
                     .map_err(SimulationRoomError::Clearing)?;
-                let funding = exchange.take_funding_executions();
+                let funding = exchange.take_clock_executions();
                 due_by_venue.push((venue_id.clone(), due));
                 for mut execution in funding {
                     execution.command_seq = self.take_command_seq();
-                    self.pending_funding_executions.push(execution);
+                    self.pending_clock_executions.push(execution);
                 }
             }
 

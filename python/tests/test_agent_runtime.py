@@ -116,6 +116,133 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("error", self.call("child", "trade", self.buy(), "slice"))
         self.assertEqual(len(self.exchange.orders), 1)
 
+    def test_market_and_reduce_only_require_a_price_and_use_bounded_ioc(self):
+        for action, variant in (("market", "PlaceImmediateOrCancel"), ("reduce_only", "PlaceReduceOnlyImmediateOrCancel")):
+            args = self.buy(action=action)
+            args.pop("price_tick")
+            self.assertIn("price_tick is required", self.call("unbounded-" + action, "trade", args)["error"])
+            self.call("bounded-" + action, "trade", self.buy(action=action, price_tick=101))
+            self.assertEqual(self.exchange.orders[-1]["action"], {variant: {"side": "Buy", "qty": 2, "price_tick": 101}})
+        self.assertEqual(len(self.exchange.orders), 2)
+
+    def test_hedge_leg_reaches_bounded_and_unbounded_exchange_actions(self):
+        self.call("open-long", "trade", self.buy(instrument="PERP", position_side="Long"))
+        action = self.exchange.orders[-1]["action"]["PlaceProtected"]
+        self.assertEqual((action["position_side"], action["order_type"], action["side"]), ("Long", "Limit", "Buy"))
+        self.call("close-short", "trade", self.buy(instrument="PERP", action="reduce_only", position_side="Short"))
+        action = self.exchange.orders[-1]["action"]["PlaceProtected"]
+        self.assertEqual((action["position_side"], action["order_type"], action["reduce_only"]), ("Short", "ImmediateOrCancel", True))
+        args = self.buy(instrument="PERP", action="market", side="Sell", position_side="Short", execution_mode="unbounded")
+        args.pop("price_tick")
+        self.call("open-short", "trade", args)
+        action = self.exchange.orders[-1]["action"]["PlaceUnboundedMarket"]
+        self.assertEqual((action["side"], action["position_side"]), ("Sell", "Short"))
+        self.assertIn("position_side", self.call("invalid-leg", "trade", self.buy(position_side="invalid"))["error"])
+
+    def test_unbounded_mode_is_explicit_and_maps_to_real_market_orders(self):
+        for action, variant in (("market", "PlaceMarket"), ("reduce_only", "PlaceReduceOnlyMarket")):
+            args = self.buy(action=action, execution_mode="unbounded")
+            args.pop("price_tick")
+            self.call("sweep-" + action, "trade", args)
+            self.assertEqual(self.exchange.orders[-1]["action"], {variant: {"side": "Buy", "qty": 2}})
+        bounded = self.buy(action="market", execution_mode="bounded")
+        bounded.pop("price_tick")
+        self.assertIn("price_tick is required", self.call("explicit-bounded", "trade", bounded)["error"])
+        self.assertEqual(len(self.exchange.orders), 2)
+
+    def test_unbounded_mode_preserves_optional_deadline_and_retry_after_restart(self):
+        args = self.buy(action="market", execution_mode="unbounded", valid_until_market_time_ms=2500)
+        args.pop("price_tick")
+        self.exchange.lose_response = True
+        with self.assertRaises(TimeoutError):
+            self.call("sweep-lost", "trade", args)
+        expected = {"PlaceUnboundedMarket": {"side": "Buy", "qty": 2, "reduce_only": False,
+            "valid_until_market_time_ms": 2500}}
+        self.assertEqual(self.exchange.orders[0]["action"], expected)
+        self.runtime.store.db.close()
+        self.runtime = Runtime(self.directory.name, PLUGIN, "http://unused", self.sandbox, lambda _: self.exchange)
+        self.assertTrue(self.call("sweep-lost", "trade", args)["accepted"])
+        self.assertEqual(len(self.exchange.orders), 1)
+        self.assertFalse(self.runtime.store.pending("alice"))
+        with self.assertRaisesRegex(ValueError, "different arguments"):
+            self.call("sweep-lost", "trade", self.buy(action="market", execution_mode="bounded"))
+
+    def test_unbounded_retry_without_deadline_is_not_mistaken_for_a_legacy_order(self):
+        args = self.buy(action="market", execution_mode="unbounded")
+        args.pop("price_tick")
+        self.exchange.lose_response = True
+        with self.assertRaises(TimeoutError):
+            self.call("sweep-no-deadline", "trade", args)
+        self.call("sweep-no-deadline", "trade", args)
+        self.assertEqual(len(self.exchange.orders), 1)
+        self.assertEqual(self.exchange.orders[0]["action"], {"PlaceMarket": {"side": "Buy", "qty": 2}})
+
+    def test_invalid_modes_and_conflicting_price_fields_do_not_submit_orders(self):
+        for index, mode in enumerate((None, True, "off", {}, [])):
+            self.assertIn("execution_mode", self.call("bad-mode-" + str(index), "trade", self.buy(execution_mode=mode))["error"])
+        self.assertIn("omit price_tick", self.call("conflicting-price", "trade", self.buy(action="market", execution_mode="unbounded"))["error"])
+        for action in ("limit", "post_only", "ioc"):
+            args = self.buy(action=action, execution_mode="unbounded")
+            args.pop("price_tick")
+            self.assertIn("only supported for market/reduce_only", self.call("bad-sweep-" + action, "trade", args)["error"])
+        self.assertEqual(self.exchange.orders, [])
+
+    def test_unbounded_child_strategy_still_shares_quantity_and_order_limits(self):
+        args = self.buy(action="market", execution_mode="unbounded")
+        args.pop("price_tick")
+        config = self.runtime.config("alice")
+        config["orders_per_minute"] = 1
+        self.runtime.store.put("trader", "alice", config)
+        self.sandbox.result["actions"] = [args]
+        self.save()
+        self.runtime.tick(config, self.runtime.strategies("alice")[0])
+        self.assertEqual(self.exchange.orders[0]["action"], {"PlaceMarket": {"side": "Buy", "qty": 2}})
+        self.assertIn("order budget exhausted", self.call("another-sweep", "trade", args)["error"])
+        self.assertIn("error", self.call("oversized-sweep", "trade", {**args, "qty": config["max_order_qty"] + 1}))
+        self.assertIn("scope", self.call("other-sweep", "trade", {**args, "instrument": "OTHER"})["error"])
+        self.assertEqual(len(self.exchange.orders), 1)
+
+    def test_deadlines_are_absolute_and_unchanged_after_unknown_outcome(self):
+        args = self.buy(valid_until_market_time_ms=2500, expires_at_market_time_ms=5000)
+        self.exchange.lose_response = True
+        with self.assertRaises(TimeoutError):
+            self.call("protected-retry", "trade", args)
+        expected = {"PlaceProtected": {"side": "Buy", "qty": 2, "price_tick": 100, "order_type": "Limit",
+            "reduce_only": False, "valid_until_market_time_ms": 2500, "expires_at_market_time_ms": 5000}}
+        self.assertEqual(self.exchange.orders[0]["action"], expected)
+        self.call("protected-retry", "trade", args)
+        self.assertEqual(len(self.exchange.orders), 1)
+        self.assertEqual(self.exchange.orders[0]["action"], expected)
+
+    def test_legacy_unbounded_pending_order_is_not_silently_discarded_on_upgrade(self):
+        args = self.buy(action="market")
+        args.pop("price_tick")
+        self.runtime.store.reserve("alice", "legacy", "trade", {"input": args, "source": "direct"})
+        with self.assertRaisesRegex(UncertainOutcome, "legacy unbounded order outcome is unresolved"):
+            self.call("legacy", "trade", args)
+        self.assertEqual(len(self.runtime.store.pending("alice")), 1)
+        self.assertEqual(self.exchange.orders, [])
+
+    def test_bad_deadlines_fail_closed_and_cancellation_needs_no_price(self):
+        for value in (True, -1, 0, 1.5, 2**53):
+            self.assertIn("error", self.call("bad-" + str(value), "trade", self.buy(valid_until_market_time_ms=value)))
+        for action in ("market", "ioc", "reduce_only"):
+            self.assertIn("only limit/post_only", self.call("expiry-" + action, "trade",
+                self.buy(action=action, expires_at_market_time_ms=5000))["error"])
+        self.call("cancel-no-price", "trade", {"instrument": "SPOT", "action": "cancel", "order_id": 1})
+        self.assertEqual(self.exchange.orders[-1]["action"], {"Cancel": {"order_id": 1}})
+
+    def test_generated_strategy_uses_the_same_price_and_deadline_protection(self):
+        self.sandbox.result["actions"] = [self.buy(action="reduce_only", instrument="PERP",
+            side="Sell", price_tick=99, valid_until_market_time_ms=2500)]
+        self.save()
+        self.runtime.tick(self.runtime.config("alice"), self.runtime.strategies("alice")[0])
+        action = self.exchange.orders[0]["action"]["PlaceProtected"]
+        self.assertTrue(action["reduce_only"])
+        self.assertEqual(action["order_type"], "ImmediateOrCancel")
+        self.assertEqual(action["price_tick"], 99)
+        self.assertEqual(action["valid_until_market_time_ms"], 2500)
+
     def test_malformed_exchange_response_keeps_request_pending(self):
         original = self.exchange._request
         def damaged(*args, **kwargs):

@@ -32,6 +32,7 @@ pub struct TrainingScenario {
 fn base_scenario(room_id: &str, sell_qty: Qty) -> ScenarioConfig {
     ScenarioConfig {
         room_id: room_id.to_string(),
+        market_events: Vec::new(),
         venue_preset: None,
         venue_rules: Default::default(),
         venue_asset_policy: Default::default(),
@@ -59,6 +60,7 @@ fn base_scenario(room_id: &str, sell_qty: Qty) -> ScenarioConfig {
         ],
         seed_orders: vec![
             Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: 1,
                 account_id: 10,
                 side: Side::Buy,
@@ -67,6 +69,7 @@ fn base_scenario(room_id: &str, sell_qty: Qty) -> ScenarioConfig {
                 reduce_only: false,
             }),
             Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: 2,
                 account_id: 10,
                 side: Side::Sell,

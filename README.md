@@ -28,6 +28,7 @@ account cashflows, collateral risk, deterministic recovery and public/private re
 - `python/marketforge`: HTTP SDK (`strategy.v1`) for observe/place/cancel/training.
 - `marketforge-candlescope-plugin`: embedded and remote CandleScope integration.
 - `marketforge-web`: React/TypeScript interface.
+- `vendor/candlescope`: project-owned frontend and analysis source copy; see [simulation workbench](docs/CANDLESCOPE_WORKBENCH.md). Integration changes stay in MarketForge.
 
 ## Local development
 
@@ -75,6 +76,14 @@ The SDK talks only to HTTP. It does not open the database or internal actors.
 
 ## Validation
 
+Development and test builds disable source-level debug information (`debug = 0`)
+while retaining incremental compilation (`incremental = true`). Windows MSVC may
+still emit smaller PDBs with function symbols and standard-library information.
+Existing symbols and caches are not automatically removed.
+For source-level debugging, temporarily enable symbols for the relevant profile:
+`cargo --config profile.dev.debug=2 build` or
+`cargo --config profile.test.debug=2 test`.
+
 ```sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
@@ -108,6 +117,7 @@ Frontend `npm` build is optional for backend work.
 - [Backend follow-up execution plan (Chinese)](docs/BACKEND_FOLLOWUP_EXECUTION_PLAN.md)
 - [Runtime contract](docs/RUNTIME_CONTRACT.md)
 - [HTTP API contract](docs/API_CONTRACT.md)
+- [双向持仓配置与开平仓](docs/HEDGE_MODE.md)
 - [Backend storage and runtime configuration](docs/BACKEND_STORAGE.md)
 - [Bot plugins and installation](docs/BOT_PLUGINS.md)
 - [Pine background strategies and mixed market](docs/PINE_BOTS.md)

@@ -38,11 +38,13 @@ pub(super) async fn runtime_info(
     headers: HeaderMap,
 ) -> ApiResult<serde_json::Value> {
     let app = lock_state(&state).await?;
-    current_user_id(&headers, &app.auth_policy)?;
+    if !app.auth_policy.is_accounts() {
+        current_user_id(&headers, &app.auth_policy)?;
+    }
     let kind = app.journal.storage_kind();
     Ok(Json(
         serde_json::json!({"api_version":"http.v1", "storage":{"kind":kind,"durable":kind == "postgresql"},
-        "websocket":{"version":VERSION,"snapshot_interval_ms":CADENCE.as_millis()}}),
+        "websocket":{"version":VERSION,"snapshot_interval_ms":CADENCE.as_millis()},"room_portal":{"version":"room.portal.v1"},"competition_platform":{"version":"competition.v1","auth_mode":app.auth_policy.mode()}}),
     ))
 }
 
@@ -63,8 +65,8 @@ pub(super) async fn upgrade(
             "WebSocket origin is not allowed",
         ));
     }
-    if selection.account_id == 0
-        || ![1_000, 60_000, 300_000, 900_000, 3_600_000].contains(&selection.interval_ms)
+    if !(1_000..=2_678_400_000).contains(&selection.interval_ms)
+        || selection.interval_ms % 1_000 != 0
     {
         return Err(api_error(
             StatusCode::BAD_REQUEST,
@@ -185,7 +187,7 @@ async fn snapshot(
         state,
         headers,
         room,
-        RoomReadAccess::Account(selection.account_id),
+        RoomReadAccess::ViewAccount(selection.account_id),
     )
     .await?;
     let (observation, cursor, fallback) = {
@@ -196,10 +198,11 @@ async fn snapshot(
                 .map(|room| room.primary_instrument_id().to_string())
                 .unwrap_or_default()
         });
-        let observation = app
+        let mut observation = app
             .rooms
             .participant_observation(room, &instrument, selection.account_id)
             .map_err(api_error_from_room)?;
+        room_portal::public_observation(&mut observation, selection.account_id);
         let cursor = app
             .rooms
             .simulation_room(room)
@@ -240,10 +243,11 @@ async fn snapshot(
         // Never hold the matching writer lock across database I/O. A changed cursor or
         // account/book/clock rejects the mixed sample instead of publishing it.
         let app = lock_state(state).await?;
-        let now = app
+        let mut now = app
             .rooms
             .participant_observation(room, &observation.instrument_id, selection.account_id)
             .map_err(api_error_from_room)?;
+        room_portal::public_observation(&mut now, selection.account_id);
         if now != observation
             || app
                 .rooms

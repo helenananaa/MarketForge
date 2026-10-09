@@ -51,7 +51,7 @@ fn inspect_recovery(recovery: &JournalRecovery, full_replay: bool) -> Result<Val
         "rooms": actors,
         "tickers": tickers,
         "next_order_id": crate::next_order_id_from_recovery(recovery)?,
-        "schedulers": crate::scheduler_states_from_recovery(recovery),
+        "schedulers": crate::scheduler_states_from_recovery(recovery)?,
         "training_runs": crate::training_runs_from_recovery(recovery),
     });
     // Plugin state is arbitrary JSON: never normalize its arrays by field name.
@@ -133,6 +133,7 @@ mod tests {
             (4, 20, Side::Buy, 102),
         ] {
             let command = Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: id,
                 account_id,
                 side,
@@ -219,6 +220,7 @@ mod tests {
         };
         store.append_snapshot(&snapshot).unwrap();
         let tail = Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: 100,
             account_id: 20,
             side: Side::Buy,

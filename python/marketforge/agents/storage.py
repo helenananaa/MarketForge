@@ -62,7 +62,14 @@ class Store:
                     raise ValueError("request id reused with different arguments")
                 return dict(row)
             self.db.execute("INSERT INTO calls VALUES(?,?,?,?,?,NULL)", (trader, key, name, payload, "pending"))
+            if name == "trade":
+                self.db.execute("INSERT OR REPLACE INTO objects VALUES(?,?,?)", ("exchange_reservation", f"{trader}:{key}", "true"))
             return None
+
+    def last_event(self, trader, kind):
+        with self.lock:
+            row = self.db.execute("SELECT * FROM events WHERE trader=? AND kind=? ORDER BY seq DESC LIMIT 1", (trader, kind)).fetchone()
+            return dict(row) | {"data": json.loads(row["data"])} if row else None
 
     def finish(self, trader, key, result):
         with self.lock, self.db:
@@ -71,3 +78,13 @@ class Store:
     def pending(self, trader):
         with self.lock:
             return [dict(r) for r in self.db.execute("SELECT * FROM calls WHERE trader=? AND status='pending' ORDER BY rowid", (trader,))]
+
+    def receipt(self, trader, key):
+        with self.lock:
+            row = self.db.execute("SELECT status,result FROM calls WHERE trader=? AND id=?", (trader, key)).fetchone()
+            return {"status": row["status"], "result": json.loads(row["result"]) if row["result"] else None} if row else {"status": "not_submitted"}
+
+    def call_record(self, trader, key):
+        with self.lock:
+            row = self.db.execute("SELECT * FROM calls WHERE trader=? AND id=?", (trader, key)).fetchone()
+            return dict(row) if row else None

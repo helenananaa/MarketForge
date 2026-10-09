@@ -32,6 +32,9 @@ pub struct BotFillDetail {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BotMarketData {
     pub interval_ms: u64,
+    /// Cumulative quantity excluding any trade involving this account.
+    #[serde(default)]
+    pub external_volume_qty: String,
     /// Closed, nonempty bars only; no synthetic volume or prices.
     pub candles: Vec<crate::Candle>,
     /// Complete public fills involving this account, in execution order.
@@ -56,6 +59,10 @@ pub struct ParticipantObservation {
     pub book: BookSnapshot,
     pub public_trades: Vec<Trade>,
     pub own_orders: Vec<Order>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub related_markets: Vec<ParticipantObservation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub market_events: Vec<crate::market_events::MarketEvent>,
     pub own_account: Option<AccountSnapshot>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bot_market_data: Option<BotMarketData>,
