@@ -314,9 +314,16 @@ function OrderBookDock({ runtime, height, onRequestClose, onSelectPrice }: Order
   const rows = useMemo(() => (
     presentation ? buildOrderBookRows(presentation.bids, presentation.asks, presentation.aggregationApplied ? presentation.priceStep : null, presentation.incompleteBidPrices, presentation.incompleteAskPrices, { bidMin: presentation.coverageBidMin, askMax: presentation.coverageAskMax }) : null
   ), [presentation]);
-  const groupingOptions = view.preferences.mode === "partial"
-    ? PARTIAL_PRICE_GROUPINGS
-    : FULL_PRICE_GROUPINGS;
+  const groupingOptions = useMemo(() => {
+    const all = view.preferences.mode === "partial" ? PARTIAL_PRICE_GROUPINGS : FULL_PRICE_GROUPINGS;
+    const tick = snapshot.book?.priceTickSize;
+    const reference = snapshot.book?.bids[0]?.[0] ?? snapshot.book?.asks[0]?.[0];
+    if (!tick || !reference) return all;
+    // A bucket wider than a tenth of the price collapses the whole book into one or two rows.
+    const maxStep = reference * 0.1;
+    return all.filter((grouping) => grouping === "auto" || grouping === "raw" || grouping === activeGrouping
+      || tick * Number(grouping) <= maxStep);
+  }, [activeGrouping, snapshot.book, view.preferences.mode]);
   // Percentages must not imply coverage out to a wide bucket's synthetic edge.
   const coveredBid = presentation?.coverageBidMin == null ? null
     : Math.max(presentation.coverageBidMin, presentation.bids.at(-1)?.[0] ?? presentation.coverageBidMin);

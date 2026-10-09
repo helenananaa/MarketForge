@@ -11,6 +11,7 @@
     "frontend/simulation.html",
     "frontend/src/app/WorkspaceNavigation.tsx",
     "frontend/src/editor/simulationEditorSetup.ts",
+    "frontend/src/features/order-book/OrderBookDock.tsx",
     "frontend/src/features/simulation/README.md",
     "frontend/src/features/simulation/SimulationApp.tsx",
     "frontend/src/features/simulation/SimulationChart.tsx",
@@ -55,6 +56,7 @@
     "frontend/src/i18n/catalogs/zh-Hant.ts",
     "frontend/src/i18n/catalogs/zh-MO.ts",
     "frontend/src/i18n/catalogs/zh-TW.ts",
+    "frontend/src/index.css",
     "frontend/src/simulation-main.tsx",
     "frontend/vite.config.js"
   ],
