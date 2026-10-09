@@ -22,13 +22,16 @@ fn expired_live_bot_decision_is_journaled_and_recovered_without_stopping_market(
     let before = rooms.simulation_room(&scenario.room_id).unwrap().next_command_seq();
     let mut order_id = 1000;
     let mut submissions = BTreeMap::new();
-    let outcome = work.apply(&mut rooms,&mut order_id,scheduler,&mut ServerBotPolicy{training:None},&mut submissions).unwrap();
+    let mut outcome = work.apply(&mut rooms,&mut order_id,&scheduler,&mut ServerBotPolicy{training:None},&mut submissions).unwrap();
+    outcome.state.revision = scheduler.revision + 1;
+    let mut recovered_state = scheduler;
+    outcome.apply_owned(&mut recovered_state).unwrap();
     let execution = rooms.execution_history(&scenario.room_id).unwrap().last().unwrap().clone();
     assert!(matches!(execution.result,ActorExecutionResult::Rejected(exchange_core::ActorRejectReason::OrderProtectionExpired{..})));
     let command = command_from_actor_execution(&execution).expect("actor rejection retains submitted command");
     let (participant,account) = submissions.get(&execution.command_seq).unwrap().clone();
     let record = JournalExecution::submitted(participant,account,command,execution);
-    store.append_room_mutation(&PendingJournalMutation::new(&scenario.room_id,before,RoomMutation::SchedulerProgress{clock_steps:0,state:outcome.state,training:None}),&[record],&[],None).unwrap();
+    store.append_room_mutation(&PendingJournalMutation::new(&scenario.room_id,before,RoomMutation::SchedulerProgress{clock_steps:0,state:recovered_state,training:None}),&[record],&[],None).unwrap();
     let recovered = recover_rooms(&store.load_recovery().unwrap()).unwrap();
     assert_eq!(recovered.book_snapshot(&scenario.room_id).unwrap(),rooms.book_snapshot(&scenario.room_id).unwrap());
     assert_eq!(recovered.clock(&scenario.room_id).unwrap(),clock);

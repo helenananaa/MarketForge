@@ -74,6 +74,17 @@ impl SpotTradingEngine {
             .sync_account_balances(account_id, cash_balance, position_qty)
     }
 
+    #[cfg(test)]
+    pub(crate) fn sync_account_balances_reference(
+        &mut self,
+        account_id: AccountId,
+        cash_balance: Money,
+        position_qty: PositionQty,
+    ) -> Result<SpotAccountSnapshot, ClearingError> {
+        self.accounts
+            .sync_account_balances_reference(account_id, cash_balance, position_qty)
+    }
+
     pub fn order_owner(&self, order_id: OrderId) -> Option<AccountId> {
         self.book.order_owner(order_id)
     }

@@ -663,6 +663,76 @@ async fn realtime_bad_ready_wave_rolls_back_before_individual_retry() {
 }
 
 #[tokio::test]
+async fn realtime_ack_preserves_roster_and_untouched_state_and_recovers_empty_actions() {
+    use journal::JournalStore;
+    let room = "sparse-ack";
+    let (shared, _, mut store) = setup(room).await;
+    let (control, priors) = prepare_wave(&shared, room).await;
+    let (roster, untouched, history_len, revision) = {
+        let mut app = shared.app.lock().await;
+        let mut scheduler = app.schedulers[room].clone();
+        if let PersistedAgentKindState::Plugin { data, .. } = &mut scheduler.agents[1].kind_state {
+            *data = serde_json::json!({"untouched": "x".repeat(10000)});
+        }
+        install_scheduler(&mut app, scheduler).await.unwrap();
+        let scheduler = &app.schedulers[room];
+        let untouched = match &scheduler.agents[1].kind_state {
+            PersistedAgentKindState::Plugin { data, .. } => {
+                data["untouched"].as_str().unwrap().as_ptr() as usize
+            }
+            _ => unreachable!(),
+        };
+        (
+            scheduler.agents.as_ptr() as usize,
+            untouched,
+            app.rooms.execution_history_len(room).unwrap(),
+            scheduler.revision,
+        )
+    };
+    let epoch = control.epoch.load(Ordering::Acquire);
+    commit_realtime_work(
+        shared.clone(),
+        room.into(),
+        work(&control, &priors[0], epoch, vec![]),
+    )
+    .await
+    .unwrap();
+    // Empty order actions still durably advance this bot's state.
+    {
+        let app = shared.app.lock().await;
+        assert_eq!(count(&app, room, "fast-a"), 1);
+        assert_eq!(app.schedulers[room].revision, revision + 1);
+        assert_eq!(app.rooms.execution_history_len(room).unwrap(), history_len);
+        assert_eq!(app.schedulers[room].agents.as_ptr() as usize, roster);
+        match &app.schedulers[room].agents[1].kind_state {
+            PersistedAgentKindState::Plugin { data, .. } => assert_eq!(
+                data["untouched"].as_str().unwrap().as_ptr() as usize,
+                untouched
+            ),
+            _ => unreachable!(),
+        }
+    }
+    // A clock-only commit preserves the same allocations as well.
+    commit_realtime_work(
+        shared.clone(),
+        room.into(),
+        realtime::Work::Clock(control.clone()),
+    )
+    .await
+    .unwrap();
+    let recovery = store.load_recovery().unwrap();
+    let recovered = scheduler_states_from_recovery(&recovery).unwrap();
+    {
+        let app = shared.app.lock().await;
+        assert_eq!(recovered[room], app.schedulers[room]);
+        assert_eq!(app.schedulers[room].agents.as_ptr() as usize, roster);
+    }
+    assert!(matches!(&recovery.mutations.last().unwrap().mutation,
+        RoomMutation::SchedulerDelta { delta, clock_steps: 1, .. } if delta.changes.is_empty()));
+    shutdown(&shared).await;
+}
+
+#[tokio::test]
 async fn realtime_ready_wave_skips_stale_members_and_fences_pause_epoch() {
     let (shared, _, _) = setup("wave-fence").await;
     let (control, priors) = prepare_wave(&shared, "wave-fence").await;

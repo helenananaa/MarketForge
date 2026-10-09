@@ -1,3 +1,4 @@
+use crate::shared_map::SharedMap;
 use std::sync::{Arc, OnceLock};
 use std::{cmp::Reverse, collections::BTreeMap};
 
@@ -356,18 +357,18 @@ pub struct PerpAccountStore {
     // Exact successful inputs, not a relaxed risk policy. Every account is
     // still checked; only identical account/order/mark/context inputs reuse work.
     #[serde(skip)]
-    sync_checks: BTreeMap<AccountId, Arc<MarginSyncCheck>>,
+    sync_checks: SharedMap<AccountId, Arc<MarginSyncCheck>>,
     #[serde(skip)]
     reservation_index: OnceLock<Arc<BTreeMap<AccountId, Vec<OrderId>>>>,
-    accounts: BTreeMap<AccountId, PerpAccount>,
+    accounts: SharedMap<AccountId, PerpAccount>,
     #[serde(default)]
-    order_reservations: BTreeMap<OrderId, PerpOrderReservation>,
+    order_reservations: SharedMap<OrderId, PerpOrderReservation>,
     #[serde(default)]
-    margin_statuses: BTreeMap<AccountId, PerpMarginStatus>,
+    margin_statuses: SharedMap<AccountId, PerpMarginStatus>,
     #[serde(default)]
     insurance_fund_balance: Money,
     #[serde(default)]
-    cross_margin_contexts: BTreeMap<AccountId, PerpCrossMarginContext>,
+    cross_margin_contexts: SharedMap<AccountId, PerpCrossMarginContext>,
     config: PerpClearingConfig,
     mark_price_tick: PriceTick,
 }
@@ -494,13 +495,13 @@ impl PerpAccountStore {
 
         Ok(Self {
             reservation_changes: crate::account::ReservationChanges::default(),
-            accounts: BTreeMap::new(),
-            order_reservations: BTreeMap::new(),
+            accounts: SharedMap::default(),
+            order_reservations: SharedMap::default(),
             reservation_index: OnceLock::new(),
-            sync_checks: BTreeMap::new(),
-            margin_statuses: BTreeMap::new(),
+            sync_checks: SharedMap::default(),
+            margin_statuses: SharedMap::default(),
             insurance_fund_balance: config.initial_insurance_fund,
-            cross_margin_contexts: BTreeMap::new(),
+            cross_margin_contexts: SharedMap::default(),
             config,
             mark_price_tick: initial_mark_price_tick,
         })
@@ -729,8 +730,17 @@ impl PerpAccountStore {
         // those entries for rollback instead of copying every account and order
         // once for each member of a venue-wide cross-margin refresh.
         let previous_account = self.accounts.get(&account_id).cloned();
-        let previous_context = self.cross_margin_contexts.insert(account_id, context);
-        self.account_mut(account_id).cash_balance = cash_balance;
+        let previous_context = self.cross_margin_contexts.get(&account_id).copied();
+        if previous_context != Some(context) {
+            self.cross_margin_contexts.insert(account_id, context);
+        }
+        if self
+            .accounts
+            .get(&account_id)
+            .is_none_or(|account| account.cash_balance != cash_balance)
+        {
+            self.account_mut(account_id).cash_balance = cash_balance;
+        }
         let result = (|| {
             self.refresh_reserved_margin_for(account_id)?;
             let account = self
@@ -740,8 +750,10 @@ impl PerpAccountStore {
         })();
         match result {
             Ok(snapshot) => {
-                self.margin_statuses
-                    .insert(account_id, snapshot.margin_status);
+                if self.margin_statuses.get(&account_id) != Some(&snapshot.margin_status) {
+                    self.margin_statuses
+                        .insert(account_id, snapshot.margin_status);
+                }
                 let check = MarginSyncCheck {
                     account: self.accounts[&account_id].clone(),
                     orders: self
@@ -1048,15 +1060,13 @@ impl PerpAccountStore {
             if new_qty == 0 {
                 staged.order_reservations.remove(&order_id);
             } else {
-                staged.order_reservations.insert(
-                    order_id,
-                    staged.reservation_for_order(
-                        existing.account_id,
-                        None,
-                        new_price_tick,
-                        new_qty,
-                    )?,
-                );
+                let reservation = staged.reservation_for_order(
+                    existing.account_id,
+                    None,
+                    new_price_tick,
+                    new_qty,
+                )?;
+                staged.order_reservations.insert(order_id, reservation);
             }
             let after = staged.risk_exposure(existing.account_id)?;
             return Ok(Some((before, after)));
@@ -1583,7 +1593,7 @@ impl PerpAccountStore {
     ) -> impl Iterator<Item = (&OrderId, &PerpOrderReservation)> {
         let index = self.reservation_index.get_or_init(|| {
             let mut index: BTreeMap<AccountId, Vec<OrderId>> = BTreeMap::new();
-            for (&id, reservation) in &self.order_reservations {
+            for (&id, reservation) in self.order_reservations.iter() {
                 index.entry(reservation.account_id).or_default().push(id);
             }
             Arc::new(index)
@@ -1779,11 +1789,11 @@ impl PerpAccountStore {
             .max(0);
         if account.reserved_margin != reserved_margin {
             self.reservation_changes.mark(account_id);
+            self.accounts
+                .get_mut(&account_id)
+                .ok_or(ClearingError::AccountNotFound)?
+                .reserved_margin = reserved_margin;
         }
-        self.accounts
-            .get_mut(&account_id)
-            .ok_or(ClearingError::AccountNotFound)?
-            .reserved_margin = reserved_margin;
         Ok(())
     }
 
@@ -1817,9 +1827,11 @@ impl PerpAccountStore {
         emit_all_changes: bool,
     ) -> Option<PerpClearingEvent> {
         let snapshot = self.account_snapshot(account_id)?;
-        let previous_status = self
-            .margin_statuses
-            .insert(account_id, snapshot.margin_status);
+        let previous_status = self.margin_statuses.get(&account_id).copied();
+        if previous_status != Some(snapshot.margin_status) {
+            self.margin_statuses
+                .insert(account_id, snapshot.margin_status);
+        }
         let previous_status = previous_status.unwrap_or(snapshot.margin_status);
         if previous_status == snapshot.margin_status {
             return None;
@@ -2414,6 +2426,43 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn unchanged_margin_refresh_keeps_shared_tables_and_detaches_real_changes() {
+        let mut accounts = PerpAccountStore::new(PerpClearingConfig::default(), 100).unwrap();
+        accounts.create_account(10, 10_000);
+        accounts
+            .sync_cross_margin_account(10, 10_000, PerpCrossMarginContext::default())
+            .unwrap();
+        let frozen = accounts.clone();
+        let before = serde_json::to_value(&frozen).unwrap();
+        accounts.refresh_reserved_margin_for(10).unwrap();
+        assert!(accounts.refresh_margin_status_for(10, true).is_none());
+        assert!(accounts.accounts.shares_storage(&frozen.accounts));
+        assert!(
+            accounts
+                .margin_statuses
+                .shares_storage(&frozen.margin_statuses)
+        );
+        accounts
+            .sync_cross_margin_account(10, 9_999, PerpCrossMarginContext::default())
+            .unwrap();
+        assert!(!accounts.accounts.shares_storage(&frozen.accounts));
+        assert!(
+            accounts
+                .cross_margin_contexts
+                .shares_storage(&frozen.cross_margin_contexts)
+        );
+        assert!(
+            accounts
+                .margin_statuses
+                .shares_storage(&frozen.margin_statuses)
+        );
+        assert!(!accounts.sync_checks.shares_storage(&frozen.sync_checks));
+        assert_eq!(serde_json::to_value(&frozen).unwrap(), before);
+        let restored: PerpAccountStore = serde_json::from_value(before.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&restored).unwrap(), before);
+    }
 
     fn trade(
         trade_id: u64,

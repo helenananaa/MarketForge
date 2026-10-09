@@ -7,6 +7,7 @@ use crate::{
         ExchangeActor, MarketActor, MarketExecution, MarketStatus, RoomId,
     },
     clock::SimulationClock,
+    history::History,
     model::{AccountId, BookSnapshot, CancelOrder, Command, OrderId},
     portfolio::PortfolioAccountSnapshot,
     scenario::{ScenarioConfig, ScenarioError},
@@ -23,7 +24,7 @@ const SYSTEM_LIQUIDATION_ORDER_ID_STRIDE: OrderId = 1_000;
 #[derive(Clone, Debug, Default)]
 pub struct RoomManager {
     rooms: BTreeMap<RoomId, SimulationRoom>,
-    executions: BTreeMap<RoomId, Vec<ActorExecution>>,
+    executions: BTreeMap<RoomId, History<ActorExecution>>,
     pending_liquidations: BTreeMap<RoomId, VecDeque<PendingRoomLiquidation>>,
     recovered_last_trades: BTreeMap<(RoomId, String), i64>,
     restored_bot_history: BTreeMap<
@@ -43,6 +44,7 @@ impl RoomManager {
             rooms: self,
             room_id,
             public: BTreeMap::new(),
+            history: BTreeMap::new(),
         }
     }
 
@@ -67,7 +69,7 @@ impl RoomManager {
         let room_id = room.room_id().to_string();
         self.rooms.insert(room_id.clone(), room);
         self.executions
-            .insert(room_id.clone(), seed_executions.clone());
+            .insert(room_id.clone(), seed_executions.clone().into());
         self.pending_liquidations
             .insert(room_id.clone(), VecDeque::new());
         self.refresh_pending_liquidations(&room_id)?;
@@ -95,7 +97,7 @@ impl RoomManager {
         room.normalize_after_restore()
             .map_err(RoomManagerError::Actor)?;
         self.rooms.insert(room_id.clone(), room);
-        self.executions.insert(room_id.clone(), executions);
+        self.executions.insert(room_id.clone(), executions.into());
         self.pending_liquidations
             .insert(room_id.clone(), VecDeque::new());
         self.refresh_pending_liquidations(&room_id)?;
@@ -118,7 +120,7 @@ impl RoomManager {
         room.normalize_after_restore()
             .map_err(RoomManagerError::Actor)?;
         self.rooms.insert(room_id.clone(), room);
-        self.executions.insert(room_id.clone(), executions);
+        self.executions.insert(room_id.clone(), executions.into());
         self.pending_liquidations
             .insert(room_id.clone(), VecDeque::new());
         self.refresh_pending_liquidations(&room_id)?;
@@ -140,7 +142,7 @@ impl RoomManager {
         room.normalize_after_restore()
             .map_err(RoomManagerError::Actor)?;
         self.rooms.insert(room_id.clone(), room);
-        self.executions.insert(room_id.clone(), executions);
+        self.executions.insert(room_id.clone(), executions.into());
         self.pending_liquidations
             .insert(room_id.clone(), VecDeque::new());
         self.refresh_pending_liquidations(&room_id)?;
@@ -636,8 +638,8 @@ impl RoomManager {
             });
         let own_orders = self.resting_orders_for_account(room_id, instrument_id, account_id)?;
         let mut public_trades = Vec::new();
-        if let Ok(history) = self.execution_history(room_id) {
-            for execution in history.iter().rev() {
+        if let Ok(history) = self.execution_history_from(room_id, 0) {
+            for execution in history.rev() {
                 if execution.instrument_id != instrument_id {
                     continue;
                 }
@@ -846,7 +848,7 @@ impl RoomManager {
                 receipts.insert(receipt.trade.trade_id, receipt.clone());
             }
         }
-        for execution in self.execution_history(room_id)? {
+        for execution in self.execution_history_from(room_id, 0)? {
             if execution.instrument_id != instrument_id {
                 continue;
             }
@@ -1000,7 +1002,7 @@ impl RoomManager {
     ) -> Result<Vec<crate::candles::TimedTrade>, RoomManagerError> {
         use crate::model::Event;
         let mut trades = Vec::new();
-        for execution in self.execution_history(room_id)? {
+        for execution in self.execution_history_from(room_id, 0)? {
             if execution.instrument_id != instrument_id {
                 continue;
             }
@@ -1151,8 +1153,29 @@ impl RoomManager {
         Ok(self
             .executions
             .get(room_id)
-            .map(Vec::as_slice)
+            .map(|history| &**history)
             .unwrap_or_default())
+    }
+
+    /// Count records without materializing a contiguous export of the history.
+    pub fn execution_history_len(&self, room_id: &str) -> Result<usize, RoomManagerError> {
+        self.room(room_id)?;
+        Ok(self.executions.get(room_id).map_or(0, History::len))
+    }
+
+    /// Ordered transaction suffix, sharing old chunks with candidate rooms.
+    /// The legacy slice API remains available for explicit complete exports.
+    pub fn execution_history_from(
+        &self,
+        room_id: &str,
+        start: usize,
+    ) -> Result<impl DoubleEndedIterator<Item = &ActorExecution>, RoomManagerError> {
+        self.room(room_id)?;
+        Ok(self
+            .executions
+            .get(room_id)
+            .into_iter()
+            .flat_map(move |history| history.iter_from(start)))
     }
 }
 
@@ -1160,6 +1183,52 @@ pub struct RoomObservationBatch<'a> {
     rooms: &'a RoomManager,
     room_id: &'a str,
     public: BTreeMap<String, crate::ParticipantObservation>,
+    history: BTreeMap<String, ObservationHistory>,
+}
+
+/// The immutable room borrow is the cache validity boundary. Keep extra
+/// receipts/bars for this wave to avoid replaying history for every POV bot.
+struct ObservationHistory {
+    receipts: Vec<crate::observation::BotTradeReceipt>,
+    complete: bool,
+    candles: BTreeMap<u64, Vec<crate::Candle>>,
+    volume: Option<u128>,
+    accounts: BTreeMap<AccountId, ObservationAccountHistory>,
+}
+
+#[derive(Default)]
+struct ObservationAccountHistory {
+    volume: u128,
+    receipt_indices: Vec<usize>,
+}
+
+impl ObservationHistory {
+    fn new(receipts: Vec<crate::observation::BotTradeReceipt>, complete: bool) -> Self {
+        let mut volume = Some(0u128);
+        let mut accounts = BTreeMap::<AccountId, ObservationAccountHistory>::new();
+        for (index, receipt) in receipts.iter().enumerate() {
+            let trade = &receipt.trade;
+            volume = volume.and_then(|value| value.checked_add(u128::from(trade.qty)));
+            for (side, account) in [trade.maker_account_id, trade.taker_account_id]
+                .into_iter()
+                .enumerate()
+            {
+                if side == 1 && trade.maker_account_id == trade.taker_account_id {
+                    continue;
+                }
+                let own = accounts.entry(account).or_default();
+                own.volume = own.volume.saturating_add(u128::from(trade.qty));
+                own.receipt_indices.push(index);
+            }
+        }
+        Self {
+            receipts,
+            complete,
+            candles: BTreeMap::new(),
+            volume,
+            accounts,
+        }
+    }
 }
 
 impl RoomObservationBatch<'_> {
@@ -1170,14 +1239,92 @@ impl RoomObservationBatch<'_> {
         request: Option<crate::bots::BotMarketDataRequest>,
         related: &[String],
     ) -> Result<crate::ParticipantObservation, RoomManagerError> {
-        // History-dependent bots retain their exact account-specific fill and
-        // volume projections. Ordinary bots only need the shared public view.
-        let mut view = if request.is_some() {
-            self.rooms
-                .bot_observation(self.room_id, instrument_id, account_id, request)?
-        } else {
-            self.participant(instrument_id, account_id)?
-        };
+        let mut view = self.participant(instrument_id, account_id)?;
+        if let Some(request) = request {
+            if request.validate().is_err() {
+                return Err(RoomManagerError::Candle(
+                    crate::CandleError::InvalidInterval,
+                ));
+            }
+            if !self.history.contains_key(instrument_id) {
+                let (receipts, complete) =
+                    self.rooms.bot_trade_history(self.room_id, instrument_id)?;
+                self.history.insert(
+                    instrument_id.to_string(),
+                    ObservationHistory::new(receipts, complete),
+                );
+            }
+            let history = self
+                .history
+                .get_mut(instrument_id)
+                .expect("inserted history");
+            if !history.candles.contains_key(&request.interval_ms) {
+                let timed = history
+                    .receipts
+                    .iter()
+                    .map(|receipt| {
+                        crate::TimedTrade::from_trade(receipt.market_time_ms, &receipt.trade)
+                    })
+                    .collect::<Vec<_>>();
+                let mut candles =
+                    crate::aggregate_candles(&timed, request.interval_ms, view.market_time_ms)
+                        .map_err(RoomManagerError::Candle)?;
+                candles.retain(|bar| bar.is_final);
+                history.candles.insert(request.interval_ms, candles);
+            }
+            let candles = &history.candles[&request.interval_ms];
+            let own = history.accounts.get(&account_id);
+            let external_volume_qty = history
+                .volume
+                .map(|volume| volume - own.map_or(0, |own| own.volume))
+                .unwrap_or_else(|| {
+                    // Preserve the original saturating filtered sum even if
+                    // the total quantity cannot be represented in u128.
+                    history
+                        .receipts
+                        .iter()
+                        .filter(|receipt| {
+                            receipt.trade.maker_account_id != account_id
+                                && receipt.trade.taker_account_id != account_id
+                        })
+                        .fold(0u128, |n, receipt| {
+                            n.saturating_add(u128::from(receipt.trade.qty))
+                        })
+                })
+                .to_string();
+            let indices = own.map_or(&[][..], |own| own.receipt_indices.as_slice());
+            let mut own_fills = Vec::new();
+            let mut fill_details = Vec::new();
+            for &index in &indices[indices.len().saturating_sub(4096)..] {
+                let receipt = &history.receipts[index];
+                let trade = &receipt.trade;
+                let buyer = if trade.taker_side == crate::Side::Buy {
+                    trade.taker_account_id
+                } else {
+                    trade.maker_account_id
+                };
+                fill_details.push(crate::observation::BotFillDetail {
+                    trade_id: trade.trade_id,
+                    market_time_ms: receipt.market_time_ms,
+                    fee_paid: if account_id == buyer {
+                        receipt.buyer_fee
+                    } else {
+                        receipt.seller_fee
+                    },
+                });
+                own_fills.push(trade.clone());
+            }
+            let truncated =
+                !history.complete || candles.len() > request.max_bars || indices.len() > 4096;
+            view.bot_market_data = Some(crate::BotMarketData {
+                interval_ms: request.interval_ms,
+                external_volume_qty,
+                candles: candles[candles.len().saturating_sub(request.max_bars)..].to_vec(),
+                own_fills,
+                fill_details,
+                truncated,
+            });
+        }
         for instrument in related {
             if instrument != instrument_id {
                 view.related_markets
@@ -1702,7 +1849,18 @@ mod tests {
         {
             let mut batch = manager.observation_batch("history");
             for account in [20, 30, 10, 999, 20] {
-                for history in [None, Some(request)] {
+                for history in [
+                    None,
+                    Some(request),
+                    Some(crate::bots::BotMarketDataRequest {
+                        interval_ms: 2000,
+                        max_bars: 2,
+                    }),
+                    Some(crate::bots::BotMarketDataRequest {
+                        interval_ms: 1,
+                        max_bars: 1,
+                    }),
+                ] {
                     assert_eq!(
                         batch
                             .bot_observation("V-BTC-SPOT", account, history, &[])
@@ -1714,6 +1872,8 @@ mod tests {
                     );
                 }
             }
+            assert_eq!(batch.history.len(), 1);
+            assert_eq!(batch.history["V-BTC-SPOT"].candles.len(), 3);
         }
         let view = manager
             .bot_observation("history", "V-BTC-SPOT", 20, Some(request))
@@ -1774,6 +1934,143 @@ mod tests {
         assert!(recovered.bot_market_data.is_none());
     }
 
+    fn restored_history_room() -> RoomManager {
+        let mut manager = RoomManager::new();
+        manager
+            .create_room(spot_scenario("cached-history"))
+            .unwrap();
+        manager
+            .apply("cached-history", limit(2, 20, Side::Buy, 100, 1))
+            .unwrap();
+        let (receipts, _) = manager
+            .bot_trade_history("cached-history", "V-BTC-SPOT")
+            .unwrap();
+        let template = &receipts[0];
+        let receipts = (0..4200)
+            .map(|index| {
+                let mut receipt = template.clone();
+                receipt.trade.trade_id = index + 100;
+                receipt.market_time_ms = index * 1000;
+                receipt.buyer_fee = Some(2);
+                receipt.seller_fee = Some(1);
+                receipt
+            })
+            .collect();
+        manager.restore_bot_history("cached-history", receipts, false);
+        manager.advance_clock("cached-history", 4200).unwrap();
+        manager
+    }
+
+    #[test]
+    fn wave_history_preserves_bounded_fills_conflicts_and_new_wave_freshness() {
+        let mut manager = restored_history_room();
+        let request = crate::bots::BotMarketDataRequest {
+            interval_ms: 1000,
+            max_bars: 2,
+        };
+        {
+            let mut batch = manager.observation_batch("cached-history");
+            for account in [10, 20, 30, 999, 10] {
+                let view = batch
+                    .bot_observation("V-BTC-SPOT", account, Some(request), &[])
+                    .unwrap();
+                assert_eq!(
+                    view,
+                    manager
+                        .bot_observation("cached-history", "V-BTC-SPOT", account, Some(request))
+                        .unwrap()
+                );
+                let data = view.bot_market_data.unwrap();
+                assert!(data.truncated);
+                if account == 10 || account == 20 {
+                    assert_eq!(data.own_fills.len(), 4096);
+                    assert_eq!(data.own_fills[0].trade_id, 204);
+                    assert_eq!(data.fill_details.len(), 4096);
+                } else {
+                    assert!(data.own_fills.is_empty());
+                }
+            }
+        }
+        manager
+            .apply("cached-history", limit(3, 20, Side::Buy, 100, 1))
+            .unwrap();
+        // A new wave observes the append immediately, including the forming bar.
+        let mut batch = manager.observation_batch("cached-history");
+        let view = batch
+            .bot_observation("V-BTC-SPOT", 20, Some(request), &[])
+            .unwrap();
+        assert_eq!(
+            view,
+            manager
+                .bot_observation("cached-history", "V-BTC-SPOT", 20, Some(request))
+                .unwrap()
+        );
+        assert_eq!(batch.history["V-BTC-SPOT"].receipts.len(), 4202);
+        // The fallback retains the exact filtered sum if the cached total is unavailable.
+        batch.history.get_mut("V-BTC-SPOT").unwrap().volume = None;
+        assert_eq!(
+            batch
+                .bot_observation("V-BTC-SPOT", 20, Some(request), &[])
+                .unwrap(),
+            view
+        );
+        let mut conflict = batch.history["V-BTC-SPOT"]
+            .receipts
+            .first()
+            .unwrap()
+            .clone();
+        conflict.trade.price_tick += 1;
+        drop(batch);
+        manager.restore_bot_history("cached-history", vec![conflict], true);
+        let mut batch = manager.observation_batch("cached-history");
+        assert_eq!(
+            batch
+                .bot_observation("V-BTC-SPOT", 20, Some(request), &[])
+                .unwrap(),
+            manager
+                .bot_observation("cached-history", "V-BTC-SPOT", 20, Some(request))
+                .unwrap()
+        );
+        assert!(!batch.history["V-BTC-SPOT"].complete);
+    }
+
+    #[test]
+    #[ignore = "fixed-work release comparison; run explicitly"]
+    fn wave_history_fixed_work_benchmark() {
+        let manager = restored_history_room();
+        let request = crate::bots::BotMarketDataRequest {
+            interval_ms: 1000,
+            max_bars: 64,
+        };
+        let mut reference = None;
+        for cached in [false, true, true, false, false, true, true, false] {
+            let start = std::time::Instant::now();
+            let mut batch = manager.observation_batch("cached-history");
+            let mut views = Vec::new();
+            for n in 0..100 {
+                let account = [10, 20, 30, 999][n % 4];
+                views.push(if cached {
+                    batch
+                        .bot_observation("V-BTC-SPOT", account, Some(request), &[])
+                        .unwrap()
+                } else {
+                    manager
+                        .bot_observation("cached-history", "V-BTC-SPOT", account, Some(request))
+                        .unwrap()
+                });
+            }
+            println!(
+                "cached={cached} seconds={:.6}",
+                start.elapsed().as_secs_f64()
+            );
+            if let Some(prior) = &reference {
+                assert_eq!(&views, prior);
+            } else {
+                reference = Some(views);
+            }
+        }
+    }
+
     #[test]
     fn exposes_execution_history_for_room_timeline() {
         let mut manager = RoomManager::new();
@@ -1789,6 +2086,67 @@ mod tests {
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].command_seq, 0);
         assert_eq!(history[1].command_seq, 1);
+    }
+
+    #[test]
+    fn candidate_history_suffix_and_observations_preserve_original_and_recovery() {
+        let room = "history-fork";
+        let mut original = RoomManager::new();
+        original.create_room(spot_scenario(room)).unwrap();
+        // Cross multiple history chunks with real commands, including refusals.
+        for order in 2..620 {
+            original
+                .apply(room, limit(order, 20, Side::Buy, 1, 1))
+                .unwrap();
+        }
+        let previous = original.execution_history_len(room).unwrap();
+        let before = original
+            .participant_observation(room, "V-BTC-SPOT", 20)
+            .unwrap();
+        let mut candidate = original.clone();
+        candidate
+            .apply(room, limit(620, 20, Side::Buy, 100, 1))
+            .unwrap();
+        candidate
+            .apply(room, limit(621, 20, Side::Buy, 100, 1))
+            .unwrap();
+        let suffix = candidate
+            .execution_history_from(room, previous)
+            .unwrap()
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(suffix.len(), 2);
+        assert_eq!(original.execution_history_len(room).unwrap(), previous);
+        assert_eq!(
+            original
+                .participant_observation(room, "V-BTC-SPOT", 20)
+                .unwrap(),
+            before
+        );
+        let exported = candidate.execution_history(room).unwrap().to_vec();
+        assert_eq!(suffix, exported[previous..]);
+        let mut restored = RoomManager::new();
+        restored
+            .restore_simulation_room(candidate.simulation_room(room).unwrap().clone(), exported)
+            .unwrap();
+        assert_eq!(
+            restored
+                .execution_history_from(room, previous)
+                .unwrap()
+                .collect::<Vec<_>>(),
+            candidate
+                .execution_history_from(room, previous)
+                .unwrap()
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            restored
+                .participant_observation(room, "V-BTC-SPOT", 20)
+                .unwrap(),
+            candidate
+                .participant_observation(room, "V-BTC-SPOT", 20)
+                .unwrap()
+        );
     }
 
     #[test]

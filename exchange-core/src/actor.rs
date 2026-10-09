@@ -27,6 +27,21 @@ pub type RoomId = String;
 pub type ActorSeq = u64;
 type MarketReservations = BTreeMap<AccountId, BTreeMap<String, Money>>;
 
+fn ordered_available_balance<'a>(
+    cursor: &mut std::iter::Peekable<
+        impl Iterator<Item = (AccountId, &'a crate::VenueAssetBalance)>,
+    >,
+    account: AccountId,
+) -> Option<Money> {
+    while cursor.peek().is_some_and(|(id, _)| *id < account) {
+        cursor.next();
+    }
+    cursor
+        .peek()
+        .filter(|(id, _)| *id == account)
+        .map(|(_, balance)| balance.available())
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum MarketStatus {
     Running,
@@ -1593,6 +1608,85 @@ impl ExchangeActor {
         &mut self,
         instrument_id: &str,
     ) -> Result<(), ClearingError> {
+        #[cfg(test)]
+        if tests::INDEXED_MARGIN_REFERENCE.get() {
+            return self.sync_market_accounts_from_venue_indexed_reference(instrument_id);
+        }
+        let market = self
+            .markets
+            .get(instrument_id)
+            .ok_or(ClearingError::AccountNotFound)?;
+        let instrument = market.config().instrument().clone();
+        if market.kind() == MarketKind::Perp {
+            return self.sync_perp_cross_margin_group(&instrument.quote_asset);
+        }
+        let AccountSnapshots::Spot(accounts) = market.account_snapshots() else {
+            return Err(ClearingError::WrongMarketKind);
+        };
+        let account_reservations = accounts
+            .into_iter()
+            .map(|account| {
+                (
+                    account.account_id,
+                    account.reserved_cash,
+                    account.reserved_position,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let merge = account_reservations.len() >= self.venue_accounts.account_count() / 4
+            && account_reservations
+                .windows(2)
+                .all(|pair| pair[0].0 < pair[1].0);
+        let mut quote = self
+            .venue_accounts
+            .balances_for_asset(&instrument.quote_asset)
+            .peekable();
+        let mut base = self
+            .venue_accounts
+            .balances_for_asset(&instrument.base_asset)
+            .peekable();
+        for (account_id, own_quote_reservation, own_base_reservation) in account_reservations {
+            let quote_available = if merge {
+                ordered_available_balance(&mut quote, account_id)
+            } else {
+                self.venue_available_balance(account_id, &instrument.quote_asset)
+            };
+            let quote_balance = quote_available
+                .map(|available| {
+                    available
+                        .max(0)
+                        .checked_add(own_quote_reservation)
+                        .ok_or(ClearingError::BalanceOverflow)
+                })
+                .transpose()?
+                .unwrap_or(own_quote_reservation);
+            let base_available = if merge {
+                ordered_available_balance(&mut base, account_id)
+            } else {
+                self.venue_available_balance(account_id, &instrument.base_asset)
+            };
+            let base_balance = base_available
+                .map(|available| {
+                    available
+                        .checked_add(own_base_reservation)
+                        .ok_or(ClearingError::BalanceOverflow)
+                })
+                .transpose()?
+                .unwrap_or(own_base_reservation);
+            self.markets
+                .get_mut(instrument_id)
+                .ok_or(ClearingError::AccountNotFound)?
+                .sync_venue_balances(account_id, quote_balance, base_balance)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn sync_market_accounts_from_venue_indexed_reference(
+        &mut self,
+        instrument_id: &str,
+    ) -> Result<(), ClearingError> {
         let market = self
             .markets
             .get(instrument_id)
@@ -1617,11 +1711,9 @@ impl ExchangeActor {
 
         for (account_id, own_quote_reservation, own_base_reservation) in account_reservations {
             let quote_balance = self
-                .venue_accounts
-                .balance_snapshot(account_id, &instrument.quote_asset)
-                .map(|balance| {
-                    balance
-                        .available
+                .venue_available_balance(account_id, &instrument.quote_asset)
+                .map(|available| {
+                    available
                         .max(0)
                         .checked_add(own_quote_reservation)
                         .ok_or(ClearingError::BalanceOverflow)
@@ -1629,11 +1721,9 @@ impl ExchangeActor {
                 .transpose()?
                 .unwrap_or(own_quote_reservation);
             let base_balance = self
-                .venue_accounts
-                .balance_snapshot(account_id, &instrument.base_asset)
-                .map(|balance| {
-                    balance
-                        .available
+                .venue_available_balance(account_id, &instrument.base_asset)
+                .map(|available| {
+                    available
                         .checked_add(own_base_reservation)
                         .ok_or(ClearingError::BalanceOverflow)
                 })
@@ -1660,6 +1750,173 @@ impl ExchangeActor {
         if tests::SCALAR_MARGIN_REFERENCE.get() {
             return self.sync_perp_cross_margin_group_reference(quote_asset, affected);
         }
+        #[cfg(test)]
+        if tests::INDEXED_MARGIN_REFERENCE.get() {
+            return self.sync_perp_cross_margin_group_indexed_reference(quote_asset, affected);
+        }
+        let _timer = crate::performance::Timer::start(1);
+        let market_accounts = self
+            .markets
+            .iter()
+            .filter(|(_, market)| {
+                market.kind() == MarketKind::Perp
+                    && market.config().instrument().quote_asset == quote_asset
+            })
+            .map(|(instrument_id, market)| {
+                let MarketEngine::Perp(engine) = &market.engine else {
+                    unreachable!("filtered to perp markets");
+                };
+                let accounts = engine.margin_inputs(affected);
+                // PerpAccountStore emits snapshots in BTreeMap account order.
+                // Binary search avoids both linear peer scans and rebuilding
+                // a separately allocated tree for every synchronization.
+                debug_assert!(
+                    accounts
+                        .windows(2)
+                        .all(|pair| pair[0].account_id < pair[1].account_id)
+                );
+                (instrument_id.clone(), accounts)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let liquidation_pending_accounts = self
+            .markets
+            .iter()
+            .filter(|(_, market)| {
+                market.kind() == MarketKind::Perp
+                    && market.config().instrument().quote_asset == quote_asset
+            })
+            .flat_map(|(_, market)| market.pending_liquidation_accounts())
+            .collect::<std::collections::BTreeSet<_>>();
+
+        for (target_instrument_id, target_accounts) in &market_accounts {
+            let sorted = target_accounts
+                .windows(2)
+                .all(|pair| pair[0].account_id < pair[1].account_id);
+            let mut peers = market_accounts
+                .iter()
+                .filter(|(id, _)| *id != target_instrument_id)
+                .map(|(_, accounts)| {
+                    let ordered = sorted
+                        && target_accounts.len() >= accounts.len() / 4
+                        && accounts
+                            .windows(2)
+                            .all(|pair| pair[0].account_id < pair[1].account_id);
+                    (accounts.as_slice(), 0usize, ordered)
+                })
+                .collect::<Vec<_>>();
+            let merge_venue =
+                sorted && target_accounts.len() >= self.venue_accounts.account_count() / 4;
+            let mut venue = self
+                .venue_accounts
+                .balances_for_asset(quote_asset)
+                .peekable();
+            let mut requests = Vec::with_capacity(target_accounts.len());
+            let mut request_error = None;
+            for target_account in target_accounts {
+                let request = (|| {
+                    let mut context = PerpCrossMarginContext {
+                        liquidation_pending: liquidation_pending_accounts
+                            .contains(&target_account.account_id),
+                        ..PerpCrossMarginContext::default()
+                    };
+                    for (accounts, cursor, ordered) in &mut peers {
+                        let other_account = if *ordered {
+                            while accounts.get(*cursor).is_some_and(|account| {
+                                account.account_id < target_account.account_id
+                            }) {
+                                *cursor += 1;
+                            }
+                            accounts
+                                .get(*cursor)
+                                .filter(|account| account.account_id == target_account.account_id)
+                        } else {
+                            accounts
+                                .binary_search_by_key(&target_account.account_id, |account| {
+                                    account.account_id
+                                })
+                                .ok()
+                                .map(|index| &accounts[index])
+                        };
+                        let Some(other_account) = other_account else {
+                            continue;
+                        };
+                        context.other_unrealized_pnl = context
+                            .other_unrealized_pnl
+                            .checked_add(other_account.unrealized_pnl)
+                            .ok_or(ClearingError::BalanceOverflow)?;
+                        context.other_required_margin = context
+                            .other_required_margin
+                            .checked_add(other_account.collateral_reservation()?)
+                            .ok_or(ClearingError::BalanceOverflow)?;
+                        context.other_initial_margin = context
+                            .other_initial_margin
+                            .checked_add(other_account.initial_margin)
+                            .ok_or(ClearingError::BalanceOverflow)?;
+                        context.other_maintenance_margin = context
+                            .other_maintenance_margin
+                            .checked_add(other_account.maintenance_margin)
+                            .ok_or(ClearingError::BalanceOverflow)?;
+                        context.other_position_open |= other_account.position_open;
+                    }
+
+                    let cross_group_reservation = target_account
+                        .collateral_reservation()?
+                        .checked_add(context.other_required_margin)
+                        .ok_or(ClearingError::BalanceOverflow)?;
+                    let available = if merge_venue {
+                        ordered_available_balance(&mut venue, target_account.account_id)
+                    } else {
+                        self.venue_available_balance(target_account.account_id, quote_asset)
+                    };
+                    let cash_balance = available
+                        .map(|available| {
+                            available
+                                .checked_add(cross_group_reservation)
+                                .and_then(|value| {
+                                    value.checked_sub(reservation_amount(
+                                        &self.funding_collateral_shortfalls,
+                                        target_account.account_id,
+                                        quote_asset,
+                                    ))
+                                })
+                                .ok_or(ClearingError::BalanceOverflow)
+                        })
+                        .transpose()?
+                        .unwrap_or(cross_group_reservation);
+                    Ok((target_account.account_id, cash_balance, context))
+                })();
+                match request {
+                    Ok(request) => requests.push(request),
+                    Err(error) => {
+                        request_error = Some(error);
+                        break;
+                    }
+                }
+            }
+            let market = self
+                .markets
+                .get_mut(target_instrument_id)
+                .ok_or(ClearingError::AccountNotFound)?;
+            let MarketEngine::Perp(engine) = &mut market.engine else {
+                unreachable!("filtered to perp markets");
+            };
+            // Preserve the scalar failure order: earlier account sync errors
+            // take precedence over a later request-construction error.
+            engine.sync_cross_margin_accounts(&requests)?;
+            if let Some(error) = request_error {
+                return Err(error);
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn sync_perp_cross_margin_group_indexed_reference(
+        &mut self,
+        quote_asset: &str,
+        affected: Option<&BTreeSet<AccountId>>,
+    ) -> Result<(), ClearingError> {
         let _timer = crate::performance::Timer::start(1);
         let market_accounts = self
             .markets
@@ -1741,11 +1998,9 @@ impl ExchangeActor {
                         .checked_add(context.other_required_margin)
                         .ok_or(ClearingError::BalanceOverflow)?;
                     let cash_balance = self
-                        .venue_accounts
-                        .balance_snapshot(target_account.account_id, quote_asset)
-                        .map(|balance| {
-                            balance
-                                .available
+                        .venue_available_balance(target_account.account_id, quote_asset)
+                        .map(|available| {
+                            available
                                 .checked_add(cross_group_reservation)
                                 .and_then(|value| {
                                     value.checked_sub(reservation_amount(
@@ -2111,7 +2366,43 @@ impl ExchangeActor {
             .collect()
     }
 
+    fn venue_available_balance(&self, account_id: AccountId, asset_id: &str) -> Option<Money> {
+        #[cfg(test)]
+        if tests::SNAPSHOT_VENUE_REFERENCE.get() {
+            return self
+                .venue_accounts
+                .balance_snapshot(account_id, asset_id)
+                .map(|balance| balance.available);
+        }
+        self.venue_accounts.available_balance(account_id, asset_id)
+    }
+
     fn validate_venue_after_clearing(&self) -> Result<(), ClearingError> {
+        #[cfg(test)]
+        if tests::SNAPSHOT_VENUE_REFERENCE.get() {
+            return self.validate_venue_after_clearing_reference();
+        }
+        // Check every raw balance. Only an underfunded balance can need the
+        // funding-liability exception; ordinary orders avoid building either
+        // public snapshots or an all-position liability projection.
+        let mut liabilities = None;
+        for (account, asset, balance) in self.venue_accounts.balance_entries() {
+            if balance.reserved < 0 {
+                return Err(ClearingError::InsufficientAvailableBalance);
+            }
+            if balance.total < balance.reserved
+                && !liabilities
+                    .get_or_insert_with(|| self.funding_liability_accounts())
+                    .contains(&(account, asset.to_string()))
+            {
+                return Err(ClearingError::InsufficientAvailableBalance);
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn validate_venue_after_clearing_reference(&self) -> Result<(), ClearingError> {
         let liabilities = self.funding_liability_accounts();
         for account in self.venue_accounts.account_snapshots() {
             for balance in account.balances {
@@ -2492,6 +2783,15 @@ impl MarketActor {
     ) -> Result<(), ClearingError> {
         match &mut self.engine {
             MarketEngine::Spot(engine) => {
+                #[cfg(test)]
+                if tests::SNAPSHOT_VENUE_REFERENCE.get() || tests::SPOT_SYNC_REFERENCE.get() {
+                    engine.sync_account_balances_reference(
+                        account_id,
+                        quote_balance,
+                        base_balance,
+                    )?;
+                    return Ok(());
+                }
                 engine.sync_account_balances(account_id, quote_balance, base_balance)?;
             }
             MarketEngine::Perp(engine) => {
@@ -2828,6 +3128,9 @@ mod tests {
     thread_local! {
         pub(super) static FULL_RESERVATION_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
         pub(super) static SCALAR_MARGIN_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        pub(super) static INDEXED_MARGIN_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        pub(super) static SNAPSHOT_VENUE_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        pub(super) static SPOT_SYNC_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     }
 
     use super::*;
@@ -3038,16 +3341,22 @@ mod tests {
                     CommandOrigin::External,
                     true,
                 );
+                crate::shared_map::EAGER_CLONE.set(true);
+                INDEXED_MARGIN_REFERENCE.set(true);
                 SCALAR_MARGIN_REFERENCE.set(true);
                 FULL_RESERVATION_REFERENCE.set(true);
+                SNAPSHOT_VENUE_REFERENCE.set(true);
                 let b = full.apply_to_instrument_synced(
                     instrument,
                     command,
                     CommandOrigin::External,
                     false,
                 );
+                crate::shared_map::EAGER_CLONE.set(false);
+                INDEXED_MARGIN_REFERENCE.set(false);
                 SCALAR_MARGIN_REFERENCE.set(false);
                 FULL_RESERVATION_REFERENCE.set(false);
+                SNAPSHOT_VENUE_REFERENCE.set(false);
                 assert_eq!(a, b, "execution {n}, hedge={hedge}");
                 if let Ok(ActorExecution {
                     result: ActorExecutionResult::Accepted(MarketExecution::Perp(result)),
@@ -3287,6 +3596,376 @@ mod tests {
         }
     }
 
+    #[test]
+    #[ignore = "fixed-work release comparison; run explicitly"]
+    fn raw_venue_fixed_work_benchmark() {
+        let mut initial = ExchangeActor::new(
+            "raw-venue-bench",
+            ExchangeConfig::new(
+                "binance",
+                vec![
+                    venue_perp_config("btc", "BTC", "USDT"),
+                    venue_perp_config("eth", "ETH", "USDT"),
+                ],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        for id in 1..=1000 {
+            initial.create_account(id, 1_000_000);
+        }
+        let mut reference = None;
+        for raw in [false, true, true, false, false, true, true, false] {
+            SNAPSHOT_VENUE_REFERENCE.set(!raw);
+            let mut actor = initial.clone();
+            let start = std::time::Instant::now();
+            let mut executions = Vec::new();
+            for n in 0..600 {
+                executions.push(
+                    actor
+                        .apply_to_instrument(
+                            if n % 4 < 2 { "btc" } else { "eth" },
+                            limit(
+                                n + 1,
+                                n % 1000 + 1,
+                                if n % 2 == 0 { Side::Sell } else { Side::Buy },
+                                100,
+                                2,
+                            ),
+                        )
+                        .unwrap(),
+                );
+            }
+            println!("raw={raw} seconds={:.6}", start.elapsed().as_secs_f64());
+            SNAPSHOT_VENUE_REFERENCE.set(false);
+            let result = (canonical_actor(&actor), executions);
+            if let Some(prior) = &reference {
+                assert_eq!(&result, prior);
+            } else {
+                reference = Some(result);
+            }
+        }
+    }
+
+    #[test]
+    fn margin_merge_matches_indexed_with_disjoint_accounts_gaps_restore_and_overflow() {
+        let mut initial = ExchangeActor::new(
+            "margin-merge",
+            ExchangeConfig::new(
+                "binance",
+                vec![
+                    venue_perp_config("a", "A", "USDT"),
+                    venue_perp_config("b", "B", "USDT"),
+                    venue_perp_config("c", "C", "USDT"),
+                ],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        for id in 1..=96 {
+            if id == 77 {
+                continue;
+            }
+            initial.venue_accounts.set_balance(
+                id,
+                if id % 5 == 0 { "OTHER" } else { "USDT" },
+                1_000_000,
+            );
+            for (index, name) in ["a", "b", "c"].into_iter().enumerate() {
+                if id % (index as u64 + 2) != 0 {
+                    initial
+                        .market_mut(name)
+                        .unwrap()
+                        .create_account(id, 1_000_000);
+                }
+            }
+        }
+        initial
+            .apply_to_instrument("a", limit(1, 1, Side::Sell, 100, 2))
+            .unwrap();
+        initial
+            .apply_to_instrument("a", limit(2, 3, Side::Buy, 100, 2))
+            .unwrap();
+        // Account 77 has no local market account. A dense merge crosses its
+        // venue entry but must not evaluate overflowing available arithmetic.
+        let mut venue = serde_json::to_value(&initial.venue_accounts).unwrap();
+        venue["balances"]["77"] = serde_json::json!({"USDT":{"total":"MIN_SENTINEL","reserved":1}});
+        let encoded = serde_json::to_string(&venue)
+            .unwrap()
+            .replace("\"MIN_SENTINEL\"", &Money::MIN.to_string());
+        initial.venue_accounts = serde_json::from_str(&encoded).unwrap();
+        for affected in [
+            None,
+            Some(BTreeSet::new()),
+            Some(BTreeSet::from([1, 19, 96])),
+            Some(BTreeSet::from([9999])),
+        ] {
+            for restored in [false, true] {
+                let mut merged = if restored {
+                    serde_json::from_str::<ExchangeActor>(&serde_json::to_string(&initial).unwrap())
+                        .unwrap()
+                } else {
+                    initial.clone()
+                };
+                let mut indexed = merged.clone();
+                let result = merged.sync_perp_cross_margin_group_for("USDT", affected.as_ref());
+                INDEXED_MARGIN_REFERENCE.set(true);
+                let reference = indexed.sync_perp_cross_margin_group_for("USDT", affected.as_ref());
+                INDEXED_MARGIN_REFERENCE.set(false);
+                assert_eq!(result, reference);
+                assert_eq!(
+                    serde_json::to_string(&merged).unwrap(),
+                    serde_json::to_string(&indexed).unwrap()
+                );
+            }
+        }
+        let mut venue = serde_json::to_value(
+            serde_json::from_str::<VenueAccountStore>(
+                &encoded.replace(&Money::MIN.to_string(), "0"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        venue["balances"]["1"]["USDT"] = serde_json::json!({"total":"MAX_SENTINEL","reserved":0});
+        initial.venue_accounts = serde_json::from_str(
+            &serde_json::to_string(&venue)
+                .unwrap()
+                .replace("\"MAX_SENTINEL\"", &Money::MAX.to_string()),
+        )
+        .unwrap();
+        let mut indexed = initial.clone();
+        let result = initial.sync_perp_cross_margin_group_for("USDT", None);
+        INDEXED_MARGIN_REFERENCE.set(true);
+        let reference = indexed.sync_perp_cross_margin_group_for("USDT", None);
+        INDEXED_MARGIN_REFERENCE.set(false);
+        assert_eq!(result, Err(ClearingError::BalanceOverflow));
+        assert_eq!(result, reference);
+        assert_eq!(
+            serde_json::to_string(&initial).unwrap(),
+            serde_json::to_string(&indexed).unwrap()
+        );
+    }
+
+    #[test]
+    #[ignore = "fixed-work release comparison; run explicitly"]
+    fn margin_merge_fixed_work_benchmark() {
+        for count in [0usize, 1, 2, 4] {
+            let configs = (0..count)
+                .map(|n| venue_perp_config(&format!("m{n}"), &format!("ASSET{n}"), "USDT"))
+                .collect();
+            let config = if count == 0 {
+                ExchangeConfig::new_single(spot_config()).unwrap()
+            } else {
+                ExchangeConfig::new("binance", configs).unwrap()
+            };
+            let mut initial = ExchangeActor::new("margin-merge-bench", config).unwrap();
+            for id in 1..=1000 {
+                if count == 0 {
+                    initial
+                        .create_spot_account_with_position(id, 1_000_000, 100)
+                        .unwrap();
+                } else {
+                    initial.create_account(id, 1_000_000);
+                }
+            }
+            let instruments = if count == 0 {
+                vec!["V-BTC-SPOT".to_string()]
+            } else {
+                (0..count).map(|n| format!("m{n}")).collect::<Vec<_>>()
+            };
+            let mut reference = None;
+            for merge in [false, true, true, false, false, true, true, false] {
+                INDEXED_MARGIN_REFERENCE.set(!merge);
+                let mut actor = initial.clone();
+                let phases_before = crate::performance::snapshot();
+                let start = std::time::Instant::now();
+                let mut executions = Vec::new();
+                for n in 0..600 {
+                    executions.push(
+                        actor
+                            .apply_to_instrument(
+                                &instruments[(n as usize / 2) % instruments.len()],
+                                limit(
+                                    n + 1,
+                                    n % 1000 + 1,
+                                    if n % 2 == 0 { Side::Sell } else { Side::Buy },
+                                    100,
+                                    2,
+                                ),
+                            )
+                            .unwrap(),
+                    );
+                }
+                let seconds = start.elapsed().as_secs_f64();
+                INDEXED_MARGIN_REFERENCE.set(false);
+                let phases_after = crate::performance::snapshot();
+                println!(
+                    "markets={count} merge={merge} seconds={seconds:.6} margin_us={}",
+                    phases_after[1].1 - phases_before[1].1
+                );
+                let result = (canonical_actor(&actor), executions);
+                if let Some(prior) = &reference {
+                    assert_eq!(&result, prior);
+                } else {
+                    reference = Some(result);
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "fixed-work release comparison; run explicitly"]
+    fn shared_tables_fixed_work_benchmark() {
+        for perp in [true, false] {
+            let config = if perp {
+                ExchangeConfig::new(
+                    "binance",
+                    vec![
+                        venue_perp_config("btc", "BTC", "USDT"),
+                        venue_perp_config("eth", "ETH", "USDT"),
+                    ],
+                )
+                .unwrap()
+            } else {
+                ExchangeConfig::new_single(spot_config()).unwrap()
+            };
+            let mut initial = ExchangeActor::new("shared-tables-bench", config).unwrap();
+            for id in 1..=1000 {
+                if perp {
+                    initial.create_account(id, 1_000_000);
+                } else {
+                    initial
+                        .create_spot_account_with_position(id, 1_000_000, 100)
+                        .unwrap();
+                }
+            }
+            let frozen = canonical_actor(&initial);
+            let mut reference = None;
+            for shared in [false, true, true, false, false, true, true, false] {
+                crate::shared_map::EAGER_CLONE.set(!shared);
+                let mut actor = initial.clone();
+                let phases_before = crate::performance::snapshot();
+                let start = std::time::Instant::now();
+                let mut executions = Vec::new();
+                for n in 0..600 {
+                    let instrument = if !perp {
+                        "V-BTC-SPOT"
+                    } else if n % 4 < 2 {
+                        "btc"
+                    } else {
+                        "eth"
+                    };
+                    executions.push(
+                        actor
+                            .apply_to_instrument(
+                                instrument,
+                                limit(
+                                    n + 1,
+                                    n % 1000 + 1,
+                                    if n % 2 == 0 { Side::Sell } else { Side::Buy },
+                                    100,
+                                    2,
+                                ),
+                            )
+                            .unwrap(),
+                    );
+                }
+                let seconds = start.elapsed().as_secs_f64();
+                crate::shared_map::EAGER_CLONE.set(false);
+                let phases_after = crate::performance::snapshot();
+                println!(
+                    "perp={perp} shared={shared} seconds={seconds:.6} clone_us={} margin_us={} reservation_us={}",
+                    phases_after[0].1 - phases_before[0].1,
+                    phases_after[1].1 - phases_before[1].1,
+                    phases_after[2].1 - phases_before[2].1
+                );
+                let result = (canonical_actor(&actor), executions);
+                if let Some(prior) = &reference {
+                    assert_eq!(&result, prior);
+                } else {
+                    reference = Some(result);
+                }
+                assert_eq!(canonical_actor(&initial), frozen);
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "fixed-work release comparison; run explicitly"]
+    fn spot_balance_sync_fixed_work_benchmark() {
+        let mut initial = ExchangeActor::new(
+            "spot-sync-bench",
+            ExchangeConfig::new_single(spot_config()).unwrap(),
+        )
+        .unwrap();
+        for id in 1..=1000 {
+            initial
+                .create_spot_account_with_position(id, 1_000_000, 100)
+                .unwrap();
+        }
+        let mut reference = None;
+        for exact in [false, true, true, false, false, true, true, false] {
+            SPOT_SYNC_REFERENCE.set(!exact);
+            let mut actor = initial.clone();
+            let start = std::time::Instant::now();
+            let mut executions = Vec::new();
+            for n in 0..600 {
+                executions.push(actor.apply(limit(
+                    n + 1,
+                    n % 1000 + 1,
+                    if n % 2 == 0 { Side::Sell } else { Side::Buy },
+                    100,
+                    2,
+                )));
+            }
+            println!("exact={exact} seconds={:.6}", start.elapsed().as_secs_f64());
+            SPOT_SYNC_REFERENCE.set(false);
+            let result = (canonical_actor(&actor), executions);
+            if let Some(prior) = &reference {
+                assert_eq!(&result, prior);
+            } else {
+                reference = Some(result);
+            }
+        }
+    }
+
+    #[test]
+    fn raw_venue_checks_preserve_funding_exception_and_reject_other_deficits() {
+        let mut actor = crate::funding_tests::scenario(100_000)
+            .bootstrap()
+            .unwrap()
+            .exchange;
+        actor
+            .apply_to_instrument("V-USD-PERP", limit(3, 10, Side::Sell, 10000, 1))
+            .unwrap();
+        actor
+            .apply_to_instrument("V-USD-PERP", limit(4, 20, Side::Buy, 10000, 1))
+            .unwrap();
+        let assert_same = |actor: &ExchangeActor| {
+            assert_eq!(
+                actor.validate_venue_after_clearing(),
+                actor.validate_venue_after_clearing_reference()
+            );
+        };
+        assert_same(&actor);
+        actor
+            .venue_accounts
+            .apply_signed_delta(10, "USD", -200_000)
+            .unwrap();
+        assert_same(&actor);
+        assert!(actor.validate_venue_after_clearing().is_ok());
+        actor.venue_accounts.set_balance(99, "USD", -1);
+        assert_same(&actor);
+        assert!(actor.validate_venue_after_clearing().is_err());
+        let restored: ExchangeActor = serde_json::from_value(canonical_actor(&actor)).unwrap();
+        assert_same(&restored);
+        let mut malformed = canonical_actor(&actor);
+        malformed["venue_accounts"]["balances"]["10"]["USD"]["reserved"] = serde_json::json!(-1);
+        let malformed: ExchangeActor = serde_json::from_value(malformed).unwrap();
+        assert_same(&malformed);
+        assert!(malformed.validate_venue_after_clearing().is_err());
+    }
+
     fn canonical_actor(actor: &ExchangeActor) -> serde_json::Value {
         fn normalize(value: &mut serde_json::Value) {
             match value {
@@ -3401,9 +4080,15 @@ mod tests {
                 }
             };
             let a = action(&mut dirty);
+            INDEXED_MARGIN_REFERENCE.set(true);
+            crate::shared_map::EAGER_CLONE.set(true);
             FULL_RESERVATION_REFERENCE.set(true);
+            SNAPSHOT_VENUE_REFERENCE.set(true);
             let b = action(&mut full);
+            INDEXED_MARGIN_REFERENCE.set(false);
+            crate::shared_map::EAGER_CLONE.set(false);
             FULL_RESERVATION_REFERENCE.set(false);
+            SNAPSHOT_VENUE_REFERENCE.set(false);
             assert_eq!(a, b, "action {n}");
             assert_eq!(canonical_actor(&dirty), canonical_actor(&full), "state {n}");
             funding_count += dirty

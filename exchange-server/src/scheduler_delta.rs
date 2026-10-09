@@ -185,6 +185,21 @@ pub struct AgentDelta {
 }
 
 impl SchedulerDelta {
+    pub(super) fn metadata(state: &SchedulerState) -> SchedulerState {
+        SchedulerState {
+            version: state.version,
+            revision: state.revision,
+            room_id: state.room_id.clone(),
+            mode: state.mode,
+            bots_enabled: state.bots_enabled,
+            catch_up_limit: state.catch_up_limit,
+            lagged: state.lagged,
+            continuity: state.continuity,
+            phase: state.phase.clone(),
+            agents: Vec::new(),
+        }
+    }
+
     pub fn between(prior: &SchedulerState, next: &SchedulerState) -> Option<Self> {
         if prior.room_id != next.room_id
             || prior.version != next.version
@@ -198,18 +213,7 @@ impl SchedulerDelta {
         {
             return None;
         }
-        let state = SchedulerState {
-            version: next.version,
-            revision: next.revision,
-            room_id: next.room_id.clone(),
-            mode: next.mode,
-            bots_enabled: next.bots_enabled,
-            catch_up_limit: next.catch_up_limit,
-            lagged: next.lagged,
-            continuity: next.continuity,
-            phase: next.phase.clone(),
-            agents: Vec::new(),
-        };
+        let state = Self::metadata(next);
         let changes = prior
             .agents
             .iter()
@@ -256,6 +260,18 @@ impl SchedulerDelta {
     }
 
     pub fn apply(&self, prior: &mut SchedulerState) -> Result<(), JournalError> {
+        self.validate_predecessor(prior)?;
+        for change in &self.changes {
+            prior.agents[change.index].kind_state = change.kind_state.clone();
+            prior.agents[change.index].unfinished_actions = change.unfinished_actions.clone();
+        }
+        let agents = std::mem::take(&mut prior.agents);
+        *prior = self.state.clone();
+        prior.agents = agents;
+        Ok(())
+    }
+
+    pub(super) fn validate_predecessor(&self, prior: &SchedulerState) -> Result<(), JournalError> {
         self.validate(&prior.room_id)?;
         if prior.revision != self.base_revision
             || prior.agents.len() != self.agent_count
@@ -265,14 +281,55 @@ impl SchedulerDelta {
                 "scheduler delta missing or incompatible predecessor".into(),
             ));
         }
+        Ok(())
+    }
+
+    /// Consume an already prepared update without cloning bot runtime data.
+    /// Validation still precedes every mutation, including recovery callers.
+    pub(super) fn apply_owned(self, prior: &mut SchedulerState) -> Result<(), JournalError> {
+        self.validate_predecessor(prior)?;
         // Validate every field before mutating the recovered state.
-        for change in &self.changes {
-            prior.agents[change.index].kind_state = change.kind_state.clone();
-            prior.agents[change.index].unfinished_actions = change.unfinished_actions.clone();
+        for change in self.changes {
+            prior.agents[change.index].kind_state = change.kind_state;
+            prior.agents[change.index].unfinished_actions = change.unfinished_actions;
         }
         let agents = std::mem::take(&mut prior.agents);
-        *prior = self.state.clone();
+        *prior = self.state;
         prior.agents = agents;
         Ok(())
+    }
+}
+
+/// Full candidates remain necessary for deterministic/manual steps. Live work
+/// changes only metadata and a bounded set of agents under the same writer lock.
+pub(super) enum Candidate {
+    Full(SchedulerState),
+    Patch(SchedulerDelta),
+}
+
+impl Candidate {
+    pub fn state(&self) -> &SchedulerState {
+        match self {
+            Self::Full(state) => state,
+            Self::Patch(delta) => &delta.state,
+        }
+    }
+
+    pub fn state_mut(&mut self) -> &mut SchedulerState {
+        match self {
+            Self::Full(state) => state,
+            Self::Patch(delta) => &mut delta.state,
+        }
+    }
+
+    pub fn materialize(&self, prior: Option<&SchedulerState>) -> SchedulerState {
+        match self {
+            Self::Full(state) => state.clone(),
+            Self::Patch(delta) => {
+                let mut state = prior.expect("live update has a locked predecessor").clone();
+                delta.apply(&mut state).expect("live update was validated");
+                state
+            }
+        }
     }
 }

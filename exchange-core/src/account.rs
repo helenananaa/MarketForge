@@ -182,6 +182,35 @@ impl VenueAccountStore {
             .map(|balance| balance.snapshot(account_id, asset_id.to_string()))
     }
 
+    /// Internal risk reads need amounts, not owned public snapshot labels.
+    pub(crate) fn available_balance(&self, account_id: AccountId, asset_id: &str) -> Option<Money> {
+        self.balances
+            .get(&account_id)
+            .and_then(|balances| balances.get(asset_id))
+            .map(VenueAssetBalance::available)
+    }
+
+    pub(crate) fn balance_entries(
+        &self,
+    ) -> impl Iterator<Item = (AccountId, &str, &VenueAssetBalance)> {
+        self.balances.iter().flat_map(|(&account, balances)| {
+            balances
+                .iter()
+                .map(move |(asset, balance)| (account, asset.as_str(), balance))
+        })
+    }
+
+    /// Account-key order, with arithmetic deferred until a requested account
+    /// is selected. Skipping a peer must not evaluate its available balance.
+    pub(crate) fn balances_for_asset<'a>(
+        &'a self,
+        asset: &'a str,
+    ) -> impl Iterator<Item = (AccountId, &'a VenueAssetBalance)> + 'a {
+        self.balances
+            .iter()
+            .filter_map(move |(&id, balances)| balances.get(asset).map(|balance| (id, balance)))
+    }
+
     pub fn account_snapshot(&self, account_id: AccountId) -> VenueAccountSnapshot {
         let balances = self
             .balances
@@ -381,6 +410,30 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn ordered_asset_balances_skip_other_assets_and_defer_available_arithmetic() {
+        let mut store = VenueAccountStore::new();
+        store.set_balance(1, "USD", 100);
+        store.set_balance(2, "OTHER", 200);
+        store.set_balance(3, "USD", Money::MIN);
+        store.balance_mut(3, "USD".into()).reserved = 1;
+        let rows = store
+            .balances_for_asset("USD")
+            .map(|(id, balance)| (id, balance.total, balance.reserved))
+            .collect::<Vec<_>>();
+        assert_eq!(rows, vec![(1, 100, 0), (3, Money::MIN, 1)]);
+        assert_eq!(
+            store
+                .balances_for_asset("USD")
+                .next()
+                .unwrap()
+                .1
+                .available(),
+            100
+        );
+        assert!(store.balances_for_asset("MISSING").next().is_none());
+    }
 
     #[test]
     fn venue_account_store_reserves_releases_and_snapshots_assets() {

@@ -1,6 +1,7 @@
 //! Live markets never wait for a trader's decision. Only clock/order commits
 //! enter the writer lane; observations and returned bot state are immutable inputs.
 use super::*;
+use crate::scheduler_delta::{AgentDelta, SchedulerDelta};
 use exchange_core::{BotError, BotExecutionPolicy, PersistedAgent, SchedulerPhase, SchedulerState};
 
 // Bound writer-lane occupancy without dropping decisions or splitting a bot's
@@ -34,12 +35,41 @@ impl DecisionIndex {
         }
         Self(index)
     }
-    fn find(&self, scheduler: &SchedulerState, prior: &PersistedAgent) -> Option<usize> {
+    fn find_pending(
+        &self,
+        scheduler: &SchedulerState,
+        prior: &PersistedAgent,
+        changes: &BTreeMap<usize, AgentDelta>,
+    ) -> Option<usize> {
         self.0
             .get(prior.template.participant_id())?
             .iter()
             .copied()
-            .find(|&position| scheduler.agents[position] == *prior)
+            .find(|&position| matches_pending(scheduler, changes, position, prior))
+    }
+
+    #[cfg(test)]
+    fn find(&self, scheduler: &SchedulerState, prior: &PersistedAgent) -> Option<usize> {
+        self.find_pending(scheduler, prior, &BTreeMap::new())
+    }
+}
+
+fn matches_pending(
+    scheduler: &SchedulerState,
+    changes: &BTreeMap<usize, AgentDelta>,
+    index: usize,
+    prior: &PersistedAgent,
+) -> bool {
+    let agent = &scheduler.agents[index];
+    match changes.get(&index) {
+        None => agent == prior,
+        Some(change) => {
+            agent.version == prior.version
+                && agent.config_version == prior.config_version
+                && agent.template == prior.template
+                && change.kind_state == prior.kind_state
+                && change.unfinished_actions == prior.unfinished_actions
+        }
     }
 }
 
@@ -97,11 +127,12 @@ impl Work {
         self,
         rooms: &mut RoomManager,
         next_order_id: &mut u64,
-        mut scheduler: SchedulerState,
+        scheduler: &SchedulerState,
         policy: &mut ServerBotPolicy,
         submissions: &mut BTreeMap<u64, (String, AccountId)>,
-    ) -> Result<exchange_core::SchedulerStepOutcome, exchange_core::SchedulerError> {
+    ) -> Result<SchedulerDelta, exchange_core::SchedulerError> {
         use exchange_core::SchedulerError;
+        let mut changes = BTreeMap::new();
         match self {
             Self::Bots {
                 control,
@@ -121,38 +152,42 @@ impl Work {
                         continue;
                     }
                     let position = match &index {
-                        Some(index) => index.find(&scheduler, &decision.prior),
+                        Some(index) => index.find_pending(scheduler, &decision.prior, &changes),
                         None => scheduler
                             .agents
                             .iter()
-                            .position(|agent| *agent == decision.prior),
+                            .enumerate()
+                            .find(|(index, _)| {
+                                matches_pending(scheduler, &changes, *index, &decision.prior)
+                            })
+                            .map(|(index, _)| index),
                     };
                     if let Some(position) = position {
-                        apply_decision(
+                        let change = apply_decision(
                             rooms,
                             next_order_id,
-                            &mut scheduler,
+                            &scheduler.room_id,
                             policy,
                             submissions,
                             decision,
                             position,
                         )?;
+                        changes.insert(position, change);
                     }
                 }
             }
             Self::Clock(_) => {
                 let previous = rooms
-                    .execution_history(&scheduler.room_id)
-                    .map_err(SchedulerError::Room)?
-                    .len();
+                    .execution_history_len(&scheduler.room_id)
+                    .map_err(SchedulerError::Room)?;
                 rooms
                     .advance_clock(&scheduler.room_id, 1)
                     .map_err(SchedulerError::Room)?;
                 // Clock-triggered liquidations also belong to the training evidence.
                 if let Some(run) = &mut policy.training {
-                    for execution in &rooms
-                        .execution_history(&scheduler.room_id)
-                        .map_err(SchedulerError::Room)?[previous..]
+                    for execution in rooms
+                        .execution_history_from(&scheduler.room_id, previous)
+                        .map_err(SchedulerError::Room)?
                     {
                         apply_training_execution(
                             run,
@@ -169,28 +204,39 @@ impl Work {
                     .iter()
                     .position(|agent| *agent == decision.prior)
                     .expect("decision validated under the writer lock");
-                apply_decision(
+                let change = apply_decision(
                     rooms,
                     next_order_id,
-                    &mut scheduler,
+                    &scheduler.room_id,
                     policy,
                     submissions,
                     *decision,
                     index,
                 )?;
+                changes.insert(index, change);
             }
         }
-        scheduler.phase = SchedulerPhase::StepComplete {
+        let mut state = SchedulerDelta::metadata(scheduler);
+        state.phase = SchedulerPhase::StepComplete {
             step: rooms
                 .clock(&scheduler.room_id)
                 .map_err(SchedulerError::Room)?
                 .step(),
         };
-        scheduler.lagged = false;
-        Ok(exchange_core::SchedulerStepOutcome {
-            state: scheduler,
-            crashed: false,
-            crash_point: exchange_core::CrashPoint::None,
+        state.lagged = false;
+        Ok(SchedulerDelta {
+            version: 1,
+            base_revision: scheduler.revision,
+            agent_count: scheduler.agents.len(),
+            state,
+            changes: changes
+                .into_values()
+                .filter(|change| {
+                    let prior = &scheduler.agents[change.index];
+                    prior.kind_state != change.kind_state
+                        || prior.unfinished_actions != change.unfinished_actions
+                })
+                .collect(),
         })
     }
 }
@@ -198,12 +244,12 @@ impl Work {
 fn apply_decision(
     rooms: &mut RoomManager,
     next_order_id: &mut u64,
-    scheduler: &mut SchedulerState,
+    room_id: &str,
     policy: &mut ServerBotPolicy,
     submissions: &mut BTreeMap<u64, (String, AccountId)>,
     decision: Decision,
     index: usize,
-) -> Result<(), exchange_core::SchedulerError> {
+) -> Result<AgentDelta, exchange_core::SchedulerError> {
     use exchange_core::SchedulerError;
     if decision.actions.len() > exchange_core::MAX_BOT_ACTIONS {
         return Err(SchedulerError::Bot(BotError(
@@ -221,7 +267,7 @@ fn apply_decision(
         }
         let request = GatewayRequest {
             participant_id: config.participant_id.clone(),
-            room_id: scheduler.room_id.clone(),
+            room_id: room_id.to_string(),
             instrument_id: Some(instrument.clone()),
             account_id: config.account_id,
             action,
@@ -230,7 +276,7 @@ fn apply_decision(
         // Only training policy needs a second full public snapshot.
         let observation = if policy.training.is_some() {
             let observation = rooms
-                .participant_observation(&scheduler.room_id, &instrument, config.account_id)
+                .participant_observation(room_id, &instrument, config.account_id)
                 .map_err(SchedulerError::Room)?;
             policy
                 .before_action(&request, &observation)
@@ -254,10 +300,11 @@ fn apply_decision(
             policy.after_action(&execution, &observation.book);
         }
     }
-    let agent = &mut scheduler.agents[index];
-    agent.kind_state = decision.next;
-    agent.unfinished_actions.clear();
-    Ok(())
+    Ok(AgentDelta {
+        index,
+        kind_state: decision.next,
+        unfinished_actions: Vec::new(),
+    })
 }
 
 // Alternate priority only when both sources are ready. A due clock cannot
@@ -345,17 +392,14 @@ pub(super) async fn run(
                 if wave.is_empty() {
                     continue;
                 }
-                let result = commit_scheduler_work(
+                let result = commit_realtime_work(
                     shared.clone(),
                     room_id.clone(),
-                    None,
-                    false,
-                    None,
-                    Some(Work::Bots {
+                    Work::Bots {
                         control: control.clone(),
                         epoch: current_epoch,
                         decisions: wave.clone(),
-                    }),
+                    },
                 )
                 .await;
                 if let Err((status, body)) = result {
@@ -366,17 +410,14 @@ pub(super) async fn run(
                     // preserves each bot's atomicity and existing error isolation.
                     for decision in wave {
                         let id = decision.prior.template.participant_id().to_string();
-                        let result = commit_scheduler_work(
+                        let result = commit_realtime_work(
                             shared.clone(),
                             room_id.clone(),
-                            None,
-                            false,
-                            None,
-                            Some(Work::Bot {
+                            Work::Bot {
                                 control: control.clone(),
                                 epoch: current_epoch,
                                 decision: Box::new(decision),
-                            }),
+                            },
                         )
                         .await;
                         if let Err((status, body)) = result {
@@ -409,13 +450,10 @@ pub(super) async fn run(
                     MarketStatus::Running => {}
                 }
                 *lifecycle.lock().unwrap() = AgentWorkerLifecycle::Running;
-                commit_scheduler_work(
+                commit_realtime_work(
                     shared.clone(),
                     room_id.clone(),
-                    None,
-                    false,
-                    None,
-                    Some(Work::Clock(control.clone())),
+                    Work::Clock(control.clone()),
                 )
                 .await
                 .map_err(|(_, body)| body.0.error)?;
@@ -564,5 +602,51 @@ mod index_tests {
             Some(scheduler.agents.len() - 1)
         );
         assert_eq!(index.find(&scheduler, &scheduler.agents[0]), Some(0));
+    }
+
+    #[test]
+    fn pending_changes_match_mutated_full_roster_for_duplicate_and_sequential_results() {
+        let spec: exchange_core::population::BackgroundMarket = serde_json::from_str(include_str!(
+            "../../scripts/fixtures/microstructure_market.json"
+        ))
+        .unwrap();
+        let mut scheduler = SchedulerState::new(
+            "pending-index",
+            spec.agents,
+            exchange_core::SchedulerMode::Manual,
+        );
+        scheduler.agents.reverse();
+        scheduler.agents.push(scheduler.agents[0].clone());
+        let index = DecisionIndex::new(&scheduler.agents);
+        let mut reference = scheduler.clone();
+        let mut changes = BTreeMap::new();
+        for position in [0, 0, scheduler.agents.len() - 1, 4, 4] {
+            let prior = reference.agents[position].clone();
+            assert_eq!(
+                index.find_pending(&scheduler, &prior, &changes),
+                reference.agents.iter().position(|a| a == &prior)
+            );
+            let found = index.find_pending(&scheduler, &prior, &changes).unwrap();
+            let mut changed = prior.kind_state.clone();
+            if let exchange_core::PersistedAgentKindState::Plugin { data, .. } = &mut changed {
+                *data = serde_json::json!({"changed": changes.len() + position});
+            }
+            reference.agents[found].kind_state = changed.clone();
+            reference.agents[found].unfinished_actions.clear();
+            changes.insert(
+                found,
+                AgentDelta {
+                    index: found,
+                    kind_state: changed,
+                    unfinished_actions: vec![],
+                },
+            );
+            for prior in scheduler.agents.iter().chain(&reference.agents) {
+                assert_eq!(
+                    index.find_pending(&scheduler, prior, &changes),
+                    reference.agents.iter().position(|a| a == prior)
+                );
+            }
+        }
     }
 }

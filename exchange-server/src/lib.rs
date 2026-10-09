@@ -2523,9 +2523,8 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
 
             let automatic_replay = if record.participant_id.is_none() {
                 rooms
-                    .execution_history(&room.room_id)
+                    .execution_history_from(&room.room_id, 0)
                     .map_err(|error| JournalError::Recovery(format!("{error:?}")))?
-                    .iter()
                     .find(|execution| execution.command_seq == record.command_seq)
                     .cloned()
             } else {
@@ -3080,10 +3079,8 @@ async fn journal_new_executions(
     first_record: JournalExecution,
 ) -> Result<(), JournalError> {
     let new_history = candidate_rooms
-        .execution_history(room_id)
+        .execution_history_from(room_id, previous_history_len)
         .map_err(|error| JournalError::Recovery(format!("{error:?}")))?
-        .iter()
-        .skip(previous_history_len)
         .cloned()
         .collect::<Vec<_>>();
     let mut journal_records = vec![first_record];
@@ -5843,9 +5840,8 @@ async fn advance_room_clock(
         .map_err(api_error_from_journal)?;
     let mut candidate_rooms = state.rooms.clone();
     let previous_history_len = candidate_rooms
-        .execution_history(&room_id)
-        .map_err(api_error_from_room)?
-        .len();
+        .execution_history_len(&room_id)
+        .map_err(api_error_from_room)?;
     let completed_transfers = candidate_rooms
         .advance_clock(&room_id, request.steps)
         .map_err(api_error_from_room)?;
@@ -5866,10 +5862,8 @@ async fn advance_room_clock(
         && let Some(mut run) = state.training_runs.get(run_id).cloned()
     {
         let new_executions = candidate_rooms
-            .execution_history(&room_id)
+            .execution_history_from(&room_id, previous_history_len)
             .map_err(api_error_from_room)?
-            .iter()
-            .skip(previous_history_len)
             .cloned()
             .collect::<Vec<_>>();
         for execution in &new_executions {
@@ -5885,10 +5879,8 @@ async fn advance_room_clock(
         state.training_runs.insert(run_id.clone(), run);
     }
     let execution_records = candidate_rooms
-        .execution_history(&room_id)
+        .execution_history_from(&room_id, previous_history_len)
         .map_err(api_error_from_room)?
-        .iter()
-        .skip(previous_history_len)
         .map(|execution| {
             command_from_actor_execution(execution)
                 .map(|command| JournalExecution::system(command, execution.clone()))
@@ -6252,9 +6244,8 @@ async fn set_mark_price_for_instrument(
         let mut state = lock_state(&state).await?;
         let mut candidate_rooms = state.rooms.clone();
         let previous_history_len = candidate_rooms
-            .execution_history(&room_id)
-            .map_err(api_error_from_room)?
-            .len();
+            .execution_history_len(&room_id)
+            .map_err(api_error_from_room)?;
         let command = Command::SetMarkPrice(SetMarkPrice {
             price_tick: request.price_tick,
         });
@@ -6391,9 +6382,8 @@ async fn submit_order_response(
         }
         let mut candidate_rooms = state.rooms.clone();
         let previous_history_len = candidate_rooms
-            .execution_history(&room_id)
-            .map_err(api_error_from_room)?
-            .len();
+            .execution_history_len(&room_id)
+            .map_err(api_error_from_room)?;
         let observe_instrument = instrument_id
             .clone()
             .or_else(|| {
@@ -7020,8 +7010,8 @@ async fn start_agent_worker_for_room(
     let continuity = if !state.schedulers.contains_key(&room_id)
         && state
             .rooms
-            .execution_history(&room_id)
-            .map(|history| !history.is_empty())
+            .execution_history_len(&room_id)
+            .map(|len| len != 0)
             .unwrap_or(false)
     {
         exchange_core::AgentContinuity::LegacyNonContinuous
@@ -9523,6 +9513,39 @@ async fn commit_scheduler_work(
     control: Option<ControlIdempotencyIntent>,
     realtime: Option<realtime::Work>,
 ) -> Result<exchange_core::SchedulerState, ApiError> {
+    commit_scheduler_transaction(
+        shared,
+        room_id,
+        scheduler,
+        require_paused,
+        control,
+        realtime,
+        true,
+    )
+    .await
+    .map(|state| state.expect("manual/state-returning commit requests its response"))
+}
+
+async fn commit_realtime_work(
+    shared: SharedState,
+    room_id: RoomId,
+    work: realtime::Work,
+) -> Result<(), ApiError> {
+    commit_scheduler_transaction(shared, room_id, None, false, None, Some(work), false)
+        .await
+        .map(|_| ())
+}
+
+async fn commit_scheduler_transaction(
+    shared: SharedState,
+    room_id: RoomId,
+    scheduler: Option<exchange_core::SchedulerState>,
+    require_paused: bool,
+    control: Option<ControlIdempotencyIntent>,
+    realtime: Option<realtime::Work>,
+    return_state: bool,
+) -> Result<Option<exchange_core::SchedulerState>, ApiError> {
+    use scheduler_delta::Candidate;
     let wait_started = Instant::now();
     run_durable_state_transaction(shared.clone(), async move {
         let mut state = lock_state(&shared).await?;
@@ -9543,7 +9566,7 @@ async fn commit_scheduler_work(
             )
             .await?
         {
-            return Ok(Json(replayed));
+            return Ok(Json(return_state.then_some(replayed)));
         }
         if let Some(work) = &realtime {
             let current = state
@@ -9554,7 +9577,7 @@ async fn commit_scheduler_work(
                 || state.rooms.status(&room_id).map_err(api_error_from_room)?
                     != MarketStatus::Running
             {
-                return Ok(Json(current.clone()));
+                return Ok(Json(return_state.then(|| current.clone())));
             }
         }
         state
@@ -9574,26 +9597,33 @@ async fn commit_scheduler_work(
                 format!("manual step requires room {room_id} to be paused"),
             ));
         }
-        let scheduler = state
-            .schedulers
-            .get(&room_id)
-            .cloned()
-            .or(scheduler)
-            .ok_or_else(|| {
-                api_error(
-                    StatusCode::CONFLICT,
-                    format!("room {room_id} has no scheduler to step"),
-                )
-            })?;
+        // Live work reads the locked predecessor and prepares a sparse patch.
+        // Only deterministic/manual execution needs an owned complete roster.
+        let scheduler = if realtime.is_none() {
+            Some(
+                state
+                    .schedulers
+                    .get(&room_id)
+                    .cloned()
+                    .or(scheduler)
+                    .ok_or_else(|| {
+                        api_error(
+                            StatusCode::CONFLICT,
+                            format!("room {room_id} has no scheduler to step"),
+                        )
+                    })?,
+            )
+        } else {
+            None
+        };
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
         let clone_started = Instant::now();
         let mut candidate_rooms = state.rooms.clone();
         shared.lifecycle.record_scheduler_phase(1, clone_started);
         let previous_history_len = candidate_rooms
-            .execution_history(&room_id)
-            .map_err(api_error_from_room)?
-            .len();
+            .execution_history_len(&room_id)
+            .map_err(api_error_from_room)?;
         let clock_before = candidate_rooms
             .clock(&room_id)
             .map_err(api_error_from_room)?;
@@ -9614,23 +9644,36 @@ async fn commit_scheduler_work(
             let result = work.apply(
                 &mut candidate_rooms,
                 &mut next_order_id,
-                scheduler,
+                state
+                    .schedulers
+                    .get(&room_id)
+                    .expect("live predecessor was checked"),
                 &mut policy,
                 &mut submissions,
             );
-            (candidate_rooms, next_order_id, result, policy.training)
+            (
+                candidate_rooms,
+                next_order_id,
+                result.map(Candidate::Patch),
+                policy.training,
+            )
         } else {
             tokio::task::spawn_blocking(move || {
                 let mut policy = ServerBotPolicy { training };
                 let result = exchange_core::run_scheduler_step_with_policy(
                     &mut candidate_rooms,
                     &mut next_order_id,
-                    scheduler,
+                    scheduler.expect("manual scheduler was prepared"),
                     exchange_core::CrashPoint::None,
                     &registry,
                     &mut policy,
                 );
-                (candidate_rooms, next_order_id, result, policy.training)
+                (
+                    candidate_rooms,
+                    next_order_id,
+                    result.map(|outcome| Candidate::Full(outcome.state)),
+                    policy.training,
+                )
             })
             .await
             .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
@@ -9674,10 +9717,8 @@ async fn commit_scheduler_work(
             updated_training = Some((run_id.clone(), run));
         }
         let execution_records = candidate_rooms
-            .execution_history(&room_id)
+            .execution_history_from(&room_id, previous_history_len)
             .map_err(api_error_from_room)?
-            .iter()
-            .skip(previous_history_len)
             .map(|execution| {
                 let command = command_from_actor_execution(execution).ok_or_else(|| {
                     api_error(
@@ -9686,7 +9727,7 @@ async fn commit_scheduler_work(
                     )
                 })?;
                 let participant = if manual {
-                    execution_participant_id(&outcome.state, execution)
+                    execution_participant_id(outcome.state(), execution)
                         .map(|id| (id, execution_account_id(execution).unwrap_or(0)))
                 } else {
                     submissions.get(&execution.command_seq).cloned()
@@ -9738,7 +9779,7 @@ async fn commit_scheduler_work(
         shared
             .lifecycle
             .record_scheduler_phase(3, checkpoint_started);
-        outcome.state.revision = state
+        outcome.state_mut().revision = state
             .schedulers
             .get(&room_id)
             .map_or(0, |s| s.revision)
@@ -9747,12 +9788,14 @@ async fn commit_scheduler_work(
         let record = control
             .as_ref()
             .map(|intent| {
+                let materialized = matches!(outcome, Candidate::Patch(_))
+                    .then(|| outcome.materialize(state.schedulers.get(&room_id)));
                 control_record(
                     intent.user_id.clone(),
                     room_id.clone(),
                     intent.key.clone(),
                     intent.fingerprint.clone(),
-                    &outcome.state,
+                    materialized.as_ref().unwrap_or_else(|| outcome.state()),
                 )
             })
             .transpose()?;
@@ -9763,13 +9806,26 @@ async fn commit_scheduler_work(
                 .as_ref()
                 .map(|(_, run)| Box::new(run.clone()))
         };
-        let delta = if manual || snapshot_due || outcome.state.revision.is_multiple_of(100) {
+        if let Candidate::Patch(delta) = &outcome {
+            delta
+                .validate_predecessor(
+                    state
+                        .schedulers
+                        .get(&room_id)
+                        .expect("locked live predecessor"),
+                )
+                .map_err(api_error_from_journal)?;
+        }
+        let delta = if manual || snapshot_due || outcome.state().revision.is_multiple_of(100) {
             None
         } else {
-            state
-                .schedulers
-                .get(&room_id)
-                .and_then(|prior| scheduler_delta::SchedulerDelta::between(prior, &outcome.state))
+            match &outcome {
+                Candidate::Patch(delta) => Some(delta.clone()),
+                Candidate::Full(next) => state
+                    .schedulers
+                    .get(&room_id)
+                    .and_then(|prior| scheduler_delta::SchedulerDelta::between(prior, next)),
+            }
         };
         let progress = match delta {
             Some(delta) => RoomMutation::SchedulerDelta {
@@ -9779,7 +9835,7 @@ async fn commit_scheduler_work(
             },
             None => RoomMutation::SchedulerProgress {
                 clock_steps,
-                state: outcome.state.clone(),
+                state: outcome.materialize(state.schedulers.get(&room_id)),
                 training: training_progress,
             },
         };
@@ -9806,7 +9862,7 @@ async fn commit_scheduler_work(
         shared.lifecycle.record_scheduler_phase(4, journal_started);
         if let Some(replay_json) = append_result? {
             let replayed = serde_json::from_value(replay_json).map_err(api_error_from_json)?;
-            return Ok(Json(replayed));
+            return Ok(Json(return_state.then_some(replayed)));
         }
         if let Some((run_id, run)) = updated_training {
             if manual {
@@ -9824,10 +9880,25 @@ async fn commit_scheduler_work(
         );
         state.rooms = candidate_rooms;
         state.next_order_id = next_order_id;
-        state
-            .schedulers
-            .insert(room_id.clone(), outcome.state.clone());
-        Ok(Json(outcome.state))
+        let response = return_state.then(|| outcome.materialize(state.schedulers.get(&room_id)));
+        match outcome {
+            Candidate::Full(next) => {
+                state.schedulers.insert(room_id, next);
+            }
+            Candidate::Patch(delta) => {
+                // This exact predecessor was validated before the durable
+                // append; the writer lock has remained held throughout it.
+                delta
+                    .apply_owned(
+                        state
+                            .schedulers
+                            .get_mut(&room_id)
+                            .expect("locked live predecessor"),
+                    )
+                    .expect("validated patch cannot fail after the durable append");
+            }
+        }
+        Ok(Json(response))
     })
     .await
     .map(|json| json.0)

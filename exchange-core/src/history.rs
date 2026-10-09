@@ -46,11 +46,29 @@ impl<T: Clone> History<T> {
 }
 
 impl<T> History<T> {
-    fn values(&self) -> impl Iterator<Item = &T> {
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+
+    pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &T> {
         self.chunks
             .iter()
             .flat_map(|chunk| chunk.iter())
             .chain(self.tail.iter())
+    }
+
+    /// Read a suffix directly from its first chunk, without flattening or
+    /// walking the preceding history. This is the transaction journal path.
+    pub(crate) fn iter_from(&self, start: usize) -> impl DoubleEndedIterator<Item = &T> {
+        let start = start.min(self.len);
+        let sealed_len = self.len - self.tail.len();
+        let first_chunk = (start / CHUNK_SIZE).min(self.chunks.len());
+        let offset = start % CHUNK_SIZE;
+        self.chunks[first_chunk..]
+            .iter()
+            .enumerate()
+            .flat_map(move |(index, chunk)| chunk[if index == 0 { offset } else { 0 }..].iter())
+            .chain(self.tail[start.saturating_sub(sealed_len)..].iter())
     }
 }
 
@@ -61,13 +79,13 @@ impl<T: Clone> Deref for History<T> {
             return &self.tail;
         }
         self.contiguous
-            .get_or_init(|| Arc::new(self.values().cloned().collect()))
+            .get_or_init(|| Arc::new(self.iter().cloned().collect()))
     }
 }
 
 impl<T: PartialEq> PartialEq for History<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.len == other.len && self.values().eq(other.values())
+        self.len == other.len && self.iter().eq(other.iter())
     }
 }
 impl<T: Eq> Eq for History<T> {}
@@ -75,10 +93,18 @@ impl<T: Eq> Eq for History<T> {}
 impl<T: Serialize> Serialize for History<T> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut seq = serializer.serialize_seq(Some(self.len))?;
-        for value in self.values() {
+        for value in self.iter() {
             seq.serialize_element(value)?;
         }
         seq.end()
+    }
+}
+
+impl<T: Clone> From<Vec<T>> for History<T> {
+    fn from(values: Vec<T>) -> Self {
+        let mut history = Self::default();
+        history.extend(values);
+        history
     }
 }
 
@@ -112,5 +138,30 @@ mod tests {
         let restored: History<u64> = serde_json::from_value(value).unwrap();
         assert_eq!(restored, fork);
         assert_eq!(&*restored, &*fork);
+    }
+
+    #[test]
+    fn suffix_reads_cross_chunks_without_materializing_or_copying_old_entries() {
+        let mut history = History::default();
+        history.extend(0..900usize);
+        for start in [0, 1, 255, 256, 257, 511, 512, 767, 768, 899, 900, 901] {
+            assert_eq!(
+                history.iter_from(start).copied().collect::<Vec<_>>(),
+                (start.min(900)..900).collect::<Vec<_>>()
+            );
+            assert_eq!(
+                history.iter_from(start).rev().copied().collect::<Vec<_>>(),
+                (start.min(900)..900).rev().collect::<Vec<_>>()
+            );
+        }
+        assert!(history.contiguous.get().is_none());
+        let mut fork = history.clone();
+        fork.push(900);
+        assert!(Arc::ptr_eq(&history.chunks, &fork.chunks));
+        assert_eq!(history.len(), 900);
+        assert_eq!(fork.iter_from(899).copied().collect::<Vec<_>>(), [899, 900]);
+        let empty = History::<usize>::default();
+        assert_eq!(empty.len(), 0);
+        assert_eq!(empty.iter_from(usize::MAX).next(), None);
     }
 }

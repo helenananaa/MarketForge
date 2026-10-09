@@ -37,6 +37,7 @@ pub mod risk;
 pub mod room;
 pub mod scenario;
 pub mod scheduler;
+mod shared_map;
 pub mod simulation;
 pub mod spot;
 pub mod trading;
