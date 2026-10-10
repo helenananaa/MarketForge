@@ -1,0 +1,195 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import type { LocalDatasetManifest } from "../../local-data/localDataTypes.js";
+import { LOCAL_INTERVAL_STORAGE_PREFIX, localIntervalStorageKey } from "../../local-data/useLocalIntervalSelection.js";
+import { resolveLocalIntervalSupport } from "../../local-data/localIntervalPolicy.js";
+import { buildLocalAnalysisStorageKey } from "../../local-data/localAnalysisStore.js";
+import StrategyResearchApp from "../StrategyResearchApp.js";
+import {
+  importedChartDatasetKey,
+  importedDatasetSourceFromManifest,
+  importedDrawingKeyBase,
+  importedManifestForSource,
+  preferredLibrarySelectedId,
+} from "../importedDatasetSource.js";
+import { parseStrategyResearchLaunch } from "../strategyResearchLaunch.js";
+import { StrategyResearchRuntime } from "../StrategyResearchRuntime.js";
+
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+
+function manifest(overrides: Partial<LocalDatasetManifest> = {}): LocalDatasetManifest {
+  return {
+    schema_version: 1,
+    dataset_id: "local-0123456789abcdef0123456789abcdef",
+    data_epoch: `sha256:${"a".repeat(64)}`,
+    name: "BTC sample",
+    source: "local_dataset",
+    symbol: "BTC-USDT",
+    interval: "15m",
+    alignment: "fixed_epoch",
+    alignment_offset_ms: 0,
+    volume_available: true,
+    timezone: "UTC",
+    timestamp_semantics: "bar_open",
+    rows: 12,
+    first_open_ms: 1_704_067_200_000,
+    last_open_ms: 1_704_067_260_000,
+    all_rows_final: true,
+    excluded_range_count: 0,
+    sqlite_sha256: "b".repeat(64),
+    imported_at: "2026-08-25T00:00:00+00:00",
+    ...overrides,
+  };
+}
+
+test("library selection follows the restored source instead of the first dataset", () => {
+  const first = manifest();
+  const restored = manifest({
+    dataset_id: "local-ffffffffffffffffffffffffffffffff",
+    data_epoch: `sha256:${"c".repeat(64)}`,
+  });
+  const source = importedDatasetSourceFromManifest(restored);
+  assert.equal(preferredLibrarySelectedId(source, [first, restored]), restored.dataset_id);
+  assert.equal(importedManifestForSource(source, first), null);
+  assert.equal(importedManifestForSource(source, restored), restored);
+  assert.equal(importedManifestForSource(source, manifest({
+    dataset_id: restored.dataset_id,
+    data_epoch: `sha256:${"d".repeat(64)}`,
+  })), null);
+});
+
+test("activating a revision refreshes the library before advancing source epoch and stales the old result", () => {
+  const current = manifest();
+  const activated = manifest({ data_epoch: `sha256:${"d".repeat(64)}` });
+  const runtime = new StrategyResearchRuntime({ restoreWorkspace: false, libraryEnabled: true });
+  runtime.dispatch({ type: "source/select", source: importedDatasetSourceFromManifest(current) });
+  runtime.dispatch({ type: "result/setRun", runId: "bt_previous" });
+  runtime.dispatch({
+    type: "source/revisionChanged",
+    source: importedDatasetSourceFromManifest(activated),
+  });
+
+  assert.equal(
+    runtime.state.source.source?.kind === "IMPORTED_DATASET"
+      ? runtime.state.source.source.dataEpoch
+      : null,
+    activated.data_epoch,
+  );
+  assert.equal(runtime.state.result.runId, "bt_previous");
+  assert.equal(runtime.state.result.stale, true);
+  assert.equal(runtime.state.result.staleReason, "DATA_REVISION_CHANGED");
+  assert.equal(importedManifestForSource(runtime.state.source.source, activated), activated);
+
+  const managementSource = readFileSync(
+    path.resolve(here, "../../research-data/ResearchDatasetManagement.tsx"),
+    "utf8",
+  );
+  const refreshIndex = managementSource.indexOf("await input.onChanged(input.manifest.dataset_id)");
+  const sourceIndex = managementSource.indexOf("input.onRevisionActivated?.(activated)");
+  assert.ok(refreshIndex >= 0 && sourceIndex > refreshIndex);
+  const appSource = readFileSync(path.resolve(here, "../StrategyResearchApp.tsx"), "utf8");
+  assert.match(appSource, /current\.datasetId !== manifest\.dataset_id[\s\S]*setLibrarySelectedId\(current\.datasetId\)/);
+  assert.match(appSource, /dispatchImportedSource\(dispatch, current, manifest\)/);
+  assert.match(appSource, /onRevisionActivated=\{handleRevisionActivated\}/);
+});
+
+test("imported source identity is dataset_id + data_epoch and never invents a snapshot hash", () => {
+  const source = importedDatasetSourceFromManifest(manifest(), "1h");
+  assert.equal(source.kind, "IMPORTED_DATASET");
+  assert.equal(source.datasetId, manifest().dataset_id);
+  assert.equal(source.dataEpoch, manifest().data_epoch);
+  assert.equal(source.interval, "1h");
+  assert.equal("snapshotHash" in source, false);
+});
+
+test("chart, drawings, indicators, events, and interval keys isolate by dataset_id + data_epoch", () => {
+  const current = manifest();
+  const nextEpoch = manifest({ data_epoch: `sha256:${"b".repeat(64)}` });
+  assert.equal(
+    importedChartDatasetKey(current, "30m"),
+    `local:${current.dataset_id}:${current.data_epoch}:30m`,
+  );
+  assert.notEqual(importedChartDatasetKey(current, "30m"), importedChartDatasetKey(nextEpoch, "30m"));
+  assert.equal(importedDrawingKeyBase(current), `local:${current.dataset_id}:${current.data_epoch}`);
+  assert.notEqual(importedDrawingKeyBase(current), importedDrawingKeyBase(nextEpoch));
+  const analysisKey = buildLocalAnalysisStorageKey({
+    datasetId: current.dataset_id,
+    dataEpoch: current.data_epoch,
+  });
+  assert.match(analysisKey, new RegExp(current.dataset_id));
+  assert.match(analysisKey, /sha256/);
+  assert.notEqual(
+    analysisKey,
+    buildLocalAnalysisStorageKey({
+      datasetId: nextEpoch.dataset_id,
+      dataEpoch: nextEpoch.data_epoch,
+    }),
+  );
+  assert.notEqual(
+    localIntervalStorageKey(current.dataset_id, current.data_epoch),
+    localIntervalStorageKey(nextEpoch.dataset_id, nextEpoch.data_epoch),
+  );
+  assert.match(localIntervalStorageKey(current.dataset_id, current.data_epoch), new RegExp(LOCAL_INTERVAL_STORAGE_PREFIX));
+});
+
+test("15m imported data allows 30m/1h/90m and rejects 89m", () => {
+  const source = { interval: "15m", alignment_offset_ms: 0 };
+  assert.equal(resolveLocalIntervalSupport(source, "30m").supported, true);
+  assert.equal(resolveLocalIntervalSupport(source, "1h").supported, true);
+  assert.equal(resolveLocalIntervalSupport(source, "90m").supported, true);
+  const rejected = resolveLocalIntervalSupport(source, "89m");
+  assert.equal(rejected.supported, false);
+  assert.equal(rejected.code, "interval_not_composable");
+});
+
+test("unified app owns one library store and drawer does not create another", () => {
+  const appSource = readFileSync(path.resolve(here, "../StrategyResearchApp.tsx"), "utf8");
+  const drawerSource = readFileSync(path.resolve(here, "../../research-data/ResearchDataDrawer.tsx"), "utf8");
+  const chartSource = readFileSync(path.resolve(here, "../StrategyResearchChart.tsx"), "utf8");
+  assert.match(appSource, /useResearchDataLibrary\(\)/);
+  assert.match(appSource, /StrategyResearchImportedWorkspace/);
+  assert.match(appSource, /importedDatasetSourceFromManifest/);
+  assert.doesNotMatch(drawerSource, /useResearchDataLibrary\(\)/);
+  assert.match(drawerSource, /library\?:/);
+  assert.match(chartSource, /followLatest=\{false\}/);
+  assert.match(chartSource, /realtimeMode="historical-only"/);
+});
+
+test("first open shows three templates and import without hiding the script slot", () => {
+  const first = renderToStaticMarkup(
+    React.createElement(StrategyResearchApp, {
+      intent: parseStrategyResearchLaunch({ pathname: "/strategy.html", search: "" }),
+      libraryEnabled: true,
+    }),
+  );
+  assert.match(first, /data-visual-state="first"/);
+  assert.match(first, /strategy-research-first-open/);
+  assert.match(first, /strategy-research-templates/);
+  assert.match(first, /strategy-research-template-SMA_CROSS/);
+  assert.match(first, /strategy-research-template-RSI_REVERSAL/);
+  assert.match(first, /strategy-research-template-DONCHIAN_BREAKOUT/);
+  assert.match(first, /strategy-research-import-own-data/);
+  assert.match(first, /research-data-source-bar/);
+  assert.doesNotMatch(first, /monaco/i);
+  const css = readFileSync(path.resolve(here, "../strategyResearch.css"), "utf8");
+  assert.doesNotMatch(css, /data-visual-state="first"[^}]*max-height:\s*0/);
+});
+
+test("source=current does not invent a live chart session", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(StrategyResearchApp, {
+      intent: parseStrategyResearchLaunch({ pathname: "/strategy.html", search: "?source=current" }),
+      libraryEnabled: false,
+    }),
+  );
+  assert.match(html, /strategy-research-current-chart-unavailable|strategy-research-open-market-tester/);
+  assert.doesNotMatch(html, /data-symbol="BTCUSDT"/);
+  assert.doesNotMatch(html, /strategy-research-import-own-data/);
+});

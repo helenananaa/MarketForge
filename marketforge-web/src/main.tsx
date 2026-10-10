@@ -1,19 +1,20 @@
-import { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Bot,
-  ChevronDown,
-  CircleHelp,
-  Globe2,
+  ExternalLink,
   Play,
   Plus,
   RefreshCw,
-  Search,
   Send,
-  Settings,
   Square,
 } from "lucide-react";
 import "./styles.css";
+import { AgentTraders } from "./AgentTraders";
+import backgroundMarket from "../../scripts/fixtures/background_market.json";
+import behaviorMarket from "../../scripts/fixtures/behavior_market.json";
+import microstructureMarket from "../../scripts/fixtures/microstructure_market.json";
+import linkedMarket from "../../scripts/fixtures/linked_market.json";
 
 type Side = "Buy" | "Sell";
 type AgentStatus = {
@@ -21,7 +22,28 @@ type AgentStatus = {
   running: boolean;
   interval_ms: number;
   participants: string[];
+  lifecycle?: string;
+  last_error?: string | null;
 };
+type BotParameter = {
+  type: "integer" | "boolean" | "string" | "object" | "array";
+  required: boolean;
+  default: unknown;
+  minimum?: number | null;
+  maximum?: number | null;
+  choices: unknown[];
+};
+type BotDescriptor = {
+  id: string;
+  name: string;
+  version: string;
+  state_version: number;
+  parameters: Record<string, BotParameter>;
+};
+type BotInstance = { Plugin: {
+  participant: { participant_id: string; kind: "RuleAgent"; room_id: string; account_id: number; instrument_id: string };
+  plugin_id: string; plugin_version: string; state_version: number; seed: number; config: Record<string, unknown>;
+} };
 type BookLevel = {
   price_tick: number;
   qty: number;
@@ -31,23 +53,40 @@ type SpotAccount = {
   cash_balance: number;
   position_qty: number;
   fees_paid: number;
+  available_cash?: number;
 };
 type PerpAccount = SpotAccount & {
+  hedge_positions?: { long: { qty: number; avg_entry_price_tick: number }; short: { qty: number; avg_entry_price_tick: number } };
   equity: number;
   realized_pnl: number;
   unrealized_pnl: number;
   initial_margin: number;
+  funding_pnl?: number;
 };
 type AnyAccount = SpotAccount | PerpAccount;
 type AccountSnapshots = { Spot: SpotAccount[] } | { Perp: PerpAccount[] };
 type MarketView = {
   room_id: string;
+  instrument_id: string;
   status: "Running" | "Paused" | "Closed";
   book: {
     bids: BookLevel[];
     asks: BookLevel[];
   };
   accounts: AccountSnapshots;
+  instruments?: string[];
+  perp_price?: {
+    spot_instrument_id: string;
+    index_price_tick: number | null;
+    mark_price_tick: number;
+    status: "awaiting_price" | "live" | "stale" | "unavailable";
+    funding?: {
+      market_time_ms: number;
+      estimated_rate_ppm: number | null;
+      next_funding_time_ms: number;
+      last_settlement: { status: "settled" | "no_positions" | "skipped_prices" | "unbalanced_positions"; rate_ppm: number; covered_ms: number; interval_ms: number } | null;
+    };
+  };
 };
 type ApiEvent = {
   type: string;
@@ -59,6 +98,7 @@ type ApiEvent = {
   remaining_qty?: number;
   unfilled_qty?: number;
   reason?: string;
+  taker_side?: Side;
 };
 type OrderResponse = {
   participant_id: string;
@@ -73,6 +113,8 @@ type OrderResponse = {
 };
 type RoomExecutionSummary = {
   room_id: string;
+  instrument_id?: string | null;
+  market_time_ms?: number | null;
   command_seq: number;
   status: string;
   accepted: boolean;
@@ -88,6 +130,24 @@ type TimelineRow = {
   execution: RoomExecutionSummary;
   event?: ApiEvent;
 };
+type Trade = {
+  key: string;
+  command_seq: number;
+  price_tick: number;
+  qty: number;
+  taker_side?: Side;
+};
+type RoomTradesResponse = {
+  room_id: string;
+  trades: {
+    instrument_id: string;
+    trade_id: number;
+    command_seq: number;
+    price_tick: number;
+    qty: number;
+    taker_side: "buy" | "sell";
+  }[];
+};
 type LogEntry = {
   id: string;
   level: "ok" | "warn" | "info";
@@ -96,29 +156,56 @@ type LogEntry = {
 
 const API_DEFAULT = "http://127.0.0.1:57305";
 const ROOM_DEFAULT = "demo-web";
+// Served by scripts/start-candlescope-workbench.ps1; see docs/CANDLESCOPE_WORKBENCH.md.
+const WORKBENCH_URL = "http://127.0.0.1:15173/simulation.html";
+const BOOK_DEPTH = 8;
+const STATUS_LABELS: Record<MarketView["status"], string> = { Running: "运行中", Paused: "已暂停", Closed: "已关闭" };
+const LOG_LABELS: Record<LogEntry["level"], string> = { ok: "成功", warn: "失败", info: "提示" };
 
 function App() {
   const [apiBase, setApiBase] = useState(API_DEFAULT);
   const [roomId, setRoomId] = useState(ROOM_DEFAULT);
   const [activeRoom, setActiveRoom] = useState("");
   const [view, setView] = useState<MarketView | null>(null);
+  const [activeInstrument, setActiveInstrument] = useState("");
+  const [linkedMarkets, setLinkedMarkets] = useState(true);
+  const [enhancedBehaviors, setEnhancedBehaviors] = useState(true);
+  const [microstructureBehaviors, setMicrostructureBehaviors] = useState(false);
+  const refreshRequest = useRef(0);
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [roomEvents, setRoomEvents] = useState<RoomExecutionSummary[]>([]);
+  const [trades, setTrades] = useState<Trade[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [side, setSide] = useState<Side>("Buy");
+  const [positionSide, setPositionSide] = useState<"Long" | "Short">("Long");
   const [orderKind, setOrderKind] = useState<"Limit" | "Market">("Limit");
   const [price, setPrice] = useState(100);
   const [qty, setQty] = useState(2);
   const [accountId, setAccountId] = useState(20);
+  const [bots, setBots] = useState<BotDescriptor[]>([]);
+  const [botId, setBotId] = useState("DcaTrader");
+  const [botParams, setBotParams] = useState<Record<string, string>>({});
+  const [botAccount, setBotAccount] = useState(30);
+  const [botSeed, setBotSeed] = useState(1);
+  const [botInstanceId, setBotInstanceId] = useState("bot-1");
+  const [botInstances, setBotInstances] = useState<BotInstance[]>([]);
+  const selectedBot = bots.find((bot) => bot.id === botId);
+
 
   const accounts = useMemo(() => flattenAccounts(view?.accounts), [view]);
   const selectedAccount = accounts.find((account) => account.account_id === accountId);
+  const hedgePositions = selectedAccount && isPerpAccount(selectedAccount) ? selectedAccount.hedge_positions : undefined;
+  const closingLeg = !!hedgePositions && ((positionSide === "Long" && side === "Sell") || (positionSide === "Short" && side === "Buy"));
+  const quantityUnit = view && "Perp" in view.accounts ? "张" : "单位";
+  const funding = view?.perp_price?.funding;
   const bestBid = view?.book.bids[0]?.price_tick;
   const bestAsk = view?.book.asks[0]?.price_tick;
-  const lastPrice = bestAsk ?? bestBid ?? price;
-  const spread = bestAsk !== undefined && bestBid !== undefined ? bestAsk - bestBid : 0;
+  const lastPrice = trades[0]?.price_tick;
+  const priceTone = trades.length > 1 ? priceDirection(trades[0].price_tick, trades[1].price_tick) : undefined;
+  const spread = bestAsk !== undefined && bestBid !== undefined ? bestAsk - bestBid : undefined;
+  const latestLog = logs[0];
 
   const pushLog = useCallback((entry: Omit<LogEntry, "id">) => {
     setLogs((current) => [
@@ -147,58 +234,152 @@ function App() {
     [apiBase],
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    api<BotDescriptor[]>("/bots").then((descriptors) => {
+      if (!cancelled) setBots(descriptors);
+    }).catch((error: Error) => {
+      if (!cancelled) { setBots([]); pushLog({ level: "warn", text: error.message }); }
+    });
+    return () => { cancelled = true; };
+  }, [api, pushLog]);
+
+  const configureBot = (id: string) => {
+    setBotId(id);
+    setBotParams({});
+  };
+
+  const makeBotInstance = (): BotInstance => {
+    if (!selectedBot || !activeRoom) throw new Error("请先载入房间并选择交易 bot");
+    if (!botInstanceId.trim()) throw new Error("请填写 bot 实例名称");
+    if (!Number.isSafeInteger(botAccount) || botAccount <= 0 || !Number.isSafeInteger(botSeed) || botSeed < 0) {
+      throw new Error("账户和种子必须是有效整数");
+    }
+    const config: Record<string, unknown> = {};
+    for (const [name, parameter] of Object.entries(selectedBot.parameters)) {
+      const raw = botParams[name];
+      if (raw === undefined || raw === "") {
+        if (parameter.default !== null && parameter.default !== undefined) config[name] = parameter.default;
+        else if (parameter.required) throw new Error(`请填写参数 ${name}`);
+        continue;
+      }
+      const value = parameter.type === "string" ? raw : JSON.parse(raw);
+      if (parameter.type === "integer" && !Number.isSafeInteger(value)) throw new Error(`${name} 必须是整数`);
+      config[name] = value;
+    }
+    return { Plugin: {
+      participant: { participant_id: botInstanceId.trim(), kind: "RuleAgent", room_id: activeRoom, account_id: botAccount, instrument_id: view?.instrument_id ?? "V-BTC-SPOT" },
+      plugin_id: selectedBot.id, plugin_version: selectedBot.version, state_version: selectedBot.state_version, seed: botSeed, config,
+    } };
+  };
+
+  const addBotInstance = () => {
+    try {
+      const instance = makeBotInstance();
+      if (botInstances.some((bot) => bot.Plugin.participant.participant_id === instance.Plugin.participant.participant_id)) {
+        throw new Error("bot 实例名称重复");
+      }
+      setBotInstances([...botInstances, instance]);
+      setBotInstanceId(`bot-${botInstances.length + 2}`);
+    } catch (error) { pushLog({ level: "warn", text: error instanceof Error ? error.message : "添加失败" }); }
+  };
+
   const refresh = useCallback(
-    async (room = activeRoom) => {
+    async (room = activeRoom, instrument = activeInstrument) => {
       if (!room) {
         return;
       }
-      const [nextView, nextAgents, nextEvents] = await Promise.all([
-        api<MarketView>(`/rooms/${room}/view`),
+      const request = ++refreshRequest.current;
+      const viewRequest = api<MarketView>(instrument ? `/rooms/${room}/instruments/${encodeURIComponent(instrument)}/view` : `/rooms/${room}/view`);
+      const [nextView, nextAgents, nextEvents, nextTrades] = await Promise.all([
+        viewRequest,
         api<AgentStatus>(`/rooms/${room}/agents`),
         api<RoomEventsResponse>(`/rooms/${room}/events?limit=80`),
+        // Query the selected instrument's latest trades independently of the room command window.
+        viewRequest.then((nextView) => api<RoomTradesResponse>(
+          `/rooms/${room}/instruments/${encodeURIComponent(nextView.instrument_id)}/trades?limit=80`,
+        )),
       ]);
+      if (request !== refreshRequest.current) return;
       setView(nextView);
+      setActiveInstrument(nextView.instrument_id);
       setAgentStatus(nextAgents);
       setRoomEvents(nextEvents.executions);
+      setTrades(nextTrades.trades.map((trade) => ({
+        key: `${trade.instrument_id}-${trade.trade_id}`,
+        command_seq: trade.command_seq,
+        price_tick: trade.price_tick,
+        qty: trade.qty,
+        taker_side: trade.taker_side === "buy" ? "Buy" : "Sell",
+      })));
     },
-    [activeRoom, api],
+    [activeRoom, activeInstrument, api],
   );
 
   useEffect(() => {
-    if (!activeRoom || !autoRefresh) {
+    if (!activeRoom || !autoRefresh || busy) {
       return;
     }
-    const handle = window.setInterval(() => {
-      refresh().catch((error: Error) =>
-        pushLog({ level: "warn", text: error.message }),
-      );
-    }, 900);
-    return () => window.clearInterval(handle);
-  }, [activeRoom, autoRefresh, pushLog, refresh]);
+    let cancelled = false;
+    let handle: ReturnType<typeof window.setTimeout>;
+    const poll = async () => {
+      try {
+        await refresh();
+      } catch (error) {
+        if (!cancelled) pushLog({ level: "warn", text: error instanceof Error ? error.message : String(error) });
+      } finally {
+        if (!cancelled) handle = window.setTimeout(poll, 900);
+      }
+    };
+    handle = window.setTimeout(poll, 900);
+    return () => { cancelled = true; window.clearTimeout(handle); };
+  }, [activeRoom, autoRefresh, busy, pushLog, refresh]);
+
+  const loadSavedBots = async (room: string) => {
+    const saved = await api<{ agents: { template: BotInstance | Record<string, unknown> }[] } | null>(`/rooms/${room}/bots`);
+    setBotInstances((saved?.agents ?? []).flatMap(({ template }) => "Plugin" in template ? [template as BotInstance] : []));
+  };
 
   const createRoom = async () => {
     const nextRoom = roomId.trim() || ROOM_DEFAULT;
     setBusy(true);
     try {
+      const payload = sampleRoomPayload(nextRoom, linkedMarkets, enhancedBehaviors, microstructureBehaviors);
       await api("/rooms", {
         method: "POST",
-        body: JSON.stringify(sampleRoomPayload(nextRoom)),
+        body: JSON.stringify(payload),
       });
       setActiveRoom(nextRoom);
-      pushLog({ level: "ok", text: `房间 ${nextRoom} 已创建` });
-      await refresh(nextRoom);
+      await loadSavedBots(nextRoom);
+      pushLog({ level: "ok", text: `房间 ${nextRoom} 已创建，${payload.agents.length} 个背景交易者已启动${linkedMarkets ? "，现货与永续已绑定" : ""}` });
+      await refresh(nextRoom, "");
     } catch (error) {
       const message = error instanceof Error ? error.message : "create room failed";
       if (message.includes("RoomAlreadyExists")) {
         setActiveRoom(nextRoom);
         pushLog({ level: "info", text: `房间 ${nextRoom} 已载入` });
-        await refresh(nextRoom);
+        await refresh(nextRoom, "");
+        await loadSavedBots(nextRoom);
       } else {
         pushLog({ level: "warn", text: message });
       }
     } finally {
       setBusy(false);
     }
+  };
+
+  const loadRoom = async () => {
+    const nextRoom = roomId.trim();
+    if (!nextRoom) return;
+    setBusy(true);
+    try {
+      await refresh(nextRoom, "");
+      await loadSavedBots(nextRoom);
+      setActiveRoom(nextRoom);
+      pushLog({ level: "ok", text: `房间 ${nextRoom} 已载入` });
+    } catch (error) {
+      pushLog({ level: "warn", text: error instanceof Error ? error.message : "载入失败" });
+    } finally { setBusy(false); }
   };
 
   const submitOrder = async () => {
@@ -208,14 +389,18 @@ function App() {
     }
     setBusy(true);
     try {
-      const action =
-        orderKind === "Market"
+      const action = hedgePositions
+        ? orderKind === "Market"
+          ? { PlaceUnboundedMarket: { side, qty, position_side: positionSide, reduce_only: closingLeg } }
+          : { PlaceProtected: { side, qty, position_side: positionSide, price_tick: price, order_type: closingLeg ? "ImmediateOrCancel" : "Limit", reduce_only: closingLeg } }
+        : orderKind === "Market"
           ? { PlaceMarket: { side, qty } }
           : { PlaceLimit: { side, price_tick: price, qty } };
       const response = await api<OrderResponse>(`/rooms/${activeRoom}/orders`, {
         method: "POST",
         body: JSON.stringify({
           participant_id: "human-web",
+          instrument_id: activeInstrument,
           account_id: accountId,
           action,
         }),
@@ -245,12 +430,12 @@ function App() {
       const status = await api<AgentStatus>(`/rooms/${activeRoom}/agents`, {
         method: "POST",
         body: JSON.stringify({
-          agents: [dcaAgent(activeRoom)],
+          agents: botInstances.length ? botInstances : [makeBotInstance()],
           interval_ms: 700,
         }),
       });
       setAgentStatus(status);
-      pushLog({ level: "ok", text: "AI 交易员已启动" });
+      pushLog({ level: "ok", text: "交易 bot 已启动" });
       await refresh();
     } catch (error) {
       pushLog({
@@ -273,7 +458,7 @@ function App() {
         body: "{}",
       });
       setAgentStatus(status);
-      pushLog({ level: "info", text: "AI 交易员已停止" });
+      pushLog({ level: "info", text: "交易 bot 已停止" });
     } catch (error) {
       pushLog({
         level: "warn",
@@ -284,56 +469,58 @@ function App() {
     }
   };
 
+  const switchInstrument = async (instrument: string) => {
+    setBusy(true);
+    try { await refresh(activeRoom, instrument); }
+    catch (error) { pushLog({ level: "warn", text: error instanceof Error ? error.message : "切换失败" }); }
+    finally { setBusy(false); }
+  };
+
   return (
-    <main className="terminal">
+    <main className={`terminal${view?.perp_price ? " has-perp-price" : ""}`}>
+      <div className="dev-banner" role="note">
+        <span>
+          这是开发调试页面，只显示后端原始数据。完整的看盘与交易请使用 CandleScope 仿真工作台。
+        </span>
+        <a href={WORKBENCH_URL} target="_blank" rel="noreferrer">
+          打开仿真工作台
+          <ExternalLink size={14} aria-hidden="true" />
+        </a>
+      </div>
       <header className="global-nav">
         <div className="brand">
           <span className="brand-mark">MF</span>
           <strong>MarketForge</strong>
+          <span className="brand-tag">调试台</span>
         </div>
-        <nav aria-label="main navigation">
-          <button>市场</button>
-          <button>交易</button>
-          <button>策略</button>
-          <button>房间</button>
-        </nav>
-        <div className="search">
-          <Search size={16} aria-hidden="true" />
+        <label className="api-field">
+          <span>API 地址</span>
           <input
             value={apiBase}
             onChange={(event) => setApiBase(event.target.value)}
-            aria-label="API base URL"
           />
-        </div>
-        <div className="nav-actions">
-          <button aria-label="settings">
-            <Settings size={18} aria-hidden="true" />
-          </button>
-          <button aria-label="help">
-            <CircleHelp size={18} aria-hidden="true" />
-          </button>
-          <button aria-label="language">
-            <Globe2 size={18} aria-hidden="true" />
-          </button>
-        </div>
+        </label>
       </header>
 
+      <AgentTraders room={activeRoom} instrument={view?.instrument_id ?? "V-BTC-SPOT"} />
       <section className="market-strip">
         <div className="symbol-block">
           <span className="coin">V</span>
           <div>
             <div className="symbol-line">
-              <strong>V-BTC/SPOT</strong>
-              <ChevronDown size={16} aria-hidden="true" />
+              <select aria-label="交易品种" value={activeInstrument} disabled={busy || !view} onChange={(event) => switchInstrument(event.target.value)}>
+                {!view && <option value="">选择交易品种</option>}
+                {(view?.instruments ?? (view ? [view.instrument_id] : [])).map((id) => <option key={id} value={id}>{id}</option>)}
+              </select>
             </div>
             <span>{activeRoom || "未载入房间"}</span>
           </div>
         </div>
-        <MarketStat label="最新价" value={formatNumber(lastPrice)} tone="up" />
-        <MarketStat label="价差" value={formatNumber(spread)} />
+        <MarketStat label="最新成交价" value={formatNumber(lastPrice)} tone={priceTone} />
         <MarketStat label="最优买价" value={formatNumber(bestBid)} tone="up" />
         <MarketStat label="最优卖价" value={formatNumber(bestAsk)} tone="down" />
-        <MarketStat label="状态" value={view?.status ?? "-"} />
+        <MarketStat label="价差" value={formatNumber(spread)} className="optional-stat" />
+        <MarketStat label="状态" value={view ? STATUS_LABELS[view.status] : "-"} className="optional-stat" />
         <div className="room-controls">
           <input
             value={roomId}
@@ -342,9 +529,22 @@ function App() {
           />
           <button onClick={createRoom} disabled={busy}>
             <Plus size={16} aria-hidden="true" />
-            创建
+            创建仿真市场
           </button>
-          <button onClick={() => refresh()} disabled={!activeRoom || busy}>
+          <label className="auto-toggle">
+            <input type="checkbox" checked={linkedMarkets} onChange={(event) => setLinkedMarkets(event.target.checked)} />
+            绑定永续
+          </label>
+          <label className="auto-toggle">
+            <input type="checkbox" checked={enhancedBehaviors} disabled={!linkedMarkets} onChange={(event) => setEnhancedBehaviors(event.target.checked)} />
+            增强行为
+          </label>
+          <label className="auto-toggle">
+            <input type="checkbox" checked={microstructureBehaviors} disabled={!linkedMarkets || !enhancedBehaviors} onChange={(event) => setMicrostructureBehaviors(event.target.checked)} />
+            盘口反馈与杠杆
+          </label>
+          <button onClick={loadRoom} disabled={busy || !roomId.trim()}>载入</button>
+          <button onClick={() => refresh()} disabled={!activeRoom || busy} aria-label="刷新" title="刷新">
             <RefreshCw size={16} aria-hidden="true" />
           </button>
           <label className="auto-toggle">
@@ -358,53 +558,50 @@ function App() {
         </div>
       </section>
 
+      {view?.perp_price && <section className="linked-price-strip" aria-label="现货永续联动">
+        <MarketStat label="现货指数价" value={formatNumber(view.perp_price.index_price_tick ?? undefined)} />
+        <MarketStat label="标记价" value={formatNumber(view.perp_price.mark_price_tick)} />
+        <MarketStat label={`关联 ${view.perp_price.spot_instrument_id}`} value={{ live: "已联动", stale: "行情过期", unavailable: "行情不足", awaiting_price: "等待行情" }[view.perp_price.status]} />
+        {funding && <>
+          <MarketStat label="资金费率（预估）" value={funding.estimated_rate_ppm === null ? "等待行情" : `${funding.estimated_rate_ppm >= 0 ? "+" : ""}${(funding.estimated_rate_ppm / 10000).toFixed(4)}%`} />
+          <MarketStat label="距结算（仿真时间）" value={`${Math.max(0, Math.ceil((funding.next_funding_time_ms - funding.market_time_ms) / 1000))} 秒`} />
+          <MarketStat label="上次资金费结算" value={funding.last_settlement ? `${{ settled: "已结算", no_positions: "无持仓", skipped_prices: "行情不足，已跳过", unbalanced_positions: "持仓不平衡，已跳过" }[funding.last_settlement.status]} · 行情覆盖 ${(funding.last_settlement.covered_ms / funding.last_settlement.interval_ms * 100).toFixed(0)}%` : "尚未结算"} />
+        </>}
+      </section>}
+
       <div className="trade-grid">
-        <section className="chart-pane">
-          <div className="pane-tabs">
-            <button className="tab active">图表</button>
-            <button className="tab">信息</button>
-            <button className="tab">交易数据</button>
-            <button className="tab">动态</button>
-          </div>
-          <div className="timeframe-row">
-            {["1秒", "1分", "5分", "15分", "1小时", "4小时", "1日"].map((item) => (
-              <button className={item === "1分" ? "active" : ""} key={item}>
-                {item}
-              </button>
-            ))}
-          </div>
-          <ChartPlaceholder price={lastPrice} />
-        </section>
-
-        <section className="orderbook-pane">
+        <section className="trades-pane" aria-labelledby="trades-title">
           <div className="pane-header">
-            <div>
-              <button className="tab active">订单表</button>
-              <button className="tab">最新成交</button>
-            </div>
-            <button aria-label="book settings">
-              <Settings size={16} aria-hidden="true" />
-            </button>
+            <h2 id="trades-title">最近成交</h2>
+            <span className="pane-note">当前品种最近 80 笔成交 · K 线请在仿真工作台查看</span>
           </div>
-          <OrderBook bids={view?.book.bids ?? []} asks={view?.book.asks ?? []} lastPrice={lastPrice} />
+          <TradeTape trades={trades} />
         </section>
 
-        <aside className="ticket-pane">
-          <div className="pane-tabs compact">
-            <button className="tab active">交易</button>
-            <button className="tab">工具</button>
+        <section className="orderbook-pane" aria-labelledby="book-title">
+          <div className="pane-header">
+            <h2 id="book-title">订单簿</h2>
+            <span className="pane-note">前 {BOOK_DEPTH} 档</span>
           </div>
+          <OrderBook bids={view?.book.bids ?? []} asks={view?.book.asks ?? []} lastPrice={lastPrice} priceTone={priceTone} />
+        </section>
+
+        <aside className="ticket-pane" aria-label="下单">
           <div className="buy-sell-tabs">
             <button className={side === "Buy" ? "active" : ""} onClick={() => setSide("Buy")}>
-              买入
+              {hedgePositions ? positionSide === "Long" ? "开多" : "平空" : "买入"}
             </button>
             <button className={side === "Sell" ? "active sell" : ""} onClick={() => setSide("Sell")}>
-              卖出
+              {hedgePositions ? positionSide === "Long" ? "平多" : "开空" : "卖出"}
             </button>
           </div>
+          {hedgePositions && <div className="order-type-row" aria-label="选择持仓方向">
+            <button className={positionSide === "Long" ? "active" : ""} onClick={() => setPositionSide("Long")}>多仓</button>
+            <button className={positionSide === "Short" ? "active" : ""} onClick={() => setPositionSide("Short")}>空仓</button>
+          </div>}
           <div className="order-type-row">
             <button className={orderKind === "Limit" ? "active" : ""} onClick={() => setOrderKind("Limit")}>
-              限价委托
+              {closingLeg ? "限价平仓（IOC）" : "限价委托"}
             </button>
             <button className={orderKind === "Market" ? "active" : ""} onClick={() => setOrderKind("Market")}>
               市价委托
@@ -423,30 +620,71 @@ function App() {
             suffix="TICK"
             disabled={orderKind === "Market"}
           />
-          <TicketInput label="数量" value={qty} onChange={setQty} suffix="BTC" />
-          <div className="percent-row">
-            {[0, 25, 50, 75, 100].map((item) => (
-              <button key={item}>{item}%</button>
-            ))}
-          </div>
+          <TicketInput label="数量" value={qty} onChange={setQty} suffix={quantityUnit} />
           <div className="balance-lines">
             <span>可用现金</span>
-            <strong>{selectedAccount?.cash_balance ?? "-"} EUR</strong>
-            <span>持仓数量</span>
-            <strong>{selectedAccount?.position_qty ?? "-"} BTC</strong>
+            <strong>{selectedAccount?.available_cash ?? selectedAccount?.cash_balance ?? "-"}</strong>
+            <span>{hedgePositions ? "净持仓数量" : "持仓数量"}</span>
+            <strong>{selectedAccount?.position_qty ?? "-"} {quantityUnit}</strong>
+            {hedgePositions && <>
+              <span>多仓 / 开仓均价</span><strong>{hedgePositions.long.qty} / {hedgePositions.long.avg_entry_price_tick}</strong>
+              <span>空仓 / 开仓均价</span><strong>{hedgePositions.short.qty} / {hedgePositions.short.avg_entry_price_tick}</strong>
+            </>}
+            {selectedAccount && "funding_pnl" in selectedAccount && <>
+              <span>累计资金费收付</span>
+              <strong>{selectedAccount.funding_pnl ?? 0}</strong>
+            </>}
           </div>
           <button className={side === "Buy" ? "submit buy" : "submit sell"} onClick={submitOrder} disabled={busy || !activeRoom}>
             <Send size={17} aria-hidden="true" />
-            {side === "Buy" ? "买入 BTC" : "卖出 BTC"}
+            {hedgePositions ? positionSide === "Long" ? side === "Buy" ? "开多" : "平多" : side === "Buy" ? "平空" : "开空" : side === "Buy" ? "买入" : "卖出"}
           </button>
+          {latestLog && (
+            <p className={`ticket-feedback ${latestLog.level}`} role={latestLog.level === "warn" ? "alert" : "status"}>
+              {latestLog.text}
+            </p>
+          )}
           <div className="ai-box">
             <div className="ai-state">
               <Bot size={16} aria-hidden="true" />
-              <strong>{agentStatus?.running ? "AI 运行中" : "AI 已停止"}</strong>
+              <strong>{agentStatus?.running ? "Bot 运行中" : "Bot 已停止"}</strong>
               <span>{agentStatus?.interval_ms ? `${agentStatus.interval_ms}ms` : "-"}</span>
             </div>
+            <label className="bot-field">交易 bot
+              <select aria-label="交易 bot" value={botId} onChange={(event) => configureBot(event.target.value)} disabled={busy || !bots.length}>
+                {bots.map((bot) => <option key={bot.id} value={bot.id}>{bot.name} · {bot.version}</option>)}
+              </select>
+            </label>
+            <label className="bot-field">实例名称
+              <input aria-label="实例名称" value={botInstanceId} onChange={(event) => setBotInstanceId(event.target.value)} />
+            </label>
+            <TicketInput label="Bot 账户" value={botAccount} onChange={setBotAccount} suffix="ID" />
+            <TicketInput label="随机种子" value={botSeed} onChange={setBotSeed} suffix="" />
+            {Object.entries(selectedBot?.parameters ?? {}).map(([name, parameter]) => {
+              const fallback = parameter.default === null || parameter.default === undefined ? "" : parameter.type === "string" ? String(parameter.default) : JSON.stringify(parameter.default);
+              const value = botParams[name] ?? fallback;
+              return <label className="bot-field" key={name}>{name}{parameter.required ? " *" : ""}
+                {parameter.type === "boolean" || parameter.choices.length ?
+                  <select aria-label={name} value={value} onChange={(event) => setBotParams({ ...botParams, [name]: event.target.value })}>
+                    {(!value || parameter.default == null) && <option value="">请选择</option>}
+                    {(parameter.type === "boolean" ? [true, false] : parameter.choices).map((choice) => {
+                      const text = parameter.type === "string" ? String(choice) : JSON.stringify(choice);
+                      return <option key={text} value={text}>{text}</option>;
+                    })}
+                  </select> : <input aria-label={name} value={value} type={parameter.type === "integer" ? "number" : "text"}
+                    min={parameter.minimum ?? undefined} max={parameter.maximum ?? undefined}
+                    onChange={(event) => setBotParams({ ...botParams, [name]: event.target.value })} />}
+              </label>;
+            })}
+            <button className="bot-add" onClick={addBotInstance} disabled={busy || !activeRoom || !selectedBot}>添加到启动列表</button>
+            {botInstances.map((bot) => <div className="bot-instance" key={bot.Plugin.participant.participant_id}>
+              <span>{bot.Plugin.participant.participant_id} · {bot.Plugin.plugin_id} · 账户 {bot.Plugin.participant.account_id}</span>
+              <button aria-label={`移除 ${bot.Plugin.participant.participant_id}`} onClick={() => setBotInstances(botInstances.filter((item) => item !== bot))}>移除</button>
+            </div>)}
+            {!!botInstances.length && <small>启动将应用整个列表；列表为空时启动当前配置。</small>}
+            {agentStatus?.last_error && <p role="alert" className="bot-error">{agentStatus.last_error}</p>}
             <div className="ai-buttons">
-              <button onClick={startAi} disabled={busy || !activeRoom}>
+              <button onClick={startAi} disabled={busy || !activeRoom || !selectedBot}>
                 <Play size={16} aria-hidden="true" />
                 启动
               </button>
@@ -459,15 +697,12 @@ function App() {
         </aside>
 
         <section className="bottom-pane">
-          <div className="pane-tabs">
-            <button className="tab active">当前委托</button>
-            <button className="tab">历史委托</button>
-            <button className="tab">当前仓位</button>
-            <button className="tab">资产</button>
-            <button className="tab">策略</button>
-          </div>
-          <div className="bottom-content">
+          <div className="data-section" aria-labelledby="events-title">
+            <h2 id="events-title" className="section-title">房间事件与本地日志</h2>
             <ActivityTable executions={roomEvents} logs={logs} />
+          </div>
+          <div className="data-section" aria-labelledby="accounts-title">
+            <h2 id="accounts-title" className="section-title">账户</h2>
             <AccountTable accounts={accounts} />
           </div>
         </section>
@@ -480,51 +715,44 @@ function MarketStat({
   label,
   value,
   tone,
+  className,
 }: {
   label: string;
   value: string | number;
   tone?: "up" | "down";
+  className?: string;
 }) {
   return (
-    <div className="market-stat">
+    <div className={className ? `market-stat ${className}` : "market-stat"}>
       <span>{label}</span>
       <strong className={tone ?? ""}>{value}</strong>
     </div>
   );
 }
 
-function ChartPlaceholder({ price }: { price: number }) {
-  const candles = [42, 48, 45, 51, 49, 54, 52, 58, 61, 57, 64, 68, 65, 71, 75, 73, 78, 76, 82, 80];
+function TradeTape({ trades }: { trades: Trade[] }) {
+  if (trades.length === 0) {
+    return <div className="data-empty">暂无成交</div>;
+  }
   return (
-    <div className="chart-surface">
-      <div className="chart-title">
-        <span>V-BTC/SPOT - 1 - MarketForge</span>
-        <strong>{formatNumber(price)}</strong>
+    <div className="trade-tape">
+      <div className="tape-head">
+        <span>命令</span>
+        <span>价格</span>
+        <span>数量</span>
+        <span>主动方</span>
       </div>
-      <div className="chart-grid">
-        {candles.map((height, index) => (
-          <span
-            className={index % 4 === 1 ? "candle down" : "candle"}
-            key={`${height}-${index}`}
-            style={{ height: `${height}%` }}
-          />
+      <div className="tape-rows">
+        {trades.map((trade) => (
+          <div className="tape-row" key={trade.key}>
+            <span>#{trade.command_seq}</span>
+            <strong className={trade.taker_side === "Buy" ? "up" : trade.taker_side === "Sell" ? "down" : ""}>
+              {formatNumber(trade.price_tick)}
+            </strong>
+            <span>{trade.qty}</span>
+            <span>{trade.taker_side === "Buy" ? "主动买" : trade.taker_side === "Sell" ? "主动卖" : "-"}</span>
+          </div>
         ))}
-      </div>
-      <div className="volume-row">
-        {candles.map((height, index) => (
-          <span
-            className={index % 4 === 1 ? "volume down" : "volume"}
-            key={`v-${height}-${index}`}
-            style={{ height: `${Math.max(10, 100 - height)}%` }}
-          />
-        ))}
-      </div>
-      <div className="chart-footer">
-        <span>1日</span>
-        <span>5日</span>
-        <span>1月</span>
-        <span>3月</span>
-        <span>自动</span>
       </div>
     </div>
   );
@@ -534,74 +762,77 @@ function OrderBook({
   bids,
   asks,
   lastPrice,
+  priceTone,
 }: {
   bids: BookLevel[];
   asks: BookLevel[];
-  lastPrice: number;
+  lastPrice?: number;
+  priceTone?: "up" | "down";
 }) {
-  const askRows = asks.slice(0, 8).reverse();
-  const bidRows = bids.slice(0, 8);
+  const bidRows = withCumulative(bids.slice(0, BOOK_DEPTH));
+  // Asks are accumulated outward from the spread, then flipped so the best ask sits next to it.
+  const askRows = withCumulative(asks.slice(0, BOOK_DEPTH)).reverse();
+  const bidTotal = bidRows.at(-1)?.total ?? 0;
+  const askTotal = askRows[0]?.total ?? 0;
+  const maxTotal = Math.max(bidTotal, askTotal, 1);
+  const bidShare = bidTotal + askTotal > 0 ? (bidTotal / (bidTotal + askTotal)) * 100 : undefined;
   return (
     <div className="book-table">
       <div className="book-head">
         <span>价格</span>
         <span>数量</span>
-        <span>合计</span>
+        <span>累计</span>
       </div>
       <div className="book-asks">
         {askRows.length === 0 ? (
-          <EmptyRows side="ask" />
+          <div className="book-empty">暂无卖单</div>
         ) : (
-          askRows.map((level, index) => (
-            <BookRow level={level} side="ask" key={`ask-${level.price_tick}`} rank={index + 1} />
+          askRows.map((row) => (
+            <BookRow row={row} side="ask" maxTotal={maxTotal} key={`ask-${row.price_tick}`} />
           ))
         )}
       </div>
       <div className="last-price">
-        <strong>{formatNumber(lastPrice)}</strong>
-        <span>最新价</span>
+        <strong className={priceTone ?? ""}>{formatNumber(lastPrice)}</strong>
+        <span>{lastPrice === undefined ? "暂无成交" : "最新成交价"}</span>
       </div>
       <div className="book-bids">
         {bidRows.length === 0 ? (
-          <EmptyRows side="bid" />
+          <div className="book-empty">暂无买单</div>
         ) : (
-          bidRows.map((level, index) => (
-            <BookRow level={level} side="bid" key={`bid-${level.price_tick}`} rank={index + 1} />
+          bidRows.map((row) => (
+            <BookRow row={row} side="bid" maxTotal={maxTotal} key={`bid-${row.price_tick}`} />
           ))
         )}
       </div>
       <div className="depth-ratio">
-        <span>B 50.25%</span>
-        <span>S 49.75%</span>
+        {bidShare === undefined ? (
+          <span className="muted">买卖量占比：-</span>
+        ) : (
+          <>
+            <span>买 {bidShare.toFixed(1)}%</span>
+            <span>卖 {(100 - bidShare).toFixed(1)}%</span>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-function BookRow({ level, side, rank }: { level: BookLevel; side: "bid" | "ask"; rank: number }) {
-  const width = Math.min(100, Math.max(12, level.qty * 12 + rank * 5));
+function BookRow({ row, side, maxTotal }: { row: BookLevel & { total: number }; side: "bid" | "ask"; maxTotal: number }) {
   return (
     <div className={`book-row ${side}`}>
-      <span className="depth-bg" style={{ width: `${width}%` }} />
-      <strong>{formatNumber(level.price_tick)}</strong>
-      <span>{level.qty}</span>
-      <span>{level.qty}</span>
+      <span className="depth-bg" style={{ width: `${(row.total / maxTotal) * 100}%` }} />
+      <strong>{formatNumber(row.price_tick)}</strong>
+      <span>{row.qty}</span>
+      <span>{row.total}</span>
     </div>
   );
 }
 
-function EmptyRows({ side }: { side: "bid" | "ask" }) {
-  return (
-    <>
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div className={`book-row ${side} empty-row`} key={index}>
-          <strong>-</strong>
-          <span>-</span>
-          <span>-</span>
-        </div>
-      ))}
-    </>
-  );
+function withCumulative(levels: BookLevel[]) {
+  let total = 0;
+  return levels.map((level) => ({ ...level, total: (total += level.qty) }));
 }
 
 function TicketInput({
@@ -647,12 +878,12 @@ function ActivityTable({
         : execution.events.map((event) => ({ execution, event })),
     )
     .reverse()
-    .slice(0, 9);
+    .slice(0, 40);
 
   return (
     <div className="data-table activity">
       <div className="data-head">
-        <span>序号</span>
+        <span>来源</span>
         <span>事件</span>
         <span>说明</span>
       </div>
@@ -660,21 +891,23 @@ function ActivityTable({
         <div className="data-empty">暂无房间事件</div>
       ) : (
         <>
+          {logs.slice(0, 3).map((log) => (
+            <div className="data-row" key={log.id}>
+              <span>本地</span>
+              <strong className={log.level}>{LOG_LABELS[log.level]}</strong>
+              <span>{log.text}</span>
+            </div>
+          ))}
           {rows.map(({ execution, event }, index) => (
             <div
               className="data-row"
               key={`${execution.command_seq}-${event?.seq ?? "reject"}-${index}`}
             >
               <span>#{execution.command_seq}</span>
-              <strong className={eventTone(event, execution)}>{event?.type ?? "Rejected"}</strong>
+              <strong className={eventTone(event, execution)} title={event?.type ?? "Rejected"}>
+                {eventLabel(event)}
+              </strong>
               <span>{eventDescription(event, execution)}</span>
-            </div>
-          ))}
-          {logs.slice(0, 2).map((log) => (
-            <div className="data-row" key={log.id}>
-              <span>local</span>
-              <strong className={log.level}>{log.level}</strong>
-              <span>{log.text}</span>
             </div>
           ))}
         </>
@@ -691,6 +924,33 @@ function eventTone(event: ApiEvent | undefined, execution: RoomExecutionSummary)
     return "ok";
   }
   return "info";
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  TradePrinted: "成交",
+  OrderRested: "挂单",
+  OrderAccepted: "已接受",
+  OrderFilled: "完全成交",
+  OrderPartiallyFilled: "部分成交",
+  OrderCanceled: "已撤销",
+  RiskRejected: "风控拒绝",
+  OrderRejected: "订单拒绝",
+  CancelRejected: "撤单拒绝",
+  OrderExpired: "已过期",
+};
+
+function eventLabel(event: ApiEvent | undefined) {
+  if (!event) {
+    return "拒绝";
+  }
+  return EVENT_LABELS[event.type] ?? event.type;
+}
+
+function priceDirection(current: number, previous: number): "up" | "down" | undefined {
+  if (current > previous) {
+    return "up";
+  }
+  return current < previous ? "down" : undefined;
 }
 
 function eventDescription(event: ApiEvent | undefined, execution: RoomExecutionSummary) {
@@ -737,7 +997,7 @@ function AccountTable({ accounts }: { accounts: AnyAccount[] }) {
           <div className="data-row" key={account.account_id}>
             <strong>{account.account_id}</strong>
             <span>{account.cash_balance}</span>
-            <span>{account.position_qty}</span>
+            <span>{isPerpAccount(account) && account.hedge_positions ? `多 ${account.hedge_positions.long.qty} / 空 ${account.hedge_positions.short.qty}` : account.position_qty}</span>
             <span>{accountEquity(account)}</span>
           </div>
         ))
@@ -764,63 +1024,11 @@ function isPerpAccount(account: AnyAccount): account is PerpAccount {
   return Object.prototype.hasOwnProperty.call(account, "equity");
 }
 
-function sampleRoomPayload(roomId: string) {
-  return {
-    scenario: {
-      room_id: roomId,
-      market: {
-        Spot: {
-          instrument: { symbol: "V-BTC-SPOT", tick_size: 1, lot_size: 1 },
-          clearing: { maker_fee_ppm: 0, taker_fee_ppm: 0 },
-          risk: {
-            price_tick_size: null,
-            lot_size: null,
-            max_order_qty: null,
-            max_order_notional: null,
-            allow_short: false,
-          },
-        },
-      },
-      accounts: [
-        { Spot: { account_id: 10, cash_balance: 10_000, position_qty: 120 } },
-        { Basic: { account_id: 20, cash_balance: 10_000 } },
-        { Basic: { account_id: 30, cash_balance: 10_000 } },
-      ],
-      seed_orders: [
-        {
-          NewOrder: {
-            order_id: 10_000,
-            account_id: 10,
-            side: "Sell",
-            kind: { Limit: { price_tick: 104 } },
-            qty: 8,
-          },
-        },
-      ],
-    },
-    agents: [dcaAgent(roomId)],
-    agent_interval_ms: 900,
-    autostart_agents: false,
-  };
-}
-
-function dcaAgent(roomId: string) {
-  return {
-    DcaTrader: {
-      participant: {
-        participant_id: "dca-worker",
-        kind: "RuleAgent",
-        room_id: roomId,
-        account_id: 30,
-      },
-      interval_steps: 1,
-      order_qty: 1,
-      use_market_order: false,
-      limit_offset_ticks: 0,
-      fallback_price_tick: 100,
-      side: "Buy",
-    },
-  };
+function sampleRoomPayload(roomId: string, linked: boolean, enhanced: boolean, microstructure: boolean) {
+  const recipe = structuredClone(linked ? (enhanced ? (microstructure ? microstructureMarket : behaviorMarket) : linkedMarket) : backgroundMarket);
+  recipe.scenario.room_id = roomId;
+  for (const bot of recipe.agents) bot.Plugin.participant.room_id = roomId;
+  return recipe;
 }
 
 function summarizeOrder(response: OrderResponse) {
@@ -835,7 +1043,7 @@ function summarizeOrder(response: OrderResponse) {
   if (rested) {
     return `${response.participant_id} 挂单 ${rested.remaining_qty} @ ${rested.price_tick}`;
   }
-  return `${response.participant_id} accepted`;
+  return `${response.participant_id} 订单已接受`;
 }
 
 function formatNumber(value?: number) {

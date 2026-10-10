@@ -10,11 +10,13 @@ pub const DEFAULT_USER_ID: &str = "local-user";
 pub enum AuthPolicy {
     LocalDevelopment,
     BearerTokens(BTreeMap<String, String>),
+    Accounts(std::sync::Arc<std::sync::RwLock<BTreeMap<String, crate::platform::Session>>>),
 }
 
 impl fmt::Debug for AuthPolicy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Accounts(_) => f.write_str("Accounts"),
             Self::LocalDevelopment => f.write_str("LocalDevelopment"),
             Self::BearerTokens(tokens) => f
                 .debug_struct("BearerTokens")
@@ -29,7 +31,36 @@ impl AuthPolicy {
         Self::LocalDevelopment
     }
 
+    pub fn accounts() -> Self {
+        Self::Accounts(Default::default())
+    }
+    pub fn is_accounts(&self) -> bool {
+        matches!(self, Self::Accounts(_))
+    }
+    pub fn mode(&self) -> &'static str {
+        match self {
+            Self::Accounts(_) => "accounts",
+            Self::BearerTokens(_) => "bearer",
+            Self::LocalDevelopment => "local-development",
+        }
+    }
+    pub(crate) fn install_sessions(&self, sessions: &BTreeMap<String, crate::platform::Session>) {
+        if let Self::Accounts(registry) = self {
+            *registry.write().unwrap() = sessions.clone();
+        }
+    }
     pub fn from_env() -> Result<Self, AuthError> {
+        match env::var("MARKETFORGE_AUTH_MODE").as_deref() {
+            Ok("accounts") => return Ok(Self::accounts()),
+            Ok("local-development") | Err(env::VarError::NotPresent) => {}
+            Ok(other) => {
+                return Err(AuthError::Configuration(format!(
+                    "unsupported authentication mode {other}"
+                )));
+            }
+            Err(error) => return Err(AuthError::Configuration(error.to_string())),
+        }
+
         match env::var(AUTH_TOKENS_ENV) {
             Ok(raw) => Self::from_token_json(&raw),
             Err(env::VarError::NotPresent) => Ok(Self::LocalDevelopment),
@@ -62,6 +93,21 @@ impl AuthPolicy {
 
     pub fn authenticate(&self, headers: &HeaderMap) -> Result<String, AuthError> {
         match self {
+            Self::Accounts(registry) => {
+                let token = headers
+                    .get(AUTHORIZATION)
+                    .ok_or(AuthError::MissingCredentials)?
+                    .to_str()
+                    .map_err(|_| AuthError::InvalidCredentials)?
+                    .strip_prefix("Bearer ")
+                    .ok_or(AuthError::InvalidCredentials)?;
+                let sessions = registry.read().map_err(|_| AuthError::InvalidCredentials)?;
+                let session = sessions
+                    .get(&crate::platform::digest(token))
+                    .filter(|s| s.expires_at_ms > crate::platform::now_ms())
+                    .ok_or(AuthError::InvalidCredentials)?;
+                Ok(session.user_id.clone())
+            }
             Self::LocalDevelopment => local_user_id(headers),
             Self::BearerTokens(tokens) => {
                 let header = headers
@@ -82,7 +128,7 @@ impl AuthPolicy {
     }
 
     pub fn requires_bearer_token(&self) -> bool {
-        matches!(self, Self::BearerTokens(_))
+        matches!(self, Self::BearerTokens(_) | Self::Accounts(_))
     }
 }
 

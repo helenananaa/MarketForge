@@ -1,0 +1,165 @@
+# CandleScope 前端架构
+
+本文记录当前前端架构目标、已经完成的重构，以及后续优化路线。
+
+下一阶段逐步执行方案见
+[前端优化执行文档](OPTIMIZATION_EXECUTION_zh.md)。
+当前阶段审查和推荐后续工作见
+[前端优化阶段审查](OPTIMIZATION_PHASE_REVIEW_zh.md)。
+TypeScript 渐进迁移的分阶段步骤、验证门和回滚条件见
+[前端 TypeScript 渐进迁移执行文档](FRONTEND_TYPESCRIPT_MIGRATION_EXECUTION_zh.md)。
+绘图性能从 per-drawing primitive 迁移到 retained scene 的逐步实施、灰度和
+性能门见
+[绘图引擎 V2 丝滑重构执行文档](DRAWING_ENGINE_V2_REBUILD_EXECUTION_zh.md)。
+
+## 目标
+
+- 让 `src/app/App.tsx` 成为组合根，而不是所有数据、流、偏好和工作流逻辑的所有者。
+- 让 `src/features/*` 按业务能力拥有状态、runtime、storage、controller 和 feature UI 入口。
+- 让 `src/runtime` 不再承载业务所有权，只保留跨应用性能 instrumentation。
+- 让 K 线加载、指标更新、WebSocket、缺口恢复和用户工作流可以按 feature 分别理解、验证和维护。
+- 让本地开发在 `localhost` 和 `127.0.0.1` 入口下都稳定。
+- 通过懒加载首屏不需要的面板，降低初始 JavaScript 成本。
+
+## 当前所有权边界
+
+Phase 10 后，`src/app` 拥有应用组合根和 Shell。Phase 11 后，原先在
+`src/hooks` 和 `src/runtime` 中的业务 runtime 已迁入对应 feature。
+
+`src/features` 按业务能力分组：
+
+| 分组 | 所有权 |
+|---|---|
+| `chart-session/` | 当前 symbol、exchange、market type、interval、dataset key、自定义周期、交易所 capability、可见范围存储 |
+| `market-data/` | K 线 `SeriesDataFeed`、有界 `SeriesWindowStore`、delta 渲染输入、首屏历史加载、左侧分页、backfill completion、K 线 WebSocket、背景预取、gap recovery、header 行情展示状态 |
+| `indicators/` | active indicators、计算调度、hosted indicator WebSocket、输出 reducer、pane projection、catalog 和 Pyne 安全策略 |
+| `drawings/` | 绘图工具状态、primitive 交互、选择、snap、持久化、lazy drawing engine host |
+| `watchlist/` | 自选列表、侧栏布局、订阅层级、watchlist price stream |
+| `symbol-search/` | symbol catalog、收藏、搜索过滤、modal interaction |
+| `settings/` | 图表外观、代理、交易所刷新、cache limit、维护动作、数据库工具面板 |
+| `export/` | 导出选项、预览、导出服务和导出前绘图提交协作 |
+
+`src/runtime` 仅保留 app-wide performance marks，规则见
+[src/runtime/README.md](src/runtime/README.md)。`src/i18n` 负责宿主 locale、
+文案 catalog 和 `t()`；settings 持久化 `locale` 并写入
+`document.documentElement.lang`。Feature 边界规则见
+[src/features/README.md](src/features/README.md)。
+
+## 桌面启动与验收
+
+`desktop/main.mjs` 负责 Electron 生命周期、后端 sidecar、窗口与 IPC 的组合。
+`desktop/evidence-harness-loader.mjs` 独立负责验收模式选择、启动参数、拓扑控制权
+和运行分派；只在显式设置验收输出路径时创建会话，再懒加载
+`desktop/evidence-harness.mjs` 中的压测、故障注入和证据采集实现。
+普通启动不加载这些实现。新增验收场景应在验收模块内完成，避免重新向主入口添加模式分支。
+
+验收会话接收现有窗口、sidecar 和总线实例，不创建第二份生产状态。
+窗口恢复、验收失败向启动错误处理传播、退出时排空 sidecar 仍由原来的生命周期负责。
+`desktop/evidence-session.test.mjs` 验证各模式分派、拓扑交接、恢复顺序和失败传播。
+
+## 后端连接
+
+前端默认使用同源 `/api/v1`。在 Vite 本地开发时，`vite.config.js` 会把
+`/api` 的 HTTP 和 WebSocket 请求代理到 `http://127.0.0.1:18080`。
+
+这样可以避免一种假故障：页面从 `http://127.0.0.1:15173` 打开，但浏览器
+CORS 阻止访问另一个后端源，导致 K 线 HTTP 请求失败。
+
+只有在后端不能通过 Vite proxy 访问时，才需要设置 `VITE_API_BASE`。
+
+## 已完成
+
+| 模块 | 状态 |
+|---|---|
+| 图表数据 runtime 抽取 | 已完成 |
+| 首屏历史加载 runtime 抽取 | 已完成 |
+| K 线 WebSocket runtime 抽取 | 已完成 |
+| Backfill completion runtime 抽取 | 已完成 |
+| Gap recovery runtime 抽取 | 已完成 |
+| 背景预取 runtime 抽取 | 已完成 |
+| Watchlist runtime 和存储抽取 | 已完成 |
+| 绘图、导出、设置、价格轴、自定义周期工作流抽取 | 已完成 |
+| Runtime 目录分组和边界文档 | 已完成 |
+| Vite `/api` proxy 和可配置 API base | 已完成 |
+| Settings、Indicators、Alerts、Export 面板懒加载拆包 | 已完成 |
+| Symbol search modal、watchlist sidebar、drawing toolbar 懒加载拆包 | 已完成 |
+| active/saved drawing workflow 的 lazy drawing engine host | 已完成 |
+| 前端性能 marks 和 smoke timing report | 已完成 |
+| K 线优先于指标和后台任务的首屏加载 | 已完成 |
+| 保守的 chart series 尾部增量更新路径 | 已完成 |
+| K 线窗口预算、feed 收敛、delta 渲染、指标窗口化和乐观切换 | 已完成 |
+| `check:architecture` 迁移 allowlist 清零 | 已完成 |
+| symbol search 和 Settings 的意图预加载 | 已完成 |
+| React、Lightweight Charts、editor、export 库的构建期 vendor chunk | 已完成 |
+| Phase 10 app shell 和 lazy surfaces 迁入 `src/app` | 已完成 |
+| Phase 11 清理 `src/hooks` 和业务 `src/runtime` 迁移期入口 | 已完成 |
+
+## 原生多 pane 图表的内部职责
+
+`SingleChartPanes` 保留 chart/主 series 所有权、实时 delta 提交、视口恢复和
+跨能力协作；以下独立职责从组合组件中拆出，不通过共享巨型 context 互相访问：
+
+- `singleChartPaneLayout.ts`：原生 pane 位置、保存的高度布局以及空 pane 占位
+  series 的创建、重排和回收。重排后按实际 pane 索引重新确认占位所有权。
+- `singleChartIndicatorPanes.ts`：指标 line/marker/fill/hline/bgcolor 的按 pane
+  隔离、时间对齐及过滤缓存；输出有序描述，不持有 chart 或 React 状态。
+- `NativePaneDrawingHost.tsx`：每个 pane 的 drawing adapter、API 发布和
+  frame invalidation 生命周期；主 pane 继续复用稳定 adapter。
+- `usePanePriceScaleMenu.ts`、`panePriceScaleMenuModel.ts` 和
+  `PanePriceScaleMenu.tsx`：菜单状态和文档监听、pane 命中/操作解析、界面。
+  菜单操作时重新按 pane id 定位，避免打开菜单后 pane 移动或删除导致误操作。
+
+## 验证基线
+
+前端架构改动后至少运行：
+
+```bash
+cd frontend
+npm run check:architecture
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
+
+`npm run check` 会按上述顺序执行永久门禁。`src` 内生产代码、测试和测试辅助代码
+均只允许 `.ts/.tsx/.d.ts`；architecture checker 会拒绝重新引入 `.js/.jsx`。
+ESLint 对 TypeScript 使用类型感知配置，Node/Vite 的 `.js/.mjs` 工具脚本使用
+disable-type-checked override。
+
+浏览器 smoke 验证：
+
+1. 启动后端到 `http://localhost:18080`。
+2. 启动 Vite 到 `15173`。
+3. 运行仓库内 smoke 检查：
+
+   ```bash
+   npm run smoke -- --url http://127.0.0.1:15173/
+   npm run smoke:release
+   ```
+
+   该检查会确认页面达到 `Connected to Binance`、非零 `bars`、
+   `Live (WebSocket)`，确认 drawing toolbar 已加载，并确认懒加载的
+   symbol search 和 Settings 面板可以打开。
+
+   `smoke:release` 额外验收 15 种主图类型的切换/刷新恢复，以及
+   PNG/JPEG/WebP、三个导出范围、水印、绘图隐藏和真实下载文件。
+
+Windows 下如果后端启动日志因为控制台编码失败，可用 UTF-8 输出启动：
+
+```powershell
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUTF8 = "1"
+python -m uvicorn app.main:app --host 127.0.0.1 --port 18080
+```
+
+## 剩余工作
+
+- 把 `smoke:release` 接入 CI，并为无交易所网络环境提供确定性的 mock 数据入口。
+- 继续以实测为依据优化 fills、markers、hlines 和 overlays 的图表渲染成本。
+- `SingleChartPanes` 内部简化继续以证据驱动。它仍然是最密集的图表模块，但
+  Lightweight Charts 写操作应继续经 `chart-adapter`。
+- 当本地 smoke 数字稳定到适合跨机器比较后，可以考虑把性能预算报告接入 CI。
+- 按绘图引擎 V2 执行文档建立 drawing-specific production benchmark、单一 scene primitive、live ink overlay、LOD/worker 和异步持久化；在性能与兼容门通过前保留 legacy 回滚路径。
+- 继续把仍留在 `src/components` 的 feature UI 实现逐步迁入对应 feature，避免只为了目录整齐而移动仍不稳定的代码。
+- 当前端 feature 边界变化时，同步更新顶层 README 和本文档。

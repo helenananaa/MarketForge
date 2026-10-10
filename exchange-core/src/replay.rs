@@ -48,6 +48,12 @@ pub struct ReplayReport {
 pub struct ReplayEngine;
 
 impl ReplayEngine {
+    pub fn replay_count(command_log: &[CommandRecord]) -> (ReplayReport, usize) {
+        let report = Self::replay(command_log);
+        let n = report.commands.len();
+        (report, n)
+    }
+
     pub fn replay(command_log: &[CommandRecord]) -> ReplayReport {
         let mut book = OrderBook::new();
         let mut log = EventLog::new();
@@ -75,6 +81,7 @@ mod tests {
 
     fn limit(order_id: u64, side: Side, price_tick: i64, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id: order_id + 1_000,
             side,
@@ -86,6 +93,7 @@ mod tests {
 
     fn market(order_id: u64, side: Side, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id: order_id + 1_000,
             side,
@@ -168,6 +176,8 @@ mod tests {
             trades,
             vec![
                 Trade {
+                    maker_position_side: Default::default(),
+                    taker_position_side: Default::default(),
                     trade_id: 0,
                     maker_order_id: 1,
                     maker_account_id: 1001,
@@ -178,6 +188,8 @@ mod tests {
                     taker_side: Side::Buy,
                 },
                 Trade {
+                    maker_position_side: Default::default(),
+                    taker_position_side: Default::default(),
                     trade_id: 1,
                     maker_order_id: 2,
                     maker_account_id: 1002,

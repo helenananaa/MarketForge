@@ -218,11 +218,25 @@ pub struct PerpMarketConfig {
     pub clearing: PerpClearingConfig,
     pub risk: PerpRiskConfig,
     pub initial_mark_price_tick: PriceTick,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub price_link: Option<crate::price_link::PerpPriceLinkConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub funding: Option<crate::FundingConfig>,
 }
 
 impl PerpMarketConfig {
     pub fn validate(&self) -> Result<(), MarketConfigError> {
         self.instrument.validate()?;
+        if let Some(link) = &self.price_link
+            && (link.spot_instrument_id.trim().is_empty() || link.max_age_ms == 0)
+        {
+            return Err(MarketConfigError::InvalidPriceLink);
+        }
+        if let Some(funding) = &self.funding
+            && (self.price_link.is_none() || !funding.is_valid())
+        {
+            return Err(MarketConfigError::InvalidFundingConfig);
+        }
         if self.initial_mark_price_tick <= 0 {
             return Err(MarketConfigError::InvalidInitialMarkPrice);
         }
@@ -391,6 +405,22 @@ impl ExchangeConfig {
                 || !asset_ids.contains(&instrument.quote_asset)
             {
                 return Err(MarketConfigError::UnknownAssetId);
+            }
+            if let MarketConfig::Perp(perp) = market
+                && let Some(link) = &perp.price_link
+            {
+                let source = self
+                    .markets
+                    .iter()
+                    .find(|candidate| candidate.instrument_id() == link.spot_instrument_id);
+                let Some(MarketConfig::Spot(spot)) = source else {
+                    return Err(MarketConfigError::InvalidPriceLink);
+                };
+                if spot.instrument.base_asset != instrument.base_asset
+                    || spot.instrument.quote_asset != instrument.quote_asset
+                {
+                    return Err(MarketConfigError::InvalidPriceLink);
+                }
             }
         }
 
@@ -616,6 +646,8 @@ pub enum MarketConfigError {
     InvalidTickSize,
     InvalidLotSize,
     InvalidInitialMarkPrice,
+    InvalidPriceLink,
+    InvalidFundingConfig,
     InvalidLeverage,
     VenueRule(VenueRuleConfigError),
     AssetPolicy(VenueAssetPolicyConfigError),
@@ -784,6 +816,8 @@ mod tests {
                 ..PerpRiskConfig::default()
             },
             initial_mark_price_tick: 100,
+            price_link: None,
+            funding: None,
         });
 
         assert_eq!(config.kind(), MarketKind::Perp);
@@ -815,6 +849,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 100,
+            price_link: None,
+            funding: None,
         };
         assert_eq!(
             perp.validate(),
@@ -855,6 +891,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 100,
+            price_link: None,
+            funding: None,
         });
 
         let exchange = ExchangeConfig::new("binance", vec![spot.clone(), perp]).unwrap();
@@ -902,6 +940,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 0,
+            price_link: None,
+            funding: None,
         };
         assert_eq!(
             invalid_mark.validate(),
@@ -910,6 +950,8 @@ mod tests {
 
         let invalid_leverage = PerpMarketConfig {
             initial_mark_price_tick: 100,
+            price_link: None,
+            funding: None,
             clearing: PerpClearingConfig {
                 leverage: 0,
                 ..PerpClearingConfig::default()
@@ -942,6 +984,7 @@ mod tests {
 
         let execution = engine
             .apply(Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: 1,
                 account_id: 1,
                 side: Side::Buy,
@@ -975,6 +1018,7 @@ mod tests {
 
         let execution = engine
             .apply(Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: 1,
                 account_id: 1,
                 side: Side::Buy,
@@ -1003,6 +1047,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 100,
+            price_link: None,
+            funding: None,
         });
 
         let MarketEngine::Perp(mut engine) = config.build_engine().unwrap() else {
@@ -1012,6 +1058,7 @@ mod tests {
 
         let execution = engine
             .apply(Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: 1,
                 account_id: 1,
                 side: Side::Buy,

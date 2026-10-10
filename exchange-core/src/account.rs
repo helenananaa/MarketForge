@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -30,12 +31,52 @@ pub enum ClearingError {
     ReservationUnderflow,
 }
 
+/// Derived reconciliation inputs. Unknown after restore or untracked replacement;
+/// only a successful full reconciliation establishes a known baseline.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ReservationChanges(Option<BTreeSet<AccountId>>);
+
+impl ReservationChanges {
+    pub(crate) fn mark(&mut self, id: AccountId) {
+        if let Some(ids) = &mut self.0 {
+            ids.insert(id);
+        }
+    }
+
+    pub(crate) fn invalidate(&mut self) {
+        self.0 = None;
+    }
+
+    pub(crate) fn accounts(&self) -> Option<&BTreeSet<AccountId>> {
+        self.0.as_ref()
+    }
+
+    pub(crate) fn reconciled(&mut self, affected: Option<&BTreeSet<AccountId>>) {
+        match affected {
+            None => self.0 = Some(BTreeSet::new()),
+            Some(affected) => {
+                if let Some(ids) = &mut self.0 {
+                    ids.retain(|id| !affected.contains(id));
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct VenueAccountStore {
-    balances: BTreeMap<AccountId, BTreeMap<AssetId, VenueAssetBalance>>,
+    #[serde(skip)]
+    pub(crate) reservation_changes: ReservationChanges,
+    // Candidate transactions share untouched accounts; mutations detach only
+    // the selected account. Serde retains the existing plain map wire format.
+    balances: crate::shared_map::SharedMap<AccountId, Arc<BTreeMap<AssetId, VenueAssetBalance>>>,
 }
 
 impl VenueAccountStore {
+    pub(crate) fn account_count(&self) -> usize {
+        self.balances.len()
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -141,6 +182,35 @@ impl VenueAccountStore {
             .map(|balance| balance.snapshot(account_id, asset_id.to_string()))
     }
 
+    /// Internal risk reads need amounts, not owned public snapshot labels.
+    pub(crate) fn available_balance(&self, account_id: AccountId, asset_id: &str) -> Option<Money> {
+        self.balances
+            .get(&account_id)
+            .and_then(|balances| balances.get(asset_id))
+            .map(VenueAssetBalance::available)
+    }
+
+    pub(crate) fn balance_entries(
+        &self,
+    ) -> impl Iterator<Item = (AccountId, &str, &VenueAssetBalance)> {
+        self.balances.iter().flat_map(|(&account, balances)| {
+            balances
+                .iter()
+                .map(move |(asset, balance)| (account, asset.as_str(), balance))
+        })
+    }
+
+    /// Account-key order, with arithmetic deferred until a requested account
+    /// is selected. Skipping a peer must not evaluate its available balance.
+    pub(crate) fn balances_for_asset<'a>(
+        &'a self,
+        asset: &'a str,
+    ) -> impl Iterator<Item = (AccountId, &'a VenueAssetBalance)> + 'a {
+        self.balances
+            .iter()
+            .filter_map(move |(&id, balances)| balances.get(asset).map(|balance| (id, balance)))
+    }
+
     pub fn account_snapshot(&self, account_id: AccountId) -> VenueAccountSnapshot {
         let balances = self
             .balances
@@ -188,9 +258,8 @@ impl VenueAccountStore {
     }
 
     fn balance_mut(&mut self, account_id: AccountId, asset_id: AssetId) -> &mut VenueAssetBalance {
-        self.balances
-            .entry(account_id)
-            .or_default()
+        self.reservation_changes.mark(account_id);
+        Arc::make_mut(self.balances.entry(account_id).or_default())
             .entry(asset_id)
             .or_default()
     }
@@ -270,7 +339,96 @@ pub(crate) fn fee_for(notional: Money, fee_rate_ppm: FeeRatePpm) -> Result<Money
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn venue_candidate_detaches_only_changed_accounts_and_restores_plain_maps() {
+        let mut store = super::VenueAccountStore::new();
+        for id in 1..=3 {
+            store.set_balance(id, "USD", 1000);
+            store.set_balance(id, "BTC", 10);
+        }
+        let before = serde_json::to_value(&store).unwrap();
+        let mut candidate = store.clone();
+        assert!(store.balances.shares_storage(&candidate.balances));
+        candidate.available_balance(1, "USD");
+        assert!(store.balances.shares_storage(&candidate.balances));
+        candidate.reserve(1, "USD", 100).unwrap();
+        candidate.apply_delta(2, "BTC", 2).unwrap();
+        assert_eq!(serde_json::to_value(&store).unwrap(), before);
+        assert!(!store.balances.shares_storage(&candidate.balances));
+        assert!(!Arc::ptr_eq(&store.balances[&1], &candidate.balances[&1]));
+        assert!(!Arc::ptr_eq(&store.balances[&2], &candidate.balances[&2]));
+        assert!(Arc::ptr_eq(&store.balances[&3], &candidate.balances[&3]));
+        assert!(candidate.reserve(3, "USD", 2000).is_err());
+        assert_eq!(serde_json::to_value(&store).unwrap(), before);
+        let restored: super::VenueAccountStore = serde_json::from_value(before.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&restored).unwrap(), before);
+        assert_eq!(restored.account_snapshots(), store.account_snapshots());
+        assert!(restored.reservation_changes.accounts().is_none());
+        // A previous plain-map document is the same schema, without Arc tags.
+        let legacy = serde_json::json!({"balances":{"7":{"USD":{"total":99,"reserved":9}}}});
+        let restored: super::VenueAccountStore = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(serde_json::to_value(restored).unwrap(), legacy);
+    }
+
+    #[test]
+    #[ignore = "controlled release account-copy comparison; run alone with --nocapture"]
+    fn venue_candidate_copy_fixed_work_benchmark() {
+        use std::{collections::BTreeMap, hint::black_box, time::Instant};
+        let mut store = super::VenueAccountStore::new();
+        for id in 1..=1000 {
+            store.set_balance(id, "USD", 1000);
+            store.set_balance(id, "BTC", 10);
+        }
+        let plain: BTreeMap<super::AccountId, BTreeMap<String, super::VenueAssetBalance>> = store
+            .balances
+            .iter()
+            .map(|(&id, balances)| (id, (**balances).clone()))
+            .collect();
+        for cow in [false, true, true, false, false, true, true, false] {
+            let start = Instant::now();
+            for _ in 0..1000 {
+                if cow {
+                    let mut copy = black_box(&store).clone();
+                    copy.reserve(1, "USD", 1).unwrap();
+                    copy.reserve(2, "BTC", 1).unwrap();
+                    black_box(copy);
+                } else {
+                    let mut copy = black_box(&plain).clone();
+                    copy.get_mut(&1).unwrap().get_mut("USD").unwrap().reserved += 1;
+                    copy.get_mut(&2).unwrap().get_mut("BTC").unwrap().reserved += 1;
+                    black_box(copy);
+                }
+            }
+            println!("cow={cow} seconds={:.6}", start.elapsed().as_secs_f64());
+        }
+        assert_eq!(store.balance_snapshot(1, "USD").unwrap().reserved, 0);
+    }
+
     use super::*;
+
+    #[test]
+    fn ordered_asset_balances_skip_other_assets_and_defer_available_arithmetic() {
+        let mut store = VenueAccountStore::new();
+        store.set_balance(1, "USD", 100);
+        store.set_balance(2, "OTHER", 200);
+        store.set_balance(3, "USD", Money::MIN);
+        store.balance_mut(3, "USD".into()).reserved = 1;
+        let rows = store
+            .balances_for_asset("USD")
+            .map(|(id, balance)| (id, balance.total, balance.reserved))
+            .collect::<Vec<_>>();
+        assert_eq!(rows, vec![(1, 100, 0), (3, Money::MIN, 1)]);
+        assert_eq!(
+            store
+                .balances_for_asset("USD")
+                .next()
+                .unwrap()
+                .1
+                .available(),
+            100
+        );
+        assert!(store.balances_for_asset("MISSING").next().is_none());
+    }
 
     #[test]
     fn venue_account_store_reserves_releases_and_snapshots_assets() {

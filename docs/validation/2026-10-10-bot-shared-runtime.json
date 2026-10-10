@@ -1,0 +1,384 @@
+{
+  "date": "2026-10-10",
+  "baseline_commit": "b4521717930461ab44fc550fd6ece6ea3ae4d000",
+  "implementation": [
+    "Arc-backed immutable template, predecessor state, next state and action buffers; copy-on-write BotRegistry map.",
+    "Explicit factory opt-in for native runtime reuse; cached metadata; reuse requires exact committed state, unchanged epoch and factory identity. Restore after mismatch. Process/Pine factories remain opt-out.",
+    "Empty bot-only waves durably append complete state deltas/checkpoints without a market candidate, order-ID reservation or room snapshot publication. Training and action waves keep normal transactions."
+  ],
+  "correctness": {
+    "workspace": {
+      "passed": 514,
+      "ignored": 12
+    },
+    "real_postgres_server_library": {
+      "passed": 197,
+      "ignored": 1,
+      "required": true
+    },
+    "fmt": "passed",
+    "clippy_all_targets_deny_warnings": "passed",
+    "new_coverage": [
+      "15 native strategy action/state parity against restore on every observation, with actual gateway feedback",
+      "Exact committed state, config, epoch, factory identity and unfinished-action cache fences",
+      "Real realtime loop reuses opted-in bots and restores default plugins each time",
+      "Empty wave journal checkpoint/delta recovery, unchanged clock and order IDs, same reader Arc",
+      "Journal append failure rollback and caller cancellation followed by durable completion"
+    ]
+  },
+  "live_comparison": {
+    "conditions": "single room, 1000 native mixed bots, unchanged funds/frequency/TTL/risk, 25ms wall tick, 1000ms simulation step, memory journal",
+    "sequence": "old-new-new-old",
+    "warmup_seconds": 3,
+    "measurement_seconds_per_run": 60,
+    "cases": [
+      {
+        "case": "old-a",
+        "server_sha256": "91059149290b29ac546820585989862f8120355b78822e1e405028b207c6d0ea",
+        "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37",
+        "steps_per_wall_second": 28.783934669408715,
+        "latency": {
+          "view": {
+            "count": 117,
+            "p50_ms": 15.885299999354174,
+            "p95_ms": 27.222400000027847,
+            "max_ms": 54.652300001180265
+          },
+          "place": {
+            "count": 109,
+            "p50_ms": 19.37029999862716,
+            "p95_ms": 69.31120000081137,
+            "max_ms": 125.27570000020205
+          },
+          "cancel": {
+            "count": 109,
+            "p50_ms": 17.143499999292544,
+            "p95_ms": 55.41030000131286,
+            "max_ms": 122.89429999873391
+          }
+        },
+        "average_logical_cores": 1.2994489960210511,
+        "peak_memory_mib": 787.15625,
+        "errors": [],
+        "observed_bots": 1000,
+        "bot_errors": {},
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 13000,
+          "p95_ms": 17000,
+          "max_ms": 17000
+        },
+        "phase_counters": {
+          "marketforge_scheduler_steps_total": 1830.0,
+          "marketforge_scheduler_step_errors_total": 0.0,
+          "marketforge_scheduler_wait_us_total": 393456.0,
+          "marketforge_scheduler_clone_us_total": 655553.0,
+          "marketforge_scheduler_apply_us_total": 26732355.0,
+          "marketforge_scheduler_snapshot_us_total": 4905.0,
+          "marketforge_scheduler_journal_us_total": 8560436.0,
+          "marketforge_core_actor_clone_calls_total": 14481.0,
+          "marketforge_core_actor_clone_us_total": 419819.0,
+          "marketforge_core_margin_sync_calls_total": 26023.0,
+          "marketforge_core_margin_sync_us_total": 7254904.0,
+          "marketforge_core_reservation_reconcile_calls_total": 40831.0,
+          "marketforge_core_reservation_reconcile_us_total": 3539145.0,
+          "marketforge_core_liquidation_scan_calls_total": 16310.0,
+          "marketforge_core_liquidation_scan_us_total": 764100.0
+        }
+      },
+      {
+        "case": "new-a",
+        "server_sha256": "811bcbc5069ddd9556d3af30284d3353d33e8542a74e31f1e15bd92563159dbe",
+        "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37",
+        "steps_per_wall_second": 24.26230835502359,
+        "latency": {
+          "view": {
+            "count": 117,
+            "p50_ms": 15.420300000187126,
+            "p95_ms": 17.910299999130075,
+            "max_ms": 46.68149999997695
+          },
+          "place": {
+            "count": 107,
+            "p50_ms": 30.617800000982243,
+            "p95_ms": 56.159899999329355,
+            "max_ms": 97.77670000039507
+          },
+          "cancel": {
+            "count": 107,
+            "p50_ms": 33.6090000000695,
+            "p95_ms": 60.66879999889352,
+            "max_ms": 112.24080000101821
+          }
+        },
+        "average_logical_cores": 1.1024694841712146,
+        "peak_memory_mib": 614.71484375,
+        "errors": [],
+        "observed_bots": 1000,
+        "bot_errors": {},
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 20000,
+          "p95_ms": 27000,
+          "max_ms": 28000
+        },
+        "phase_counters": {
+          "marketforge_scheduler_steps_total": 1556.0,
+          "marketforge_scheduler_step_errors_total": 0.0,
+          "marketforge_scheduler_wait_us_total": 225639.0,
+          "marketforge_scheduler_clone_us_total": 311927.0,
+          "marketforge_scheduler_apply_us_total": 43526881.0,
+          "marketforge_scheduler_snapshot_us_total": 3439.0,
+          "marketforge_scheduler_journal_us_total": 6361884.0,
+          "marketforge_core_actor_clone_calls_total": 21857.0,
+          "marketforge_core_actor_clone_us_total": 855975.0,
+          "marketforge_core_margin_sync_calls_total": 31249.0,
+          "marketforge_core_margin_sync_us_total": 10585133.0,
+          "marketforge_core_reservation_reconcile_calls_total": 60399.0,
+          "marketforge_core_reservation_reconcile_us_total": 8531896.0,
+          "marketforge_core_liquidation_scan_calls_total": 23412.0,
+          "marketforge_core_liquidation_scan_us_total": 1123598.0
+        }
+      },
+      {
+        "case": "new-b",
+        "server_sha256": "811bcbc5069ddd9556d3af30284d3353d33e8542a74e31f1e15bd92563159dbe",
+        "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37",
+        "steps_per_wall_second": 32.92176788581338,
+        "latency": {
+          "view": {
+            "count": 117,
+            "p50_ms": 15.933599999698345,
+            "p95_ms": 25.095900000451365,
+            "max_ms": 41.71409999980824
+          },
+          "place": {
+            "count": 111,
+            "p50_ms": 17.37879999927827,
+            "p95_ms": 67.31539999964298,
+            "max_ms": 95.33469999951194
+          },
+          "cancel": {
+            "count": 111,
+            "p50_ms": 15.683499999795458,
+            "p95_ms": 57.829300001685624,
+            "max_ms": 80.70029999908002
+          }
+        },
+        "average_logical_cores": 1.5161108650584618,
+        "peak_memory_mib": 949.8671875,
+        "errors": [],
+        "observed_bots": 1000,
+        "bot_errors": {},
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 8000,
+          "p95_ms": 10000,
+          "max_ms": 10000
+        },
+        "phase_counters": {
+          "marketforge_scheduler_steps_total": 2075.0,
+          "marketforge_scheduler_step_errors_total": 0.0,
+          "marketforge_scheduler_wait_us_total": 500248.0,
+          "marketforge_scheduler_clone_us_total": 360014.0,
+          "marketforge_scheduler_apply_us_total": 27330507.0,
+          "marketforge_scheduler_snapshot_us_total": 2457.0,
+          "marketforge_scheduler_journal_us_total": 9542784.0,
+          "marketforge_core_actor_clone_calls_total": 10413.0,
+          "marketforge_core_actor_clone_us_total": 242616.0,
+          "marketforge_core_margin_sync_calls_total": 20029.0,
+          "marketforge_core_margin_sync_us_total": 5255672.0,
+          "marketforge_core_reservation_reconcile_calls_total": 32416.0,
+          "marketforge_core_reservation_reconcile_us_total": 2355403.0,
+          "marketforge_core_liquidation_scan_calls_total": 12487.0,
+          "marketforge_core_liquidation_scan_us_total": 554689.0
+        }
+      },
+      {
+        "case": "old-b",
+        "server_sha256": "91059149290b29ac546820585989862f8120355b78822e1e405028b207c6d0ea",
+        "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37",
+        "steps_per_wall_second": 30.654106124953103,
+        "latency": {
+          "view": {
+            "count": 117,
+            "p50_ms": 16.189699999813456,
+            "p95_ms": 18.186799999966752,
+            "max_ms": 58.0097999991267
+          },
+          "place": {
+            "count": 110,
+            "p50_ms": 16.85200000065379,
+            "p95_ms": 55.13809999683872,
+            "max_ms": 95.61659999963013
+          },
+          "cancel": {
+            "count": 110,
+            "p50_ms": 16.918200002692174,
+            "p95_ms": 50.31869999947958,
+            "max_ms": 105.2265999969677
+          }
+        },
+        "average_logical_cores": 1.389536747337786,
+        "peak_memory_mib": 800.84765625,
+        "errors": [],
+        "observed_bots": 1000,
+        "bot_errors": {},
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 10000,
+          "p95_ms": 14000,
+          "max_ms": 14000
+        },
+        "phase_counters": {
+          "marketforge_scheduler_steps_total": 1940.0,
+          "marketforge_scheduler_step_errors_total": 0.0,
+          "marketforge_scheduler_wait_us_total": 421078.0,
+          "marketforge_scheduler_clone_us_total": 712631.0,
+          "marketforge_scheduler_apply_us_total": 25751284.0,
+          "marketforge_scheduler_snapshot_us_total": 3151.0,
+          "marketforge_scheduler_journal_us_total": 8008572.0,
+          "marketforge_core_actor_clone_calls_total": 14395.0,
+          "marketforge_core_actor_clone_us_total": 359377.0,
+          "marketforge_core_margin_sync_calls_total": 26044.0,
+          "marketforge_core_margin_sync_us_total": 6555812.0,
+          "marketforge_core_reservation_reconcile_calls_total": 41097.0,
+          "marketforge_core_reservation_reconcile_us_total": 3345860.0,
+          "marketforge_core_liquidation_scan_calls_total": 16334.0,
+          "marketforge_core_liquidation_scan_us_total": 709399.0
+        }
+      }
+    ],
+    "old_means": {
+      "steps_per_wall_second": 29.71902039718091,
+      "mean_of_run_place_p95_ms": 62.22464999882504,
+      "mean_of_run_cancel_p95_ms": 52.86450000039622,
+      "mean_peak_memory_mib": 794.001953125
+    },
+    "new_means": {
+      "steps_per_wall_second": 28.592038120418486,
+      "mean_of_run_place_p95_ms": 61.737649999486166,
+      "mean_of_run_cancel_p95_ms": 59.24905000028957,
+      "mean_peak_memory_mib": 782.291015625
+    },
+    "mean_clock_rate_change_percent": -3.792124577798417,
+    "conclusion": "No stable end-to-end acceleration established. New run rates straddle old rates; do not promote the microbenchmark win to a live throughput claim."
+  },
+  "runtime_microbenchmark": {
+    "bots": 1000,
+    "decisions_per_run": 64000,
+    "exact_actions_and_final_states_equal": true,
+    "rounds": 64,
+    "runs": [
+      {
+        "actions": 23624,
+        "elapsed_ms": 1368.384,
+        "reuse": false
+      },
+      {
+        "actions": 23624,
+        "elapsed_ms": 473.57120000000003,
+        "reuse": true
+      },
+      {
+        "actions": 23624,
+        "elapsed_ms": 510.78900000000004,
+        "reuse": true
+      },
+      {
+        "actions": 23624,
+        "elapsed_ms": 2127.8788999999997,
+        "reuse": false
+      }
+    ],
+    "scope": "fixed observations; includes snapshot and observation clone; excludes order execution and journaling",
+    "cold_mean_ms": 1748.1314499999999,
+    "reuse_mean_ms": 492.18010000000004,
+    "elapsed_reduction_percent": 71.84536094239367
+  },
+  "fixed_order_diagnostic": {
+    "runs": [
+      {
+        "actions": 20409,
+        "bots": 1000,
+        "canonical_seen_order_ids": true,
+        "decisions": 64000,
+        "elapsed_ms": 24119.0646,
+        "empty": 43952,
+        "receipt_sha256": "f84cf257b5104faf0c02639e8e6af85268469a2b5baad702c3ddb9e40a24265e",
+        "reuse": false,
+        "steps": 64
+      },
+      {
+        "actions": 20409,
+        "bots": 1000,
+        "canonical_seen_order_ids": true,
+        "decisions": 64000,
+        "elapsed_ms": 22730.554900000003,
+        "empty": 43952,
+        "receipt_sha256": "f84cf257b5104faf0c02639e8e6af85268469a2b5baad702c3ddb9e40a24265e",
+        "reuse": true,
+        "steps": 64
+      },
+      {
+        "actions": 20409,
+        "bots": 1000,
+        "canonical_seen_order_ids": true,
+        "decisions": 64000,
+        "elapsed_ms": 21542.695200000002,
+        "empty": 43952,
+        "receipt_sha256": "f84cf257b5104faf0c02639e8e6af85268469a2b5baad702c3ddb9e40a24265e",
+        "reuse": true,
+        "steps": 64
+      },
+      {
+        "actions": 20409,
+        "bots": 1000,
+        "canonical_seen_order_ids": true,
+        "decisions": 64000,
+        "elapsed_ms": 25407.878,
+        "empty": 43952,
+        "receipt_sha256": "f84cf257b5104faf0c02639e8e6af85268469a2b5baad702c3ddb9e40a24265e",
+        "reuse": false,
+        "steps": 64
+      }
+    ],
+    "identical_receipts": true,
+    "old_mean_ms": 24763.4713,
+    "new_mean_ms": 22136.625050000002,
+    "receipt_covers": "Final room snapshot including accounts/orders, all journal executions and persisted scheduler state; only the known OrderBook seen_order_ids HashSet is sorted before hashing",
+    "scope": "1000 bots x 64 rounds, real native decisions and production clock/batch transactions, fixed participant ordering and batch size 64. Baseline restores each round; candidate harness retains native instances and asserts committed state equality.",
+    "limitations": "Diagnostic harness excludes parallel dispatch and ready-result timing; freezes owned rosters and repeats metadata lookup in both binaries. Runtime reuse here is driven by the harness; real cache invalidation is covered separately by tests.",
+    "elapsed_reduction_percent": 10.607746459196932,
+    "diagnostic_build": "Release copied source trees; unrelated test modules and the default-off journal test hook omitted in both builds. Production binaries measured separately."
+  },
+  "commands": {
+    "correctness": [
+      "cargo test --workspace",
+      "cargo clippy --workspace --all-targets -- -D warnings",
+      "python .local/bot-shared-runtime/run_postgres_tests.py"
+    ],
+    "live": "python .local/bot-shared-runtime/run_compare.py",
+    "micro": "cargo run --release -p exchange-core --example benchmark_bot_runtime -- 1000 64",
+    "fixed": "python .local/bot-shared-runtime/run_fixed_canonical.py"
+  },
+  "source_sha256": {
+    "exchange-core/src/agents.rs": "29041b0285d8f45d17ba8838b1e2d0989e1ed7355dd02ba3e969de66d6db2c16",
+    "exchange-core/src/bots.rs": "4cd35a1aab5a2a8828c32851c9f1e2959d5df94bb28ccef75c0a294a6fcd56b0",
+    "exchange-core/src/market_bots.rs": "94224c002bfb5266310f18039ee586ba5044198925bd8312c3deccce3a653f33",
+    "exchange-server/src/lib.rs": "60eb334d63de760ba7418de8a5e6bd53de48e36a5f5db27d7840a54a95022cbc",
+    "exchange-server/src/market_behavior_server_tests.rs": "618bde4afb8eb7c2fedbe0d5f8512cd0e1aef7ebf66da30586c1e13bd7a93f10",
+    "exchange-server/src/realtime.rs": "27b90fbbdb527a713b32cdfdbb0e42b1c21dd243085edc1f894568abc33eb466",
+    "exchange-server/src/realtime_tests.rs": "50bed770ce6035fb5c1916ec795e280a3611a7fa0c2858b8d4fbd1ec933ce019",
+    "exchange-server/src/room_runtime.rs": "a6bffbf653f11d7c51308dbcbfe381dd046c1b9594ec2bfad59eb2e65cb86ec9",
+    "exchange-core/examples/benchmark_bot_runtime.rs": "57c48a4bd9780397e3188455dd48c4911caf88af42b06a7d2a133ac28632d16d"
+  },
+  "receipts_directory": ".local/bot-shared-runtime",
+  "limits": [
+    "Live performance uses memory journal, not PostgreSQL throughput.",
+    "Finite funding and concurrent completion change subsequent workloads; same recipe is not the same trading trajectory.",
+    "Two live trials per version and 60-second windows do not establish sustained capacity.",
+    "No claim of reaching the configured 40 simulation steps per wall second."
+  ],
+  "git": "Working-tree implementation; not committed or pushed."
+}

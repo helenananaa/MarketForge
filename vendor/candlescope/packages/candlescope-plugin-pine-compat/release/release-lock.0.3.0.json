@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "releaseStatus": "qualified-local",
+  "plugin": {
+    "id": "candlescope.pine-compat",
+    "package": "candlescope-plugin-pine-compat",
+    "version": "0.3.0"
+  },
+  "python": {
+    "requires": ">=3.11,<3.14",
+    "module": "candlescope_plugin_pine_compat"
+  },
+  "wheels": {
+    "candlescope-plugin-pine-compat": {
+      "version": "0.3.0",
+      "source": "local-release-build",
+      "artifactFilename": "candlescope_plugin_pine_compat-0.3.0-py3-none-any.whl",
+      "sha256": "sha256:cfdd62ac03e4bd6086f55c0b4af90075eb9d1a3fedbb1eecf0a7215fb14cc533",
+      "size": 22670
+    },
+    "candlescope-plugin-sdk": {
+      "version": "0.2.0",
+      "source": "local-release-build",
+      "artifactFilename": "candlescope_plugin_sdk-0.2.0-py3-none-any.whl",
+      "sha256": "sha256:a6036881f0b3b1a77dc1460a13a79aefb8c2042d379003b33bedb3a22b86c4b0",
+      "size": 110326
+    },
+    "pine-compat-runtime": {
+      "version": "0.3.0",
+      "source": "github-release",
+      "artifactFilename": "pine_compat_runtime-0.3.0-cp310-abi3-win_amd64.whl",
+      "sha256": "sha256:1c40598c456ac1d4048b3dc699549b3f09ae43daea8923b0ae86d3cd5d59fe36",
+      "size": 3925706,
+      "releaseTag": "v0.3.0",
+      "releaseUrl": "https://github.com/helenananaa/pine-compat-runtime/releases/download/v0.3.0/pine_compat_runtime-0.3.0-cp310-abi3-win_amd64.whl",
+      "releaseCommit": "390e93afd87df6ac5a2aa64b940d612b9d49bab9",
+      "manifestUrl": "https://github.com/helenananaa/pine-compat-runtime/releases/download/v0.3.0/manifest.json",
+      "manifestSha256": "sha256:0ab15c8cd7a87849c0f51158df53557ab8664b3eadddb4618958d27417bfdd3e"
+    }
+  },
+  "probe": {
+    "source": "//@version=5\nindicator(\"CSPKG Pine Probe\", overlay=false)\nplot(close * 2, \"Close x2\", color=color.green)\n",
+    "context": {
+      "exchange": "binance",
+      "marketType": "spot",
+      "symbol": "BTCUSDT",
+      "interval": "1m"
+    },
+    "bars": [
+      {
+        "time": 1700000000,
+        "open": 100,
+        "high": 102,
+        "low": 99,
+        "close": 101,
+        "volume": 10,
+        "isClosed": true
+      },
+      {
+        "time": 1700000060,
+        "open": 101,
+        "high": 103,
+        "low": 100,
+        "close": 102,
+        "volume": 11,
+        "isClosed": true
+      }
+    ],
+    "params": {},
+    "options": {},
+    "analysisSha256": "sha256:993bec84af0e0631ca6b07ce69e44733646f124d1ac3b4bb4551e83f9e797fa2",
+    "executionSha256": "sha256:2ed443cb6b0d449eeb7d160f1899a176a213eb5b3c2b2c33d3dbe34365b5bea3"
+  }
+}

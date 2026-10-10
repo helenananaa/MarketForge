@@ -1,0 +1,2257 @@
+# CandleScope 前端 TypeScript 渐进迁移执行文档
+
+> 状态：已完成（T0-T13 与 Post-T13 严格类型债务清零）
+> 计划基线日期：2026-07-13
+> 适用范围：`frontend/`
+> 核心原则：渐进迁移，不全量重写；每个阶段独立验证、独立提交、独立回滚。
+
+本文定义 CandleScope 前端从 JavaScript/JSX 迁移到 TypeScript/TSX 的完整执行路线。
+
+迁移目标不是把现有代码“重新写一遍”，也不是借 TypeScript 之名同时重做架构。当前前端已经具备清晰的 `app -> features -> chart-adapter/shared` 边界、较完整的单元测试和浏览器 smoke。正确做法是在保持这些行为和边界不变的前提下，从低风险纯函数开始，逐步把类型约束向 API、WebSocket、图表、指标、绘图和 React 组合根推进。
+
+当前架构事实以[前端架构](ARCHITECTURE_zh.md)为准。本文只负责迁移步骤、验证门、回滚条件和完成定义。
+
+---
+
+## 1. 迁移结论
+
+采用以下方案：
+
+- 新代码默认使用 TypeScript。
+- 现有 JS/JSX 允许在迁移期继续运行。
+- 不开一个长期并行的“TS 重写版”前端。
+- 不一次性重命名整个目录。
+- 不在类型迁移提交里顺手改变 UI、网络协议、缓存策略、调度顺序或图表语义。
+- 生产源码、测试、构建和 smoke 始终保持可运行。
+
+一句话：
+
+> 保留当前前端，只替换它的类型表达方式；先收紧契约，再迁复杂实现。
+
+---
+
+## 2. 当前基线
+
+以下是 2026-07-13 的仓库快照。正式执行 Phase T0 时必须重新统计并把结果写入文末“执行记录”，不能把本表当成永久事实。
+
+| 项目 | 当前状态 |
+|---|---|
+| 框架 | React `^19.2.0` |
+| 构建工具 | Vite `^7.3.1` |
+| 图表库 | Lightweight Charts `^5.1.0` |
+| `src` 中 `.js` | 271 个 |
+| `src` 中 `.jsx` | 54 个 |
+| `src` 中 `.ts/.tsx` | 0 个 |
+| 生产 JS/JSX 文件 | 241 个 |
+| 测试文件 | 84 个 |
+| `src` 物理行数 | 约 6.6 万行，含空行、注释和测试 |
+| TypeScript 编译器 | 未安装 |
+| `tsconfig` | 不存在 |
+| ESLint TS 支持 | 不存在，只检查 JS/JSX |
+| 架构检查 | 只识别 `.js/.jsx` |
+| 单元测试 | `node:test`，当前由裸 `node --test` 执行 |
+| 浏览器验收 | `smoke`、`smoke:chart-types`、`smoke:export`、`smoke:release` |
+
+当前最需要类型保护的区域：
+
+- `services/api.js` 和 `services/indicatorApi.js` 直接消费 `response.json()`。
+- K 线、指标和 watchlist WebSocket 以 `JSON.parse()` 后的动态对象驱动分支。
+- `market-data` 同时处理秒、毫秒、范围、epoch、stale request 和窗口 revision。
+- `chart-representation` 存在普通时间和自定义 ordinal axis time。
+- `chart-adapter` 同时连接 Lightweight Charts 泛型、custom series、pane、viewport 和 drawing 坐标。
+- drawing anchor 需要区分绝对 source time、`sourceOrdinal`、projection lineage 和迁移期 logical fallback。
+- `SingleChartPanes.jsx`、`useIndicatorRuntime.js`、`drawingInteractionController.js` 是高耦合热点，必须后迁。
+
+当前已有的有利条件：
+
+- feature 所有权边界已经清楚。
+- `check:architecture` 当前无 migration allowlist。
+- 当前静态 import 图未发现循环依赖。
+- 绝大多数复杂纯函数已有 `node:test` 覆盖。
+- Vite 可以在同一项目中同时处理 JS、JSX、TS 和 TSX。
+
+---
+
+## 3. 目标
+
+完成后应达到：
+
+- `src` 中生产源码全部使用 `.ts/.tsx`。
+- `strict: true` 下 `npm run typecheck` 通过。
+- API、WebSocket、localStorage 的原始数据先按 `unknown` 处理，再经 parser/guard 进入业务层。
+- K 线、时间单位、series identity、chart time、indicator payload、drawing anchor 等核心类型由明确 owner 持有。
+- React runtime 公开接口稳定为 `{ view, actions, status, events? }`，而不是隐式大对象。
+- Lightweight Charts 的类型只在 `chart-adapter` 内部直接出现。
+- `SingleChartPanes` 的 props、imperative handle、refs 和 callbacks 有完整类型。
+- 单元测试数量不低于 Phase T0 基线；新增 parser/guard 必须新增失败用例。
+- `check:architecture`、typecheck、lint、test、build 和 release smoke 全部通过。
+- 不保留永久 `.js` facade、无限期 allowlist 或无法解释的 `any`。
+
+---
+
+## 4. 非目标
+
+本计划不负责：
+
+- 重做 UI 视觉设计。
+- 更换 React、Vite、Lightweight Charts 或状态管理方案。
+- 把 `node:test` 整体换成 Vitest/Jest。
+- 改变 FastAPI 路由、WebSocket 协议或数据库 schema。
+- 重写 K 线加载、backfill、gap recovery、indicator cache 或 drawing persistence 语义。
+- 在迁移时拆解 `SingleChartPanes`、`useIndicatorRuntime` 或 drawing controller。
+- 为了“类型漂亮”删除当前必要的 runtime fallback。
+- 把全部类型塞进一个全局 `types.ts`。
+- 追求 100% 类型体操或让类型比业务代码更难理解。
+
+如果迁移过程中发现真实业务 bug，应单独记录，在独立修复提交中处理；不能混进机械迁移提交。
+
+---
+
+## 5. 强制迁移原则
+
+### 5.1 一次只迁一个可验证切片
+
+一个提交应满足：
+
+- 文件属于同一个 owner 或同一条依赖链。
+- 后缀修改、类型声明和必要的 parser/guard 可以一起提交。
+- 不混入无关格式化。
+- 不混入行为重构。
+- 提交结束时全局静态门通过。
+
+禁止“把某个目录全部改成 `.ts`，再统一修错误”。
+
+### 5.2 新 TS 文件从第一天就严格
+
+- `strict: true` 从 Phase T1 开启。
+- 迁移期使用 `allowJs: true`、`checkJs: false`。
+- 不先对全仓开启 `checkJs: true`。
+- 不为快速通过而把 `strict` 关掉。
+- 不使用 `const enum`。
+- registry/常量优先使用 `as const` 和字面量联合。
+- 只作为类型使用的依赖必须使用 `import type`。
+
+### 5.3 外部数据永远不是“已经有类型”
+
+以下表达禁止作为最终实现：
+
+```ts
+const payload = await response.json() as KlineResponse;
+const message = JSON.parse(event.data) as IndicatorMessage;
+const settings = JSON.parse(raw) as Settings;
+```
+
+正确顺序：
+
+```ts
+const raw: unknown = await response.json();
+const payload = parseKlineResponse(raw);
+```
+
+parser/guard 必须负责：
+
+- 判断对象、数组和必需字段。
+- 校验有限数值、整数、时间单位和范围顺序。
+- 处理 snake_case/camelCase 兼容时只转换一次。
+- 对未知 WebSocket message type 安全忽略并保留诊断。
+- 对损坏 localStorage 使用默认值或兼容迁移，不能让页面启动崩溃。
+
+高频 WebSocket 优先使用小型手写 guard，避免每个 tick 做昂贵的通用 schema 遍历。低频 REST/localStorage 若未来需要引入 schema 库，必须单独提交并测量 bundle 变化；Phase T1 不引入 schema 库。
+
+### 5.4 类型按所有权放置
+
+推荐结构：
+
+```text
+src/shared/
+  mainChartTypes.ts
+  timeTypes.ts
+  marketIdentityTypes.ts
+
+src/features/chart-session/
+  chartSessionTypes.ts
+
+src/features/market-data/
+  marketDataTypes.ts
+  klineContracts.ts
+
+src/features/chart-representation/
+  chartRepresentationTypes.ts
+
+src/chart-adapter/
+  chartAdapterTypes.ts
+
+src/features/indicators/
+  indicatorTypes.ts
+  indicatorContracts.ts
+
+src/features/drawings/
+  drawingTypes.ts
+  drawingContracts.ts
+```
+
+约束：
+
+- 只在多个 feature 之间稳定共享的标量/身份类型才能进入 `shared`。
+- feature 私有 payload、state、action 和 view model 留在 feature 内。
+- `chart-adapter` 的 raw chart handles 不进入 feature 公共 contract。
+- type-only import 仍然算架构依赖，不能借 `import type` 绕过边界。
+- 不建立包罗万象的 `src/types.ts`。
+
+### 5.5 危险标量要区分语义
+
+优先定义并通过构造函数创建：
+
+- `EpochSeconds`
+- `EpochMilliseconds`
+- `IntervalSeconds`
+- `SeriesKey`
+- `DatasetKey`
+- `SymbolCode`
+- `ExchangeId`
+- `MarketType`
+
+普通 `number` 无法区分秒和毫秒。仅写：
+
+```ts
+type EpochSeconds = number;
+```
+
+没有保护作用。应使用 branded type 或带字段名的对象，并由 parser/constructor 校验后生成。
+
+不要过度 brand 所有数字。价格、成交量等在同一上下文中不会混淆时保持 `number`。
+
+### 5.6 临时逃生口必须可删除
+
+默认禁止：
+
+- `@ts-ignore`
+- `@ts-nocheck`
+- 无说明的 `@ts-expect-error`
+- `as unknown as SomeType`
+- feature-wide `any`
+- 永久 `.d.ts` 谎报 JS 模块形状
+
+确实无法避免时，必须在文末 suppression ledger 记录文件、原因、保护测试和最迟删除 Phase。
+
+### 5.7 保持 import 解析策略一致
+
+当前大量源码、测试和 `.mjs` 脚本显式 import `*.js`。把源文件改名为 `.ts` 后，裸 Node ESM 不保证把 `foo.js` 映射到 `foo.ts`。
+
+Phase T1 必须先用 canary 固定一种策略：
+
+1. 首选保留现有 `.js` module specifier，由 `moduleResolution: "Bundler"`、Vite 和 `tsx` 解析到 TS 源文件。
+2. 如果 canary 任一链路失败，只修改受影响 import 为 extensionless specifier。
+3. 不把全仓 import 改成显式 `.ts`，也不依赖 `allowImportingTsExtensions`。
+4. 不同时保留同名 `foo.js` facade 和 `foo.ts` 实现；临时 facade 只能带删除 Phase 和 architecture allowlist。
+5. 每次 rename 后运行：
+
+   ```powershell
+   rg -n "被迁移文件名\.js" src scripts
+   ```
+
+   检查静态 import、dynamic import、Vite URL 和 smoke 脚本。
+
+---
+
+## 6. 通用验证门
+
+除 Phase T0/T1 的工具链特殊步骤外，后续每个阶段至少运行：
+
+```powershell
+Set-Location H:\program\CandleScope\frontend
+npm run check:architecture
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
+
+建议在 Phase T1 增加聚合脚本：
+
+```json
+{
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test",
+    "check": "npm run check:architecture && npm run typecheck && npm run lint && npm test && npm run build"
+  }
+}
+```
+
+有运行环境时，根据改动范围追加：
+
+```powershell
+npm run smoke -- --url http://127.0.0.1:15173/
+npm run smoke:chart-types
+npm run smoke:export
+npm run smoke:release
+```
+
+smoke 未执行时，执行记录必须写明未执行原因、所需环境和补跑条件，不能记为通过。
+
+---
+
+## 7. 阶段依赖总览
+
+| Phase | 主题 | 风险 | 必须依赖 |
+|---|---|---:|---|
+| T0 | 冻结基线和迁移台账 | 低 | 无 |
+| T1 | TS 工具链、ESLint、架构检查、mixed-mode canary | 高 | T0 |
+| T2 | shared、utils、chart-session 契约 | 低 | T1 |
+| T3 | market-data 内核和窗口/feed 类型 | 中 | T2 |
+| T4 | HTTP、K 线 WebSocket 和 transport 边界 | 中 | T3 |
+| T5 | chart-representation 纯投影引擎 | 中 | T2 |
+| T6 | chart-adapter 和 Lightweight Charts 类型 | 高 | T5 |
+| T7 | cache/watchlist/export/settings 等支撑内核 | 中 | T2-T4 |
+| T8 | indicator core、API、WS 和 cache | 高 | T3-T6 |
+| T9 | drawing core、persistence 和 primitives | 高 | T5-T6 |
+| T10 | feature React runtimes/hooks | 高 | T7-T9 |
+| T11 | feature UI 和普通组件 | 中 | T10 |
+| T12 | `SingleChartPanes`、app 和入口 | 极高 | T6、T10、T11 |
+| T13 | 测试迁移、严格度收口和 release 验收 | 高 | T12 |
+
+T4 和 T5 在不冲突时可以并行开发，但合并顺序仍应保证每次主分支全局门通过。T6 之后再开始 drawings；T8/T9 之后再迁聚合 hooks。
+
+---
+
+## Phase T0：冻结基线和建立迁移台账
+
+### 修复的问题
+
+没有可比较的基线时，后续无法判断测试减少、bundle 变化、smoke 失败或类型 suppression 是否是迁移引入。
+
+### 前置条件
+
+- 工作区中的既有改动已确认归属。
+- 不在脏工作区里把无关文件混入迁移提交。
+
+### 目标
+
+记录迁移开始前的真实状态，不修改生产行为。
+
+### 任务
+
+1. 在仓库根目录记录 Git 状态：
+
+   ```powershell
+   git status --short
+   git branch --show-current
+   git rev-parse HEAD
+   ```
+
+2. 进入 `frontend/`，使用 lockfile 安装：
+
+   ```powershell
+   Set-Location H:\program\CandleScope\frontend
+   npm ci
+   ```
+
+3. 运行当前静态和测试基线：
+
+   ```powershell
+   npm run check:architecture
+   npm run lint
+   node --test
+   npm run build
+   ```
+
+4. 统计文件：
+
+   ```powershell
+   $extensions = '.js', '.jsx', '.ts', '.tsx'
+   Get-ChildItem .\src -Recurse -File |
+     Where-Object { $extensions -contains $_.Extension } |
+     Group-Object Extension |
+     Sort-Object Name |
+     Select-Object Name, Count
+   ```
+
+5. 记录测试文件数和实际 test count。最终验收不能低于该基线。
+6. 搜索现有 suppression 和动态边界：
+
+   ```powershell
+   rg -n "@ts-ignore|@ts-nocheck|@ts-expect-error|eslint-disable|JSON\.parse|response\.json" src
+   ```
+
+7. 有后端和 Vite 环境时运行：
+
+   ```powershell
+   npm run smoke -- --url http://127.0.0.1:15173/
+   npm run smoke:release
+   ```
+
+8. 把结果填入文末 Phase 执行记录，不修改正文中的历史计划。
+
+### 验收
+
+- 当前 commit、分支、文件数、测试数、build 结果均已记录。
+- smoke 已通过，或明确记录未执行原因和补跑条件。
+- 现有失败已区分为迁移前失败，不会被后续误算为迁移回归。
+
+### 回滚
+
+本 Phase 不应产生生产文件修改。若生成临时日志，不提交并删除。
+
+### 不做
+
+- 不安装 TypeScript。
+- 不改后缀。
+- 不修基线中发现的业务 bug。
+
+---
+
+## Phase T1：建立 TypeScript 工具链和 mixed-mode canary
+
+### 修复的问题
+
+当前没有 TypeScript 编译器、TS lint、TS 架构检查或 TS 测试运行链。直接 rename 会让 `node:test`、显式 `.js` import、smoke 脚本和 Vite URL 产生不确定解析。
+
+### 前置条件
+
+- T0 已完成并记录。
+- 当前全局门达到 T0 记录的状态。
+
+### 目标
+
+让 JS、JSX、TS、TSX 在同一仓库中稳定共存，并通过一个真实 canary 证明：
+
+- JS test -> TS source。
+- TS source -> TS dependency。
+- `.mjs` script -> TS source。
+- Vite build -> TS source。
+
+### 涉及文件
+
+- `package.json`
+- `package-lock.json`
+- `eslint.config.js`
+- `scripts/check-architecture.mjs`
+- 新增 `tsconfig.json`
+- 新增 `src/vite-env.d.ts`
+- 新增临时 resolution canary fixture/test
+- 首个真实迁移文件：`src/shared/mainChartTypes.js -> .ts`
+
+### 任务
+
+1. 安装直接 dev dependencies：
+
+   ```powershell
+   npm install --save-dev typescript typescript-eslint tsx @types/node
+   ```
+
+2. 新增 `tsconfig.json`，初始配置固定为：
+
+   ```json
+   {
+     "compilerOptions": {
+       "target": "ES2022",
+       "useDefineForClassFields": true,
+       "lib": ["ES2022", "DOM", "DOM.Iterable"],
+       "module": "ESNext",
+       "moduleResolution": "Bundler",
+       "moduleDetection": "force",
+       "allowJs": true,
+       "checkJs": false,
+       "jsx": "react-jsx",
+       "strict": true,
+       "noEmit": true,
+       "isolatedModules": true,
+       "verbatimModuleSyntax": true,
+       "resolveJsonModule": true,
+       "skipLibCheck": true,
+       "forceConsistentCasingInFileNames": true,
+       "types": ["vite/client", "node"]
+     },
+     "include": ["src", "scripts/**/*.ts"],
+     "exclude": ["dist", "node_modules"]
+   }
+   ```
+
+3. 新增 `src/vite-env.d.ts`：
+
+   ```ts
+   /// <reference types="vite/client" />
+   ```
+
+4. 在 `package.json` 增加 `typecheck`、`test` 和 `check`：
+
+   ```json
+   {
+     "scripts": {
+       "typecheck": "tsc --noEmit -p tsconfig.json",
+       "test": "tsx --test",
+       "check": "npm run check:architecture && npm run typecheck && npm run lint && npm test && npm run build"
+     }
+   }
+   ```
+
+5. 把 `test:drawing` 改为通过 `tsx --test` 执行。
+6. 搜索所有会直接/间接 import `src` 的 Node 入口：
+
+   ```powershell
+   rg -n "src/|src\\\\" scripts package.json
+   ```
+
+   `smoke.mjs`、chart type matrix 等入口改由 `tsx` 启动。没有 import TS 源码的纯 Node 脚本可以继续用 `node`。
+
+7. 修改 ESLint flat config：
+
+   - JS/JSX 保留当前规则。
+   - TS/TSX 增加 `typescript-eslint` 的 `recommended` 配置。
+   - 本阶段先不启用 type-aware lint。
+   - TS/TSX 继续使用 React hooks 和 React refresh 规则。
+   - `no-unused-vars` 对 TS 文件由 TypeScript ESLint 对应规则接管。
+
+8. 修改 `scripts/check-architecture.mjs`：
+
+   - `SOURCE_EXTENSIONS` 加入 `.ts/.tsx`。
+   - `normalizeModulePath()` 识别 `.ts/.tsx/.mts/.cts`。
+   - runtime 文件匹配改为兼容 `Runtime.ts/tsx`。
+   - `src/app/App.jsx` 特判改为同时识别 `App.tsx`，最好比较无后缀 normalized path。
+   - `strictRuntimeContractFiles` 改为无后缀路径，避免 rename 后绕过规则。
+   - 所有原有规则必须对 TS/TSX 同样生效。
+
+9. 新增 temporary resolution fixture：
+
+   ```text
+   scripts/type-migration-canary/
+     leaf.ts
+     entry.ts
+     entry.test.js
+   ```
+
+   `entry.ts` 使用当前约定的 `.js` specifier import `leaf.ts`；JS test 再通过 `.js` specifier import `entry.ts`。它只验证解析，不包含业务逻辑，T13 删除。
+
+10. 把 `src/shared/mainChartTypes.js` rename 为 `.ts`：
+
+    - `MAIN_CHART_TYPES` 使用 `as const`。
+    - 导出 `MainChartType` 字面量联合。
+    - `normalizeMainChartType()` 接收 `unknown` 或 `string`，返回 `MainChartType`。
+    - 不改变字符串值和 fallback。
+
+11. 验证 `.mjs` script -> TS：
+
+    ```powershell
+    npx tsx -e "import('./scripts/chart-type-matrix.mjs').then(() => console.log('chart matrix import ok'))"
+    ```
+
+12. 运行完整 gate：
+
+    ```powershell
+    npm run check
+    ```
+
+13. 有运行环境时运行 `npm run smoke:chart-types`。
+14. 把最终 import specifier 选择写入执行记录。canary 不通过时停止迁移，不允许带着解析问题进入 T2。
+
+### 验收
+
+- `npm run typecheck` 首次通过。
+- 原有 JS/JSX 仍可运行。
+- canary 四条解析链全部通过。
+- `check:architecture` 对 `.ts/.tsx` 不会漏检。
+- 单元测试不少于 T0 基线。
+- Vite build 通过。
+- chart type matrix 能读到迁移后的类型文件。
+
+### 回滚
+
+- 回退 `mainChartTypes.ts` 到 `.js`。
+- 删除 canary、`tsconfig.json` 和 `vite-env.d.ts`。
+- 回退 package/lockfile、ESLint 和 architecture checker。
+
+### 不做
+
+- 不全仓开启 `checkJs`。
+- 不启用 type-aware lint。
+- 不改大量 import 风格。
+- 不迁第二个业务模块。
+- 不通过 JS facade 掩盖 canary 失败。
+
+---
+
+## Phase T2：迁移 shared、utils 和 chart-session 契约
+
+### 修复的问题
+
+symbol、exchange、market type、interval、dataset key、visible range 和 session transition 在大量 feature 之间传递，目前主要靠字符串和对象 shape 约定。
+
+### 前置条件
+
+- T1 mixed-mode canary 全部通过。
+- import specifier 规则已记录。
+
+### 目标
+
+建立低风险、可复用的身份和会话类型，为 market-data、watchlist、settings 和 App 提供稳定输入。
+
+### 文件顺序
+
+按以下顺序逐个迁移，每个小组单独提交：
+
+1. `src/utils/intervals.js`
+2. `src/utils/intervalTimeline.js`
+3. `src/utils/symbolKey.js`
+4. `src/utils/exportFilename.js`
+5. `src/features/chart-session/chartDatasetKey.js`
+6. `src/features/chart-session/chartSessionTransition.js`
+7. `src/features/chart-session/intervalPolicy.js`
+8. `src/features/chart-session/trackedIntervalsPolicy.js`
+9. `src/features/chart-session/paneLayoutStorage.js`
+10. `src/features/chart-session/visibleRangeStorage.js`
+11. `src/features/chart-session/chartSessionModel.js`
+12. 新增 `src/features/chart-session/chartSessionTypes.ts`
+
+`mainChartTypes.ts` 已在 T1 完成。
+
+### 核心类型
+
+- `IntervalUnit`
+- `IntervalString`
+- `IntervalParts`
+- `ExchangeId`
+- `MarketType`
+- `SymbolCode`
+- `SymbolIdentity`
+- `SeriesIdentity`
+- `DatasetKey`
+- `ChartSession`
+- `ChartSessionTransition`
+- `VisibleRangeSnapshot`
+
+### 任务
+
+1. 先给纯 parser 返回值加类型，不改 parser 宽容行为。
+2. `normalizeIntervalValue()` 仍以 runtime validation 为准，不能因为参数标成 `IntervalString` 而跳过校验。
+3. `symbolKey()` 和 `parseSymbolKey()` 固化同一 round-trip contract。
+4. transition type 使用常量对象 + 字面量联合，不使用 TS enum。
+5. `localStorage` 读取结果先作为 `unknown`：
+
+   - user prefs 损坏时回退 `{}`。
+   - visible range 字段逐个验证。
+   - pane height 只接受有限正数。
+
+6. storage key 和已存 JSON shape 保持不变。
+7. 每迁一个文件，搜索显式 `.js` 引用并跑全局 typecheck。
+8. 为非法 interval、损坏 prefs、错误 visible range 增加测试。
+
+### 验证
+
+```powershell
+npx tsx --test src/features/chart-session/__tests__/chartDatasetKey.test.js
+npx tsx --test src/features/chart-session/__tests__/trackedIntervals.test.js
+npx tsx --test src/features/chart-session/__tests__/visibleRangeStorage.test.js
+npx tsx --test src/utils/__tests__/exportFilename.test.js
+npm run check
+```
+
+### 验收
+
+- chart-session 的公开状态不再依赖隐式 object shape。
+- interval 大小写语义不变，尤其 `M` 仍代表月。
+- 旧 localStorage 可以读取。
+- 不支持的 interval fallback 行为不变。
+- 无新增 suppression。
+
+### 回滚
+
+按文件小组回退 rename 和类型，不删除或迁移用户 localStorage 数据。
+
+### 不做
+
+- 不迁 `useChartSession` 和 React hooks。
+- 不修改 exchange capability 业务规则。
+- 不更换 storage key。
+
+---
+
+## Phase T3：迁移 market-data 内核
+
+### 修复的问题
+
+K 线窗口、fetch plan、epoch、stale request、backfill completion 和 delta 依赖多个相似对象。秒/毫秒和 active/stale 语义一旦传错，JS 只能在运行时暴露。
+
+### 前置条件
+
+- T2 的 interval、series identity 和 session 类型可用。
+
+### 目标
+
+固化 market-data 内部纯模型和 feed contract，不改变调度、缓存或网络行为。
+
+### 建议结构
+
+```text
+src/features/market-data/
+  marketDataTypes.ts
+  klineContracts.ts
+```
+
+核心类型：
+
+- `KlineBar`
+- `EpochSeconds`
+- `EpochMilliseconds`
+- `TimeRangeSec`
+- `TimeRangeMs`
+- `SeriesKey`
+- `SeriesCoverage`
+- `DataRevision`
+- `WindowDelta` 判别联合
+- `FetchPlan` 判别联合
+- `KlineApi` interface
+- `BackfillCompletedMessage`
+
+### 文件顺序
+
+1. `phase1WindowPolicy.js`
+2. `rangeRuntime.js`
+3. `chartDataRuntime.js`
+4. `crosshairDisplayStore.js`
+5. `indicatorRangeRuntime.js`
+6. `marketDataEvents.js`
+7. `marketDataView.js`
+8. `window/windowDeltas.js`
+9. `window/seriesWindowStore.js`
+10. `window/windowRegistry.js`
+11. `feed/fetchPlanner.js`
+12. `feed/inflightRegistry.js`
+13. `feed/seriesDataFeed.js`
+
+`feed/klineApi` 和 `feed/klineStreamSubscription` 留到 T4。
+
+### 任务
+
+1. 从测试 fixture 归纳真实 `KlineBar` 字段，不凭印象新增必填字段。
+2. 为秒、毫秒建立构造/转换函数，转换只发生在命名清晰的边界。
+3. `normalizeRangeSec()` 返回 `TimeRangeSec | null`。
+4. `SeriesWindowStore` 的 rows、coverage、revision 和 delta 全部类型化。
+5. `WindowDelta` 用 `type` 字段做判别联合，switch 必须有 `never` exhaustiveness check。
+6. `InflightRegistry` 的 key、promise result 和 abort path 明确类型。
+7. `SeriesDataFeed` 先声明 `KlineApi` dependency interface，即使实际 implementation 仍来自 JS。
+8. 保留并测试以下不变量：
+
+   - epoch 变化后旧结果不能提交。
+   - stale request 不覆盖 active series。
+   - before-page completion 不重复释放 loading。
+   - range 秒/毫秒转换位置不移动。
+   - window budget 和 trim 顺序不变。
+
+9. 只添加类型和测试；发现竞态 bug 时另开修复提交。
+
+### 验证
+
+```powershell
+npx tsx --test src/features/market-data/__tests__/fetchPlanner.test.js
+npx tsx --test src/features/market-data/__tests__/seriesWindowStore.test.js
+npx tsx --test src/features/market-data/__tests__/windowRegistry.test.js
+npx tsx --test src/features/market-data/__tests__/seriesDataFeed.test.js
+npm run check
+```
+
+### 验收
+
+- 秒/毫秒在函数签名中可区分。
+- `SeriesDataFeed` 不再接收无 shape 的 api/callback object。
+- 所有 stale/epoch 测试保持通过。
+- K 线数量、加载顺序和缓存预算不变。
+
+### 回滚
+
+按 `window -> planner -> feed` 的反方向回退。不得保留半套 branded time 类型和普通 number 混用。
+
+### 不做
+
+- 不迁 HTTP 实现。
+- 不改变 fetch 次数、重试、cooldown 或 backfill 策略。
+- 不迁 React hooks。
+
+---
+
+## Phase T4：迁移 HTTP 和 K 线 WebSocket 边界
+
+### 修复的问题
+
+`response.json()` 和 `JSON.parse(event.data)` 当前直接把动态数据交给业务层。仅给返回值写一个 TS 类型会制造错误安全感。
+
+### 前置条件
+
+- T3 已定义 K 线、range 和 feed contract。
+
+### 目标
+
+让 transport 层只向业务层输出已验证、已标准化的对象。
+
+### 涉及文件
+
+- `src/services/apiConfig.js`
+- `src/services/api.js`
+- `src/features/market-data/feed/klineApi.js`
+- `src/features/market-data/feed/klineStreamSubscription.js`
+- 对应 services/market-data tests
+
+`indicatorApi` 和 indicator WebSocket 在 T8；alerts/settings 专用 client 随 owner 在 T7/T10。
+
+### 任务
+
+1. 先迁 `apiConfig`，固定 HTTP/WS URL 类型和 optional env 输入。
+2. 给 `ApiError`、request method、headers、body、signal 建立类型。
+3. 底层 `request()` 返回 `Promise<unknown>`，不写欺骗性的 `<T>` 泛型。
+4. 在 endpoint wrapper 中解析响应：
+
+   - K 线 history/before/range/latest。
+   - exchange list/capabilities，因为 T2 已有 TS consumer。
+   - 已迁消费者依赖的 subscription response。
+
+5. 尚未迁 owner 的 endpoint 可以暂时返回 `unknown`，但必须在 suppression ledger 标明最迟处理 Phase。
+6. `parseKlineResponse()` 校验：
+
+   - `data` 为数组。
+   - time 为有限数值且单位符合 endpoint contract。
+   - OHLC 为有限数值。
+   - `has_more`、`next_end_ms`、`truncated` 等 metadata 类型正确。
+
+7. `klineStreamSubscription`：
+
+   - `JSON.parse()` 结果声明为 `unknown`。
+   - 定义 control、status、backfill、kline message 判别联合。
+   - 未知 type 不进入 callback。
+   - 缺失 `msg.data` 或错误 tick shape 触发 parse diagnostic，不更新图表。
+
+8. 保留 `"pong"` 快路径、reconnect、subscribe/unsubscribe 和 callback 顺序。
+9. 增加无效 JSON、未知 type、缺字段、错误时间单位、abort 测试。
+10. 搜索所有 Vite URL 形式的 `.js` 请求，迁移后实际跑一次对应测试。
+
+### 验证
+
+```powershell
+npx tsx --test src/services/__tests__/subscriptionApiPolicy.test.js
+npx tsx --test src/features/market-data/__tests__/seriesDataFeed.test.js
+npm run check
+```
+
+有运行环境时：
+
+```powershell
+npm run smoke -- --url http://127.0.0.1:15173/
+```
+
+### 验收
+
+- raw REST/WS payload 不会无验证进入 market-data。
+- `ApiError` 的 status/detail/url 行为不变。
+- AbortError 不被包装成错误 payload。
+- 无效 WS message 不导致 socket 崩溃或图表更新。
+- 正常 K 线加载和 realtime 更新 smoke 通过。
+
+### 回滚
+
+优先回退 endpoint parser 与后缀，不改变后端协议。若 parser 过严导致合法 payload 被拒绝，应先保存 fixture，再单独修 parser。
+
+### 不做
+
+- 不生成全量 OpenAPI client。
+- 不引入 schema 库。
+- 不改变 endpoint URL 或参数名。
+
+---
+
+## Phase T5：迁移 chart-representation 纯投影引擎
+
+### 修复的问题
+
+普通 K 线时间和 Renko/Kagi/Point & Figure/Line Break 的 ordinal axis time、projection metadata、tail state 目前靠手写 shape 和 JSDoc 维持。
+
+### 前置条件
+
+- T2 的 chart type 和时间标量可用。
+- T3 的 `KlineBar` 可用。
+
+### 目标
+
+建立投影引擎的 source row、display row、lineage 和 projector contract，为 chart-adapter/drawings 提供稳定输入。
+
+### 文件顺序
+
+先 types 和 leaf：
+
+1. 新增 `chartRepresentationTypes.ts`
+2. `priceTick.js`
+3. `projectors/projectorData.js`
+4. `axisTime.js`
+5. 各 projection options
+6. `projectors/identityProjector.js`
+7. `projectors/heikinAshiProjector.js`
+8. `projectors/renkoProjector.js`
+9. `projectors/pointFigureProjector.js`
+10. `projectors/kagiProjector.js`
+11. `projectors/lineBreakProjector.js`
+12. `projectorFactory.js`
+13. `chartTypeRegistry.js`
+14. `drawingLineageIndex.js`
+15. `derivedAuxiliaryProjection.js`
+16. `projectionViewportPolicy.js`
+17. `surfaceViewportState.js`
+18. `projectionStore.js`
+19. `index.js`
+
+### 核心类型
+
+- `OrdinalAxisTime`
+- `AxisTime`
+- `ProjectionMetadata`
+- `ProjectionConfig`
+- `ProjectionResult`
+- `SourceBar`
+- `DisplayRow`
+- `Projector<TState, TConfig>`
+- `ProjectionTailState`
+- `SourceTimeRange`
+
+### 任务
+
+1. `isOrdinalAxisTime()` 保持为 runtime guard。
+2. `AxisTime` 联合不得把 ordinal object 简化成 `number`。
+3. `sourceTime` 和 `sourceOrdinal` 明确用途；projection-local `order` 不能被当成持久化身份。
+4. projector interface 明确 full rebuild、incremental update、provisional tail 和 reset。
+5. 每个 projector 的 config 用判别类型或独立 interface。
+6. registry 使用 `satisfies` 检查 descriptor，不改变运行时对象。
+7. `ProjectionStore` 的 stateful tail、1:N source emission 和 repeated timestamp 测试必须保持。
+8. 避免为了类型方便 clone 大数组或改变 hot path。
+
+### 验证
+
+```powershell
+npm test
+npm run check
+```
+
+重点确认 `src/features/chart-representation/__tests__/` 下全部测试仍被发现，测试数不低于 T0。
+
+### 验收
+
+- Axis time 的普通/ordinal 分支可穷尽。
+- projector 输入输出和 state 不再是隐式 object。
+- projection lineage 仍能跨 rebuild 定位 drawing anchor。
+- 无性能路径行为改动。
+
+### 回滚
+
+按 `ProjectionStore -> projectors -> types` 逆序回退。
+
+### 不做
+
+- 不修改图表显示算法。
+- 不调整 Renko/Kagi 参数默认值。
+- 不改变 viewport 恢复策略。
+
+---
+
+## Phase T6：迁移 chart-adapter
+
+### 修复的问题
+
+`chart-adapter` 是 Lightweight Charts 与 CandleScope 自定义 axis/series/drawing 的唯一边界，也是类型迁移中第三方泛型摩擦最大的区域。
+
+### 前置条件
+
+- T5 的 `AxisTime`、display row 和 projector 类型稳定。
+
+### 目标
+
+利用 Lightweight Charts 自带声明，明确 chart、series、pane、time scale、custom series、viewport 和 drawing coordinate contract。
+
+### 建议结构
+
+```text
+src/chart-adapter/
+  chartAdapterTypes.ts
+```
+
+核心类型：
+
+- `ChartTime`
+- `ChartSurfaceHandle`
+- `ChartSurfaceView`
+- `ChartSurfaceActionName`
+- `MainSeriesHandle`
+- `IndicatorSeriesHandle`
+- `PaneHandle`
+- `CoordinateSnapshot`
+- `CoordinateContext`
+- `DrawingLineageIndex`
+
+### 文件顺序
+
+1. `chartTime.js`
+2. `chartSurfaceContract.js`
+3. `chartSeriesData.js`
+4. `mainSeriesModel.js`
+5. custom series：`highLowSeries`、`kagiSeries`、`pointFigureSeries`
+6. renderers：bar color、bgcolor、marker、overlay、projection
+7. `paneManager.js`
+8. `viewportController.js`
+9. `futureTimeAxis.js`
+10. `ordinalHorzScaleBehavior.js`
+11. `lightweightChartSurface.js`
+12. `seriesLifecycle.js`
+13. `seriesDeltaRenderer.js`
+14. `chartPaneLifecycle.js`
+15. `chartInstanceBridge.js`
+16. `coordinateBridge.js`
+17. `useChartSurfaceRuntime.js`
+
+### 任务
+
+1. 从库声明导入官方类型，不复制一套本地宽松声明。
+2. custom ordinal horizontal scale 的泛型适配集中在 adapter 内。
+3. 无法表达的第三方泛型只允许在最小 adapter 函数中局部 cast，并记录 ledger。
+4. `callChartSurface(methodName, ...)` 改为 key/parameter/return 映射，错误方法名在编译期失败。
+5. refs 全部显式包含 `null`，不使用非空断言掩盖 lifecycle。
+6. coordinate conversion 继续区分：
+
+   - 绝对 source time。
+   - ordinal source lineage。
+   - projection-local order。
+   - 仅迁移期 fallback logical。
+
+7. future drawing anchor 继续持久化绝对 source time，不能恢复旧的相对 logical/bar offset 语义。
+8. 不为类型而增加全量 `setData()` 或破坏 delta renderer。
+9. 每迁一个 renderer 运行对应 test；`coordinateBridge` 最后迁。
+
+### 验证
+
+```powershell
+npm test
+npm run check
+npm run smoke:chart-types
+```
+
+drawing 坐标交叉验证：
+
+```powershell
+npx tsx --test src/features/drawings/__tests__/coordinateBridge.test.js
+```
+
+### 验收
+
+- raw Lightweight Charts import 仍只存在于 `chart-adapter`。
+- 15 种主图类型 smoke 通过。
+- viewport、pane height、series lifecycle、未来时间轴行为不变。
+- custom ordinal axis 没有用 `any` 整体绕过。
+- future anchor 仍为绝对 source time。
+
+### 回滚
+
+以 renderer/manager/bridge 为单位回退，不能留下同时存在的两套 chart handle 类型。
+
+### 不做
+
+- 不升级 Lightweight Charts。
+- 不重构 `SingleChartPanes`。
+- 不改变渲染策略或性能预算。
+
+---
+
+## Phase T7：迁移支撑 feature kernels
+
+### 修复的问题
+
+cache、watchlist、export、settings、symbol-search 和 alerts 的纯 store/policy/model 较分散，但风险低于 indicator/drawing，可用于继续扩大类型覆盖。
+
+### 前置条件
+
+- T2 shared/session 类型稳定。
+- T4 transport 基础可用。
+
+### 目标
+
+迁移非 React 的小型 feature kernels，并把各自 localStorage/API boundary 收紧。
+
+### 执行切片
+
+每一行独立提交：
+
+| 切片 | 文件 |
+|---|---|
+| cache-gc | `cacheAccessRuntime`、`cacheDiagnostics`、`cacheRegistry`、`browserPressure`、`cachePolicy`、`cacheTrim`、`autoGcPolicy` |
+| runtime performance | `runtime/performance/perfMarks`、`runtime/performance/windowBudgetAssert` |
+| watchlist | `watchlistStore`、`watchlistSubscriptionPolicy`、`subscriptionApiPolicy`、`watchlistStorage` |
+| watchlist full cache | `watchlistFullCachePolicy`、`watchlistFullCacheResolver`、`watchlistFullCacheStore` |
+| export | `exportOptionsStore`、`exportService` |
+| settings pure | `settingsActionTypes`、`settingsPanelViewModel`、`settingsTabRegistry` |
+| symbol search | `symbolSearchFilter`、`symbolFavoritesStore` |
+| alerts | `alertRuleModel`、`alertsClient`、`alertsApi` |
+
+### 核心类型
+
+- `CacheDiagnostics`
+- `GcPlan` / `GcAction`
+- `PerformanceMarkName` / `WindowBudgetResult`
+- `WatchlistItem`
+- `WatchlistGroup`
+- `SubscriptionTier`
+- `WarmCacheRow`
+- `ExportOptions`
+- `SettingsCategory`
+- `SymbolSearchItem`
+- `AlertRule` / `AlertExpression`
+
+### 任务
+
+1. 先迁 parser/store，再迁 policy/model。
+2. localStorage 读取一律按 `unknown` 验证。
+3. 旧 watchlist、favorites、export prefs 和 settings key 不变。
+4. reducer/action 使用判别联合。
+5. 删除/启用 subscription 的 request/response 明确类型。
+6. `cacheTrim` 跨 feature 调用只依赖稳定公开 contract。
+7. alerts expression tree 使用递归类型，但 parser 必须防错误递归 shape。
+8. 每个切片完成后跑该目录测试和全局 `npm run check`。
+
+### 验证
+
+```powershell
+npm test
+npm run check
+```
+
+涉及 export 后：
+
+```powershell
+npm run smoke:export
+```
+
+### 验收
+
+- 损坏 storage 不阻止应用启动。
+- watchlist tier、warm cache、GC 和 export 默认值不变。
+- alerts payload 与现有后端契约一致。
+- 各切片可以独立 revert。
+
+### 回滚
+
+按切片回退，不改 storage key，不主动清理用户数据。
+
+### 不做
+
+- 不迁 React runtime/UI。
+- 不改变 GC 阈值、watchlist 订阅语义或 export 视觉结果。
+
+---
+
+## Phase T8：迁移 indicator core、API 和 WebSocket
+
+### 修复的问题
+
+indicator definition、schema、line/marker/fill/hline/bgcolor、range intent、revision、cache 和 WS message 是当前最复杂的数据族之一。
+
+### 前置条件
+
+- T3 的 K 线/range 类型稳定。
+- T4 的 transport 规则已固定。
+- T6 的 chart adapter 输出类型可用。
+
+### 目标
+
+让 indicator core 从输入到 cache/output 都使用可穷尽的类型；raw payload 不下沉到 reducer 或 chart projection。
+
+### 建议结构
+
+```text
+src/features/indicators/
+  indicatorTypes.ts
+  indicatorContracts.ts
+```
+
+### 文件顺序
+
+1. `indicatorRangeCoverage.js`
+2. `indicatorRangePlanning.js`
+3. `indicatorRangeBatcher.js`
+4. `indicatorRangeScheduler.js`
+5. `indicatorComputeRuntime.js`
+6. `indicatorPayloadRuntime.js`
+7. `indicatorOutputReducer.js`
+8. `indicatorPaneProjection.js`
+9. `indicatorResultCacheStore.js`
+10. `services/indicatorApi.js`
+11. `indicatorWsRuntime.js`
+12. `src/editor/pyneLanguage.js`
+13. `src/editor/pyneTheme.js`
+
+React controllers/hooks 留到 T10。
+
+### 核心类型
+
+- `IndicatorDefinition`
+- `IndicatorParameterSchema`
+- `IndicatorLine`
+- `IndicatorMarker`
+- `IndicatorFill`
+- `IndicatorHLine`
+- `IndicatorBgColor`
+- `IndicatorOutput` 判别联合
+- `IndicatorRangeIntent`
+- `IndicatorCoverage`
+- `IndicatorRevision`
+- `IndicatorSnapshotMessage`
+- `IndicatorPatchMessage`
+- `IndicatorReplaceRangeMessage`
+
+### 任务
+
+1. 从现有 normalizer 和 tests 归纳 payload，不把所有字段变成 optional。
+2. `normalizeIndicatorPayload()` 接收 `unknown`。
+3. range/revision snake_case 和 camelCase 兼容只在 parser 中处理。
+4. reducer switch 使用 `never` 做穷尽检查。
+5. cache key context 明确 symbol/exchange/market/interval/script/security mode。
+6. `indicatorApi.request()` 返回 unknown，由各 endpoint parse。
+7. `indicatorWsRuntime.parseIndicatorWsMessage()` 不再只做 `JSON.parse()`；返回 typed success/failure。
+8. sequence gap、history invalid、dirty range 和 cache invalidation 语义保持。
+9. malformed snapshot/patch/replace_range 增加失败测试。
+10. 禁止把 `Record<string, any>` 作为最终 indicator payload。
+11. editor 文件直接复用 Monaco 暴露的类型，不复制一套 editor API 声明。
+12. 保持 Pyne completion、hover、tokenizer、theme 和 lazy editor 加载行为不变。
+
+### 验证
+
+```powershell
+npm test
+npm run check
+```
+
+有运行环境时：
+
+```powershell
+npm run smoke -- --url http://127.0.0.1:15173/ --overlay-heavy
+```
+
+### 验收
+
+- raw indicator JSON 不进入 reducer/cache/projection。
+- output kind 可穷尽。
+- revision/range/sequence 行为与迁移前一致。
+- overlay-heavy smoke 通过。
+- 不通过大范围 `any` 绕开 Pyne/custom indicator shape。
+
+### 回滚
+
+按 `WS/API -> cache/reducer -> types` 逆序回退。
+
+### 不做
+
+- 不改变 indicator 计算算法。
+- 不调整 cache 窗口、重算范围或 WS 重连策略。
+- 不迁 `useIndicatorRuntime`。
+
+---
+
+## Phase T9：迁移 drawing core、persistence 和 primitives
+
+### 修复的问题
+
+drawing 工具、anchor、primitive options、drag/resize、persistence 和 custom chart lineage 存在多种相近 shape；JSDoc 已出现描述差异。
+
+### 前置条件
+
+- T5/T6 的 axis time、coordinate 和 chart surface 类型稳定。
+
+### 目标
+
+建立统一 drawing domain model，并保持旧绘图 JSON 兼容。
+
+### 建议结构
+
+```text
+src/features/drawings/
+  drawingTypes.ts
+  drawingContracts.ts
+```
+
+### 本 Phase 只迁非 React core
+
+按顺序：
+
+1. `drawingCapabilities.js`
+2. `drawingModel.js`
+3. `freehandStrokeModel.js`
+4. `drawingMoveBatch.js`
+5. `drawingPersistence.js`
+6. `drawingCreationController.js`
+7. `drawingDragResizeController.js`
+8. `drawingEraseController.js`
+9. `drawingHoverController.js`
+10. `drawingSnapController.js`
+11. `drawingPrimitiveFactory.js`
+12. `drawingEngineLoader.js`
+13. `primitives/coordinateUtils.js`
+14. `primitives/*Primitive.js`
+15. `services/drawingStorage.js`
+
+含 React hook/ref 的 interaction、pointer、keyboard、selection、text edit、tool state 和 `useDrawing*` 留到 T10。
+
+### 核心类型
+
+- `DrawingToolId`
+- `DrawingKind`
+- `ScreenPoint`
+- `DrawingDataPoint`
+- `SourceTimeAnchor`
+- `OrdinalLineageAnchor`
+- `LegacyLogicalAnchor`
+- `DrawingAnchor`
+- `SavedDrawing` 判别联合
+- `DrawingPrimitive` interface
+- 各 primitive options
+
+### 任务
+
+1. 以当前 persistence sanitizer 为真实契约来源。
+2. 明确：
+
+   - 普通图表持久化绝对 `time`。
+   - synthetic chart 可附带 `sourceOrdinal/sourceProjection/sourceProjectionConfig`。
+   - `order` 永不持久化。
+   - `logical` 仅作为旧数据/失败 fallback，不是新 future anchor 格式。
+
+3. `SavedDrawing` 按 kind 建立判别联合。
+4. primitive factory 的输入输出使用同一 union。
+5. 每个 primitive constructor options 显式类型化。
+6. localStorage parser 保留 schema version 和旧 fixture。
+7. 不用 `instanceof` 作为持久化数据验证。
+8. 迁移 freehand 时保持点压缩、采样和渲染性能。
+9. 增加损坏 anchor、未知 kind、旧 logical payload、synthetic lineage fixture。
+
+### 验证
+
+```powershell
+npm run test:drawing
+npm test
+npm run check
+```
+
+有运行环境时：
+
+```powershell
+npm run smoke -- --url http://127.0.0.1:15173/ --drawing-check
+```
+
+### 验收
+
+- 旧绘图全部可读。
+- 新 future anchor 仍持久化绝对 source time。
+- synthetic drawing lineage 跨 representation rebuild 保持。
+- freehand/line/text/position/fibonacci 等 primitive 行为不变。
+- drawing-check smoke 通过。
+
+### 回滚
+
+不迁移或删除 localStorage 数据。代码回退后旧版仍必须能读取迁移期间保存的兼容格式；如做不到，禁止合并。
+
+### 不做
+
+- 不重做 drawing UX。
+- 不拆 `drawingInteractionController`。
+- 不改变 snap、drag、resize 或 future anchor 语义。
+
+---
+
+## Phase T10：迁移 feature React runtimes/hooks
+
+### 修复的问题
+
+纯 core 类型建立后，React hooks 仍通过大 options object、refs 和 callbacks 传递隐式契约。
+
+### 前置条件
+
+- 所属 feature core 已迁移。
+- 外部 boundary 已有 typed parser。
+
+### 目标
+
+让每个 feature runtime 的输入、返回值、effects、refs 和 callbacks 有稳定类型，保持 `{ view, actions, status, events? }` contract。
+
+### 固定内部顺序
+
+每个 feature 按以下顺序迁：
+
+1. store/parser
+2. leaf runtime
+3. controller
+4. aggregate hook
+5. lazy loader/host
+
+禁止一次性 rename 整个 feature。
+
+### 文件清单
+
+chart-session：
+
+- `customIntervalStore`
+- `exchangeCatalogRuntime`
+- `intervalNoticeRuntime`
+- `useChartSession`
+
+market-data：
+
+- `useChartBackgroundPrefetch`
+- `useChartDataRuntime`
+- `useChartInitialLoad`
+- `useChartLoadMoreLeft`
+- `useKlineStreamRuntime`
+- `useMarketDataRuntime`
+- `useSessionTransitionReset`
+
+cache/watchlist：
+
+- `useFrontendAutoGcRuntime`
+- `watchlistSubscriptionRuntime`
+- `useWatchlistRuntime`
+- `useWatchlistFullCacheRuntime`
+
+indicators：
+
+- `activeIndicatorStore`
+- `indicatorComputeController`
+- `indicatorStreamController`
+- `useIndicatorCatalogRuntime`
+- `usePyneSecurityPolicy`
+- `useIndicatorRuntime`，本组最后
+
+drawings：
+
+- `drawingInteractionController`
+- `drawingKeyboardController`
+- `drawingPointerController`
+- `drawingSelectionController`
+- `drawingTextEditController`
+- `drawingToolState`
+- `useDrawingPersistenceLifecycle`
+- `useDrawingRuntime`
+- `DrawingEngineHost.tsx`
+
+export/settings/symbol-search：
+
+- `exportPreviewRuntime`、`useExportRuntime`
+- settings 各 `*Runtime`、`chartAppearanceSettings`、`priceScalePrefsRuntime`、`services/databaseToolsApi`、`useSettingsRuntime`
+- `symbolCatalogRuntime`、`useSymbolSearchRuntime`
+
+### 任务
+
+1. 为每个 hook 定义 options 和 return type。
+2. refs 明确 `null`，timer 使用 `ReturnType<typeof setTimeout>`。
+3. effect cleanup 明确返回 `void | (() => void)`。
+4. WebSocket、AbortController、ResizeObserver 等 browser handle 不用 Node 类型替代。
+5. runtime public contract 只暴露稳定 view/actions/status/events。
+6. callback 参数使用 owner 类型，不复制匿名 object。
+7. `useIndicatorRuntime`、`drawingInteractionController` 最后迁，只加类型不拆分。
+8. React state 初始 `null` 时显式 union，禁止用非空断言。
+9. 每完成一个 aggregate hook，跑该 feature tests 和对应 smoke。
+
+### 验证
+
+```powershell
+npm test
+npm run check
+```
+
+按 feature 追加：
+
+```powershell
+npm run smoke -- --url http://127.0.0.1:15173/
+npm run smoke -- --url http://127.0.0.1:15173/ --overlay-heavy
+npm run smoke -- --url http://127.0.0.1:15173/ --drawing-check
+```
+
+### 验收
+
+- aggregate hook 不返回隐式匿名大对象。
+- callback/ref/timer nullability 明确。
+- interval/symbol 快速切换不新增 stale closure 或 effect 重订阅。
+- 所有 runtime 行为和 smoke 与迁移前一致。
+
+### 回滚
+
+按 feature 回退，不能让同一 public contract 同时存在两套互不一致的类型。
+
+### 不做
+
+- 不拆大型 hooks。
+- 不优化依赖数组。
+- 不改变 effect 生命周期，除非另有 bugfix 提交。
+
+---
+
+## Phase T11：迁移 feature UI 和普通组件
+
+### 修复的问题
+
+普通组件仍缺少 Props、event、ref 和 lazy import 类型，但它们依赖的 runtime contract 在 T10 后已经稳定。
+
+### 前置条件
+
+- 对应 runtime 已迁移。
+
+### 目标
+
+迁移除 `SingleChartPanes` 外的 feature UI、settings panels、app shell 子组件和普通 components。
+
+### 文件顺序
+
+每个 feature 使用：
+
+1. leaf UI
+2. panel body
+3. panel shell
+4. lazy wrapper
+
+主要切片：
+
+- indicators：`IndicatorEditor.tsx`、`IndicatorPanel.tsx`
+- drawings：`DrawingToolbar.tsx` 及 drawing 子组件
+- export：`ExportPreviewPanel.tsx`、`ExportPanel.tsx`
+- watchlist：`WatchlistSidebar.tsx`
+- symbol search：`SymbolSearch.tsx`、`SymbolSearchModal.tsx`
+- settings：`SettingsPanelHost`、各 panels、`SettingsModalStyles`、`SettingsModal`
+- alerts：panel/editor UI
+- `src/components/drawing/*`、`src/components/settings/*` 和 `src/components/alerts/AlertsPanel.jsx`
+- compatibility wrappers：`DrawingToolbar.jsx`、`DrawingEngineHost.jsx`、`SymbolSearch.jsx`、`SymbolSearchModal.jsx`
+- ordinary components：`IntervalSelector.jsx`、`TextEditOverlay.jsx`、`TextFormatBar.jsx`，以及 `src/components` 中除 `SingleChartPanes` 和 `singleChartPaneLifecycle` 外尚未迁移的文件
+- app leaf：`TopBar`、`StatusBar`、`LazyFeatureSurfaces`、`ChartWorkspace`、`lazySurfaceLoaders`
+
+### 任务
+
+1. 每个 component 定义具名 Props type。
+2. 可复用 native props 使用 `ComponentPropsWithoutRef`，不重复抄 DOM 属性。
+3. callback 返回值明确，不把 `Function` 当类型。
+4. form event、pointer event、keyboard event 使用 React 对应事件类型。
+5. imperative refs 使用 `forwardRef`/handle contract，不暴露 raw chart instance。
+6. lazy import 保持 default export 和 chunk 边界。
+7. style object 只在确有必要时使用 `CSSProperties`。
+8. `children` 不是自动存在，确实支持时显式声明。
+9. 组件 rename 后验证 dynamic import 和 smoke 脚本路径。
+
+### 验证
+
+```powershell
+npm test
+npm run check
+npm run smoke:export
+```
+
+有完整环境时再跑：
+
+```powershell
+npm run smoke:release
+```
+
+### 验收
+
+- 普通 UI 组件 Props 不再隐式。
+- lazy surfaces 可以打开。
+- export、settings、watchlist、indicator、drawing UI 行为不变。
+- vendor/lazy chunk 结构没有意外合并成首屏大包。
+
+### 回滚
+
+按 feature UI 切片回退；不回退已稳定的 core 类型。
+
+### 不做
+
+- 不重设计组件 API。
+- 不移动目录。
+- 不改 CSS 和布局。
+
+---
+
+## Phase T12：迁移 `SingleChartPanes`、app 和入口
+
+### 修复的问题
+
+最大组件和组合根汇集了几乎所有 feature contract。过早迁移会产生大量 `any`；所有下游稳定后再迁可以让编译器真正检查整条链路。
+
+### 前置条件
+
+- T2-T11 全部完成。
+- feature public contracts 稳定。
+- 全局 suppression ledger 已接近清零。
+
+### 目标
+
+完成生产源码最后一段 TS/TSX 迁移，不改变图表生命周期和 App 装配。
+
+### 文件顺序
+
+1. 为 `ChartSurfaceHandle` 和 `SingleChartPanesProps` 补齐最终定义。
+2. `components/singleChartPaneLifecycle.js -> .ts`
+3. `components/SingleChartPanes.jsx -> .tsx`
+4. `app/view-models/* -> .ts`
+5. `app/appShellViewModel.js -> .ts`
+6. `app/AppProviders.jsx -> .tsx`
+7. `app/AppShell.jsx -> .tsx`
+8. `app/App.jsx -> .tsx`
+9. `src/App.jsx -> .tsx`
+10. `src/main.jsx -> .tsx`
+11. 其余 re-export wrapper 最后迁移。
+
+### 任务
+
+1. 先写 `SingleChartPanesProps`，覆盖当前全部 props，再 rename 文件。
+2. 按区域组织 Props type：
+
+   - session/chart type
+   - bars/market-data
+   - indicators/panes
+   - drawings
+   - viewport/price scale
+   - export
+   - callbacks
+
+3. `chartRef`、series refs、pane refs 和 imperative methods 使用 T6 contract。
+4. 不用 `Record<string, any>` 包住 props。
+5. view-model builder 的输入和输出分别具名。
+6. App 中每个 feature runtime contract 只传给合法 consumer。
+7. `AppProviders` error boundary 的 state/error 类型完整。
+8. `main.tsx` 按当前入口行为处理 root element 的 nullability；若要改变启动失败策略，另开 bugfix，不混入迁移提交。
+9. 不在本 Phase 拆 `SingleChartPanes`，即使类型暴露出它过大。
+10. 编译错误若揭示真实 contract 冲突，先修 owner type；不要在 App 层 cast。
+
+### 验证
+
+```powershell
+npm run check
+npm run smoke:release
+```
+
+额外检查：
+
+```powershell
+rg --files src -g "*.js" -g "*.jsx"
+```
+
+此时只允许尚未迁移的测试文件；生产文件应为 0。
+
+### 验收
+
+- `SingleChartPanesProps` 无整体 `any`。
+- chart refs 和 methods 编译期可检查。
+- App 只装配 feature。
+- 所有生产 JS/JSX 已迁移。
+- release smoke 全部通过。
+
+### 回滚
+
+`main/App -> view-models -> SingleChartPanes` 逆序回退。若 `SingleChartPanes` 无法在不改变 lifecycle 的前提下通过类型检查，停止并拆为新的前置迁移 Phase，不能强 cast 合并。
+
+### 不做
+
+- 不拆组件。
+- 不改变 chart effect 顺序。
+- 不改变 props 语义。
+- 不做性能优化。
+
+---
+
+## Phase T13：迁移测试、收紧配置并完成 release 验收
+
+### 修复的问题
+
+生产源码迁完后仍可能存在 JS tests、临时 canary、宽松配置和迁移期 suppression。没有最后收口，项目会长期停在 mixed mode。
+
+### 前置条件
+
+- T12 完成且 release smoke 通过。
+
+### 目标
+
+结束 mixed mode，删除临时设施，建立长期 TypeScript gate。
+
+### 任务
+
+1. 按 owner 分批把 `src/**/__tests__/*.test.js` 迁到 `.test.ts`，有 JSX 才用 `.tsx`。
+2. test fixture 使用生产类型，避免重新声明宽松 shape。
+3. mock 必须满足 interface；确实只 mock 一部分时使用明确的 test helper，不做全局 cast。
+4. 删除 `scripts/type-migration-canary/`。
+5. `tsconfig`：
+
+   - `allowJs: false`
+   - `checkJs` 删除
+   - `include` 只覆盖 TS/TSX 和需要的声明
+   - 分批评估开启 `noUncheckedIndexedAccess`
+   - 分批评估开启 `exactOptionalPropertyTypes`
+
+6. ESLint 切换到 `recommendedTypeChecked`，JS/MJS config/scripts 使用 disable-type-checked override。
+7. 清理：
+
+   ```powershell
+   rg -n "@ts-ignore|@ts-nocheck|@ts-expect-error|as unknown as|\bany\b" src
+   ```
+
+8. 删除临时 `.d.ts`、facade、allowlist 和无用 JSDoc typedef。
+9. 更新 `scripts/check-architecture.mjs` 的最终扩展规则和测试。
+10. 更新 README/architecture 的验证命令，把 `typecheck` 放入永久 gate。
+11. 运行完整 release 验收并记录 bundle/chunk 差异。
+
+### 验证
+
+```powershell
+npm run check:architecture
+npm run typecheck
+npm run lint
+npm test
+npm run build
+npm run smoke:release
+```
+
+最终文件检查：
+
+```powershell
+rg --files src -g "*.js" -g "*.jsx"
+```
+
+预期输出为空。
+
+### 验收
+
+- `src` 生产和测试均无 JS/JSX。
+- `allowJs: false`。
+- type-aware lint 通过。
+- 测试数不低于 T0，新增 parser 失败用例存在。
+- suppression ledger 清零，或仅保留有明确第三方原因和删除条件的项目。
+- release smoke、drawing、overlay、export、15 chart types 全部通过。
+
+### 回滚
+
+严格选项一次只开一个并独立提交。某个严格选项失败时只回退该选项，不回退已经完成的 TS 文件。
+
+### 不做
+
+- 不强制把 `scripts/*.mjs`、`eslint.config.js`、`vite.config.js` 全改 TS。
+- 不因测试类型麻烦而减少测试发现范围。
+
+---
+
+## 8. 每次文件迁移的标准操作
+
+每迁一个文件或小组，固定执行：
+
+1. 阅读 owner README、当前测试和所有 importers。
+2. 记录当前导出 API。
+3. rename `.js -> .ts` 或 `.jsx -> .tsx`。
+4. 先给公开输入/输出加类型。
+5. 再给内部 state/ref/callback 加类型。
+6. raw external data 改为 `unknown` 并通过 parser。
+7. 搜索旧后缀引用：
+
+   ```powershell
+   rg -n "文件名\.js" src scripts
+   ```
+
+8. 运行针对性测试。
+9. 运行 `npm run typecheck`。
+10. 运行 `npm run check`。
+11. 涉及 UI/transport/chart 时跑对应 smoke。
+12. 检查 diff：
+
+    ```powershell
+    git diff --check
+    git diff --stat
+    git diff
+    ```
+
+13. 确认 diff 没有行为重写后再提交。
+14. 在文末追加执行记录和 suppression 变化。
+
+---
+
+## 9. 推荐提交顺序
+
+建议每条至少一个独立 commit，较大 Phase 可拆多个 PR：
+
+1. `build(frontend): add mixed TypeScript toolchain`
+2. `refactor(frontend): type shared market identities`
+3. `refactor(frontend): migrate chart session contracts`
+4. `refactor(frontend): type market data windows and feed`
+5. `refactor(frontend): validate market transport payloads`
+6. `refactor(frontend): type chart representation engine`
+7. `refactor(frontend): type chart adapter contracts`
+8. `refactor(frontend): migrate support feature kernels`
+9. `refactor(frontend): type indicator core and transport`
+10. `refactor(frontend): type drawing core and persistence`
+11. `refactor(frontend): migrate feature runtimes`
+12. `refactor(frontend): migrate feature ui`
+13. `refactor(frontend): migrate chart workspace and app root`
+14. `test(frontend): migrate tests to TypeScript`
+15. `build(frontend): enforce strict TypeScript gates`
+16. `docs(frontend): complete TypeScript migration record`
+
+不要把全部迁移压成一个 commit。
+
+---
+
+## 10. 风险矩阵
+
+| 风险 | 具体表现 | 对策 |
+|---|---|---|
+| Node ESM 无法解析 rename | JS test 或 `.mjs` script 仍请求 `foo.js` | T1 `tsx` + 四链路 canary；不过即停止 |
+| Vite build 通过但没有 typecheck | TS 类型错误进入构建 | 永久独立 `tsc --noEmit` gate |
+| 类型断言制造假安全 | `response.json() as T` | raw data 必须 `unknown -> parser` |
+| 秒/毫秒仍混用 | 都写成普通 `number` | branded type/命名对象 + 边界转换 |
+| custom chart time 被简化 | ordinal object 被当时间戳 | 保留 `AxisTime` 联合和 lineage |
+| 第三方泛型扩散 | 全项目出现 library handles/any | 只在 `chart-adapter` 局部适配 |
+| localStorage 兼容破坏 | 老用户启动失败或绘图丢失 | 旧 fixture + parser fallback，不改 key |
+| TS 改变 React lifecycle | effect/ref/callback 为过类型而重写 | hooks 后迁，只加类型，不改依赖数组 |
+| 巨型组件被迫 cast | `SingleChartPanes` 出现大面积 any | 下游先迁；先写 Props；冲突回 owner 修 |
+| 测试数量悄悄减少 | `.test.ts` 未被 runner 发现 | `tsx --test`；每阶段对比 T0 test count |
+| bundle 变大 | schema/helper 被打进 hot chunk | 首期手写 guard；新增依赖需单独测 bundle |
+| 迁移永远停在 mixed mode | allowJs/facade/suppression 长期存在 | T13 明确清零 gate 和删除条件 |
+
+---
+
+## 11. 停止条件
+
+出现以下任一情况时，停止当前 Phase，不继续扩大 rename：
+
+- T1 canary 任一解析链失败。
+- 单元测试发现数低于 T0，但原因不明。
+- 需要通过 feature-wide `any` 才能 typecheck。
+- 需要修改后端协议才能完成一个纯前端 rename。
+- 需要改变 K 线请求顺序、indicator range、drawing anchor 或 chart lifecycle。
+- localStorage 旧 fixture 无法读取。
+- chart type/drawing/overlay smoke 出现行为差异。
+- architecture checker 因 `.ts/.tsx` 漏检边界。
+- 一个 Phase 需要大量永久 facade 或 allowlist。
+- build 通过但 typecheck/lint/test 未通过。
+
+停止后应：
+
+1. 保存最小复现。
+2. 判断是工具链、真实 bug、错误现有契约还是迁移范围过大。
+3. 回退当前未完成切片。
+4. 必要时把 Phase 再拆小。
+5. 不用 cast 把问题推到后续阶段。
+
+---
+
+## 12. 回滚策略
+
+- 每个 Phase 独立 commit/PR。
+- rename 和 import 调整必须在同一提交。
+- parser 变严格前先保存真实合法 payload fixture。
+- 不做不可逆 localStorage migration。
+- 不删除旧字段，除非读取路径已兼容且有测试。
+- 严格编译选项一次只启用一个。
+- smoke 失败优先 revert 当前切片，不回退已验证的前置类型。
+- 禁止使用 `git reset --hard` 清理包含其他人的工作区。
+
+---
+
+## 13. 最终完成定义
+
+迁移完成必须同时满足：
+
+- [x] `src` 中 `.js/.jsx` 为 0。
+- [x] `allowJs: false`。
+- [x] `strict: true`。
+- [x] `npm run check:architecture` 通过。
+- [x] `npm run typecheck` 通过。
+- [x] `npm run lint` 通过。
+- [x] `npm test` 通过，测试数不低于 T0。
+- [x] `npm run build` 通过。
+- [x] `npm run smoke:release` 通过。
+- [x] API/WS/localStorage raw payload 均从 `unknown` 开始。
+- [x] 秒/毫秒、AxisTime、indicator output、drawing anchor 有明确类型。
+- [x] Lightweight Charts raw handles 不越出 `chart-adapter`。
+- [x] `SingleChartPanesProps` 和 feature runtime contracts 完整。
+- [x] 无 `@ts-ignore`、`@ts-nocheck`。
+- [x] 无永久 JS facade。
+- [x] architecture allowlist 为 0，或每项都有明确短期删除条件。
+- [x] suppression ledger 清零。
+- [x] 文档执行记录与真实 commit/验证结果一致。
+
+只有“文件后缀都变了”不算完成。
+
+---
+
+## 14. 执行记录
+
+执行时只追加本节，不回写计划正文。
+
+### Phase 状态
+
+| Phase | 状态 | Commit/PR | typecheck | unit tests | build | smoke | 备注 |
+|---|---|---|---|---|---|---|---|
+| T0 | 已完成 | `45c901c` | N/A（T1 建立） | 702/702 通过 | 通过 | basic/release 通过 | 2026-07-13；迁移前基线已冻结 |
+| T1 | 已完成 | `45c901c` | 通过 | 703/703 通过 | 通过 | chart-types 通过 | mixed-mode 五条解析链全部验证；新增 suppression 0 |
+| T2 | 已完成 | `741b5d1` | 通过 | 719/719 通过 | 通过 | basic/release 通过 | 12 个生产模块迁为 TS；新增 suppression 0 |
+| T3 | 已完成 | `7915a98` | 通过 | 720/720 通过 | 通过 | basic/release 通过 | 15 个 market-data TS 模块；局部 adapter cast 已在 T4 删除 |
+| T4 | 已完成 | `cbf6108` | 通过 | 727/727 通过 | 通过 | basic/release 通过 | 4 个 transport owner 迁为 TS，新增 raw payload parsers；未迁 endpoint 保持 `unknown` 并登记 ledger |
+| T5 | 已完成 | `cb28b4e` | 通过 | 727/727 通过 | 通过 | basic/release 通过 | 21 个 chart-representation owner 迁为 TS，新增统一投影 contract；专项测试 200/200 通过 |
+| T6 | 已完成 | `306c90c` | 通过 | 727/727 通过 | 通过 | basic/release 通过 | 24 个 chart-adapter owner 迁为 TS，新增统一 adapter contract；adapter 专项 146/146、drawing coordinate 44/44 通过 |
+| T7 | 已完成 | `5edce5d`…`a2eaef5` | 通过 | 740/740 通过 | 通过 | basic/release 通过 | 8 个 owner 切片独立提交；26 个既有 owner 迁为 TS，新增 8 个类型模块；聚合专项 58/58 通过 |
+| T8 | 已完成 | `69576e8`…`c37113a` | 通过 | 747/747 通过 | 通过 | basic/release 通过 | 13 个既有 owner 迁为 TS；raw indicator HTTP/WS payload、range/revision、cache/output 与 Monaco contract 已收紧；专项 60/60 通过 |
+| T9 | 已完成 | `166264d` | 通过 | 748/748 通过 | 通过 | drawing-check 通过 | 22 个既有 drawing owner 迁为 TS；统一 anchor、saved schema、primitive 与交互 controller contract；drawing 专项 159/159 通过 |
+| T10 | 已完成 | `e1aae04` | 通过 | 748/748 通过 | 通过 | basic/overlay-heavy/drawing-check 通过 | 44 个既有 feature runtime/hook owner 迁为 TS；aggregate contract、ref/timer/browser handle 与 raw payload 边界已类型化；指标专项 53/53、drawing 专项 159/159 通过 |
+| T11 | 已完成 | `e3af38a` | 通过 | 748/748 通过 | 通过 | export/release 通过 | 49 个既有 feature UI/ordinary/app leaf owner 迁为 TS/TSX；具名 Props、React event/ref、lazy module 与 UI raw payload 边界已类型化；export 3/3、15 种图表、drawing persistence 全通过 |
+| T12 | 已完成 | `15683a5` | 通过 | 748/748 通过 | 通过 | release 通过 | 13 个剩余生产 owner 迁为 TS/TSX，新增 app shell 具名聚合 contract；生产 JS/JSX 残留 0；15 种图表、export 3/3、drawing persistence 全通过 |
+| T13 | 已完成 | `8e49ddb`…`d47b6e3` | 通过 | 748/748 通过 | 通过 | release 通过 | 95 个测试 owner 与 harness 完成 TS 化；mixed mode/canary 和 inline lint suppression 清除，永久严格门禁生效 |
+
+### T0 基线记录
+
+| 项目 | 结果 |
+|---|---|
+| 记录时间 | 2026-07-13，Asia/Shanghai |
+| Branch | `main` |
+| Commit | `5c407def6df5c431b71507716619151954b55aab` |
+| 工作区归属 | `README.md`、`ARCHITECTURE_zh.md` 和本执行文档均为已确认的 TypeScript 迁移文档改动；没有混入未知改动 |
+| Node / npm | Node `v22.14.0`；npm `10.9.2` |
+| `npm ci` | 通过；停止占用 `esbuild.exe` 的本项目 Vite 进程后重试成功，安装 167 packages |
+| npm audit 基线 | 7 项：3 low、3 moderate、1 high；T0 不执行自动修复 |
+| JS 文件数 | 271 |
+| JSX 文件数 | 54 |
+| TS 文件数 | 0 |
+| TSX 文件数 | 0 |
+| Test files | 84 |
+| Test count | 702；pass 702、fail 0、skipped 0、todo 0 |
+| Architecture check | 通过；0 migration allowlist entries active |
+| Lint | 通过 |
+| Build | 通过；Vite 7.3.1，289 modules transformed；入口 JS 401.34 kB / gzip 118.95 kB |
+| Basic smoke | 通过；1500 bars、connected/live；failures 0、warnings 0、exceptions 0 |
+| Release smoke | 通过；chart type matrix、export matrix、drawing check、overlay-heavy 全部通过；failures 0、warnings 0、exceptions 0 |
+| 迁移前已知 gate 失败 | 无；npm audit advisory 单独作为依赖风险基线记录 |
+
+### T0 动态边界与 suppression 清单
+
+| 类别 | 出现次数 | 文件数 | 备注 |
+|---|---:|---:|---|
+| `@ts-ignore` | 0 | 0 | 无 |
+| `@ts-nocheck` | 0 | 0 | 无 |
+| `@ts-expect-error` | 0 | 0 | 无 |
+| `eslint-disable` | 2 | 2 | 见下方精确位置 |
+| `JSON.parse` | 25 | 20 | 生产代码 18 次/17 文件；测试 7 次/3 文件 |
+| `response.json` | 6 | 3 | 全部位于 service transport 边界 |
+
+现有 ESLint suppression：
+
+- `src/components/TextFormatBar.jsx:90`：`react-hooks/exhaustive-deps`
+- `src/features/drawings/drawingInteractionController.js:1424`：`react-hooks/immutability`
+
+生产代码中的 `JSON.parse` 边界：
+
+- cache/session：`autoGcPolicy`、`chartSessionModel`、`customIntervalStore`、`paneLayoutStorage`、`visibleRangeStorage`
+- drawings/indicators：`drawingPersistence`、`drawingToolState`、`activeIndicatorStore`、`indicatorResultCacheStore`、`indicatorWsRuntime`
+- data/settings/search：`klineStreamSubscription`、`chartAppearanceSettings`、`symbolFavoritesStore`
+- watchlist/performance：`useWatchlistFullCacheRuntime`、`watchlistStore`（2 次）、`watchlistSubscriptionRuntime`、`perfMarks`
+
+测试中的 `JSON.parse` 位于 `drawingPersistence.test.js`（3 次）、`seriesDataFeed.test.js`（3 次）和 `indicatorApi.test.js`（1 次）。`response.json` 位于 `alertsApi.js`、`api.js` 和 `indicatorApi.js`，各 2 次。后续 Phase 应在各 owner parser/transport 切片中收紧这些边界，不在 T0 修改行为。
+
+### Import 解析决策
+
+| 项目 | 结果 |
+|---|---|
+| `.js` specifier -> `.ts` source | 通过；现有 consumer 和 canary 均可解析 `mainChartTypes.ts` / `entry.ts` |
+| JS test -> TS source | 通过；`entry.test.js` 通过 `.js` specifier 加载 `entry.ts` |
+| TS source -> TS dependency | 通过；`entry.ts` 通过 `./leaf.js` 加载 `leaf.ts` |
+| `.mjs` script -> TS source | 通过；`chart-type-matrix.mjs` 加载 `mainChartTypes.ts`，`npx tsx -e` 实测成功 |
+| Vite build -> TS source | 通过；289 modules transformed |
+| 最终 specifier 规则 | rename 时保留既有 specifier；需要由 Node/tsx 执行的相对 runtime import 使用 `.js` specifier 指向 `.ts` source；禁止 runtime import 写 `.ts` 后缀；既有 Vite-only extensionless import 不在迁移时批量改写 |
+
+### T1 工具链与验证记录
+
+| 项目 | 结果 |
+|---|---|
+| TypeScript | `6.0.3` |
+| typescript-eslint | `8.63.0` |
+| tsx | `4.23.1` |
+| `@types/node` | `26.1.1` |
+| 初始模式 | `strict: true`、`allowJs: true`、`checkJs: false`、`noEmit: true`、`moduleResolution: Bundler` |
+| 首个生产 TS 文件 | `src/shared/mainChartTypes.ts`；保留 runtime `Object.freeze`，新增 `MainChartType` 字面量联合 |
+| Architecture 正向门 | 通过；0 migration allowlist entries active |
+| Architecture 负向门 | 通过；临时 TS shared→feature import 和 TSX feature Runtime JSX 均被拦截，样本已删除 |
+| Architecture 附带修复 | import 提取器补齐 `import "module"` 副作用导入；否则该形式会绕过依赖规则 |
+| Canary | 1/1 通过；JS test → TS entry → TS leaf |
+| 完整测试 | 703/703 通过；T0 的 702 个测试全部保留，新增 1 个 canary |
+| Build | 通过；入口 JS 401.39 kB / gzip 118.93 kB，较 T0 无实质增长 |
+| Chart type smoke | 通过；15 种类型、持久化和恢复均通过；failures/warnings/exceptions 为 0 |
+| 已知测试噪声 | 两个既有 Vite middleware 测试并发时会提示 HMR 端口 24678 占用；已用原 `node --test` 独立复现，不是 tsx 回归 |
+| 新增 suppression | 0 |
+
+### T2 shared、utils 和 chart-session 验证记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始 Commit | `45c901c` |
+| 完成 Commit | `741b5d1` |
+| 生产模块 | 迁移 11 个既有 JS 文件并新增 `chartSessionTypes.ts`，合计 12 个 TS 模块 |
+| 核心类型 | `IntervalUnit`、`IntervalString`、`SymbolIdentity`、`ChartSession`、`ChartSessionTransition`、`DatasetKey`、`VisibleRangeSnapshot`、`PaneHeights` |
+| Interval 兼容 | `m` 和 `M` 保持大小写语义；非法值 fail closed；`1M` 月周期 timeline 逻辑不变 |
+| Symbol key 兼容 | Binance 继续使用两段 key；OKX/其他交易所使用三段 key；parse/build round-trip 通过 |
+| User prefs 边界 | `JSON.parse` 结果从 `unknown` 验证；损坏、`null` 或数组回退 `{}`；非法 interval 回退 `1h` |
+| Pane storage 边界 | 只读取/写入有限正数数组；storage key 不变 |
+| Visible range 边界 | 非 object JSON fail closed；复合 identity key 不变；旧 interval-only key 继续可读 |
+| 定向测试 | 40/40 通过；覆盖 utils、session transition、interval fallback 和三类 storage |
+| 完整测试 | 719/719 通过；较 T1 新增 16 个测试，无原测试丢失 |
+| Architecture / typecheck / lint | 全部通过；0 migration allowlist entries active |
+| Build | 通过；289 modules transformed |
+| Basic smoke | 通过；1501 bars、connected/live；failures/warnings/exceptions 为 0 |
+| Release smoke | 通过；chart type、export、drawing、overlay-heavy 全部通过；failures/warnings/exceptions 为 0 |
+| 运行环境旁路 | 首次 release smoke 在经历批量 rename 的旧 Vite 进程上出现空白页；模块探测确认解析正常，干净重启后 basic/release 均通过；未修改业务代码规避该环境状态 |
+| 新增 `any` / TS suppression | 0 |
+
+### T3 market-data 内核验证记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始 Commit | `741b5d1` |
+| 生产模块 | 按计划迁移 13 个既有 JS 文件，并新增 `marketDataTypes.ts`、`klineContracts.ts`，合计 15 个 TS 模块；`klineApi.js` 和 `klineStreamSubscription.js` 保留给 T4 |
+| 时间 contract | `EpochSeconds`、`EpochMilliseconds` 使用 branded number；秒/毫秒只通过 `secondsToMilliseconds()`、`millisecondsToSeconds()` 等命名边界转换；`normalizeRangeSec()` 返回 `TimeRangeSec \| null` |
+| K 线与 series contract | 从现有 fixture 固化 `KlineBar` 的 `time` 和可选 OHLCV 字段；新增 `MarketSeries`、`SeriesKey`、`SeriesCoverage`、`DataRevision`、`KlineApi`、`BackfillCompletedMessage` |
+| Window contract | `WindowDelta` 为 `type` 判别联合；delta 类型 switch 包含 `never` exhaustiveness check；rows、coverage、revision、segment 和 time index 全部类型化 |
+| Fetch/feed contract | `FetchPlan` 为 `range` / `before` / `history` 判别联合；`InflightRegistry.run()` 保留泛型 promise result；`SeriesDataFeed` 的 API、callback、commit mode、pending page 和 result shape 全部显式化 |
+| 行为不变量 | epoch 前进后旧结果标记 stale 且不提交；inactive series 只合并 cache；before-page completion attempts 有上限；重复 backfill completion 只释放一次 loading；window trim 继续保留最新 bars；range 分页 cursor 顺序不变 |
+| 定向测试 | 54/54 通过；覆盖 planner、window store/registry、inflight、epoch/stale/active、before-page/backfill、gap 和 range runtime |
+| 完整测试 | 720/720 通过；较 T2 新增 1 个重复 backfill completion 竞态保护测试，无原测试丢失 |
+| Architecture / typecheck / lint | 全部通过；0 migration allowlist entries active；新增 `any` 和 TS directive suppression 均为 0 |
+| Build | 通过；Vite 7.3.1，291 modules transformed；HTTP/WS transport 行为未改 |
+| Basic smoke | 通过；1500 bars、connected/live；failures/warnings/exceptions 为 0 |
+| Release smoke | 通过；chart type、export、drawing、overlay-heavy 全部通过；failures/warnings/exceptions 为 0 |
+| 验证工具附带修复 | architecture JSX 文本检查跳过无法承载 JSX 的 `.ts`，避免泛型误报；export matrix 已独立验证预览和下载字节后，将被替换预览的 `blob:` URL 晚到 `ERR_FILE_NOT_FOUND` 归类为取消事件，真实 API、页面异常和导出失败仍会使 smoke 失败 |
+| 临时逃生口 | `SeriesDataFeed` 对当时仍属 T4 的 JS `KlineStreamSubscription` 使用过 1 个最小 constructor adapter cast；已在 T4 owner 迁移后删除 |
+
+### T4 HTTP、K 线 WebSocket 与 transport 边界验证记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始 Commit | `7915a98` |
+| 生产模块 | `apiConfig.js`、`api.js`、`feed/klineApi.js`、`feed/klineStreamSubscription.js` 迁为 TS；新增 `apiPayloadParsers.ts`，合计 5 个 transport TS 模块 |
+| HTTP 边界 | 低层 `request()` 固定返回 `Promise<unknown>`；`ApiError` 保留 status/detail/url；AbortError 不包装；request method、headers、body、signal 显式类型化 |
+| REST parser | K 线 history/before/range/latest、exchange list/capabilities、subscription list/detail/update/remove/sync 在 endpoint 边界校验；K 线校验 data、秒级 time、有限 OHLCV、boolean/meta 字段 |
+| WS parser | `JSON.parse` 结果先视为 `unknown`；通过 `stream_status`、control、backfill、kline 判别联合分发；未知 type、缺字段、错误 time unit 和非法 JSON 只进入诊断回调，不触发图表更新；`pong`、订阅同步顺序和 close 行为不变 |
+| T3 逃生口 | 删除 `SeriesDataFeed` 的 `KlineStreamSubscription as unknown as constructor`；直接实例化 TS owner，`T3-CAST-01` 关闭 |
+| 定向测试 | 21/21 通过；覆盖 REST payload、ApiError、AbortSignal/AbortError、非法 JSON、exchange/subscription parser、WS 无效消息和合法 tick |
+| 完整门禁 | architecture、typecheck、lint 全部通过；727/727 tests 通过；Vite 7.3.1 build 通过，292 modules transformed |
+| Basic smoke | 干净 Vite `15174` 实例通过；1500 bars、connected/live；failures/warnings/exceptions 为 0 |
+| Release smoke | chart type、export、drawing、overlay-heavy 全部通过；failures/warnings/exceptions 为 0 |
+| 冒烟调用说明 | 当前 npm 会把 `npm run smoke -- --url ...` 中的 `--url` 当作 npm 参数吞掉；验证改为直接执行 `npx tsx scripts/smoke.mjs --url http://127.0.0.1:15174/ ...`，未修改业务行为 |
+| Import 解析 | mixed-mode 继续使用源码 `.js` specifier；architecture resolver、全量测试和 Vite build 均确认 TS owner 可解析；未引入 `.ts` URL specifier 或 facade |
+| 新增 `any` / TS directive suppression | 0 |
+
+### T5 chart-representation 纯投影引擎验证记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始 Commit | `cbf6108` |
+| 生产模块 | `src/features/chart-representation/` 下 21 个既有 JS owner 全部迁为 TS；新增 `chartRepresentationTypes.ts`，合计 22 个 TS 模块，生产目录无 JS 残留 |
+| 核心 contract | 建立 `OrdinalAxisTime`、`AxisTime`、`SourceBar`、`DisplayRow`、`ProjectionMetadata`、`ProjectionResult`、`Projector<TState, TConfig>`、`ProjectionTailState`、`ProjectionPatch`、`ProjectionSourceDelta`、registry/config 与 viewport snapshot 类型 |
+| Axis time / lineage | 普通数字时间与 ordinal object 保持联合；`sourceTime`、`sourceOrdinal` 和 projection-local `order` 职责分离；相同 source time 的 1:N display lineage、drawing anchor 和 viewport 映射行为不变 |
+| Projector / Store | Identity、Heikin Ashi、Renko、Point & Figure、Kagi、Line Break 及 options/factory/registry 全部类型化；full rebuild、stateful incremental tail、provisional tail、checkpoint 与 replace-tail patch contract 显式化 |
+| 热路径不变量 | 未新增大数组 clone 或改变投影算法；100-row append/replace 的常量尾读取、copy-on-write、semantic no-op identity 和 repeated timestamp 测试继续通过 |
+| 回归防护 | 类型迁移初版使异常 `time` getter 被读取两次，专项测试即时捕获；改为先快照一次 getter 后恢复原单次读取与原子回退语义，103/103 Store 专项用例通过 |
+| 定向测试 | `src/features/chart-representation/__tests__/` 200/200 通过；覆盖 axis/options、6 个 projector、registry、lineage、derived auxiliary、viewport 和 ProjectionStore |
+| 完整门禁 | architecture、typecheck、lint 全部通过；727/727 tests 通过；Vite 7.3.1 build 通过，292 modules transformed |
+| Basic smoke | 干净 Vite `15175` 实例通过；1500 bars、connected/live；failures/warnings/exceptions 为 0 |
+| Release smoke | 15 种 chart type 与持久化恢复通过；PNG/JPEG/WebP 三组导出通过；drawing persistence、overlay-heavy 全部通过；failures/warnings/exceptions 为 0 |
+| Import 解析 | mixed-mode 继续使用源码 `.js` specifier；JS tests、tsx、architecture resolver 与 Vite 均解析到 TS owner；未引入 `.ts` URL specifier 或兼容 facade |
+| 新增 `any` / TS directive suppression | 0 |
+
+### T6 chart-adapter 与 Lightweight Charts 类型验证记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始 Commit | `cb28b4e` |
+| 生产模块 | `src/chart-adapter/` 下 24 个既有 JS owner 全部迁为 TS；新增 `chartAdapterTypes.ts`，合计 25 个 TS 模块，生产目录无 JS 残留 |
+| 核心 contract | 建立 `ChartTime`、chart/series/pane handles、series data、indicator、custom series、projection patch、viewport、future-axis、drawing coordinate context 与 React chart surface handle 类型 |
+| Lightweight Charts 边界 | chart、series、pane、custom renderer、horizontal scale、logical range 与 branded coordinate 直接使用库自带声明；custom ordinal 泛型和支持测试桩的 drawing capability interface 仅留在 adapter 内部，不向 feature 扩散 raw handle |
+| Series / pane lifecycle | 15 种主图 factory、indicator series、replacement rollback、pane move/remove、delta update 和 startup grace window 保持原顺序；动态 `addSeries` / `addCustomSeries` 的泛型摩擦集中在一个最小调用适配函数 |
+| Coordinate / future axis | 普通时间、ordinal source lineage 与 projection-local order 继续分离；future whitespace 仍只用于渲染，未来 drawing anchor 只持久化绝对 source time；未恢复 logical/bar-offset 语义 |
+| Renderer 行为 | High-Low、Point & Figure、Kagi、barcolor、bgcolor、marker、overlay 和 projection custom series 全部类型化；未新增全量 `setData()`、大数组 clone 或渲染策略变化 |
+| 定向测试 | `src/chart-adapter/__tests__/` 146/146 通过；`src/features/drawings/__tests__/coordinateBridge.test.js` 44/44 通过 |
+| 完整门禁 | architecture、typecheck、lint 全部通过；727/727 tests 通过；Vite 7.3.1 build 通过，292 modules transformed |
+| Basic smoke | 干净 Vite `15176` 实例通过；1500 bars；failures/warnings/exceptions 为 0 |
+| Release smoke | 15 种 chart type 与持久化恢复通过；PNG/JPEG/WebP 三组导出、drawing check、overlay-heavy 全部通过；failures/warnings/exceptions 为 0 |
+| Import 解析 | mixed-mode 继续使用源码 `.js` specifier；JS tests、tsx、architecture resolver 与 Vite 均解析到 TS owner；未引入 `.ts` URL specifier 或兼容 facade |
+| 新增 `any` / TS directive suppression | 0；无 `@ts-ignore`、`@ts-nocheck`、`@ts-expect-error` 或 `as unknown as` |
+
+### T7 支撑 feature kernels 验证记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始 Commit | `306c90c` |
+| 切片提交 | cache-gc `5edce5d`；runtime performance `04186e3`；watchlist `9383a8d`；watchlist full cache `64ef504`；export `6f3ef55`；settings pure `c54f4a1`；symbol search `ca5efd4`；alerts `a2eaef5` |
+| 生产模块 | 计划中的 26 个既有 JS owner 全部迁为 TS，原 JS owner 残留 0；新增 `cacheGcTypes.ts`、`performanceTypes.ts`、`watchlistTypes.ts`、`watchlistFullCacheTypes.ts`、`exportTypes.ts`、`settingsTypes.ts`、`symbolSearchTypes.ts`、`alertTypes.ts`，合计 34 个 T7 TS 模块 |
+| 核心 contract | 建立 `CacheDiagnostics`、`GcPlan` / `GcAction`、`PerformanceMarkName` / `WindowBudgetResult`、`WatchlistItem` / `WatchlistGroup` / `SubscriptionTier`、`WarmCacheRow`、`ExportOptions`、`SettingsCategory`、`SymbolSearchItem`、`AlertRule` / 递归 `AlertExpression` 类型 |
+| Storage 边界 | auto-GC audit、watchlist groups/collapsed ids、export prefs 和 symbol favorites 的 `JSON.parse` 结果均先按 `unknown` 验证；损坏或错误 shape fail closed；既有 storage key、默认值和用户数据不变 |
+| Watchlist / cache 语义 | full tier intervals、consumer id、warm rows、repair 标记、preload 优先级、socket targets、GC victim 排序与阈值不变；`cacheTrim` 只依赖各 cache owner 的公开 contract |
+| Export / settings 语义 | export scope/format/scale/quality/metadata 和 DOM element 边界显式验证；JPEG transparent fallback、文件名、像素预算与视觉输出不变；settings category/action/view model 由纯 registry owner 管理，React runtime 保持兼容 re-export |
+| Alerts 边界 | CRUD、启停、删除、history 和 evaluate response 在 endpoint 处从 `unknown` 验证；payload 与后端 camelCase contract 对齐；AND/OR/NOT 表达式 parser 校验 comparator/right shape、NOT 单子节点、最大 32 层并拒绝循环引用 |
+| 定向测试 | 17 个聚合测试文件 58/58 通过；新增 storage 损坏 shape、settings registry、symbol filter、alerts 合法/非法递归树与 API response contract 覆盖 |
+| 完整门禁 | architecture、typecheck、lint 全部通过；740/740 tests 通过；Vite 7.3.1 build 通过，293 modules transformed |
+| Export smoke | export 切片后在干净 Vite `15177` 实例验证 PNG/JPEG/WebP，三组预览和下载均通过；failures/warnings/exceptions 为 0 |
+| Basic smoke | 干净 Vite `15178` 实例通过；1500 bars、connected/live；failures/warnings/exceptions 为 0 |
+| Release smoke | 15 种 chart type 与持久化恢复通过；PNG/JPEG/WebP 三组导出、drawing check、overlay-heavy 全部通过；failures/warnings/exceptions 为 0 |
+| 独立回滚 | 8 个 owner 切片各自独立提交；未改 GC 阈值、watchlist 订阅语义、storage key、export 视觉结果或 React UI owner |
+| 新增 `any` / TS directive suppression | 0；T7 路径无 `@ts-ignore`、`@ts-nocheck`、`@ts-expect-error`、`as unknown as` 或显式 `any` |
+
+### T8 indicator core、API、WebSocket 与 editor 验证记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始 Commit | `477cbd3` |
+| 切片提交 | range kernels `69576e8`；payload/compute/output `9d8be0c`；transport/cache `1a7ba53`；Pyne editor `c7f54b2`；numeric revision 兼容修复 `c37113a` |
+| 生产模块 | 计划中的 13 个既有 JS owner 全部迁为 TS，对应 JS 残留 0；新增 `indicatorTypes.ts`、`indicatorContracts.ts`，合计 15 个 T8 TS 模块；React controllers/hooks 保留到 T10，仅 `indicatorStreamController.js` 适配 typed parse result |
+| 核心 contract | 建立 indicator definition、parameter schema、line/marker/fill/hline/bgcolor/barcolor/signal、判别式 `IndicatorOutput`、range intent/coverage/revision、cache entry/result、HTTP request/response、snapshot/patch/replace-range/subscribed/recomputed/value/error WS message 与 Monaco Pyne item 类型 |
+| Payload 边界 | `normalizeIndicatorPayload()` 接收 `unknown`；HTTP `request()` 返回 `Promise<unknown>`，preset/registry/compute/range/batch/custom/security/delete endpoint 各自解析；缺失的可选 output 数组规范化为空数组，存在但畸形的 point、annotation、range、revision 或嵌套 batch payload 立即失败 |
+| WS 边界 | `parseIndicatorWsMessage()` 返回 typed success/failure；snapshot、patch、replace-range、recomputed、subscribed、preview/update、error 与 control message 分支显式校验；controller 丢弃失败结果；合法 sequence gap、history invalid、dirty range 与 reconnect 行为保持 |
+| Output / cache | `IndicatorOutput` 与 reducer switch 均带 `never` 穷尽检查；cache key 显式包含 exchange、market type、symbol、interval、indicator/script signature、security mode、params 与 candle colors；逐点 upsert、共享数组、range replace、revision-aware coverage、stale segment 和 K-line dependency 语义不变 |
+| Snake/camel 兼容 | range/revision、output name、style、custom timestamp 与 WS resume 字段只在 parser/normalizer 边界兼容；内部统一 camelCase；`correctionRevision` 接受后端实际的有限数字或字符串并统一为字符串 |
+| Pyne editor | `pyneLanguage.ts` / `pyneTheme.ts` 直接使用 Monaco 的 completion、hover、disposable、theme 与 editor options 类型；completion、hover、snippet、theme 和 lazy editor 加载行为不变 |
+| 定向测试 | indicator feature、market-data indicator range 与 indicator API 聚合 60/60 通过；新增 unified output 五类、畸形 line/annotation、WS snapshot/patch/replace-range、HTTP range/batch 及 numeric revision 覆盖 |
+| 完整门禁 | architecture、typecheck、lint 全部通过；747/747 tests 通过；Vite 7.3.1 build 通过，294 modules transformed |
+| Basic smoke | 干净 Vite `15179` 实例通过；1500 bars、connected/live，MA/VOL hosted indicator coverage 有效；failures/warnings/exceptions 为 0 |
+| Release smoke | 15 种 chart type 与持久化恢复通过；PNG/JPEG/WebP 三组导出、drawing persistence、MA/VOL/BOLL/RSI overlay-heavy 全部通过；failures/warnings/exceptions 为 0 |
+| Smoke 捕获并修复 | 首次 basic smoke 发现后端 numeric `correctionRevision` 被首版 string-only parser 拒绝，导致合法 WS message 丢弃与 sequence-gap warnings；`c37113a` 统一 string/finite-number 输入后，focused test、完整门禁、basic/release smoke 全部通过 |
+| 范围约束 | 未修改 indicator 计算算法、cache 窗口、重算范围、WS 重连策略或 Pyne UI；`T4-UNKNOWN-01` 仍只覆盖 `src/services/api.ts` 中未迁的非 indicator endpoints，状态不变 |
+| 新增 `any` / TS directive suppression | 0；T8 路径无 `Record<string, any>`、显式 `any`、`@ts-ignore`、`@ts-nocheck`、`@ts-expect-error` 或 `as unknown as` |
+
+### T9 drawing core、persistence 与 primitives 验证记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始 Commit | `81327f0` |
+| 完成 Commit | `166264d` |
+| 生产模块 | 计划中的 22 个既有 JS owner 全部迁为 TS，对应 JS owner 残留 0；新增 `drawingTypes.ts`、`drawingContracts.ts` 与 adapter 内的 `drawingPrimitiveTypes.ts`，合计 25 个 T9 TS 模块；React hooks、selection/text-edit/tool-state 与 `useDrawing` 保留到 T10 |
+| 核心 contract | 建立 `DrawingToolId` / `DrawingKind`、`DrawingDataPoint`、普通 source-time / synthetic lineage / legacy logical anchor 判别联合、`SavedDrawing` 判别联合、freehand v2/v3 stroke、primitive options、命中结果、拖拽 descriptor 与坐标转换类型 |
+| Persistence 边界 | `JSON.parse` 结果先作为 `unknown`，逐 kind allowlist 解析；损坏 anchor、未知 kind 与畸形 freehand fail closed；旧 logical fallback 可读；synthetic `sourceOrdinal` / projection identity 可读写；projection-local `order` 永不持久化 |
+| Primitive / adapter 边界 | 8 个 Lightweight Charts drawing primitive、pane renderer/view、坐标工具和动态 engine loader 全部类型化；第三方 plugin 类型通过 `chart-adapter/drawingPrimitiveTypes.ts` 隔离，feature 层没有新增 Lightweight Charts 直连或 architecture allowlist |
+| 创建与交互语义 | freehand capture、text/position placement、line/fib/shape/axis creation、drag/resize、erase、hover、snap 与 primitive factory 均使用统一 drawing contract；未改变吸附阈值、拖拽/缩放规则、future-anchor、synthetic fold 或 UX |
+| 兼容 fixture | 新增 corrupted anchor、unknown kind、old logical 与 synthetic lineage 四类存储 fixture；前两类拒绝，后两类规范化恢复，并验证 `order` 被剥离 |
+| 定向测试 | `npm run test:drawing` 159/159 通过；较 T8 新增 1 个 schema fixture 测试，无既有 drawing 测试丢失 |
+| 完整门禁 | architecture、typecheck、lint 全部通过；748/748 tests 通过；Vite 7.3.1 build 通过，295 modules transformed |
+| Drawing smoke | 干净 Vite `15180` 实例通过；1500 bars、connected/live；drawing engine ready；创建后持久化 1 个 drawing，future anchor 已保存，reload 后恢复 2 个 drawings；failures/warnings/exceptions 为 0 |
+| 范围约束 | 未迁 `drawingInteractionController.js`、`drawingSelectionController.js`、text editing、tool state、persistence lifecycle hooks 与 React host；这些 owner 继续留给 T10 |
+| 新增 `any` / TS directive suppression | 0；T9 路径无显式 `any`、`@ts-ignore`、`@ts-nocheck`、`@ts-expect-error` 或 `as unknown as` |
+
+### T10 feature React runtimes/hooks 验证记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始 Commit | `ca9ba25` |
+| 完成 Commit | `e1aae04` |
+| 生产模块 | 计划中的 44 个既有 JS/JSX owner 全部迁为 TS/TSX，对应旧 owner 残留 0；覆盖 chart-session 4、market-data 7、cache/watchlist 4、indicators 6、drawings 9、export 2、settings/database service 10、symbol-search 2 个 owner；`SettingsPanelHost.jsx` 属于 T11 UI，不计入本阶段 |
+| Runtime contract | 为各 hook/controller 声明 options、return、callback 与 owner 类型；聚合 runtime 保持稳定 `{ view, actions, status, events? }` 结构，没有拆分大型 hook，也没有把匿名业务 shape 复制到调用方 |
+| Ref / timer / browser handle | nullable ref/state 显式建模；timeout 使用 `ReturnType<typeof setTimeout>`；WebSocket、AbortSignal/AbortController、ResizeObserver、DOM/chart handle 使用浏览器类型；effect cleanup 与 lazy host 边界均已收紧 |
+| 外部数据边界 | symbol、settings、cache、maintenance、database 与 watchlist runtime 把共享 transport 的 `unknown` raw payload 在活跃 owner consumer 边界按 record/array/字段 shape 收窄；底层 `request()` 与当前未消费 endpoint 继续正确返回 `Promise<unknown>`，不引入欺骗性泛型；`T4-UNKNOWN-01` 关闭 |
+| Drawing / adapter | interaction、pointer、keyboard、selection、text edit、tool state、persistence lifecycle、aggregate hook 与 React host 使用 T9 drawing contract；第三方 primitive attach/detach 结构差异限制在 adapter helper；snap、drag、resize、future anchor 与存储 schema 语义不变 |
+| 定向测试 | indicator feature 53/53、drawing 159/159、export 10/10、settings 9/9、symbol-search 2/2 通过 |
+| 完整门禁 | architecture 通过且 migration allowlist 活跃项为 0；typecheck、lint 全部通过；748/748 tests 通过；Vite 7.3.1 build 通过，295 modules transformed |
+| Basic smoke | Vite `15181` 实例通过；1500 bars、connected/live；drawing toolbar、symbol search、settings 与 MA/VOL hosted indicator coverage 有效；指标 WS 单次建立；failures/warnings/exceptions 为 0 |
+| Overlay-heavy smoke | MA/VOL/BOLL/RSI 托管指标、主图 overlay 与独立 pane coverage 全部通过；HTTP range batch 成功；指标 WS 单次建立；failures/warnings/exceptions 为 0 |
+| Drawing smoke | drawing engine ready；创建后持久化 1 个 drawing，future anchor 已保存，reload 后恢复 2 个 drawings；failures/warnings/exceptions 为 0 |
+| Smoke 捕获并修复 | 首次 overlay-heavy 发现约 35 秒内 `indicator.ws.open` 216 次；根因是迁移时在 `resolveRuntimeInputs()` 内每次 render 新建 `getCurrentVisibleRange` 包装函数，沿 callback 依赖链触发 stream effect 重订阅。恢复原函数引用身份、在消费结果时做边界归一化后，focused tests、完整门禁和三组 smoke 均通过，最终 WS open 为 1 次 |
+| Smoke 命令 | 本机 npm 对 `npm run smoke -- --url ...` 的参数转发会误吞 `--url`，因此按同一脚本语义直接执行 `npx tsx scripts/smoke.mjs --url http://127.0.0.1:15181/`，并分别追加 `--overlay-heavy`、`--drawing-check` |
+| 范围约束 | 未修改缓存预算、K 线加载/重试、指标计算/重连策略、drawing UX 或 settings 行为；未拆 `useIndicatorRuntime` 与 `drawingInteractionController`；下一阶段只迁 feature UI 与普通组件 |
+| 新增 `any` / TS directive suppression | 0；T10 路径无显式 `any`、`@ts-ignore`、`@ts-nocheck`、`@ts-expect-error`、`as unknown as` 或非空断言 |
+
+### T11 feature UI 和普通组件验证记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始 Commit | `4e11f6d` |
+| 完成 Commit | `e3af38a` |
+| 生产模块 | 计划中的 49 个既有 JS/JSX owner 全部迁为 TS/TSX，对应旧 owner 残留 0；覆盖 app leaf 5、export 2、indicators 2、watchlist 1、symbol-search feature 2、drawings feature wrapper 1、settings shell 3、compatibility/ordinary components 7、alerts panel 1、drawing components/controller 9、settings components 8、settings panel wrappers 8 个 owner |
+| Component contract | 所有实际 component 均声明或透传具名 Props type；native button 事件复用 React component props，form、keyboard、mouse、drag/drop、context-menu 与 pointer callback 使用对应 React 事件类型；children、nullable refs、timer、CSS custom property 和 callback 返回值显式建模 |
+| Feature UI contract | indicators、drawings、export、watchlist、symbol search、settings 与 alerts UI 直接复用 T8-T10 runtime/domain contract；drawing tool variant 使用泛型 ID 保持 chart type、cursor、line、shape、position 回调精度；settings panel view model 使用各 panel Props 组合，不再以匿名 `Record<string, unknown>` 穿过 JSX spread |
+| 外部数据边界 | watchlist price tick、proxy test、cache diagnostics、maintenance、database inventory、exchange capabilities 与 alert evaluator/history payload 在对应 feature runtime/parser 边界收窄；component 层未直接依赖 service，architecture 首次提示的两个 type-only service import 已改由 settings feature runtime 重新导出 |
+| Lazy/chunk 边界 | `lazySurfaceLoaders`、`LazyFeatureSurfaces`、`ChartWorkspace` 与各 compatibility wrapper 保持原 default export、dynamic import 路径和 Suspense 条件；Vite build 仍独立产出 ExportPanel、DrawingToolbar、WatchlistSidebar、AlertsPanel、IndicatorPanel、SettingsModal、SymbolSearchModal 与 DrawingEngineHost chunks，未把 feature UI 合并进首屏 entry |
+| 完整门禁 | `npm test` 748/748 通过；`npm run check` 完整通过：architecture 0 个 migration allowlist 活跃项、typecheck、lint、748/748 tests 和 Vite 7.3.1 build 均成功，295 modules transformed |
+| Export smoke | 隔离 Vite `15182` 实例通过；1500 bars、connected/live；chart PNG、main-pane JPEG、page WebP 3/3 cases 通过，下载 magic/尺寸、preview invalidation、drawing hide/restore 与 panel close 均通过；drawing 创建后持久化 1 个、future anchor 已保存、reload 后恢复 2 个；failures/warnings/exceptions 为 0 |
+| Release smoke | 同一隔离实例完整执行 chart-type matrix、export matrix、drawing-check、overlay-heavy；15 种图表菜单/切换步骤、histogram persistence、candlestick restoration、MA/VOL/BOLL/RSI overlay/pane、export 3/3 与 drawing persistence 全部通过；failures/warnings/exceptions 为 0 |
+| Smoke 命令 | 本机继续使用与 npm scripts 等价的直接脚本调用：`npx tsx scripts/smoke.mjs --url http://127.0.0.1:15182/ --export-matrix --drawing-check --overlay-heavy`；release 追加 `--chart-type-matrix`；验证后已停止隔离 Vite，端口释放 |
+| 范围约束 | 未迁 `components/SingleChartPanes.jsx`、`singleChartPaneLifecycle.js`、`app/view-models/*.js`、`appShellViewModel.js`、`AppProviders.jsx`、`AppShell.jsx`、`app/App.jsx`、`src/App.jsx` 或 `src/main.jsx`；这些 owner 留给 T12；未改目录、CSS、布局、lazy 触发条件或组件业务 API |
+| 新增 `any` / TS directive suppression | 0；T11 路径无显式 `any` type、`@ts-ignore`、`@ts-nocheck`、`@ts-expect-error`、`as unknown as` 或非空断言；仅 select/union 边界使用已验证的窄 union assertion |
+
+### T12 `SingleChartPanes`、app 和入口验证记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始 Commit | `9581f6d` |
+| 完成 Commit | `15683a5` |
+| 生产模块 | 13 个剩余生产 JS/JSX owner 全部迁为 TS/TSX：`SingleChartPanes`、pane lifecycle、5 个 view-model、app shell view-model、`AppProviders`、`AppShell`、app `App`、src `App` 与 `main`；另新增 `appShellContracts.ts`；生产 JS/JSX 残留 0，仅测试文件留给 T13 |
+| `SingleChartPanes` contract | 导出的 `SingleChartPanesProps` 覆盖 session/chart type、market data、indicator/pane、drawing、viewport/price scale、export 与 callback 区域；没有用 `Record<string, any>` 或整体 props cast；chart workspace 直接消费 `SingleChartPanesProps` 与 `ChartSurfaceHandle` |
+| Chart surface contract | `getVisibleRange`、drawing style、chart/series/projection/pane refs、timer/state 和 imperative methods 均显式类型化；indicator row 的必需 time/value、projection helper 泛型、drawing style/fib nullable、market display/crosshair shape 等真实 owner contract 冲突在各自 owner 收口 |
+| App composition | 5 个 view-model 与 app shell builder 的输入、输出分别具名，公共聚合 contract 集中于 `appShellContracts.ts`；feature runtime 只传给合法 consumer，App 继续只负责装配 feature 与 view-model |
+| Lifecycle invariants | 未拆 `SingleChartPanes`，未调整 chart effect 顺序、lazy 触发、CSS/布局、props 语义或性能路径；`main.tsx` 依照既有入口行为处理 root nullability，没有混入新的启动失败策略 |
+| 专项验证 | `SingleChartPanes.test.js` 与 `chartWorkspaceViewModel.test.js` 合计 18/18 通过 |
+| 完整门禁 | `npm run check` 完整通过：architecture 0 个 migration allowlist 活跃项、typecheck、lint、748/748 tests 和 Vite 7.3.1 build 均成功，295 modules transformed；feature lazy chunks 保持独立 |
+| Production residual | `src` 中仅 `__tests__` / `.test.js` 尚为 JS；排除测试后的生产 `.js/.jsx` 数量为 0 |
+| Release smoke | 隔离 Vite `15182` 实例通过；1500 bars、connected/live；15 种图表、histogram persistence、candlestick restoration、MA/VOL/BOLL/RSI overlay/pane、export 3/3 与 drawing persistence 全通过；drawing 创建后持久化 1 个、future anchor 已保存、reload 后恢复 2 个；failures/warnings/exceptions 为 0 |
+| Smoke 命令 | `npx tsx scripts/smoke.mjs --url http://127.0.0.1:15182/ --chart-type-matrix --export-matrix --drawing-check --overlay-heavy`；验证后已停止隔离 Vite，端口释放 |
+| 新增 `any` / TS directive suppression | 0；T12 路径无显式 `any` type、`@ts-ignore`、`@ts-nocheck`、`@ts-expect-error` 或 `as unknown as`；Lightweight Charts 原生/ordinal 不变泛型只在 factory 边界使用两个局部 assertion，并登记 `T12-LWC-04`；入口 root assertion 保持迁移前失败语义，不向 App contract 扩散 |
+| 范围约束 | 测试迁移、`allowJs: false`、type-aware ESLint、canary/临时设施删除与 suppression 最终清零均留给 T13；本阶段未修改严格编译配置 |
+
+### T13 测试迁移、严格门禁和 release 验收记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始 Commit | `3631fbe` |
+| 完成 Commit | `d47b6e3` |
+| 测试迁移 | `src` 下 95 个 `.test.js` 全部迁为 `.test.ts`，`localStorageHarness.js` 迁为 `.ts`；测试夹具优先复用生产 contract，局部/结构化 mock、畸形 parser fixture 与 defined assertion 集中在显式 test helper；没有通过整体 props cast 绕过编译器 |
+| 最终源码盘点 | `src` 共 306 个 `.ts`、54 个 `.tsx`、1 个 Vite 声明文件；`.js/.jsx` 均为 0；永久 architecture 规则会拒绝重新引入 legacy source extension |
+| Mixed-mode 清理 | 删除 `scripts/type-migration-canary/` 和 `test:canary`；`allowJs: false`，删除 `checkJs`，`include` 仅覆盖 TS/TSX/声明与需要的 TS scripts；没有 JS facade、迁移 allowlist 或临时声明文件，唯一 `.d.ts` 为标准 `vite-env.d.ts` |
+| 测试发现 | `npm test` 显式覆盖 `scripts/*.test.mjs` 与 `src/**/*.test.{ts,tsx}`，避免把 test helper 当空测试，同时覆盖任意深度的 `__tests__` 与源码共置测试；门禁复审新增 6 个配置/架构回归测试，并以嵌套 TSX、非 `__tests__` TS 两个真实 discovery fixture 证明不会静默漏跑，当前真实测试总数为 756 |
+| Type-aware ESLint | TS/TSX 使用 `recommendedTypeChecked`；浏览器生产源码绑定 `tsconfig.json` 且仅启用 browser globals，tests/TS tooling 绑定 `tsconfig.node.json` 并在窄化 override 中启用 Node globals；JS/MJS tooling 使用 `disableTypeChecked`；第三方 Lightweight Charts/Monaco 与动态 plugin 推断产生的 `no-unsafe-*`、对象化 runtime method reference 等项目不适配规则在 config 集中关闭，未使用源码内 `eslint-disable` |
+| 2026-07-14 门禁复审修复 | 测试发现同时覆盖 `.test.ts` / `.test.tsx`；`src` 源码扩展检查改为 fail-closed，未知或大小写变体扩展不能绕过 TypeScript gate；浏览器源码只获得 browser globals/types，Node globals/types 仅授予 TS tooling 与测试边界；新增真实 TypeScript probe 和 architecture 临时目录集成测试防止三类问题回归 |
+| 更严格编译选项评估 | 单独评估 `noUncheckedIndexedAccess` 和 `exactOptionalPropertyTypes`，分别仍有 726 与 145 个存量错误；本阶段不启用，避免把最终配置收口扩成索引访问和 optional props 语义重构 |
+| Suppression / residual | 精确扫描结果：显式 `any` type、`@ts-ignore`、`@ts-nocheck`、`@ts-expect-error`、`as unknown as` 均为 0；0 个 architecture migration allowlist；4 个 Lightweight Charts adapter 局部 assertion 仅保留在第三方不变泛型/运行时支持但声明缺失的边界，并具有删除条件和完整回归保护 |
+| 完整门禁 | `npm run check` 完整通过：architecture 0 个 migration allowlist 活跃项、browser/Node 双 project typecheck、type-aware lint、756/756 tests 和 Vite 7.3.1 build 均成功，295 modules transformed |
+| Bundle/chunk 对比 | 与 T12 `3631fbe` 的隔离 build 比较，modules 保持 295；ExportPanel、SymbolSearchModal、WatchlistSidebar、DrawingToolbar、AlertsPanel、IndicatorPanel、SettingsModal 等 lazy chunk 四舍五入后尺寸不变；DrawingEngineHost `111.87 -> 111.84 kB`、gzip `30.22 -> 30.23 kB`；entry `442.02 -> 442.12 kB`、gzip `129.91 -> 129.95 kB`；lazy chunk 数量和边界不变 |
+| Release smoke | 最终提交在隔离 Vite `15183` 实例通过；1501 bars、connected/live；15 种图表菜单/切换、histogram persistence、candlestick restoration、MA/VOL/BOLL/RSI overlay/pane、PNG/JPEG/WebP 3/3 export cases 与 drawing future-anchor/reload persistence 全部通过；`failures`、`warnings`、`exceptions` 均为 0 |
+| Smoke 命令 | `npx tsx scripts/smoke.mjs --url http://127.0.0.1:15183/ --chart-type-matrix --export-matrix --drawing-check --overlay-heavy`；验证后已停止隔离 Vite，端口释放 |
+| 完成结论 | T0-T13 全部完成；前端不再处于 mixed mode，TypeScript、architecture、lint、tests、build 与 release smoke 已形成可重复执行的长期 gate |
+
+### 2026-07-14 Post-T13 严格类型债务清零记录
+
+| 项目 | 结果 |
+|---|---|
+| 起始债务 | T13 历史评估记录为 `noUncheckedIndexedAccess` 726 条、`exactOptionalPropertyTypes` 145 条，额外开启六项 `no-unsafe-*` 时为 99 条诊断。按门禁复审后的 browser/Node 双 project 重新测量，分别为 browser 370/138、Node 715/141，当前全 TS/TSX unsafe 扫描为 106；差异来自 project、文件范围与重叠诊断口径，不能相加视为独立 bug 数。 |
+| 编译器永久门禁 | `tsconfig.json` 正式启用 `noUncheckedIndexedAccess: true` 与 `exactOptionalPropertyTypes: true`；`tsconfig.node.json` 通过 `extends` 继承。browser 生产源码与 Node tests/tooling 两个 project 均为 0 诊断。 |
+| ESLint 永久门禁 | 删除生产与 test/tooling override 中对 `no-unsafe-argument`、`no-unsafe-assignment`、`no-unsafe-call`、`no-unsafe-enum-comparison`、`no-unsafe-member-access`、`no-unsafe-return` 的关闭项；生产、共置测试、嵌套 `__tests__`、`src/test` 与 TS tooling 的最终合并配置均为 severity 2。JS/MJS tooling 继续使用 `disableTypeChecked`，不伪造缺失的 TypeScript type information。 |
+| 回归门禁 | `scripts/typescript-boundaries.test.mjs` 新增 browser/Node 双 project 负例 probe，分别锁定数组索引 `TS2532` 与 exact optional `TS2375`；同时通过 ESLint `calculateConfigForFile` 检查生产、测试和 tooling 的最终合并配置，防止后置 override 静默重新关闭六项规则。 |
+| 修复方法 | 以数组边界 guard、`unknown` parser、精确可选属性 omission、具名 runtime contract 和第三方 adapter 边界收窄清理诊断；没有用批量非空断言、宽泛 `any` 或关闭规则换取通过。清债复审同时修复 watchlist 脏数值泄漏、indicator scheduler 非数组输入异常、K 线比较器非数组 fail-open、pane layout 防御性拷贝退化，并恢复投影、lineage、freehand、text renderer 等热路径的原有复杂度与分配特征。 |
+| Suppression / assertion | 本轮新增显式 `any`、`as unknown as`、普通 type assertion、非空断言、`@ts-ignore`、`@ts-nocheck`、`@ts-expect-error` 与 `eslint-disable` 均为 0。Suppression ledger 中 4 个既有 Lightweight Charts 局部断言仍只存在于已审计的第三方声明边界，删除条件与保护测试不变。 |
+| 专项验证 | chart adapter 146/146、drawing 159/159、indicator 53/53，以及清债后高风险投影/lineage/drawing/indicator/watchlist 专项 179/179 均通过；常量尾部读取与增量投影性能断言通过。 |
+| 完整门禁 | `npm run check` 完整通过：architecture 0 个 migration allowlist 活跃项、browser/Node 双 project typecheck、六项 unsafe 规则已启用的全量 lint、760/760 tests、Vite 7.3.1 build 均成功，295 modules transformed。 |
+| Release smoke | 隔离 Vite `15183` 实例通过；1500 bars、connected/live；15 种图表、histogram persistence、candlestick restoration、MA/VOL/BOLL/RSI overlay/pane、PNG/JPEG/WebP 3/3 export cases 与 drawing future-anchor/reload persistence 全通过；`failures`、`warnings`、`exceptions` 均为 0。 |
+| Smoke 命令 | `npx tsx scripts/smoke.mjs --url http://127.0.0.1:15183/ --chart-type-matrix --export-matrix --drawing-check --overlay-heavy`；验证后仅停止本轮启动的 Vite PID，端口 `15183` 已释放。 |
+| Commit | 本节与 Post-T13 严格类型清债改动在同一提交中落库。 |
+| 完成结论 | 本轮指定的最高严格度债务已清零，并由 compiler、最终 ESLint 配置、单元测试、build 与 release smoke 五层永久门禁共同约束。 |
+
+### Suppression ledger
+
+| ID | 文件 | suppression/cast | 原因 | 保护测试 | 最迟删除 Phase | 状态 |
+|---|---|---|---|---|---|---|
+| T3-CAST-01 | `src/features/market-data/feed/seriesDataFeed.ts` | `KlineStreamSubscription as unknown as constructor` | 尚未迁移的 JS constructor 把默认空 intervals 推断为 `never[]`；adapter 只包住 T4 transport owner 边界 | `seriesDataFeed.test.js` subscribeBars；release smoke | T4 | 已删除（T4） |
+| T4-UNKNOWN-01 | `src/services/api.ts` | 尚未迁 owner 的 symbol/settings/cache/maintenance/price/resolve endpoint 返回 `Promise<unknown>` | T4 只验证已有 TS consumer 依赖的 endpoint；提前声明业务 shape 会制造错误安全感 | 完整测试；basic/overlay-heavy/drawing-check smoke | T10 | 已关闭（T10：所有活跃 owner consumer 已收窄 raw payload；未消费 endpoint 与 transport 保持 `unknown` boundary） |
+| T6-LWC-01 | `src/chart-adapter/ordinalHorzScaleBehavior.ts` | 默认 time behavior options 局部断言为 ordinal `ChartOptionsImpl` | Lightweight Charts 只导出同一 behavior contract 的不同 horizontal item 泛型；运行时 options 结构相同，适配只存在于 custom ordinal behavior | ordinal behavior 7/7；chart type matrix | 上游导出协变 horizontal behavior contract 后 | 保留（第三方边界；删除条件明确） |
+| T6-LWC-02 | `src/chart-adapter/seriesLifecycle.ts` | 动态 series factory 结果从 `unknown` 局部断言为 adapter handle | 运行时在 15 种 built-in/custom series 间选择，库的互斥 series 泛型无法由动态 descriptor 单次穷尽；断言限制在两个 factory helper | main series model 22/22；series lifecycle 9/9；chart type matrix | 上游 series factory 支持动态 descriptor 联合后 | 保留（第三方边界；删除条件明确） |
+| T6-LWC-03 | `src/chart-adapter/overlaySeriesRenderer.ts` | `0 as LineWidth` 局部断言 | 库声明的 `LineWidth` 排除运行时支持的 0；现有 area fill 以 0 隐藏边线 | overlay renderer 专项；export/drawing/overlay-heavy smoke | 上游 `LineWidth` 声明包含运行时支持的 0 后 | 保留（第三方边界；删除条件明确） |
+| T12-LWC-04 | `src/chart-adapter/lightweightChartSurface.ts` | 原生 `IChartApi` 与 ordinal `IChartApiBase<OrdinalAxisTime>` 在工厂出口局部断言为 `IChartApiBase<ChartTime>` | Lightweight Charts 的 horizontal item 泛型不变，但 adapter contract 需要在同一生命周期路径承载 time/ordinal 两种互斥实例；断言限制在两个 chart factory return，不进入 `SingleChartPanes` 或 App | adapter/unit 全量；chart type matrix；export/drawing/overlay-heavy smoke | 上游 chart API 支持 time/ordinal 协变联合后 | 保留（第三方边界；删除条件明确） |
+
+### 行为问题旁路记录
+
+迁移中发现但不在类型提交里修复的问题记录在这里：
+
+| ID | 发现 Phase | 现象 | 最小复现 | 后续 issue/commit | 状态 |
+|---|---|---|---|---|---|
+|  |  |  |  |  |  |
+
+---
+
+## 15. 参考资料
+
+- [Vite TypeScript 支持与“只转译、不 typecheck”说明](https://vite.dev/guide/features)
+- [TypeScript 从 JavaScript 渐进迁移指南](https://www.typescriptlang.org/docs/handbook/migrating-from-javascript.html)
+- [TypeScript moduleResolution 选择指南](https://www.typescriptlang.org/docs/handbook/modules/guides/choosing-compiler-options)
+- [typescript-eslint flat config](https://typescript-eslint.io/getting-started/)
+- [tsx 对 Node test runner 的 TypeScript 支持](https://tsx.is/node-enhancement)

@@ -1,0 +1,11 @@
+# Only imported source belongs in this directory. Runtime state is project-local under .local.
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+backend/data/
+backend/output/
+frontend/output/
+frontend/.playwright-cli/
+*.egg-info/

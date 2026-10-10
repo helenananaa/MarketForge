@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     account::{ClearingError, Money, PositionQty, fee_for, notional},
     engine::FillQuote,
-    model::{Command, NewOrder, PriceTick, RiskRejectReason, Side},
+    model::{Command, NewOrder, PositionSide, PriceTick, RiskRejectReason, Side},
     perp::{PerpAccountStore, PerpMarginStatus, PerpPendingOrderRisk},
     spot::SpotAccountStore,
 };
@@ -63,6 +63,9 @@ impl SpotRiskEngine {
         };
 
         self.check_order_limits(order, context)?;
+        if order.position_side != PositionSide::Both {
+            return Err(RiskRejectReason::InvalidPositionSide);
+        }
         let account = accounts
             .account(order.account_id)
             .ok_or(RiskRejectReason::AccountNotFound)?;
@@ -199,11 +202,42 @@ impl PerpRiskEngine {
             return Err(RiskRejectReason::InsufficientMargin);
         }
 
-        if order.reduce_only {
-            self.check_reduce_only_order(order, account.position_qty)?;
+        if let Some(positions) = &account.hedge_positions {
+            let leg = positions
+                .leg(order.position_side)
+                .ok_or(RiskRejectReason::InvalidPositionSide)?;
+            let closes = matches!(
+                (order.position_side, order.side),
+                (PositionSide::Long, Side::Sell) | (PositionSide::Short, Side::Buy)
+            );
+            if closes {
+                // The matching guard rechecks each fill and expires exhausted
+                // resting closes before they can consume a later position.
+                if leg.qty == 0 {
+                    return Err(RiskRejectReason::ReduceOnlyWouldIncreasePosition);
+                }
+                if PositionQty::from(order.qty) > leg.qty {
+                    return Err(RiskRejectReason::ReduceOnlyExceedsPosition);
+                }
+                return Ok(());
+            }
+            if order.reduce_only {
+                return Err(RiskRejectReason::ReduceOnlyWouldIncreasePosition);
+            }
+        } else if order.position_side != PositionSide::Both {
+            return Err(RiskRejectReason::InvalidPositionSide);
         }
 
-        if strictly_reduces_position(order, account.position_qty) {
+        if order.reduce_only && account.hedge_positions.is_none() {
+            self.check_reduce_only_order(order, account.position_qty)?;
+            if order.kind.rests_remainder() {
+                return Ok(());
+            }
+        }
+
+        if account.hedge_positions.is_none()
+            && strictly_reduces_position(order, account.position_qty)
+        {
             let position_reduction = accounts
                 .projected_order_risk(
                     order.account_id,
@@ -272,10 +306,6 @@ impl PerpRiskEngine {
         order: &NewOrder,
         position_qty: PositionQty,
     ) -> Result<(), RiskRejectReason> {
-        if order.kind.rests_remainder() {
-            return Err(RiskRejectReason::ReduceOnlyUnsupported);
-        }
-
         let fill_delta = order_position_delta(order);
         if position_qty == 0 || position_qty.signum() == fill_delta.signum() {
             return Err(RiskRejectReason::ReduceOnlyWouldIncreasePosition);
@@ -499,6 +529,7 @@ mod tests {
 
     fn limit(account_id: u64, side: Side, price_tick: i64, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id: account_id + qty,
             account_id,
             side,
@@ -510,6 +541,7 @@ mod tests {
 
     fn reduce_only(account_id: u64, side: Side, kind: OrderKind, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id: account_id + qty + 10_000,
             account_id,
             side,
@@ -524,6 +556,8 @@ mod tests {
         accounts.create_account(99, 1_000);
         accounts
             .settle_trade(&Trade {
+                maker_position_side: Default::default(),
+                taker_position_side: Default::default(),
                 trade_id: 1,
                 maker_order_id: 10,
                 maker_account_id: 99,
@@ -682,7 +716,7 @@ mod tests {
     }
 
     #[test]
-    fn perp_reduce_only_rejects_resting_order_kinds() {
+    fn perp_reduce_only_admits_resting_orders_with_matching_guard() {
         let mut accounts = PerpAccountStore::new(PerpClearingConfig::default(), 100).unwrap();
         seed_long_position(&mut accounts, 1, 5);
         let risk = PerpRiskEngine::new(PerpRiskConfig::default());
@@ -697,7 +731,7 @@ mod tests {
                     fill_quote: FillQuote::default(),
                 },
             ),
-            Err(RiskRejectReason::ReduceOnlyUnsupported)
+            Ok(())
         );
     }
 
@@ -792,6 +826,8 @@ mod tests {
         accounts.create_account(99, 10_000);
         accounts
             .settle_trade(&Trade {
+                maker_position_side: Default::default(),
+                taker_position_side: Default::default(),
                 trade_id: 1,
                 maker_order_id: 10,
                 maker_account_id: 99,
@@ -821,6 +857,7 @@ mod tests {
         assert_eq!(
             risk.check(
                 &Command::NewOrder(NewOrder {
+                    position_side: crate::model::PositionSide::Both,
                     order_id: 2,
                     account_id: 1,
                     side: Side::Sell,
@@ -836,6 +873,7 @@ mod tests {
         assert_eq!(
             risk.check(
                 &Command::NewOrder(NewOrder {
+                    position_side: crate::model::PositionSide::Both,
                     order_id: 3,
                     account_id: 1,
                     side: Side::Sell,
@@ -879,6 +917,8 @@ mod tests {
         accounts.create_account(99, 10_000);
         accounts
             .settle_trade(&Trade {
+                maker_position_side: Default::default(),
+                taker_position_side: Default::default(),
                 trade_id: 1,
                 maker_order_id: 10,
                 maker_account_id: 99,
@@ -941,6 +981,8 @@ mod tests {
         accounts.create_account(99, 10_000);
         accounts
             .settle_trade(&Trade {
+                maker_position_side: Default::default(),
+                taker_position_side: Default::default(),
                 trade_id: 1,
                 maker_order_id: 10,
                 maker_account_id: 99,

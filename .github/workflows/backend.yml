@@ -39,3 +39,35 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test workspace, including PostgreSQL recovery
         run: cargo test --workspace
+      - name: F1 control idempotency (Postgres/HTTP)
+        run: cargo test -p exchange-server --lib control_idempotency
+      - name: F2 freeze recovery (Postgres/HTTP)
+        run: cargo test -p exchange-server --lib freeze_survives
+      - name: F2 action quota (Postgres/HTTP)
+        run: cargo test -p exchange-server --lib external_action_quota
+      - name: F2 settle failure (Postgres/HTTP)
+        run: cargo test -p exchange-server --lib training_settle_failure
+      - name: F2 close settles residuals
+        run: cargo test -p exchange-server --lib close_room_settles
+      - name: F3 private stream (Postgres/HTTP)
+        run: cargo test -p exchange-server --lib private_stream
+      - name: F4 training crash recovery (Postgres)
+        run: cargo test -p exchange-server --lib training_postgres_crash_recovery
+      - name: F4 training recovery e2e (Bearer HTTP)
+        run: ./scripts/training_recovery_e2e.sh
+        env:
+          MARKETFORGE_DATABASE_URL: postgres://marketforge:marketforge@127.0.0.1:5432/marketforge
+      - name: F6 Python batch behavior
+        run: python3 -m unittest python.tests.test_batch_runner -v
+      - name: Python SDK syntax
+        run: python3 -m compileall -q python scripts/batch_runner.py python/examples/buy_remaining.py
+      - name: Training HTTP/CLI smoke
+        run: ./scripts/backend_training_smoke.sh
+      - name: Install agent dependencies and qualified Pine runtime
+        run: python3 -m pip install -e './python[agents]' -r bot-plugins/pine-strategy/requirements.txt
+      - name: Python SDK, agents, Pine and PostgreSQL recovery
+        run: |
+          cargo build -p exchange-server
+          PYTHONPATH=python python3 -m unittest discover -s python/tests -v
+        env:
+          MARKETFORGE_REQUIRE_PINE_TESTS: "1"

@@ -1,0 +1,12 @@
+//@version=6
+strategy("MarketForge Breakout")
+length = input.int(6, "Length", minval=2)
+qty = input.int(2, "Quantity", minval=1)
+upper = ta.highest(high, length)[1]
+lower = ta.lowest(low, length)[1]
+if close > upper and strategy.position_size == 0
+    strategy.entry("L", strategy.long, qty=qty)
+if close < lower and strategy.position_size > 0
+    strategy.close("L")
+plot(upper)
+plot(lower)

@@ -73,6 +73,7 @@ fn main() {
 fn smoke_scenario() -> ScenarioConfig {
     ScenarioConfig {
         room_id: "demo-spot".to_string(),
+        market_events: Vec::new(),
         venue_preset: None,
         venue_rules: exchange_core::VenueRuleConfig::default(),
         venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
@@ -101,6 +102,7 @@ fn smoke_scenario() -> ScenarioConfig {
             },
         ],
         seed_orders: vec![Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: 10_000,
             account_id: 30,
             side: Side::Sell,
@@ -118,6 +120,7 @@ fn participant(id: &str, account_id: u64) -> ParticipantConfig {
         kind: ParticipantKind::RuleAgent,
         room_id: "demo-spot".to_string(),
         account_id,
+        instrument_id: Some("V-BTC-SPOT".to_string()),
     }
 }
 

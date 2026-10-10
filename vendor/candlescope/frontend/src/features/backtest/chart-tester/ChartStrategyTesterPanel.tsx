@@ -1,0 +1,974 @@
+import { resolveStrategyTesterMode } from "./chartStrategyMode.js";
+import { useControlCommands } from "../../app-control/useControlCommands.js";
+import { command } from "../../app-control/commandRegistry.js";
+import { bool, choice, empty, nullable, number, object, optional, record, text } from "../../app-control/commandSchema.js";
+import type { NativeStrategyCollection } from "../native/nativeStrategyCollection.js";
+import type { StrategyTradeFocus } from "./strategyTradeReview.js";
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+
+import type { ChartSession } from "../../chart-session/chartSessionTypes.js";
+import type { ChartStrategyAttachmentRecord } from "../../chart-workspace/chartWorkspaceTypes.js";
+import type { ChartContextResolution } from "../backtestApi.js";
+import type { RecentRunCompareV1 } from "../backtestTypes.js";
+import { t } from "../../../i18n/index.js";
+import { StrategyConditionsEditor } from "./StrategyConditionsEditor.js";
+import { StrategyParametersEditor } from "./StrategyParametersEditor.js";
+import { validStrategyRunSettings } from "../../../shared/strategyRunSettings.js";
+import { useLocale } from "../../../i18n/useLocale.js";
+import {
+  pendingStrategyDraftSave,
+  type StrategyDraftAutoSaveState,
+  type StrategyDraftCursor,
+  type StrategyDraftRecord,
+  type StrategyDraftStore,
+} from "./StrategyDraftStore.js";
+import {
+  createChartStrategyDraftId,
+  strategyDraftContentRevision,
+} from "./chartStrategyTesterDrafts.js";
+import { chartStrategyQuickPresetIdForMarket } from "./chartStrategyRunRequest.js";
+import {
+  CHART_STRATEGY_TEMPLATES,
+  diagnoseChartStrategyDraft,
+  type ChartStrategyDraftIssue,
+  type ChartStrategyRunRequest,
+  type ChartStrategyTesterEntryState,
+} from "./chartStrategyTesterUiModel.js";
+import type {
+  ChartStrategyTesterState,
+  ChartStrategyTesterStatus,
+} from "./chartStrategyTesterState.js";
+import type { ChartStrategyResultBundle } from "./chartStrategyResultCache.js";
+import type { ChartStrategyAutoRunPauseReason } from "./chartStrategyAutoRunCoordinator.js";
+import {
+  ChartStrategyResultContextBar,
+  ChartStrategyResultOverview,
+  ChartStrategyTradeList,
+  TradeExplanationPopover,
+  type TradeExplanationSelection,
+} from "./ChartStrategyResultViews.js";
+import {
+  CHART_STRATEGY_MAX_PANEL_HEIGHT,
+  CHART_STRATEGY_MIN_PANEL_HEIGHT,
+  clampChartStrategyPanelHeight,
+  loadChartStrategyPanelPreferences,
+  saveChartStrategyPanelPreferences,
+  type ChartStrategyPanelTab,
+} from "./chartStrategyPanelPreferences.js";
+
+import StrategyDock from "./StrategyDock.js";
+
+const StrategyScriptWorkspace = lazy(() => import("./StrategyScriptWorkspace.js"));
+const NativeStrategyPanel = lazy(() => import("../native/NativeStrategyPanel.js"));
+
+type PanelTab = ChartStrategyPanelTab;
+type StartView = "start" | "templates" | "recent" | "editor";
+
+const MIN_PANEL_HEIGHT = CHART_STRATEGY_MIN_PANEL_HEIGHT;
+const MAX_PANEL_HEIGHT = CHART_STRATEGY_MAX_PANEL_HEIGHT;
+
+function clampPanelHeight(value: number): number {
+  return clampChartStrategyPanelHeight(value);
+}
+
+function attachmentForDraft(
+  record: StrategyDraftRecord,
+  session: ChartSession,
+): ChartStrategyAttachmentRecord {
+  return {
+    schemaVersion: 1,
+    strategyDraftId: record.id,
+    strategyRevisionId: null,
+    displayName: record.displayName,
+    language: record.language,
+    parameters: {},
+    rangeMode: "ALL_AVAILABLE",
+    customRange: null,
+    fidelityPreference: "FAST",
+    quickPresetId: chartStrategyQuickPresetIdForMarket(session.marketType),
+    autoRun: true,
+  };
+}
+
+function issueCopy(issue: ChartStrategyDraftIssue): { title: string; detail: string } {
+  if (issue.code === "EMPTY_SOURCE") {
+    return { title: t("chartTester.issue.emptyTitle"), detail: t("chartTester.issue.emptyDetail") };
+  }
+  if (issue.code === "UNDECLARED_TARGET") {
+    return {
+      title: t("chartTester.issue.location", { line: issue.line, column: issue.column }),
+      detail: t("chartTester.issue.unknownVariable", { variable: issue.variable ?? "target" }),
+    };
+  }
+  if (issue.code === "SERVER_DIAGNOSTIC") {
+    return {
+      title: t("chartTester.issue.location", { line: issue.line, column: issue.column }),
+      detail: issue.message || t("chartTester.issue.serverDetail"),
+    };
+  }
+  return {
+    title: t("chartTester.issue.location", { line: issue.line, column: issue.column }),
+    detail: t("chartTester.issue.delimiter", { delimiter: issue.variable ?? "?" }),
+  };
+}
+
+function runStatusKey(status: ChartStrategyTesterStatus) {
+  switch (status) {
+    case "DETACHED": return "chartTester.status.detached" as const;
+    case "RESOLVING": return "chartTester.status.resolving" as const;
+    case "NEEDS_DATA": return "chartTester.status.needs_data" as const;
+    case "READY": return "chartTester.status.ready" as const;
+    case "QUEUED": return "chartTester.status.queued" as const;
+    case "RUNNING": return "chartTester.status.running" as const;
+    case "COMPLETED": return "chartTester.status.completed" as const;
+    case "STALE": return "chartTester.status.stale" as const;
+    case "FAILED": return "chartTester.status.failed" as const;
+    case "UNSUPPORTED": return "chartTester.status.unsupported" as const;
+  }
+}
+
+function autoRunPauseKey(reason: ChartStrategyAutoRunPauseReason) {
+  switch (reason) {
+    case "FLAG_DISABLED": return "chartTester.autoRun.pause.flag" as const;
+    case "USER_DISABLED": return "chartTester.autoRun.pause.user" as const;
+    case "WAITING_DEBOUNCE": return "chartTester.autoRun.pause.debounce" as const;
+    case "WORKSPACE_QUEUE": return "chartTester.autoRun.pause.queue" as const;
+    case "PRECISE_REQUIRES_MANUAL": return "chartTester.autoRun.pause.precise" as const;
+    case "NEEDS_DATA_CONFIRMATION": return "chartTester.autoRun.pause.data" as const;
+    case "UNSUPPORTED_CONTEXT": return "chartTester.autoRun.pause.unsupported" as const;
+    case "BACKEND_BUSY": return "chartTester.autoRun.pause.busy" as const;
+    case "DRAFT_UNAVAILABLE": return "chartTester.autoRun.pause.draft" as const;
+  }
+}
+
+export interface ChartStrategyTesterPanelProps {
+  cellScope: string;
+  session: ChartSession;
+  attachment: ChartStrategyAttachmentRecord | null;
+  nativeStrategies?: NativeStrategyCollection | undefined;
+  strategyTesterMode?: "NATIVE" | "CANDLESCOPE" | undefined;
+  onStrategyTesterModeChange?(value: "NATIVE" | "CANDLESCOPE"): void;
+  onNativeStrategiesChange?(value: NativeStrategyCollection): void;
+  draftStore: StrategyDraftStore;
+  onAttachmentChange(attachment: ChartStrategyAttachmentRecord | null): void;
+  onEntryStateChange(state: ChartStrategyTesterEntryState): void;
+  onRunRequest(request: ChartStrategyRunRequest): void;
+  runState: ChartStrategyTesterState;
+  resolution: ChartContextResolution | null;
+  sourceDiagnostics: Array<Record<string, unknown>>;
+  pendingDataDraftRevision: number | null;
+  result?: ChartStrategyResultBundle | null;
+  resultLoading?: boolean;
+  resultError?: string | null;
+  comparison?: RecentRunCompareV1 | null;
+  autoRunPauseReason?: ChartStrategyAutoRunPauseReason | null;
+  selectedExplanation?: TradeExplanationSelection | null;
+  onSelectExplanation?(selection: TradeExplanationSelection): void;
+  onCloseExplanation?(): void;
+  onLocateTrade?(timeMs: number): void;
+  active?: boolean;
+  onReviewTrade?(trade: StrategyTradeFocus | null): void;
+  onPrepareData(): void;
+  onStopObserving(): void;
+  onResumeObserving(): void;
+  onSourceDirty(): void;
+  onClose(): void;
+  onOpenAdvanced?(): void;
+  onOpenBatchStudy?(): void;
+  onOpenWorkspace?(): void;
+}
+
+export default function ChartStrategyTesterPanel(props: ChartStrategyTesterPanelProps) {
+  const [localMode, setMode] = useState(() => resolveStrategyTesterMode(props.strategyTesterMode, !!props.attachment));
+  const mode = props.strategyTesterMode ?? localMode;
+  const selectedName = mode === "NATIVE"
+    ? props.nativeStrategies?.items.find((item) => item.id === props.nativeStrategies?.activeId)?.name || t("strategyCollection.default")
+    : props.attachment?.displayName;
+  const [visited, setVisited] = useState(() => new Set([mode]));
+  useControlCommands(() => ({ id: `strategy-mode:${props.cellScope}`, title: "Chart strategy engine mode", context: () => ({ session: props.session, mode }), snapshot: () => ({ mode }), commands: [
+    command("mode", "Switch strategy mode and mount its existing panel.", object({ mode: choice(["NATIVE", "CANDLESCOPE"]) }), ({ mode }) => { setMode(mode); props.onStrategyTesterModeChange?.(mode); setVisited((items) => new Set([...items, mode])); }),
+  ] }));
+  useLocale();
+  return <StrategyDock key={props.cellScope} scope={props.cellScope}
+    title={`${selectedName ? `${selectedName} · ` : ""}${props.session.symbol} · ${props.session.interval}`}
+    selector={<select aria-label={t("native.mode")} value={mode} onChange={(event) => { const next = event.target.value as typeof mode; setMode(next); props.onStrategyTesterModeChange?.(next); setVisited((items) => new Set([...items, next])); }}>
+      <option value="NATIVE">{t("native.fullStrategies")}</option>
+      <option value="CANDLESCOPE">{t("native.hostMode")}</option>
+    </select>}>
+    {(mode === "NATIVE" || visited.has("NATIVE")) && <div className="strategy-mode-pane" hidden={mode !== "NATIVE"}><Suspense fallback={<p>{t("native.loading")}</p>}><NativeStrategyPanel key={`${props.session.exchange}:${props.session.marketType}:${props.session.symbol}:${props.session.interval}`} {...props} active={props.active !== false && mode === "NATIVE"} docked /></Suspense></div>}
+    {(mode === "CANDLESCOPE" || visited.has("CANDLESCOPE")) && <div className="strategy-mode-pane" hidden={mode !== "CANDLESCOPE"}><CandleScopeStrategyTesterPanel {...props} active={props.active !== false && mode === "CANDLESCOPE"} /></div>}
+  </StrategyDock>;
+}
+
+export function CandleScopeStrategyTesterPanel({
+  cellScope,
+  session,
+  attachment,
+  draftStore,
+  onAttachmentChange,
+  onEntryStateChange,
+  onRunRequest,
+  runState,
+  resolution,
+  sourceDiagnostics,
+  pendingDataDraftRevision,
+  result = null,
+  resultLoading = false,
+  resultError = null,
+  comparison = null,
+  autoRunPauseReason = null,
+  selectedExplanation = null,
+  onSelectExplanation = () => undefined,
+  onCloseExplanation = () => undefined,
+  onLocateTrade = () => undefined,
+  onReviewTrade,
+  active = true,
+  onPrepareData,
+  onStopObserving,
+  onResumeObserving,
+  onSourceDirty,
+  onClose,
+  onOpenAdvanced,
+  onOpenBatchStudy,
+  onOpenWorkspace,
+}: ChartStrategyTesterPanelProps) {
+  const locale = useLocale();
+  const [focusMode, setFocusMode] = useState(false);
+  const [height, setHeight] = useState(() => loadChartStrategyPanelPreferences(cellScope).height);
+  const [activeTab, setActiveTab] = useState<PanelTab>(() => (
+    attachment ? loadChartStrategyPanelPreferences(cellScope).activeTab : "script"
+  ));
+  const [startView, setStartView] = useState<StartView>(attachment ? "editor" : "start");
+  const currentAttachment = attachment;
+  const [draft, setDraft] = useState<StrategyDraftRecord | null>(null);
+  const activeDraft = draft?.id === currentAttachment?.strategyDraftId ? draft : null;
+  const [source, setSource] = useState("");
+  const [cursor, setCursor] = useState<StrategyDraftCursor | null>(null);
+  const [saveState, setSaveState] = useState<StrategyDraftAutoSaveState>("IDLE");
+  const [issues, setIssues] = useState<ChartStrategyDraftIssue[]>([]);
+  const [focusIssue, setFocusIssue] = useState<ChartStrategyDraftIssue | null>(null);
+  const [focusOnMount, setFocusOnMount] = useState(false);
+  const [runReady, setRunReady] = useState(false);
+  const [recentDrafts, setRecentDrafts] = useState<StrategyDraftRecord[]>([]);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+  const pendingSaveRef = useRef<{
+    draft: StrategyDraftRecord | null;
+    source: string;
+    cursor: StrategyDraftCursor | null;
+  }>({ draft: null, source: "", cursor: null });
+  useLayoutEffect(() => {
+    pendingSaveRef.current = { draft: activeDraft, source, cursor };
+  }, [activeDraft, cursor, source]);
+
+  useEffect(() => () => resizeCleanupRef.current?.(), []);
+  useEffect(() => {
+    saveChartStrategyPanelPreferences(cellScope, { height, activeTab });
+  }, [activeTab, cellScope, height]);
+  const resultCacheKey = result?.cacheKey ?? null;
+  useEffect(() => {
+    if (!resultCacheKey) return undefined;
+    const timer = window.setTimeout(() => setActiveTab("overview"), 0);
+    return () => window.clearTimeout(timer);
+  }, [resultCacheKey]);
+  useEffect(() => {
+    const flushPending = () => {
+      const input = pendingStrategyDraftSave(pendingSaveRef.current);
+      if (!input) return;
+      void draftStore.save(input).catch(() => undefined);
+    };
+    window.addEventListener("beforeunload", flushPending);
+    return () => {
+      window.removeEventListener("beforeunload", flushPending);
+      flushPending();
+    };
+  }, [draftStore]);
+
+  useEffect(() => {
+    const draftId = currentAttachment?.strategyDraftId;
+    if (!draftId) return undefined;
+    let cancelled = false;
+    void draftStore.load(draftId).then((view) => {
+      if (cancelled || !view.record) return;
+      setDraft(view.record);
+      setSource(view.record.source);
+      setCursor(view.record.cursor);
+      setIssues(diagnoseChartStrategyDraft(view.record.source));
+      setSaveState(view.saveState);
+    });
+    const unsubscribe = draftStore.subscribe((id, view) => {
+      if (id !== draftId || !view.record) return;
+      setDraft(view.record);
+      setSaveState(view.saveState);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [currentAttachment?.strategyDraftId, draftStore]);
+
+  useEffect(() => {
+    if (!activeDraft
+      || pendingStrategyDraftSave({ draft: activeDraft, source, cursor }) === null) return undefined;
+    const timer = window.setTimeout(() => {
+      void draftStore.save({
+        id: activeDraft.id,
+        displayName: activeDraft.displayName,
+        language: activeDraft.language,
+        source,
+        cursor,
+      }).catch(() => undefined);
+    }, 550);
+    return () => window.clearTimeout(timer);
+  }, [activeDraft, cursor, draftStore, source]);
+
+  useEffect(() => {
+    if (!activeDraft) return undefined;
+    const timer = window.setTimeout(() => setIssues(diagnoseChartStrategyDraft(source)), 320);
+    return () => window.clearTimeout(timer);
+  }, [activeDraft, source]);
+
+  const serverIssues = useMemo<ChartStrategyDraftIssue[]>(() => sourceDiagnostics.map((item) => ({
+    code: "SERVER_DIAGNOSTIC",
+    line: Math.max(1, Number(item.line ?? 1)),
+    column: Math.max(1, Number(item.column ?? 1)),
+    endColumn: Math.max(2, Number(item.column ?? 1) + 1),
+    variable: null,
+    message: String(item.message ?? t("chartTester.issue.serverDetail")),
+  })), [sourceDiagnostics]);
+  const visibleIssues = activeDraft ? [...issues, ...serverIssues] : [];
+
+  useEffect(() => {
+    const primaryServerIssue = serverIssues[0];
+    if (!primaryServerIssue) return;
+    const timer = window.setTimeout(() => {
+      setActiveTab("script");
+      setStartView("editor");
+      setFocusIssue(primaryServerIssue);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [serverIssues]);
+
+  useEffect(() => {
+    if (!currentAttachment) onEntryStateChange("unattached");
+    else if (visibleIssues.length > 0 || runState.status === "FAILED" || runState.status === "UNSUPPORTED") {
+      onEntryStateChange("error");
+    }
+    else if (saveState === "SAVING") onEntryStateChange("saving");
+    else if (runReady || runState.status === "COMPLETED") onEntryStateChange("ready");
+    else onEntryStateChange("editing");
+  }, [currentAttachment, onEntryStateChange, runReady, runState.status, saveState, visibleIssues.length]);
+
+  const refreshRecent = useCallback(() => {
+    void draftStore.recent(8).then(setRecentDrafts).catch(() => setRecentDrafts([]));
+  }, [draftStore]);
+
+  useEffect(() => {
+    refreshRecent();
+  }, [refreshRecent]);
+
+  const attachRecord = useCallback((
+    record: StrategyDraftRecord,
+    shouldFocus: boolean,
+    nextSaveState: StrategyDraftAutoSaveState = "SAVED",
+  ) => {
+    const nextAttachment = attachmentForDraft(record, session);
+    setDraft(record);
+    setSource(record.source);
+    setCursor(record.cursor);
+    setIssues(diagnoseChartStrategyDraft(record.source));
+    setSaveState(nextSaveState);
+    setStartView("editor");
+    setActiveTab("script");
+    setFocusOnMount(shouldFocus);
+    setRunReady(false);
+    onAttachmentChange(nextAttachment);
+  }, [onAttachmentChange, session]);
+
+  const createDraft = useCallback(async (
+    displayName: string,
+    sourceText: string,
+    shouldFocus: boolean,
+  ) => {
+    const id = createChartStrategyDraftId();
+    try {
+      const record = await draftStore.save({
+        id,
+        displayName,
+        language: "pyne",
+        source: sourceText,
+        cursor: { line: 1, column: 1 },
+      });
+      attachRecord(record, shouldFocus);
+    } catch {
+      const failed = draftStore.snapshot(id);
+      if (failed.record) attachRecord(failed.record, shouldFocus, "ERROR");
+    }
+  }, [attachRecord, draftStore]);
+
+  const run = useCallback(() => {
+    if (!activeDraft || !currentAttachment) return;
+    if (!validStrategyRunSettings({ ...currentAttachment, rangeMode: currentAttachment.rangeMode === "VISIBLE" ? "CUSTOM" : currentAttachment.rangeMode })) {
+      setActiveTab("settings");
+      return;
+    }
+    const nextIssues = diagnoseChartStrategyDraft(source, { requireSource: true });
+    setIssues(nextIssues);
+    setRunReady(false);
+    if (nextIssues[0]) {
+      setActiveTab("script");
+      setStartView("editor");
+      setFocusIssue(nextIssues[0]);
+      onEntryStateChange("error");
+      return;
+    }
+    onRunRequest({
+      cellScope,
+      session: { ...session },
+      draftId: activeDraft.id,
+      draftContentRevision: strategyDraftContentRevision(source),
+      displayName: activeDraft.displayName,
+      language: activeDraft.language,
+      source,
+      attachment: {
+        ...currentAttachment,
+        parameters: { ...currentAttachment.parameters },
+        quickPresetId: chartStrategyQuickPresetIdForMarket(session.marketType),
+      },
+    });
+    setRunReady(true);
+    onEntryStateChange("ready");
+  }, [activeDraft, cellScope, currentAttachment, onEntryStateChange, onRunRequest, session, source]);
+
+  const retrySave = useCallback(() => {
+    if (!activeDraft) return;
+    void draftStore.save({
+      id: activeDraft.id,
+      displayName: activeDraft.displayName,
+      language: activeDraft.language,
+      source,
+      cursor,
+    }).catch(() => undefined);
+  }, [activeDraft, cursor, draftStore, source]);
+
+  const beginResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = height;
+    const handleMove = (moveEvent: PointerEvent) => {
+      setHeight(clampPanelHeight(startHeight + startY - moveEvent.clientY));
+    };
+    const finish = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", finish);
+      resizeCleanupRef.current = null;
+    };
+    resizeCleanupRef.current?.();
+    resizeCleanupRef.current = finish;
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", finish, { once: true });
+  }, [height]);
+
+  const handleResizeKey = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    const delta = event.key === "ArrowUp" ? 16 : event.key === "ArrowDown" ? -16 : 0;
+    if (delta !== 0) {
+      event.preventDefault();
+      setHeight((current) => clampPanelHeight(current + delta));
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setHeight(MIN_PANEL_HEIGHT);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setHeight(clampPanelHeight(MAX_PANEL_HEIGHT));
+    }
+  }, []);
+
+  const saveLabel = useMemo(() => {
+    if (!currentAttachment) return t("chartTester.autosave.none");
+    if (saveState === "ERROR") return t("chartTester.autosave.error");
+    if (saveState === "SAVING") return t("chartTester.autosave.saving");
+    if (activeDraft && activeDraft.source !== source) return t("chartTester.autosave.editing");
+    return t("chartTester.autosave.saved");
+  }, [activeDraft, currentAttachment, saveState, source]);
+
+  const panelStyle = { "--chart-strategy-panel-height": `${height}px` } as CSSProperties;
+  const showEditor = activeTab === "script" && startView === "editor" && activeDraft !== null;
+  const runBusy = ["RESOLVING", "QUEUED", "RUNNING"].includes(runState.status);
+  const pendingDataMatchesSource = runState.status === "NEEDS_DATA"
+    && pendingDataDraftRevision === strategyDraftContentRevision(source);
+  useControlCommands(() => ({ id: `host-chart-strategy:${cellScope}`, title: "Chart host strategy draft and run", context: () => ({ session, attachment, draftId: activeDraft?.id, source, runState, active }),
+    snapshot: () => ({ session, attachment, draftId: activeDraft?.id, source, saveState, issues, runState, resolution, activeTab, startView, height, focusMode, active, pendingDataMatchesSource, recentDrafts: recentDrafts.map((item) => ({ id: item.id, displayName: item.displayName, language: item.language })) }), commands: [
+      command("view", "Select host editor/tab and focus preference.", object({ tab: optional(choice(["script", "overview", "trades", "settings"])), startView: optional(choice(["start", "templates", "recent", "editor"])), focused: optional(bool), height: optional(number(0, 4096)) }), (input) => { if (input.tab) setActiveTab(input.tab); if (input.startView) { setStartView(input.startView); if (input.startView === "recent") refreshRecent(); } if (input.focused !== undefined) setFocusMode(input.focused); if (input.height !== undefined) setHeight(clampPanelHeight(input.height)); }),
+      command("createDraft", "Create a persisted host strategy draft using the UI draft store.", object({ name: text(128), source: text(48000, 0) }), ({ name, source }) => createDraft(name, source, false), { available: () => !runBusy && active }),
+      command("template", "Create a draft from a known host template.", object({ templateId: text(128) }), ({ templateId }) => { const item = CHART_STRATEGY_TEMPLATES.find((item) => item.id === templateId); if (!item) throw new Error("TEMPLATE_UNAVAILABLE"); return createDraft(item.displayName, item.source, false); }, { available: () => !runBusy && active }),
+      command("selectDraft", "Attach a listed recent host draft.", object({ draftId: text(128) }), ({ draftId }) => { const item = recentDrafts.find((item) => item.id === draftId); if (!item) throw new Error("DRAFT_UNAVAILABLE"); attachRecord(item, false); }, { available: () => !runBusy && active }),
+      command("source", "Edit source through autosave and invalidate the previous run input.", object({ source: text(48000, 0) }), ({ source }) => { setSource(source); setRunReady(false); onSourceDirty(); }, { available: () => !!activeDraft && !runBusy && active }),
+      command("save", "Retry saving the current host draft.", empty, retrySave, { available: () => !!activeDraft }),
+      command("configure", "Edit validated host run settings while preserving draft attachment identity.", object({ rangeMode: choice(["ALL_AVAILABLE", "CUSTOM"]), customRange: nullable(object({ startMs: number(0, 1e15, true), endMs: number(0, 1e15, true) })), parameters: optional(record), fidelityPreference: optional(choice(["FAST", "PRECISE"])), autoRun: optional(bool), executionOverrides: optional(object({ initialBalance: text(64), equityPercent: text(64), leverage: text(64), feeBps: text(64), slippageBps: text(64) })) }), (value) => { if (!currentAttachment || !validStrategyRunSettings(value)) throw new Error("RUN_SETTINGS_INVALID"); const { executionOverrides: _previous, ...base } = currentAttachment; void _previous; onAttachmentChange({ ...base, ...value }); }, { available: () => !!activeDraft && !runBusy && active }),
+      command("run", "Run the current draft using the UI diagnostics/session ownership path.", empty, run, { available: () => !!activeDraft && !runBusy && active }),
+      command("prepare", "Confirm preparation for the current matching missing-data draft.", empty, onPrepareData, { available: () => pendingDataMatchesSource && active }),
+      command("stopObserving", "Stop observing a server run through the UI lifecycle action.", empty, onStopObserving, { interrupt: true }),
+      command("resumeObserving", "Resume server-run observation.", empty, onResumeObserving),
+      command("openAdvanced", "Open the existing advanced-research workflow.", empty, () => onOpenAdvanced?.(), { available: () => !!onOpenAdvanced }),
+      command("openBatchStudy", "Open the existing batch study workflow.", empty, () => onOpenBatchStudy?.(), { available: () => !!onOpenBatchStudy }),
+      command("openWorkspace", "Open the existing strategy workspace.", empty, () => onOpenWorkspace?.(), { available: () => !!onOpenWorkspace && !!currentAttachment }),
+      command("close", "Close the host strategy panel.", empty, onClose),
+    ] }));
+  const runLabel = pendingDataMatchesSource
+    ? t("chartTester.prepareDataRun")
+    : runState.status === "RESOLVING"
+      ? t("chartTester.run.resolving")
+      : runState.status === "QUEUED"
+        ? t("chartTester.run.queued")
+        : runState.status === "RUNNING"
+          ? t("chartTester.run.running")
+          : t("chartTester.run");
+  const canResume = Boolean(runState.activeRunId)
+    && !runBusy
+    && runState.status !== "COMPLETED";
+  const costPreset = resolution?.cost_preset;
+  const accountPreset = resolution?.account_execution_preset;
+  const rangeText = resolution?.coverage.requested_start_ms != null
+    && resolution.coverage.requested_end_ms != null
+    ? t("chartTester.settings.dateAbsolute", {
+      start: new Date(resolution.coverage.requested_start_ms).toLocaleDateString(locale),
+      end: new Date(resolution.coverage.requested_end_ms).toLocaleDateString(locale),
+    })
+    : currentAttachment?.rangeMode === "ALL_AVAILABLE"
+      ? t("chartTester.settings.allAvailable")
+      : t("chartTester.settings.selectedRange");
+  const actionableCopy = useMemo(() => {
+    const code = runState.actionableError?.code ?? "";
+    if (!code) return null;
+    if (code.includes("FEE") || code.includes("PRESET")) {
+      return { message: t("chartTester.error.fee"), action: t("chartTester.error.action.settings") };
+    }
+    if (code.includes("INTERVAL")) {
+      return { message: t("chartTester.error.interval"), action: t("chartTester.error.action.interval") };
+    }
+    if (code.includes("FIDELITY")) {
+      return { message: t("chartTester.error.fidelity"), action: t("chartTester.error.action.fast") };
+    }
+    if (code.includes("PROVIDER") || code.includes("SMOKE")) {
+      return { message: t("chartTester.error.strategy"), action: t("chartTester.error.action.strategy") };
+    }
+    if (code.includes("DATA") || code.includes("SNAPSHOT") || code.includes("CONTEXT")) {
+      return { message: t("chartTester.error.data"), action: t("chartTester.error.action.retry") };
+    }
+    if (code.includes("BUDGET") || code === "RUN_CAPACITY_EXCEEDED") {
+      return { message: t("chartTester.error.busy"), action: t("chartTester.error.action.wait") };
+    }
+    return { message: t("chartTester.error.backend"), action: t("chartTester.error.action.retry") };
+  }, [runState.actionableError?.code]);
+
+  return (
+    <section
+      id="chart-strategy-tester-panel"
+      className="chart-strategy-tester-panel"
+      style={panelStyle}
+      aria-label={t("chartTester.panelAria")}
+      data-chart-strategy-panel
+      data-focus-mode={focusMode ? "true" : "false"}
+      onKeyDownCapture={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onClose();
+        }
+      }}
+    >
+      <div
+        className="chart-strategy-resize-handle"
+        role="separator"
+        tabIndex={0}
+        aria-label={t("chartTester.resize")}
+        aria-orientation="horizontal"
+        aria-valuemin={MIN_PANEL_HEIGHT}
+        aria-valuemax={MAX_PANEL_HEIGHT}
+        aria-valuenow={height}
+        onPointerDown={beginResize}
+        onKeyDown={handleResizeKey}
+      />
+      <header className="chart-strategy-tester-head">
+        <div className="chart-strategy-tester-title">
+          <strong>{currentAttachment?.displayName ?? t("chartTester.title")}</strong>
+          <span>{t("chartTester.currentChart", { symbol: session.symbol, interval: session.interval })}</span>
+        </div>
+        <div className="chart-strategy-tabs" role="tablist" aria-label={t("chartTester.tabsAria")}>
+          {(["script", "overview", "trades", "settings"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab}
+              tabIndex={activeTab === tab ? 0 : -1}
+              className={activeTab === tab ? "active" : ""}
+              onClick={() => setActiveTab(tab)}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                const tabs: PanelTab[] = ["script", "overview", "trades", "settings"];
+                const direction = event.key === "ArrowRight" ? 1 : -1;
+                const next = tabs[(tabs.indexOf(tab) + direction + tabs.length) % tabs.length]!;
+                setActiveTab(next);
+                requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(
+                  `.chart-strategy-tabs [aria-selected="true"]`,
+                )?.focus());
+              }}
+            >
+              {t(`chartTester.tab.${tab}`)}
+            </button>
+          ))}
+        </div>
+        <div className="chart-strategy-head-spacer" />
+        {currentAttachment && onOpenWorkspace && <button type="button" className="chart-strategy-link-button" onClick={() => {
+          if (!activeDraft) return;
+          void draftStore.save({ id: activeDraft.id, displayName: activeDraft.displayName, language: activeDraft.language, source, cursor })
+            .then(onOpenWorkspace).catch(() => setSaveState("ERROR"));
+        }}>{t("ux.openWorkspace")}</button>}
+        <button type="button" className="chart-strategy-link-button" aria-pressed={focusMode}
+          onClick={() => setFocusMode((focused) => !focused)}>{t("chartTester.focusMode")}</button>
+        <span className={`chart-strategy-autosave state-${saveState.toLowerCase()}`}>{saveLabel}</span>
+        {saveState === "ERROR" && (
+          <button type="button" className="chart-strategy-link-button" onClick={retrySave}>
+            {t("chartTester.retrySave")}
+          </button>
+        )}
+        {currentAttachment && (
+          <button
+            type="button"
+            className="chart-strategy-run-button"
+            disabled={runBusy}
+            data-run-status={runState.status}
+            onClick={pendingDataMatchesSource ? onPrepareData : run}
+          >
+            {runLabel}
+          </button>
+        )}
+        {runBusy && runState.activeRunId && (
+          <button
+            type="button"
+            className="chart-strategy-link-button"
+            data-testid="chart-strategy-stop-observing"
+            onClick={onStopObserving}
+          >
+            {t("chartTester.stopObserving")}
+          </button>
+        )}
+        {canResume && (
+          <button type="button" className="chart-strategy-link-button" onClick={onResumeObserving}>
+            {t("chartTester.resumeObserving")}
+          </button>
+        )}
+        <button type="button" className="chart-strategy-close-button" onClick={onClose}>
+          {t("chartTester.close")}
+        </button>
+      </header>
+
+      {result && (
+        <ChartStrategyResultContextBar
+          result={result}
+          locale={locale}
+          stale={runState.status === "STALE" || !runState.projectionVisible}
+          {...(onOpenAdvanced ? { onOpenAdvanced } : {})}
+        />
+      )}
+      {currentAttachment && autoRunPauseReason && (
+        <div className="chart-strategy-auto-run-status" role="status" data-auto-run-pause={autoRunPauseReason}>
+          <strong>{t("chartTester.autoRun.paused")}</strong>
+          <span>{t(autoRunPauseKey(autoRunPauseReason))}</span>
+        </div>
+      )}
+      {!result && resultLoading && (
+        <div className="chart-strategy-result-loading" role="status">
+          {t("chartTester.result.loading")}
+        </div>
+      )}
+      {!result && resultError && (
+        <div className="chart-strategy-result-load-error" role="alert">
+          <strong>{t("chartTester.result.unavailable")}</strong>
+          <span>{resultError}</span>
+        </div>
+      )}
+
+      <div className="chart-strategy-tester-body" role="tabpanel">
+        {activeTab === "script" && startView === "start" && (
+          <div className="chart-strategy-start-view">
+            <div className="chart-strategy-first-copy">
+              <div>
+                <p className="chart-strategy-eyebrow">{t("chartTester.startEyebrow")}</p>
+                <h2>{t("chartTester.startTitle")}</h2>
+                <p>{t("chartTester.startLead", { symbol: session.symbol, interval: session.interval })}</p>
+              </div>
+              {onOpenAdvanced ? (
+                <button type="button" className="chart-strategy-advanced-link" onClick={onOpenAdvanced}>
+                  {t("chartTester.openAdvanced")}
+                </button>
+              ) : (
+                <a href="/backtest.html" className="chart-strategy-advanced-link">
+                  {t("chartTester.openAdvanced")}
+                </a>
+              )}
+            </div>
+            <div className="chart-strategy-start-grid">
+              <button type="button" onClick={() => setStartView("templates")}>
+                <span>01</span><strong>{t("chartTester.start.template")}</strong>
+                <small>{t("chartTester.start.templateDetail")}</small>
+              </button>
+              <button type="button" onClick={() => { refreshRecent(); setStartView("recent"); }}>
+                <span>02</span><strong>{t("chartTester.start.recent")}</strong>
+                <small>{t("chartTester.start.recentDetail")}</small>
+              </button>
+              <button
+                type="button"
+                onClick={() => void createDraft(t("chartTester.untitled"), "", true)}
+              >
+                <span>03</span><strong>{t("chartTester.start.paste")}</strong>
+                <small>{t("chartTester.start.pasteDetail")}</small>
+              </button>
+            </div>
+            <p className="chart-strategy-privacy">{t("chartTester.privacy")}</p>
+          </div>
+        )}
+
+        {activeTab === "script" && startView === "templates" && (
+          <div className="chart-strategy-picker-view">
+            <div className="chart-strategy-picker-heading">
+              <div><p className="chart-strategy-eyebrow">{t("chartTester.templateEyebrow")}</p><h2>{t("chartTester.templateTitle")}</h2></div>
+              <button type="button" onClick={() => setStartView("start")}>{t("chartTester.back")}</button>
+            </div>
+            <div className="chart-strategy-template-grid">
+              {CHART_STRATEGY_TEMPLATES.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => void createDraft(template.displayName, template.source, false)}
+                >
+                  <strong>{t(template.nameKey)}</strong>
+                  <span>{t(template.descriptionKey)}</span>
+                  <small>{t("chartTester.language.pyne")}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "script" && startView === "recent" && (
+          <div className="chart-strategy-picker-view">
+            <div className="chart-strategy-picker-heading">
+              <div><p className="chart-strategy-eyebrow">{t("chartTester.recentEyebrow")}</p><h2>{t("chartTester.recentTitle")}</h2></div>
+              <button type="button" onClick={() => setStartView("start")}>{t("chartTester.back")}</button>
+            </div>
+            {recentDrafts.length === 0 ? (
+              <div className="chart-strategy-empty-recent">{t("chartTester.recentEmpty")}</div>
+            ) : (
+              <div className="chart-strategy-recent-list">
+                {recentDrafts.map((record) => (
+                  <button key={record.id} type="button" onClick={() => attachRecord(record, false)}>
+                    <strong>{record.displayName}</strong>
+                    <span>{record.language === "pine"
+                      ? t("chartTester.language.pine")
+                      : t("chartTester.language.pyne")}</span>
+                    <time dateTime={new Date(record.updatedAt).toISOString()}>
+                      {new Date(record.updatedAt).toLocaleString(locale)}
+                    </time>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {showEditor && activeDraft && (
+          <div className="chart-strategy-editor-layout">
+            <section className="chart-strategy-editor-shell" aria-label={t("chartTester.editorAria")}>
+              <div className="chart-strategy-editor-head">
+                {t("chartTester.editorHead", {
+                  name: activeDraft.displayName,
+                  language: activeDraft.language === "pine"
+                    ? t("chartTester.language.pine")
+                    : t("chartTester.language.pyne"),
+                })}
+              </div>
+              <Suspense fallback={<div className="chart-strategy-editor-loading">{t("chartTester.editorLoading")}</div>}>
+                <StrategyScriptWorkspace
+                  source={source}
+                  language={activeDraft.language}
+                  cursor={cursor}
+                  issues={visibleIssues}
+                  focusIssue={focusIssue}
+                  focusOnMount={focusOnMount}
+                  onSourceChange={(value) => {
+                    setSource(value);
+                    setRunReady(false);
+                    onSourceDirty();
+                  }}
+                  onCursorChange={setCursor}
+                  onRun={run}
+                />
+              </Suspense>
+            </section>
+            <aside className="chart-strategy-problems" aria-label={t("chartTester.problemsAria")}>
+              <StrategyParametersEditor source={source} onChange={(value) => { setSource(value); setRunReady(false); onSourceDirty(); }} />
+              <div className="chart-strategy-problems-head">{t("chartTester.problems")}</div>
+              <div className="chart-strategy-problems-body">
+                {runState.status !== "READY" && runState.status !== "DETACHED" && (
+                  <div className={`chart-strategy-run-status status-${runState.status.toLowerCase()}`} data-testid="chart-strategy-run-status">
+                    <strong>{t(runStatusKey(runState.status))}</strong>
+                    {runState.status === "NEEDS_DATA" && resolution && (
+                      <p>{t("chartTester.status.needsDataDetail", {
+                        bars: resolution.materialize.estimated_bars ?? t("chartTester.unknown"),
+                      })}</p>
+                    )}
+                    {actionableCopy && runState.status === "FAILED" && (
+                      <><p>{actionableCopy.message}</p><small>{actionableCopy.action}</small></>
+                    )}
+                  </div>
+                )}
+                {visibleIssues.length === 0 ? (
+                  <p className="chart-strategy-no-problems">
+                    {runReady ? t("chartTester.readyForRun") : t("chartTester.noProblems")}
+                  </p>
+                ) : (
+                  <>
+                    <strong className="chart-strategy-problem-count">
+                      {t("chartTester.problemCount", { count: visibleIssues.length })}
+                    </strong>
+                    {visibleIssues.map((issue, index) => {
+                      const copy = issueCopy(issue);
+                      return (
+                        <div className="chart-strategy-problem" key={`${issue.code}:${issue.line}:${issue.column}:${index}`}>
+                          <strong>{copy.title}</strong>
+                          <p>{copy.detail}</p>
+                          <button type="button" onClick={() => setFocusIssue({ ...issue })}>
+                            {t("chartTester.goToLine", { line: issue.line })}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            </aside>
+          </div>
+        )}
+
+        {activeTab === "overview" && (
+          result ? (
+            <ChartStrategyResultOverview
+              result={result}
+              stale={runState.status === "STALE" || !runState.projectionVisible}
+              comparison={comparison}
+              onOpenTrades={() => setActiveTab("trades")}
+              {...(onOpenAdvanced ? { onOpenAdvanced } : {})}
+            />
+          ) : (
+            <div className="chart-strategy-run-overview" data-testid="chart-strategy-run-overview">
+              <p className="chart-strategy-eyebrow">{t("chartTester.overviewEyebrow")}</p>
+              <h2>{t(runStatusKey(runState.status))}</h2>
+              <p>{runState.status === "COMPLETED"
+                ? t("chartTester.result.loading")
+                : runState.status === "NEEDS_DATA" && resolution
+                  ? t("chartTester.status.needsDataDetail", { bars: resolution.materialize.estimated_bars ?? t("chartTester.unknown") })
+                : t("chartTester.overview.pendingDetail")}</p>
+              {runState.status === "NEEDS_DATA" && (
+                <div className="chart-strategy-data-recovery">
+                  <p>{t("chartTester.settings.date")}: {rangeText}</p>
+                  <button type="button" className="chart-strategy-run-button" onClick={onPrepareData} disabled={!pendingDataMatchesSource}>
+                    {t("chartTester.prepareDataRun")}
+                  </button>
+                </div>
+              )}
+              {actionableCopy && (
+                <div className="chart-strategy-actionable-error">
+                  <strong>{actionableCopy.message}</strong>
+                  <span>{actionableCopy.action}</span>
+                  <details>
+                    <summary>{t("chartTester.error.details")}</summary>
+                    <code>{runState.actionableError?.code}</code>
+                  </details>
+                </div>
+              )}
+            </div>
+          )
+        )}
+
+        {activeTab === "settings" && currentAttachment && (
+          <div data-testid="chart-strategy-quick-settings">
+            <StrategyConditionsEditor
+              settings={{ ...currentAttachment, rangeMode: currentAttachment.rangeMode === "VISIBLE" ? "CUSTOM" : currentAttachment.rangeMode }}
+              marketType={session.marketType}
+              onChange={(settings) => { const { executionOverrides: _previous, ...base } = currentAttachment; void _previous; onAttachmentChange({ ...base, ...settings }); }}
+            />
+            <details><summary>{t("ux.resolvedConditions")}</summary><div className="chart-strategy-quick-settings">
+            <label className="chart-strategy-auto-run-setting">
+              <input
+                type="checkbox"
+                checked={currentAttachment.autoRun}
+                onChange={(event) => onAttachmentChange({
+                  ...currentAttachment,
+                  autoRun: event.currentTarget.checked,
+                })}
+              />
+              <span>{t("chartTester.autoRun.label")}</span>
+              <strong>{currentAttachment.autoRun
+                ? t(currentAttachment.fidelityPreference === "FAST"
+                  ? "chartTester.autoRun.enabled"
+                  : "chartTester.autoRun.preciseManual")
+                : t("chartTester.autoRun.disabled")}</strong>
+            </label>
+            <div><span>{t("chartTester.settings.capital")}</span><strong>{accountPreset?.initial_cash ?? "10,000"} USDT</strong></div>
+            <div><span>{t("chartTester.settings.position")}</span><strong>{t("chartTester.settings.positionValue", {
+              percent: accountPreset?.equity_percent ?? "10",
+              leverage: accountPreset?.leverage ?? "1",
+            })}</strong></div>
+            <div><span>{t("chartTester.settings.fee")}</span><strong>{costPreset?.fee_bps
+              ? t("chartTester.settings.feeValue", { fee: costPreset.fee_bps, slippage: costPreset.slippage_bps ?? "—" })
+              : t("chartTester.settings.feePending")}</strong></div>
+            <div><span>{t("chartTester.settings.date")}</span><strong>{rangeText}</strong></div>
+            <div><span>{t("chartTester.settings.fidelity")}</span><strong>{currentAttachment.fidelityPreference === "FAST"
+              ? t("chartTester.settings.fast")
+              : t("chartTester.settings.precise")}</strong></div>
+            {onOpenBatchStudy && (
+              <button type="button" className="chart-strategy-advanced-link" onClick={onOpenBatchStudy}>
+                {t("chartTester.settings.batchStudy")}
+              </button>
+            )}
+            </div></details>
+          </div>
+        )}
+
+        <div hidden={activeTab !== "trades"}>{result
+            ? <ChartStrategyTradeList key={result.run.run_id} active={active && activeTab === "trades"}
+              result={result}
+              locale={locale}
+              onLocateTrade={onLocateTrade}
+              {...(onReviewTrade ? { onReviewTrade } : {})}
+              onSelectExplanation={onSelectExplanation}
+            />
+            : (
+              <div className="chart-strategy-placeholder">
+                <strong>{t("chartTester.tab.trades")}</strong>
+                <p>{resultError ?? t("chartTester.placeholder.trades")}</p>
+              </div>
+            )
+        }</div>
+      </div>
+      {selectedExplanation && (
+        <TradeExplanationPopover
+          selection={selectedExplanation}
+          onClose={onCloseExplanation}
+        />
+      )}
+    </section>
+  );
+}

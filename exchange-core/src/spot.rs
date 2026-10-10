@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use crate::shared_map::SharedMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -89,9 +89,11 @@ pub enum SpotClearingEvent {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SpotAccountStore {
-    accounts: BTreeMap<AccountId, SpotAccount>,
+    #[serde(skip)]
+    pub(crate) reservation_changes: crate::account::ReservationChanges,
+    accounts: SharedMap<AccountId, SpotAccount>,
     #[serde(default)]
-    order_reservations: BTreeMap<OrderId, SpotOrderReservation>,
+    order_reservations: SharedMap<OrderId, SpotOrderReservation>,
     config: SpotClearingConfig,
 }
 
@@ -108,8 +110,9 @@ struct SpotOrderReservation {
 impl SpotAccountStore {
     pub fn new(config: SpotClearingConfig) -> Self {
         Self {
-            accounts: BTreeMap::new(),
-            order_reservations: BTreeMap::new(),
+            reservation_changes: crate::account::ReservationChanges::default(),
+            accounts: SharedMap::default(),
+            order_reservations: SharedMap::default(),
             config,
         }
     }
@@ -128,6 +131,7 @@ impl SpotAccountStore {
         cash_balance: Money,
         position_qty: PositionQty,
     ) -> SpotAccountSnapshot {
+        self.reservation_changes.mark(account_id);
         let account = self.accounts.entry(account_id).or_insert(SpotAccount {
             account_id,
             cash_balance: 0,
@@ -144,6 +148,35 @@ impl SpotAccountStore {
     }
 
     pub fn sync_account_balances(
+        &mut self,
+        account_id: AccountId,
+        cash_balance: Money,
+        position_qty: PositionQty,
+    ) -> Result<SpotAccountSnapshot, ClearingError> {
+        if let Some(account) = self.accounts.get(&account_id) {
+            if cash_balance < account.reserved_cash || position_qty < account.reserved_position {
+                return Err(ClearingError::InsufficientAvailableBalance);
+            }
+            if account.cash_balance == cash_balance && account.position_qty == position_qty {
+                // Exact balance equality still requires the reservation checks
+                // above. A read-only sync must not invalidate reconciliation.
+                return Ok(account.snapshot());
+            }
+        }
+        self.sync_account_balances_inner(account_id, cash_balance, position_qty)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn sync_account_balances_reference(
+        &mut self,
+        account_id: AccountId,
+        cash_balance: Money,
+        position_qty: PositionQty,
+    ) -> Result<SpotAccountSnapshot, ClearingError> {
+        self.sync_account_balances_inner(account_id, cash_balance, position_qty)
+    }
+
+    fn sync_account_balances_inner(
         &mut self,
         account_id: AccountId,
         cash_balance: Money,
@@ -172,6 +205,24 @@ impl SpotAccountStore {
 
     pub fn snapshots(&self) -> Vec<SpotAccountSnapshot> {
         self.accounts.values().map(SpotAccount::snapshot).collect()
+    }
+
+    pub(crate) fn reservation_balances(
+        &self,
+    ) -> impl Iterator<Item = (AccountId, Money, PositionQty)> + '_ {
+        self.accounts.values().map(|account| {
+            (
+                account.account_id,
+                account.reserved_cash,
+                account.reserved_position,
+            )
+        })
+    }
+
+    pub(crate) fn reservation_balance(&self, id: AccountId) -> Option<(Money, PositionQty)> {
+        self.accounts
+            .get(&id)
+            .map(|account| (account.reserved_cash, account.reserved_position))
     }
 
     pub fn reserve_resting_order(
@@ -392,6 +443,7 @@ impl SpotAccountStore {
     }
 
     fn account_mut(&mut self, account_id: AccountId) -> &mut SpotAccount {
+        self.reservation_changes.mark(account_id);
         self.accounts.entry(account_id).or_insert(SpotAccount {
             account_id,
             cash_balance: 0,
@@ -435,6 +487,82 @@ mod tests {
     use super::*;
 
     #[test]
+    fn shared_candidate_rolls_back_after_buyer_and_reservation_writes() {
+        let mut accounts = SpotAccountStore::new(SpotClearingConfig::default());
+        accounts.create_account_with_position(10, 1_000, 0);
+        accounts.create_account_with_position(20, Money::MAX, 10);
+        accounts
+            .reserve_resting_order(100, 20, Side::Sell, 100, 2)
+            .unwrap();
+        let checkpoint = accounts.clone();
+        assert!(accounts.accounts.shares_storage(&checkpoint.accounts));
+        assert!(
+            accounts
+                .order_reservations
+                .shares_storage(&checkpoint.order_reservations)
+        );
+        let before = serde_json::to_string(&accounts).unwrap();
+        let trade = Trade {
+            maker_position_side: Default::default(),
+            taker_position_side: Default::default(),
+            trade_id: 1,
+            maker_order_id: 100,
+            maker_account_id: 20,
+            taker_order_id: 200,
+            taker_account_id: 10,
+            price_tick: 100,
+            qty: 1,
+            taker_side: Side::Buy,
+        };
+        assert_eq!(
+            accounts.settle_trade(&trade),
+            Err(ClearingError::BalanceOverflow)
+        );
+        assert_eq!(serde_json::to_string(&accounts).unwrap(), before);
+        assert_eq!(serde_json::to_string(&checkpoint).unwrap(), before);
+        assert!(accounts.accounts.shares_storage(&checkpoint.accounts));
+        let mut restored: SpotAccountStore = serde_json::from_str(&before).unwrap();
+        restored.account_mut(20).cash_balance = 0;
+        restored.settle_trade(&trade).unwrap();
+        assert_eq!(restored.account_snapshot(10).unwrap().position_qty, 1);
+        assert_eq!(serde_json::to_string(&checkpoint).unwrap(), before);
+    }
+
+    #[test]
+    fn unchanged_balance_sync_keeps_reconciliation_but_still_checks_reservations() {
+        let mut accounts = SpotAccountStore::new(SpotClearingConfig::default());
+        accounts.create_account_with_position(1, 100, 2);
+        accounts.reservation_changes.reconciled(None);
+        let original = accounts.account_snapshot(1).unwrap();
+        assert_eq!(accounts.sync_account_balances(1, 100, 2), Ok(original));
+        assert!(accounts.reservation_changes.accounts().unwrap().is_empty());
+        accounts.sync_account_balances(1, 101, 2).unwrap();
+        assert!(
+            accounts
+                .reservation_changes
+                .accounts()
+                .unwrap()
+                .contains(&1)
+        );
+        let mut saved = serde_json::to_value(&accounts).unwrap();
+        saved["accounts"]["1"]["reserved_cash"] = serde_json::json!(200);
+        let mut malformed: SpotAccountStore = serde_json::from_value(saved).unwrap();
+        let mut reference = malformed.clone();
+        assert_eq!(
+            malformed.sync_account_balances(1, 101, 2),
+            reference.sync_account_balances_reference(1, 101, 2)
+        );
+        assert_eq!(
+            malformed.sync_account_balances(1, 101, 2),
+            Err(ClearingError::InsufficientAvailableBalance)
+        );
+        assert_eq!(
+            serde_json::to_value(&malformed).unwrap(),
+            serde_json::to_value(&reference).unwrap()
+        );
+    }
+
+    #[test]
     fn settles_buy_taker_trade_to_cash_position_and_fees() {
         let mut accounts = SpotAccountStore::new(SpotClearingConfig {
             maker_fee_ppm: 500,
@@ -445,6 +573,8 @@ mod tests {
 
         let event = accounts
             .settle_trade(&Trade {
+                maker_position_side: Default::default(),
+                taker_position_side: Default::default(),
                 trade_id: 1,
                 maker_order_id: 100,
                 maker_account_id: 10,
@@ -500,6 +630,8 @@ mod tests {
 
         accounts
             .settle_trade(&Trade {
+                maker_position_side: Default::default(),
+                taker_position_side: Default::default(),
                 trade_id: 1,
                 maker_order_id: 100,
                 maker_account_id: 10,

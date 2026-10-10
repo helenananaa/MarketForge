@@ -1,0 +1,77 @@
+const { contextBridge, ipcRenderer } = require("electron");
+
+const channels = {
+  aiConnectionGet: "candlescope:ai-connection:get",
+  aiConnectionSave: "candlescope:ai-connection:save",
+  controlRequest: "candlescope:control:request",
+  controlResult: "candlescope:control:result",
+  controlReady: "candlescope:control:ready",
+  controlFile: "candlescope:control:file",
+  managementSession: "candlescope:desktop:management-session",
+  extensionDiagnostics: "candlescope:desktop:extension-diagnostics",
+  openAppPage: "candlescope:desktop:open-app-page",
+  bootstrap: "candlescope:desktop:bootstrap",
+  reconcile: "candlescope:desktop:reconcile",
+  lifecycle: "candlescope:desktop:lifecycle",
+  closeRequested: "candlescope:desktop:close-requested",
+  placement: "candlescope:desktop:placement",
+  workspaceBusEvent: "candlescope:workspace-bus:event",
+  workspaceBusConnect: "candlescope:workspace-bus:connect",
+  workspaceBusCommit: "candlescope:workspace-bus:commit",
+  workspaceBusLink: "candlescope:workspace-bus:link",
+  workspaceBusWindow: "candlescope:workspace-bus:window",
+  appWorkAcquire: "candlescope:app-work:acquire",
+  appWorkRelease: "candlescope:app-work:release",
+  appPreviewRequest: "candlescope:app-preview:request",
+  appPreviewRelease: "candlescope:app-preview:release",
+  appBudgetDiagnostics: "candlescope:app-budget:diagnostics",
+  seriesSnapshotRead: "candlescope:series-snapshot:read",
+  seriesSnapshotPublish: "candlescope:series-snapshot:publish",
+  seriesSnapshotDiagnostics: "candlescope:series-snapshot:diagnostics",
+};
+
+function subscribe(channel, listener) {
+  if (typeof listener !== "function") throw new TypeError("Desktop listener must be a function");
+  const handler = (_event, payload) => listener(payload);
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.removeListener(channel, handler);
+}
+
+const backendPort = Number(process.argv.find((value) => value.startsWith("--candlescope-backend-port="))?.split("=")[1]);
+if (!Number.isInteger(backendPort) || backendPort < 1 || backendPort > 65535) {
+  throw new Error("Desktop backend endpoint was not configured by the host");
+}
+
+contextBridge.exposeInMainWorld("candlescopeDesktop", Object.freeze({
+  getAiConnection: () => ipcRenderer.invoke(channels.aiConnectionGet),
+  saveAiConnection: (preferences) => ipcRenderer.invoke(channels.aiConnectionSave, preferences),
+  controlEnabled: process.argv.includes("--candlescope-control-enabled"),
+  controlScopes: Object.freeze((process.argv.find((value) => value.startsWith("--candlescope-control-scopes="))?.slice("--candlescope-control-scopes=".length) ?? "observe").split(",")),
+  controlWindowId: process.argv.find((value) => value.startsWith("--candlescope-window-id="))?.slice("--candlescope-window-id=".length),
+  onControlRequest: (listener) => subscribe(channels.controlRequest, listener),
+  sendControlResult: (payload) => ipcRenderer.send(channels.controlResult, payload),
+  controlReady: () => ipcRenderer.send(channels.controlReady),
+  controlFile: (operation, input) => ipcRenderer.invoke(channels.controlFile, operation, input),
+  apiBase: `http://127.0.0.1:${backendPort}/api/v1`,
+  getBootstrap: () => ipcRenderer.invoke(channels.bootstrap),
+  getPluginManagementSession: () => ipcRenderer.sendSync(channels.managementSession),
+  getExtensionDiagnostics: () => ipcRenderer.invoke(channels.extensionDiagnostics),
+  openAppPage: (url) => ipcRenderer.invoke(channels.openAppPage, url),
+  reconcileWorkspace: (payload) => ipcRenderer.invoke(channels.reconcile, payload),
+  onLifecycle: (listener) => subscribe(channels.lifecycle, listener),
+  onCloseRequested: (listener) => subscribe(channels.closeRequested, listener),
+  onPlacement: (listener) => subscribe(channels.placement, listener),
+  workspaceBusConnect: (payload) => ipcRenderer.invoke(channels.workspaceBusConnect, payload),
+  workspaceBusCommit: (payload) => ipcRenderer.invoke(channels.workspaceBusCommit, payload),
+  workspaceBusPublishLink: (payload) => ipcRenderer.invoke(channels.workspaceBusLink, payload),
+  workspaceBusReportWindow: (payload) => ipcRenderer.send(channels.workspaceBusWindow, payload),
+  onWorkspaceBusEvent: (listener) => subscribe(channels.workspaceBusEvent, listener),
+  acquireAppWork: (payload) => ipcRenderer.invoke(channels.appWorkAcquire, payload),
+  releaseAppWork: (leaseId) => ipcRenderer.send(channels.appWorkRelease, leaseId),
+  requestAppPreview: (payload) => ipcRenderer.invoke(channels.appPreviewRequest, payload),
+  releaseAppPreview: (payload) => ipcRenderer.send(channels.appPreviewRelease, payload),
+  getAppBudgetDiagnostics: () => ipcRenderer.invoke(channels.appBudgetDiagnostics),
+  readSeriesSnapshot: (key) => ipcRenderer.sendSync(channels.seriesSnapshotRead, key),
+  publishSeriesSnapshot: (payload) => ipcRenderer.send(channels.seriesSnapshotPublish, payload),
+  getSeriesSnapshotDiagnostics: () => ipcRenderer.invoke(channels.seriesSnapshotDiagnostics),
+}));

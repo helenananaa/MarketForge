@@ -1,0 +1,7 @@
+{
+  "id": "marketforge.llm-trader",
+  "name": "LLM 自主交易员",
+  "version": "1.0.0",
+  "protocol_version": "agent.v1",
+  "entrypoint": "plugin.py"
+}

@@ -12,10 +12,10 @@ use tokio::sync::{mpsc, oneshot};
 use exchange_core::{RoomBootstrap, ScenarioConfig, VenueTransfer, model::AccountId};
 
 use crate::journal::{
-    AccountLedgerProjection, ExecutionPage, JournalError, JournalExecution, JournalSnapshot,
-    JournalStore, JournalTransfer, MarketTickProjection, OrderProjection, PendingJournalMutation,
-    PositionSnapshotProjection, RoomLeaseClaim, RoomRoutingRecord, RoomWriterLease,
-    TradeProjection,
+    AccountLedgerProjection, ControlIdempotencyRecord, ExecutionPage, JournalError,
+    JournalExecution, JournalSnapshot, JournalStore, JournalTransfer, MarketTickProjection,
+    OrderProjection, PendingJournalMutation, PositionSnapshotProjection, RoomLeaseClaim,
+    RoomRoutingRecord, RoomWriterLease, TradeProjection,
 };
 
 pub const DEFAULT_JOURNAL_QUEUE_CAPACITY: usize = 64;
@@ -30,6 +30,7 @@ type JournalJob = Box<dyn FnOnce(&mut dyn JournalStore) + Send + 'static>;
 /// OS thread for its entire lifetime.
 #[derive(Clone)]
 pub(crate) struct JournalCoordinator {
+    storage_kind: &'static str,
     writer: JournalWorker,
     readers: Arc<Vec<JournalWorker>>,
     next_reader: Arc<AtomicUsize>,
@@ -65,6 +66,16 @@ pub(crate) struct JournalCoordinatorMetricsSnapshot {
 }
 
 impl JournalCoordinator {
+    pub(crate) async fn commit_platform(
+        &self,
+        expected: u64,
+        candidate: crate::platform::PlatformData,
+        grants: Vec<crate::platform::MemberGrant>,
+    ) -> Result<(), JournalError> {
+        self.execute(move |store| store.commit_platform(expected, &candidate, &grants))
+            .await
+    }
+
     pub(crate) fn new(store: Box<dyn JournalStore>) -> Self {
         Self::with_capacity_and_read_stores(store, Vec::new(), DEFAULT_JOURNAL_QUEUE_CAPACITY)
     }
@@ -87,6 +98,7 @@ impl JournalCoordinator {
         capacity: usize,
     ) -> Self {
         assert!(capacity > 0, "journal queue capacity must be positive");
+        let storage_kind = writer.storage_kind();
         let writer =
             JournalWorker::spawn(writer, capacity, "marketforge-journal-write".to_string());
         let readers = readers
@@ -97,6 +109,7 @@ impl JournalCoordinator {
             })
             .collect();
         Self {
+            storage_kind,
             writer,
             readers: Arc::new(readers),
             next_reader: Arc::new(AtomicUsize::new(0)),
@@ -109,6 +122,10 @@ impl JournalCoordinator {
         }
         let index = self.next_reader.fetch_add(1, Ordering::Relaxed) % self.readers.len();
         &self.readers[index]
+    }
+
+    pub(crate) fn storage_kind(&self) -> &'static str {
+        self.storage_kind
     }
 
     pub(crate) fn metrics_snapshot(&self) -> JournalCoordinatorMetricsSnapshot {
@@ -390,6 +407,33 @@ impl JournalCoordinator {
         .await
     }
 
+    pub(crate) async fn find_control_idempotency(
+        &self,
+        user_id: &str,
+        room_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<ControlIdempotencyRecord>, JournalError> {
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        let idempotency_key = idempotency_key.to_string();
+        self.execute(move |store| {
+            store.find_control_idempotency(&user_id, &room_id, &idempotency_key)
+        })
+        .await
+    }
+
+    pub(crate) async fn external_action_count(
+        &self,
+        user_id: &str,
+        room_id: &str,
+        step: u64,
+    ) -> Result<u32, JournalError> {
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        self.execute(move |store| store.external_action_count(&user_id, &room_id, step))
+            .await
+    }
+
     pub(crate) async fn query_executions(
         &self,
         room_id: &str,
@@ -477,6 +521,62 @@ impl JournalCoordinator {
         .await
     }
 
+    pub(crate) async fn upsert_room_member(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        role: &str,
+    ) -> Result<(), JournalError> {
+        let room_id = room_id.to_string();
+        let user_id = user_id.to_string();
+        let role = role.to_string();
+        self.execute(move |store| store.upsert_room_member(&room_id, &user_id, &role))
+            .await
+    }
+
+    pub(crate) async fn remove_room_member(
+        &self,
+        room_id: &str,
+        user_id: &str,
+    ) -> Result<(), JournalError> {
+        let room_id = room_id.to_string();
+        let user_id = user_id.to_string();
+        self.execute(move |store| store.remove_room_member(&room_id, &user_id))
+            .await
+    }
+
+    pub(crate) async fn assign_account_owner(
+        &self,
+        room_id: &str,
+        account_id: AccountId,
+        user_id: &str,
+    ) -> Result<(), JournalError> {
+        let room_id = room_id.to_string();
+        let user_id = user_id.to_string();
+        self.execute(move |store| store.assign_account_owner(&room_id, account_id, &user_id))
+            .await
+    }
+
+    pub(crate) async fn list_room_members(
+        &self,
+        room_id: &str,
+    ) -> Result<std::collections::BTreeMap<String, String>, JournalError> {
+        let room_id = room_id.to_string();
+        self.execute_read(move |store| store.list_room_members(&room_id))
+            .await
+    }
+
+    pub(crate) async fn user_room_role(
+        &self,
+        user_id: &str,
+        room_id: &str,
+    ) -> Result<Option<String>, JournalError> {
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        self.execute_read(move |store| store.user_room_role(&user_id, &room_id))
+            .await
+    }
+
     pub(crate) async fn user_can_access_room(
         &self,
         user_id: &str,
@@ -513,6 +613,7 @@ impl JournalCoordinator {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn query_orders(
         &self,
         user_id: &str,
@@ -520,6 +621,7 @@ impl JournalCoordinator {
         instrument_id: Option<&str>,
         account_id: Option<AccountId>,
         limit: usize,
+        order_id: Option<u64>,
     ) -> Result<Vec<OrderProjection>, JournalError> {
         let user_id = user_id.to_string();
         let room_id = room_id.to_string();
@@ -531,6 +633,7 @@ impl JournalCoordinator {
                 instrument_id.as_deref(),
                 account_id,
                 limit,
+                order_id,
             )
         })
         .await
@@ -557,6 +660,40 @@ impl JournalCoordinator {
             )
         })
         .await
+    }
+
+    pub(crate) async fn query_candles(
+        &self,
+        user_id: &str,
+        room_id: &str,
+        instrument_id: &str,
+        interval_ms: u64,
+        now_ms: u64,
+        after: Option<u64>,
+    ) -> Result<Option<Vec<exchange_core::candles::Candle>>, JournalError> {
+        let user_id = user_id.to_string();
+        let room_id = room_id.to_string();
+        let instrument_id = instrument_id.to_string();
+        self.execute_read(move |store| {
+            store.query_candles(
+                &user_id,
+                &room_id,
+                &instrument_id,
+                interval_ms,
+                now_ms,
+                after,
+            )
+        })
+        .await
+    }
+
+    pub(crate) async fn load_room_replay(
+        &self,
+        room_id: &str,
+    ) -> Result<crate::journal::JournalRecovery, JournalError> {
+        let room_id = room_id.to_string();
+        self.execute_read(move |store| store.load_room_replay(&room_id))
+            .await
     }
 
     pub(crate) async fn query_market_ticks(

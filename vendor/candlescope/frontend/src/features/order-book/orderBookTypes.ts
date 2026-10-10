@@ -1,0 +1,136 @@
+export const PARTIAL_DEPTH_LEVELS = [5, 10, 20] as const;
+export const UPDATE_INTERVALS_MS = [100, 250, 500, 1000, 2000, 3000] as const;
+export const SPOT_UPDATE_INTERVALS_MS = [100, 1000] as const;
+export const FUTURES_UPDATE_INTERVALS_MS = [100, 250, 500] as const;
+export const FULL_OUTPUT_LIMITS = [20, 50, 100] as const;
+export const FULL_PRICE_GROUPINGS = ["auto", "raw", "2", "5", "10", "20", "50", "100", "200", "500", "1000", "2000", "5000", "10000", "20000", "50000", "100000", "200000", "500000", "1000000", "2000000", "5000000", "10000000", "20000000", "50000000", "100000000", "200000000", "500000000", "1000000000"] as const;
+export const PARTIAL_PRICE_GROUPINGS = FULL_PRICE_GROUPINGS;
+
+export type OrderBookMode = "partial" | "full";
+export type OrderBookSnapshotMode = "live_snapshot" | "polling_snapshot";
+export type PartialDepthLevel = (typeof PARTIAL_DEPTH_LEVELS)[number];
+export type OrderBookUpdateIntervalMs = (typeof UPDATE_INTERVALS_MS)[number];
+export type FullOutputLimit = (typeof FULL_OUTPUT_LIMITS)[number];
+export type PriceGrouping = (typeof FULL_PRICE_GROUPINGS)[number];
+export type OrderBookConnectionStatus =
+  | "idle"
+  | "unsupported"
+  | "connecting"
+  | "reconnecting"
+  | "live"
+  | "stale"
+  | "error";
+
+export interface OrderBookIdentity {
+  exchange: string;
+  marketType: string;
+  symbol: string;
+}
+
+export type OrderBookLevel = readonly [price: number, quantity: number];
+
+export interface OrderBookBook {
+  /** Locally selected presentation step for a bounded, still-raw snapshot. */
+  autoPriceStep?: number | null;
+  mode: OrderBookMode;
+  identity: OrderBookIdentity;
+  topic: string;
+  eventTimeMs: number;
+  receivedAtMs: number;
+  source: string;
+  sequence: number | null;
+  revision: number;
+  bids: readonly OrderBookLevel[];
+  asks: readonly OrderBookLevel[];
+  topBid: number | null;
+  topAsk: number | null;
+  midPrice: number | null;
+  spread: number | null;
+  spreadBps: number | null;
+  notionalImbalance: number | null;
+  updateIntervalMs: number | null;
+  depthLevels: number | null;
+  outputLimit: number | null;
+  bookBidLevels: number | null;
+  bookAskLevels: number | null;
+  priceTickSize: number | null;
+  priceStep: number | null;
+  priceGrouping: PriceGrouping;
+  aggregationApplied: boolean;
+  bucketBidLevels: number | null;
+  bucketAskLevels: number | null;
+  incompleteBidPrices?: readonly number[] | undefined;
+  incompleteAskPrices?: readonly number[] | undefined;
+  coverageBidMin?: number | null;
+  coverageAskMax?: number | null;
+}
+
+export interface OrderBookStoreSnapshot {
+  status: OrderBookConnectionStatus;
+  lastReceivedAtMs: number | null;
+  book: OrderBookBook | null;
+  message: string | null;
+  error: string | null;
+  version: number;
+}
+
+export interface OrderBookExternalStore {
+  getSnapshot(): OrderBookStoreSnapshot;
+  getServerSnapshot(): OrderBookStoreSnapshot;
+  subscribe(listener: () => void): () => void;
+  publishBook(book: OrderBookBook): void;
+  publishStatus(
+    status: Exclude<OrderBookConnectionStatus, "live">,
+    options?: { message?: string | null; error?: string | null; clearBook?: boolean },
+  ): void;
+  reset(status?: "idle" | "unsupported", message?: string | null): void;
+  destroy(): void;
+}
+
+export interface OrderBookPreferences {
+  height: number;
+  collapsed: boolean;
+  mode: OrderBookMode;
+  partialDepth: PartialDepthLevel;
+  updateIntervalMs: OrderBookUpdateIntervalMs;
+  fullOutputLimit: FullOutputLimit;
+  partialPriceGrouping: PriceGrouping;
+  fullPriceGrouping: PriceGrouping;
+}
+
+export interface OrderBookPreferenceActions {
+  setHeight(height: number): void;
+  setCollapsed(collapsed: boolean): void;
+  setMode(mode: OrderBookMode): void;
+  setPartialDepth(depth: PartialDepthLevel): void;
+  setUpdateIntervalMs(interval: OrderBookUpdateIntervalMs): void;
+  setFullOutputLimit(limit: FullOutputLimit): void;
+  setPriceGrouping(mode: OrderBookMode, grouping: PriceGrouping): void;
+}
+
+export interface OrderBookRuntime {
+  view: {
+    identity: OrderBookIdentity;
+    supported: boolean;
+    supportMessage: string | null;
+    fullModeSupported: boolean;
+    snapshotMode: OrderBookSnapshotMode | null;
+    preferences: OrderBookPreferences;
+    updateIntervalMs: OrderBookUpdateIntervalMs;
+    updateIntervalsMs: readonly OrderBookUpdateIntervalMs[];
+    store: OrderBookExternalStore;
+  };
+  actions: OrderBookPreferenceActions & {
+    retry(): void;
+    setDisplayOptions?(options: OrderBookDisplayOptions): void;
+  };
+  status: {
+    enabled: boolean;
+  };
+}
+
+export interface OrderBookDisplayOptions {
+  targetRows: number;
+  rangeBps: number;
+  autoFrozen: boolean;
+}

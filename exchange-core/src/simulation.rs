@@ -24,10 +24,17 @@ use crate::{
 
 pub type UserId = String;
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static SNAPSHOT_LIQUIDATION_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SimulationRoom {
     room_id: RoomId,
     primary_venue_id: VenueId,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    market_events: Vec<crate::market_events::MarketEvent>,
     exchanges: BTreeMap<VenueId, ExchangeActor>,
     portfolios: PortfolioStore,
     #[serde(default)]
@@ -40,10 +47,18 @@ pub struct SimulationRoom {
     pending_venue_transfers: Vec<PendingVenueTransfer>,
     #[serde(default)]
     next_command_seq: ActorSeq,
+    #[serde(skip)]
+    pending_clock_executions: Vec<ActorExecution>,
 }
 
 impl SimulationRoom {
     pub fn from_scenario(scenario: ScenarioConfig) -> Result<SimulationBootstrap, ScenarioError> {
+        let instruments = std::iter::once(&scenario.market)
+            .chain(scenario.extra_markets.iter())
+            .map(|m| m.instrument_id().to_string())
+            .collect::<Vec<_>>();
+        crate::market_events::validate_events(&scenario.market_events, &instruments)
+            .map_err(ScenarioError::InvalidMarketEvents)?;
         let room_id = scenario.room_id.clone();
         let primary_venue_id = scenario.market.venue_id().to_string();
         let mut markets_by_venue = BTreeMap::<VenueId, Vec<MarketConfig>>::new();
@@ -76,6 +91,7 @@ impl SimulationRoom {
         let mut room = Self {
             room_id: room_id.clone(),
             primary_venue_id,
+            market_events: scenario.market_events.clone(),
             exchanges,
             portfolios: PortfolioStore::new(),
             user_accounts: scenario_user_accounts(&scenario),
@@ -83,6 +99,7 @@ impl SimulationRoom {
             next_asset_ledger_seq: 0,
             pending_venue_transfers: Vec::new(),
             next_command_seq: 0,
+            pending_clock_executions: Vec::new(),
         };
 
         for portfolio in &scenario.initial_portfolios {
@@ -130,6 +147,7 @@ impl SimulationRoom {
         Self {
             room_id,
             primary_venue_id,
+            market_events: Vec::new(),
             exchanges,
             portfolios,
             user_accounts: BTreeMap::new(),
@@ -137,7 +155,25 @@ impl SimulationRoom {
             next_asset_ledger_seq: 0,
             pending_venue_transfers: Vec::new(),
             next_command_seq,
+            pending_clock_executions: Vec::new(),
         }
+    }
+
+    pub fn visible_market_events(
+        &self,
+        instrument: &str,
+    ) -> Vec<crate::market_events::MarketEvent> {
+        self.market_events
+            .iter()
+            .filter(|e| {
+                e.instrument_id == instrument && e.published_at_ms <= self.clock().market_time_ms()
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub fn validate_market_events(&self) -> Result<(), String> {
+        crate::market_events::validate_events(&self.market_events, &self.instrument_ids())
     }
 
     pub fn room_id(&self) -> &str {
@@ -154,6 +190,13 @@ impl SimulationRoom {
 
     pub fn venue_ids(&self) -> Vec<&str> {
         self.exchanges.keys().map(String::as_str).collect()
+    }
+
+    pub fn instrument_ids(&self) -> Vec<String> {
+        self.exchanges
+            .values()
+            .flat_map(|exchange| exchange.instrument_ids().into_iter().map(str::to_string))
+            .collect()
     }
 
     pub fn primary_exchange(&self) -> &ExchangeActor {
@@ -211,10 +254,88 @@ impl SimulationRoom {
         execution
     }
 
+    pub fn position_protections(
+        &self,
+        instrument: &str,
+        account: AccountId,
+    ) -> Vec<crate::PositionProtection> {
+        self.venue_id_for_instrument(instrument)
+            .and_then(|v| self.exchanges.get(&v))
+            .map(|e| e.position_protections(instrument, account))
+            .unwrap_or_default()
+    }
+    pub fn has_active_position_protections(&self) -> bool {
+        self.exchanges
+            .values()
+            .any(|e| e.has_active_position_protections())
+    }
+
+    pub fn complete_flat_position_protections(&mut self) {
+        for exchange in self.exchanges.values_mut() {
+            exchange.complete_flat_position_protections();
+        }
+    }
+
+    pub fn prepare_position_exits(
+        &mut self,
+    ) -> Vec<crate::position_protection::PositionExitRequest> {
+        self.exchanges
+            .values_mut()
+            .flat_map(|e| e.prepare_position_exits())
+            .collect()
+    }
+    pub fn prepare_conditional_orders(
+        &mut self,
+    ) -> Vec<crate::conditional_orders::ConditionalOrder> {
+        self.exchanges
+            .values_mut()
+            .flat_map(|e| e.prepare_conditional_orders())
+            .collect()
+    }
+    pub fn record_conditional_order(
+        &mut self,
+        p: &crate::conditional_orders::ConditionalOrder,
+        id: u64,
+        accepted: bool,
+    ) {
+        if let Some(venue) = self.venue_id_for_instrument(&p.instrument_id) {
+            self.exchanges
+                .get_mut(&venue)
+                .unwrap()
+                .record_conditional_order(p, id, accepted);
+        }
+    }
+    pub fn record_position_exit(
+        &mut self,
+        instrument: &str,
+        account: AccountId,
+        side: crate::PositionSide,
+        order_id: u64,
+    ) {
+        if let Some(venue) = self.venue_id_for_instrument(instrument) {
+            self.exchanges
+                .get_mut(&venue)
+                .unwrap()
+                .record_position_exit(instrument, account, side, order_id);
+        }
+    }
     pub fn apply_to_instrument(
         &mut self,
         instrument_id: &str,
         command: Command,
+    ) -> Result<ActorExecution, ActorRejectReason> {
+        self.apply_to_instrument_from(
+            instrument_id,
+            command,
+            crate::actor::CommandOrigin::External,
+        )
+    }
+
+    pub fn apply_to_instrument_from(
+        &mut self,
+        instrument_id: &str,
+        command: Command,
+        origin: crate::actor::CommandOrigin,
     ) -> Result<ActorExecution, ActorRejectReason> {
         let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
             ActorRejectReason::InstrumentNotFound {
@@ -226,7 +347,7 @@ impl SimulationRoom {
             .exchanges
             .get_mut(&venue_id)
             .expect("venue id was resolved from exchanges")
-            .apply_to_instrument(instrument_id, command)?;
+            .apply_to_instrument_from(instrument_id, command, origin)?;
         execution.command_seq = command_seq;
         Ok(execution)
     }
@@ -254,6 +375,21 @@ impl SimulationRoom {
 
     pub fn book_snapshot(&self) -> BookSnapshot {
         self.primary_exchange().book_snapshot()
+    }
+
+    pub fn perp_price_snapshot(
+        &self,
+        instrument_id: &str,
+    ) -> Result<Option<crate::PerpPriceSnapshot>, ActorRejectReason> {
+        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
+            ActorRejectReason::InstrumentNotFound {
+                instrument_id: instrument_id.to_string(),
+            }
+        })?;
+        self.exchanges
+            .get(&venue_id)
+            .expect("resolved venue")
+            .perp_price_snapshot(instrument_id)
     }
 
     pub fn book_snapshot_for(
@@ -325,6 +461,35 @@ impl SimulationRoom {
             .pending_liquidation_accounts_for(instrument_id)
     }
 
+    pub(crate) fn liquidatable_account_ids_for(
+        &self,
+        instrument_id: &str,
+    ) -> Result<Vec<AccountId>, ActorRejectReason> {
+        #[cfg(test)]
+        if SNAPSHOT_LIQUIDATION_REFERENCE.get() {
+            return Ok(match self.account_snapshots_for(instrument_id)? {
+                AccountSnapshots::Spot(_) => Vec::new(),
+                AccountSnapshots::Perp(accounts) => accounts
+                    .into_iter()
+                    .filter(|account| {
+                        account.has_open_position()
+                            && account.margin_status == crate::PerpMarginStatus::Liquidatable
+                    })
+                    .map(|account| account.account_id)
+                    .collect(),
+            });
+        }
+        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
+            ActorRejectReason::InstrumentNotFound {
+                instrument_id: instrument_id.to_string(),
+            }
+        })?;
+        self.exchanges
+            .get(&venue_id)
+            .expect("venue id was resolved from exchanges")
+            .liquidatable_account_ids_for(instrument_id)
+    }
+
     pub fn cross_margin_collateral_orders_for_liquidation(
         &self,
         instrument_id: &str,
@@ -355,6 +520,22 @@ impl SimulationRoom {
             .get(&venue_id)
             .expect("venue id was resolved from exchanges")
             .order_owner_for(instrument_id, order_id)
+    }
+
+    pub fn resting_orders_for_account(
+        &self,
+        instrument_id: &str,
+        account_id: AccountId,
+    ) -> Result<Vec<crate::model::Order>, ActorRejectReason> {
+        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
+            ActorRejectReason::InstrumentNotFound {
+                instrument_id: instrument_id.to_string(),
+            }
+        })?;
+        self.exchanges
+            .get(&venue_id)
+            .expect("venue id was resolved from exchanges")
+            .resting_orders_for_account(instrument_id, account_id)
     }
 
     pub fn venue_account_snapshot(&self, account_id: AccountId) -> VenueAccountSnapshot {
@@ -393,11 +574,28 @@ impl SimulationRoom {
         self.primary_exchange().clock()
     }
 
+    pub(crate) fn has_funding(&self) -> bool {
+        self.exchanges.values().any(|exchange| {
+            exchange
+                .config()
+                .markets
+                .iter()
+                .any(|market| matches!(market, MarketConfig::Perp(perp) if perp.funding.is_some()))
+        })
+    }
+
     pub fn advance_clock(&mut self, steps: u64) -> Result<Vec<VenueTransfer>, SimulationRoomError> {
+        self.clock()
+            .checked_time_after(steps)
+            .map_err(SimulationRoomError::Clock)?;
         let mut staged = self.clone();
         let completed = staged.advance_clock_inner(steps)?;
         *self = staged;
         Ok(completed)
+    }
+
+    pub(crate) fn take_clock_executions(&mut self) -> Vec<ActorExecution> {
+        std::mem::take(&mut self.pending_clock_executions)
     }
 
     fn advance_clock_inner(
@@ -420,7 +618,12 @@ impl SimulationRoom {
                 let due = exchange
                     .advance_clock_venue_only(1)
                     .map_err(SimulationRoomError::Clearing)?;
+                let funding = exchange.take_clock_executions();
                 due_by_venue.push((venue_id.clone(), due));
+                for mut execution in funding {
+                    execution.command_seq = self.take_command_seq();
+                    self.pending_clock_executions.push(execution);
+                }
             }
 
             // Make all venue completions visible before creating the linked
@@ -650,7 +853,7 @@ impl SimulationRoom {
             })
     }
 
-    fn venue_id_for_instrument(&self, instrument_id: &str) -> Option<VenueId> {
+    pub fn venue_id_for_instrument(&self, instrument_id: &str) -> Option<VenueId> {
         self.exchanges.iter().find_map(|(venue_id, exchange)| {
             exchange
                 .instrument_ids()
@@ -968,6 +1171,8 @@ pub struct AccountNetWorthAssetSnapshot {
 pub enum SimulationRoomError {
     VenueNotFound { venue_id: VenueId },
     Clearing(ClearingError),
+    Clock(crate::clock::ClockError),
+    Closed,
 }
 
 fn rules_for_exchange(

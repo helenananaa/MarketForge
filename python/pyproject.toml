@@ -1,0 +1,16 @@
+[project]
+name = "marketforge"
+version = "0.1.0"
+description = "MarketForge HTTP SDK and agent trading tool service"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+agents = ["mcp>=1.26,<2", "matplotlib>=3.9,<4"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["marketforge*"]

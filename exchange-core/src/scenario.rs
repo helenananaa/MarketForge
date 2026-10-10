@@ -17,6 +17,8 @@ use crate::{
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ScenarioConfig {
     pub room_id: RoomId,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub market_events: Vec<crate::market_events::MarketEvent>,
     #[serde(default)]
     pub venue_preset: Option<VenuePreset>,
     #[serde(default)]
@@ -58,6 +60,12 @@ impl ScenarioConfig {
     }
 
     pub fn bootstrap(self) -> Result<ScenarioBootstrap, ScenarioError> {
+        let instruments = std::iter::once(&self.market)
+            .chain(self.extra_markets.iter())
+            .map(|m| m.instrument_id().to_string())
+            .collect::<Vec<_>>();
+        crate::market_events::validate_events(&self.market_events, &instruments)
+            .map_err(ScenarioError::InvalidMarketEvents)?;
         let mut markets = Vec::with_capacity(1 + self.extra_markets.len());
         markets.push(self.market.clone());
         markets.extend(self.extra_markets.clone());
@@ -215,6 +223,7 @@ pub enum ScenarioError {
     Actor(ActorRejectReason),
     Allocation(VenueTransferRejectReason),
     WrongAccountForMarket,
+    InvalidMarketEvents(String),
 }
 
 #[cfg(test)]
@@ -232,6 +241,7 @@ mod tests {
 
     fn limit(order_id: u64, account_id: u64, side: Side, price_tick: i64, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id,
             side,
@@ -258,6 +268,8 @@ mod tests {
             },
             risk: PerpRiskConfig::default(),
             initial_mark_price_tick: 100,
+            price_link: None,
+            funding: None,
         })
     }
 
@@ -265,6 +277,7 @@ mod tests {
     fn bootstraps_spot_room_with_accounts_and_seed_orders() {
         let scenario = ScenarioConfig {
             room_id: "spot-room".to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -330,6 +343,7 @@ mod tests {
     fn bootstraps_perp_room_with_seed_orders() {
         let scenario = ScenarioConfig {
             room_id: "perp-room".to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -369,6 +383,7 @@ mod tests {
     fn bootstraps_room_with_extra_market_and_routed_seed_order() {
         let scenario = ScenarioConfig {
             room_id: "multi-market-room".to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -424,6 +439,7 @@ mod tests {
         balances.insert("BTC".to_string(), 10_000);
         let scenario = ScenarioConfig {
             room_id: "allocation-room".to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -472,6 +488,7 @@ mod tests {
         balances.insert("BTC".to_string(), 100);
         let scenario = ScenarioConfig {
             room_id: "bad-allocation-room".to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -508,6 +525,7 @@ mod tests {
     fn rejects_spot_account_on_perp_market() {
         let scenario = ScenarioConfig {
             room_id: "bad-room".to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: VenueRuleConfig::default(),
             venue_asset_policy: crate::VenueAssetPolicyConfig::default(),
@@ -538,6 +556,7 @@ mod tests {
         reference_price_ticks.insert("V-BTC-SPOT".to_string(), 100);
         let scenario = ScenarioConfig {
             room_id: "sse-room".to_string(),
+            market_events: Vec::new(),
             venue_preset: Some(VenuePreset::SseLike {
                 reference_price_ticks,
             }),

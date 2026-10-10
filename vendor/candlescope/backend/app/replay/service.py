@@ -1,0 +1,4879 @@
+"""Application service owning replay datasets, actors, persistence and recovery."""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import inspect
+import json
+import secrets
+import time
+import uuid
+from collections.abc import AsyncIterator, Awaitable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field, replace
+from decimal import Decimal, localcontext
+from pathlib import Path
+from typing import Callable, Mapping, Sequence, TypeVar
+
+from app.core.config import ReplaySettings
+from app.data_engine.interval_policy import (
+    compute_bucket_start_ms,
+    parse_interval_ms,
+)
+from app.data_engine.storage.raw_trade_archive import (
+    DisabledRawAggTradeArchive,
+    RawAggTradeArchive,
+    RawAggTradeDatasetRef,
+    RawAggTradeSelectionWindow,
+)
+from .actor import (
+    ActorMutation,
+    ActorRecoveryTarget,
+    ActorSnapshot,
+    ActorStreamSubscription,
+    ReplaySessionActor,
+)
+from .bars.builder import ReplayBarBuilder, assess_bar_builder_capability
+from .bars.trade_builder import TradeReplayBarBuilder
+from .broker.execution import ConservativeBarBroker
+from .broker.models import (
+    AGG_TRADE_TOUCH_OR_TAPE_HEDGE_MODEL_VERSION,
+    AGG_TRADE_TOUCH_OR_TAPE_MODEL_VERSION,
+    Account,
+    BAR_TOUCH_OR_TAPE_HEDGE_MODEL_VERSION,
+    BAR_TOUCH_OR_TAPE_MODEL_VERSION,
+    BrokerConfig,
+    BrokerLimits,
+    InstrumentFilters,
+    OrderCapacityRequest,
+    OrderRequest,
+    PAPER_LINEAR_EXECUTION_MODE,
+    PositionMode,
+    ReplayOrder,
+    TOUCH_OR_TAPE_EXECUTION_MODE,
+    position_state_from_dict,
+)
+from .broker.risk import build_order_capacity, build_order_preview
+from .canonical import canonical_json_bytes, canonical_sha256
+from .checkpoints import CheckpointCodec, CheckpointError
+from .catalog import (
+    EMPTY_GAP_SUMMARY,
+    EligibleWindow,
+    EligibleWindowRange,
+    KlinesReadRepository,
+    ReplayCatalog,
+    ReplayCatalogEntry,
+    ReplayCatalogSnapshot,
+    ReplaySeriesIdentity,
+    SeriesBounds,
+)
+from .commands import CommandResult
+from .constants import (
+    REPLAY_PROTOCOL,
+    CommandType,
+    DataFidelity,
+    ExecutionFidelity,
+    ExecutionModel,
+    SessionState,
+    SourceKind,
+    StartPolicy,
+)
+from .dataset import (
+    BarDatasetBuilder,
+    BarDatasetPool,
+    BarDatasetSnapshot,
+    ReplayBar,
+    remap_bar_snapshot_time,
+    validate_replay_repository_bar,
+)
+from .errors import ReplayDomainError, ReplayErrorCode
+from .history_archive import ReplayHistoryArchiveError, ReplayHistoryRepository
+from .remote_history import RemoteReplayHistoryRepository
+from .internal_commands import InternalCommandType
+from .market_halts import (
+    ReplayBarHalt,
+    match_verified_market_halt,
+    validate_registered_bar_halts,
+)
+from .models import (
+    ReplayCommand,
+    ReplayCursor,
+    ReplaySessionConfig,
+    validate_timestamp_ms,
+)
+from .period_summary import (
+    EncodedPeriodSummaryCandidate,
+    MAX_PERIOD_SUMMARY_CANDIDATES,
+    MAX_PERIOD_SUMMARY_TOTAL_COMPRESSED_BYTES,
+    PERIOD_SUMMARY_ALGORITHM_VERSION,
+    PERIOD_SUMMARY_MIN_SKIP_EVENTS,
+    PERIOD_SUMMARY_MIN_TAIL_EVENTS,
+    PERIOD_SUMMARY_YIELD_EVENTS,
+    ReplayPeriodSummary,
+    encode_component_state,
+)
+from .source_chain import next_source_chain_hash
+from .sources.bar_source import (
+    BAR_TERMINAL_SOURCE_LATEST_CLOSED,
+    BarReplaySource,
+    PagedBarReplaySource,
+)
+from .sources.trade_reader import PagedReplayTradeReader
+from .sources.trade_source import TradeReplaySource
+from .storage.sqlite_store import ReplaySQLiteStore, StoredCommand
+from .training.service import TrainingRunService
+
+
+SYNTHETIC_TIME_ANCHOR_MS = 946_684_800_000
+_DATASET_POOL_MAX_BYTES = 512 * 1024 * 1024
+_EVICTION_SHUTDOWN_STEP_TIMEOUT_SECONDS = 5.0
+_ENDED_SESSION_HANDOFF_GRACE_MS = 5_000
+TRADE_SESSION_DATASET_SCHEMA_VERSION = "replay-trade-session-dataset.v1"
+TRADE_SESSION_REF_SCHEMA_VERSION = "replay-trade-session-ref.v1"
+PAGED_BAR_SESSION_DATASET_SCHEMA_VERSION = "replay-paged-bar-session-dataset.v1"
+PAGED_BAR_SESSION_REF_SCHEMA_VERSION = "replay-paged-bar-session-ref.v1"
+PAGED_BAR_MANIFEST_SCHEMA_VERSION = "replay-paged-bar-manifest.v3"
+BAR_REPLAY_RETAINED_TAIL_BARS = 2_048
+_TaskResult = TypeVar("_TaskResult")
+
+
+@dataclass(slots=True)
+class ReplaySessionHandle:
+    session_id: str
+    actor: ReplaySessionActor
+    config: ReplaySessionConfig
+    broker_config: BrokerConfig
+    actual_dataset: BarDatasetSnapshot
+    actor_dataset: BarDatasetSnapshot
+    synthetic_origin_ms: int | None
+    created_at_ms: int
+    last_activity_ms: int
+    in_flight: int = 0
+    activity_generation: int = 0
+    evicting: bool = False
+    eviction_complete: asyncio.Event = field(
+        default_factory=asyncio.Event,
+        repr=False,
+    )
+    trade_dataset_ref: RawAggTradeDatasetRef | None = None
+    trade_pin_token: str | None = None
+    bar_paging_manifest: Mapping[str, object] | None = None
+
+
+@dataclass(slots=True)
+class ReplayRecoveryClaim:
+    complete: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    error: ReplayDomainError | None = None
+
+
+class ReplayService:
+    """Independent replay composition root; never depends on ``DataManager``."""
+
+    def __init__(
+        self,
+        *,
+        settings: ReplaySettings,
+        store: ReplaySQLiteStore,
+        repository: object | None = None,
+        raw_trade_archive: RawAggTradeArchive | None = None,
+        now_ms: Callable[[], int] = lambda: int(time.time() * 1_000),
+        session_id_factory: Callable[[], str] = lambda: uuid.uuid4().hex,
+        training_run_id_factory: Callable[[], str] = lambda: uuid.uuid4().hex,
+        training_random_seed_factory: Callable[[], int] = (
+            lambda: secrets.randbits(53)
+        ),
+        native_intervals: Callable[[ReplaySeriesIdentity], Sequence[str]] | None = None,
+        instrument_metadata_resolver: (
+            Callable[[str, str, str], Mapping[str, object] | None] | None
+        ) = None,
+    ) -> None:
+        if not settings.enabled:
+            raise ValueError(
+                "ReplayService cannot be constructed while replay is disabled"
+            )
+        self.settings = settings
+        self.store = store
+        if repository is not None:
+            self._repository = repository
+        else:
+            self._repository = (
+                RemoteReplayHistoryRepository(
+                    settings.replay_history_archive_dir,
+                    settings.replay_history_origin_uri,
+                    refresh_seconds=(settings.replay_history_catalog_refresh_seconds),
+                    download_timeout_seconds=(
+                        settings.replay_history_download_timeout_seconds
+                    ),
+                )
+                if settings.replay_history_origin_uri is not None
+                else ReplayHistoryRepository(settings.replay_history_archive_dir)
+            )
+        self._raw_trade_archive = raw_trade_archive or DisabledRawAggTradeArchive()
+        self._now_ms = now_ms
+        self._session_id_factory = session_id_factory
+        self.training = TrainingRunService(
+            replay_service=self,
+            run_id_factory=training_run_id_factory,
+            random_seed_factory=training_random_seed_factory,
+            instrument_metadata_resolver=instrument_metadata_resolver,
+        )
+        self._native_intervals_explicit = native_intervals is not None
+        self._native_intervals = native_intervals or self._all_local_intervals
+        self._catalog = ReplayCatalog(
+            self._repository,  # type: ignore[arg-type]
+            native_intervals=self._native_intervals,
+            now_ms=self._now_ms,
+            max_scan_rows=settings.trade_page_rows,
+            max_warmup_bars=settings.max_warmup_bars,
+            max_horizon_days=settings.max_horizon_days,
+            max_dataset_rows=settings.max_bar_dataset_rows,
+        )
+        self._training_history_catalog = ReplayCatalog(
+            self._repository,  # type: ignore[arg-type]
+            native_intervals=self._native_intervals,
+            now_ms=self._now_ms,
+            max_scan_rows=settings.trade_page_rows,
+            max_warmup_bars=settings.max_bar_dataset_rows,
+            max_horizon_days=settings.max_horizon_days,
+            max_dataset_rows=settings.max_bar_dataset_rows,
+        )
+        self._dataset_builder = BarDatasetBuilder(
+            self._repository,
+            now_ms=self._now_ms,
+            max_rows=settings.max_bar_dataset_rows,
+        )
+        pool_budget = min(
+            _DATASET_POOL_MAX_BYTES,
+            settings.max_active_sessions * settings.max_bar_dataset_rows * 2_048,
+        )
+        self._datasets = BarDatasetPool(
+            max_active_snapshots=settings.max_active_sessions,
+            max_total_bytes=max(1, pool_budget),
+        )
+        self._sessions: dict[str, ReplaySessionHandle] = {}
+        self._session_generation = 0
+        self._pending_session_reservations = 0
+        self._pending_handle_acquisitions = 0
+        self._pending_recoveries: dict[str, ReplayRecoveryClaim] = {}
+        self._pending_session_deletions: dict[str, asyncio.Event] = {}
+        self._pending_lifecycle_owners: dict[asyncio.Task[object], int] = {}
+        self._lease_owners: dict[asyncio.Task[object], int] = {}
+        self._unavailable_sessions: dict[str, ReplayDomainError] = {}
+        self._accepting = True
+        self._closed = False
+        self._lifecycle_lock = asyncio.Lock()
+        self._prune_lock = asyncio.Lock()
+        self._shutdown_lock = asyncio.Lock()
+        self._lifecycle_changed = asyncio.Event()
+        self._prune_abort = asyncio.Event()
+        self._reaper_stop = asyncio.Event()
+        self._reaper_task: asyncio.Task[None] | None = None
+        self._metrics: dict[str, int | str | None] = {
+            "sessions_created": 0,
+            "sessions_recovered": 0,
+            "startup_recoveries_deferred": 0,
+            "sessions_evicted": 0,
+            "ended_sessions_evicted": 0,
+            "idle_sessions_evicted": 0,
+            "hub_sessions_evicted": 0,
+            "reaper_failures": 0,
+            "last_reaper_error": None,
+            "recovery_failures": 0,
+            "commands": 0,
+            "forks": 0,
+            "report_persistence_failures": 0,
+            "shutdown_failures": 0,
+            "last_shutdown_error": None,
+        }
+
+    @property
+    def history_repository(self) -> KlinesReadRepository:
+        """Expose the replay-owned read repository for chart-only history pages."""
+
+        return self._repository  # type: ignore[return-value]
+
+    @property
+    def raw_trade_archive(self) -> RawAggTradeArchive:
+        """Expose the replay-owned read-only exact trade archive."""
+
+        return self._raw_trade_archive
+
+    def _progressive_owner_scope(self) -> str:
+        return hashlib.sha256(str(self.store.path.resolve()).encode("utf-8")).hexdigest()
+
+    def _progressive_session_owner(self, session_id: str) -> str:
+        return "session:" + self._progressive_owner_scope() + ":" + session_id
+
+    @property
+    def progressive_history(self):
+        from .progressive_history import ProgressiveBarHistory
+        history = getattr(self, "_progressive_history", None)
+        if history is None:
+            history = ProgressiveBarHistory(self.settings.replay_history_archive_dir / "progressive-index.sqlite3",
+                self._repository, now_ms=self._now_ms)
+            self._progressive_history = history
+        return history
+
+    async def start(self) -> None:
+        """Recover non-ended sessions without ever resuming PLAYING."""
+
+        archive_dir = self.settings.replay_history_archive_dir
+        if archive_dir is not None and (Path(archive_dir) / "progressive-index.sqlite3").exists():
+            await asyncio.to_thread(self.progressive_history.reconcile_sessions,
+                self._progressive_owner_scope(), await self.store.list_session_ids())
+        if self.training is not None:
+            await self.training.start()
+        if self.settings.replay_multi_bar_interval_enabled:
+            await self.store.enable_idle_checkpoints()
+        records = await self.store.load_recoverable_sessions()
+        for index, record in enumerate(records):
+            if len(self._sessions) >= self.settings.max_active_sessions:
+                self._metrics["startup_recoveries_deferred"] = len(records) - index
+                break
+            session_id = str(record["session_id"])
+            blind_mode = self._persisted_blind_mode(record)
+            try:
+                await self._recover_record(record)
+            except asyncio.CancelledError:
+                # Startup cancellation is lifecycle control, not durable data
+                # corruption.  _recover_record owns candidate cleanup; never
+                # convert cancellation into a sticky degraded session row.
+                raise
+            except BaseException as exc:
+                error = self._recovery_error(exc, blind_mode=blind_mode)
+                if error.code is ReplayErrorCode.SCAN_LIMIT_EXCEEDED:
+                    # Capacity pressure is not durable corruption. Leave this
+                    # and later records healthy for on-demand lazy recovery.
+                    self._metrics["startup_recoveries_deferred"] = len(records) - index
+                    break
+                self._unavailable_sessions[session_id] = error
+                self._metrics["recovery_failures"] = (
+                    int(self._metrics["recovery_failures"] or 0) + 1
+                )
+                try:
+                    await self.store.mark_degraded(session_id, error.message)
+                except Exception:
+                    pass
+        if self._reaper_task is None:
+            self._reaper_task = asyncio.create_task(
+                self._session_reaper_loop(),
+                name="replay-session-reaper",
+            )
+
+    def capabilities(self) -> dict[str, object]:
+        persistence_degraded = self.store.degraded_reason is not None
+        try:
+            list_all_series = getattr(self._repository, "list_all_series", None)
+            bar_series = (
+                list_all_series(custom_only=False)
+                if callable(list_all_series)
+                else self._repository.list_series(custom_only=False)
+            )
+            bar_ready = bool(bar_series)
+            bar_reason = None if bar_ready else "REPLAY_BAR_HISTORY_EMPTY"
+        except Exception:
+            bar_ready = False
+            bar_reason = "REPLAY_BAR_HISTORY_UNAVAILABLE"
+        bar_capability = (
+            {"enabled": True, "fidelity": "EXACT_BAR_COVERAGE"}
+            if bar_ready
+            else {"enabled": False, "reason": bar_reason}
+        )
+        archive_diagnostics = self._raw_trade_archive.diagnostics()
+        archive_enabled = bool(archive_diagnostics.get("enabled"))
+        archive_ready = archive_diagnostics.get("state") == "ready"
+        exact_dataset_available = bool(
+            archive_diagnostics.get("verified_partitions_available")
+        )
+        if not archive_enabled:
+            trade_capability: dict[str, object] = {
+                "enabled": False,
+                "reason": ReplayErrorCode.ARCHIVE_DISABLED.value,
+            }
+        elif not archive_ready:
+            trade_capability = {
+                "enabled": False,
+                "reason": ReplayErrorCode.ARCHIVE_DEGRADED.value,
+            }
+        elif not exact_dataset_available:
+            trade_capability = {
+                "enabled": False,
+                "reason": ReplayErrorCode.DATASET_INCOMPLETE.value,
+            }
+        else:
+            trade_capability = {
+                "enabled": True,
+                "fidelity": (DataFidelity.VERIFIED_AGG_TRADE_APPROXIMATE_BARS.value),
+                "execution_fidelity": ExecutionFidelity.AGG_TRADE_TAPE.value,
+                "requires_exact_dataset": True,
+                "bar_parity_required": False,
+                "reader": "paged",
+            }
+        return {
+            "protocol": REPLAY_PROTOCOL,
+            "enabled": True,
+            "available": (
+                not persistence_degraded and self._accepting and not self._closed
+            ),
+            "sources": {
+                "bar": bar_capability,
+                "agg_trade": trade_capability,
+            },
+            "execution_models": [ExecutionModel.PAPER_LINEAR_V1.value],
+            "limits": {
+                "max_active_sessions": self.settings.max_active_sessions,
+                "max_warmup_bars": self.settings.max_warmup_bars,
+                "max_bar_dataset_rows": self.settings.max_bar_dataset_rows,
+                "max_horizon_days": self.settings.max_horizon_days,
+                "event_buffer_size": self.settings.event_buffer_size,
+                "subscriber_queue": self.settings.event_subscriber_queue,
+            },
+            "persistence": {
+                "schema_version": self.store.schema_version,
+                "degraded": persistence_degraded,
+                # Capabilities are public and have no session/blind context.
+                # Never copy a driver exception, database path, or real timestamp
+                # from the persistence layer into this response.
+                "degraded_reason": (
+                    ReplayErrorCode.PERSISTENCE_DEGRADED.value
+                    if persistence_degraded
+                    else None
+                ),
+            },
+        }
+
+    async def catalog(
+        self,
+        *,
+        warmup_bars: int,
+        horizon_ms: int,
+        quality_mode: str,
+        blind_mode: bool,
+        source_kind: SourceKind | str = SourceKind.BAR,
+    ) -> dict[str, object]:
+        self._ensure_available(blind_mode=blind_mode)
+        try:
+            source = (
+                source_kind
+                if isinstance(source_kind, SourceKind)
+                else SourceKind(str(source_kind).lower())
+            )
+        except (TypeError, ValueError) as exc:
+            raise ReplayDomainError(
+                ReplayErrorCode.UNSUPPORTED_SOURCE,
+                f"unsupported replay source: {source_kind}",
+            ) from exc
+        if source is SourceKind.AGG_TRADE:
+            try:
+                self._require_trade_capability()
+            except ReplayDomainError as exc:
+                raise self._blind_safe_dataset_error(blind_mode, exc) from exc
+        try:
+            snapshot = await asyncio.to_thread(
+                self._catalog.build,
+                warmup_bars=warmup_bars,
+                horizon_ms=horizon_ms,
+                quality_mode=quality_mode,
+            )
+        except ReplayDomainError as exc:
+            raise self._blind_safe_dataset_error(blind_mode, exc) from exc
+        except ReplayHistoryArchiveError as exc:
+            unavailable = ReplayDomainError(
+                ReplayErrorCode.ARCHIVE_DEGRADED,
+                "replay history catalog is unavailable",
+            )
+            raise self._blind_safe_dataset_error(blind_mode, unavailable) from exc
+        except Exception as exc:
+            if blind_mode:
+                raise self._blind_unexpected_dataset_error() from exc
+            raise
+        try:
+            source_catalog_epoch, source_entries = await self._source_catalog_view(
+                snapshot,
+                source_kind=source,
+            )
+        except ReplayDomainError as exc:
+            raise self._blind_safe_dataset_error(blind_mode, exc) from exc
+        entries = [
+            self._catalog_entry_payload(entry, blind_mode=blind_mode)
+            for entry in source_entries
+        ]
+        return {
+            "protocol": REPLAY_PROTOCOL,
+            "catalog_epoch": source_catalog_epoch,
+            "warmup_bars": snapshot.warmup_bars,
+            "horizon_ms": snapshot.horizon_ms,
+            "quality_mode": snapshot.quality_mode.value,
+            "blind_mode": blind_mode,
+            "entries": entries,
+        }
+
+    async def _source_catalog_view(
+        self,
+        snapshot: ReplayCatalogSnapshot,
+        *,
+        source_kind: SourceKind,
+    ) -> tuple[str, tuple[ReplayCatalogEntry, ...]]:
+        if source_kind is SourceKind.BAR:
+            return snapshot.catalog_epoch, snapshot.entries
+        filtered: list[tuple[ReplayCatalogEntry, str | None]] = []
+        for entry in snapshot.entries:
+            trade_epoch, eligible_ranges = await self._trade_eligible_ranges(entry)
+            if not eligible_ranges:
+                continue
+            filtered.append(
+                (
+                    replace(
+                        entry,
+                        eligible_ranges=eligible_ranges,
+                        quality=DataFidelity.VERIFIED_AGG_TRADE_APPROXIMATE_BARS,
+                        limitations=tuple(
+                            dict.fromkeys(
+                                (
+                                    *entry.limitations,
+                                    "AGG_TRADE_OFFICIAL_AVAILABILITY_INTERSECTION",
+                                )
+                            )
+                        ),
+                    ),
+                    trade_epoch,
+                )
+            )
+        source_epoch = canonical_sha256(
+            {
+                "schema_version": "replay-agg-trade-source-catalog.v1",
+                "bar_catalog_epoch": snapshot.catalog_epoch,
+                "entries": [
+                    {
+                        "identity": entry.identity.to_dict(),
+                        "bar_source_fingerprint": entry.source_fingerprint,
+                        "agg_trade_catalog_epoch": trade_epoch,
+                        "eligible_ranges": [
+                            item.to_dict() for item in entry.eligible_ranges
+                        ],
+                    }
+                    for entry, trade_epoch in filtered
+                ],
+            }
+        )
+        return source_epoch, tuple(
+            replace(entry, catalog_epoch=source_epoch)
+            for entry, _trade_epoch in filtered
+        )
+
+    async def select_training_window(
+        self,
+        config: ReplaySessionConfig,
+        *,
+        expected_catalog_epoch: str,
+        minimum_history_bars: int | None = None,
+    ) -> dict[str, object]:
+        """Freeze the start choice before Phase 14 expands visible history.
+
+        The public catalog remains bound to indicator warmup.  The returned
+        source fingerprint and exact selected start are then used to prove that
+        the larger internal snapshot did not re-randomize or cross source drift.
+        """
+
+        if not isinstance(config, ReplaySessionConfig):
+            raise TypeError("config must be ReplaySessionConfig")
+        required_history_bars = (
+            config.warmup_bars if minimum_history_bars is None else minimum_history_bars
+        )
+        if (
+            isinstance(required_history_bars, bool)
+            or not isinstance(required_history_bars, int)
+            or required_history_bars < config.warmup_bars
+        ):
+            raise ValueError(
+                "minimum_history_bars must be an integer at least as large as warmup_bars"
+            )
+        self._ensure_available(blind_mode=config.blind_mode)
+        if config.source_kind is SourceKind.AGG_TRADE:
+            try:
+                self._require_trade_capability()
+            except ReplayDomainError as exc:
+                raise self._blind_safe_dataset_error(config, exc) from exc
+        try:
+            catalog = await asyncio.to_thread(
+                self._catalog.build,
+                warmup_bars=config.warmup_bars,
+                horizon_ms=config.horizon_ms,
+                quality_mode=config.quality_mode,
+            )
+        except ReplayDomainError as exc:
+            raise self._blind_safe_dataset_error(config, exc) from exc
+        except ReplayHistoryArchiveError as exc:
+            unavailable = ReplayDomainError(
+                ReplayErrorCode.ARCHIVE_DEGRADED,
+                "replay history catalog is unavailable",
+            )
+            raise self._blind_safe_dataset_error(config, unavailable) from exc
+        try:
+            source_catalog_epoch, source_entries = await self._source_catalog_view(
+                catalog,
+                source_kind=config.source_kind,
+            )
+            if source_catalog_epoch != expected_catalog_epoch:
+                # The client already supplied the opaque epoch, so reporting this
+                # comparison does not disclose source dates or a hidden start.
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "replay catalog changed after capability validation",
+                    details={"reason": "CATALOG_EPOCH_MISMATCH"},
+                )
+            identity = ReplaySeriesIdentity(
+                config.exchange,
+                config.market_type,
+                config.symbol,
+            )
+            entry = next(
+                (
+                    candidate
+                    for candidate in source_entries
+                    if candidate.identity == identity
+                ),
+                None,
+            )
+            if entry is None:
+                raise ReplayDomainError(
+                    ReplayErrorCode.UNSUPPORTED_SOURCE,
+                    "replay series is not present in source catalog: "
+                    f"{identity.key}",
+                    details={"identity": identity.to_dict()},
+                )
+            trade_catalog_epoch: str | None = None
+            if config.start_policy is StartPolicy.RANDOM_ELIGIBLE:
+                window, trade_catalog_epoch = await self._select_random_window_bound(
+                    self._catalog,
+                    entry,
+                    config,
+                    minimum_history_bars=required_history_bars,
+                )
+            else:
+                window, trade_catalog_epoch = await self._select_manual_window_bound(
+                    self._catalog,
+                    entry,
+                    config,
+                    start_ms=self._required_manual_start(config),
+                )
+        except ReplayDomainError as exc:
+            raise self._blind_safe_dataset_error(config, exc) from exc
+        if config.source_kind is SourceKind.AGG_TRADE:
+            try:
+                current_source_epoch, _current_entries = (
+                    await self._source_catalog_view(
+                        catalog,
+                        source_kind=config.source_kind,
+                    )
+                )
+            except ReplayDomainError as exc:
+                raise self._blind_safe_dataset_error(config, exc) from exc
+            if current_source_epoch != source_catalog_epoch:
+                raise self._blind_safe_dataset_error(
+                    config,
+                    ReplayDomainError(
+                        ReplayErrorCode.DATASET_MISMATCH,
+                        "aggregate-trade catalog changed during selection",
+                        details={"reason": "CATALOG_EPOCH_MISMATCH"},
+                    ),
+                )
+        if entry.bounds is None:
+            raise self._blind_safe_dataset_error(
+                config,
+                ReplayDomainError(
+                    ReplayErrorCode.NO_ELIGIBLE_WINDOW,
+                    "training source has no exact history bounds",
+                ),
+            )
+        continuous_start_ms = entry.bounds.earliest_open_ms
+        for gap in entry.gap_summary.gaps:
+            if gap.end_ms < window.replay_start_ms:
+                continuous_start_ms = max(
+                    continuous_start_ms,
+                    gap.end_ms + window.interval_ms,
+                )
+        selected_range = next(
+            (
+                candidate
+                for candidate in entry.eligible_ranges
+                if candidate.contains(window.replay_start_ms)
+            ),
+            None,
+        )
+        continuous_future_end_ms = (
+            window.replay_end_open_ms
+            if selected_range is None
+            else selected_range.last_start_ms
+            + (selected_range.replay_bars - 1) * selected_range.interval_ms
+        )
+        verified_market_halts: list[ReplayBarHalt] = []
+        if config.source_kind is SourceKind.BAR:
+            continuous_future_end_ms = entry.bounds.latest_closed_open_ms
+            for gap in entry.gap_summary.gaps:
+                if gap.end_ms < window.replay_start_ms:
+                    continue
+                if gap.start_ms <= window.replay_end_open_ms:
+                    raise self._blind_safe_dataset_error(
+                        config,
+                        ReplayDomainError(
+                            ReplayErrorCode.DATASET_MISMATCH,
+                            "selected BAR window intersects its frozen gap index",
+                        ),
+                    )
+                halt = match_verified_market_halt(
+                    entry.identity,
+                    gap,
+                    interval_ms=window.interval_ms,
+                )
+                if (
+                    halt is not None
+                    and halt.resume_ms <= entry.bounds.latest_closed_open_ms
+                ):
+                    verified_market_halts.append(halt)
+                    continue
+                # Selection is restricted to the tail reachable after the last
+                # unverified gap.  Reaching this branch means the commitment no
+                # longer agrees with the catalog used to choose it.
+                raise self._blind_safe_dataset_error(
+                    config,
+                    ReplayDomainError(
+                        ReplayErrorCode.DATASET_INCOMPLETE,
+                        "selected BAR start cannot reach the frozen source tail",
+                        details={"reason": "UNVERIFIED_FUTURE_GAP"},
+                    ),
+                )
+        return {
+            "catalog_epoch": source_catalog_epoch,
+            "source_fingerprint": entry.source_fingerprint,
+            "source_revision": entry.source_revision,
+            "identity": entry.identity.to_dict(),
+            "selected_base_interval": entry.selected_base_interval,
+            "source_bounds": entry.bounds.to_dict(),
+            "selected_start_ms": window.replay_start_ms,
+            "continuous_history_start_ms": continuous_start_ms,
+            # Internal selection commitment only.  Blind public projections
+            # never expose this boundary before an authorized reveal.
+            "continuous_future_end_ms": continuous_future_end_ms,
+            "interval_ms": window.interval_ms,
+            **(
+                {"bar_terminal_kind": BAR_TERMINAL_SOURCE_LATEST_CLOSED}
+                if config.source_kind is SourceKind.BAR
+                else {}
+            ),
+            **(
+                {
+                    "verified_market_halts": [
+                        halt.to_dict() for halt in verified_market_halts
+                    ]
+                }
+                if verified_market_halts
+                else {}
+            ),
+            **(
+                {"agg_trade_catalog_epoch": trade_catalog_epoch}
+                if trade_catalog_epoch is not None
+                else {}
+            ),
+        }
+
+    async def materialize_training_hybrid_input_seed(
+        self,
+        config: ReplaySessionConfig,
+        selection: Mapping[str, object],
+    ) -> dict[str, object]:
+        """Materialize the bounded BAR evidence used by playable HEDGE fallback.
+
+        The seed deliberately exposes only prices that become revealed on the
+        replay clock: the last warm-up close at T0, followed by each replay bar
+        close at ``close_time + 1``.  It is internal input-building evidence,
+        not an exchange mark/index-history claim.
+        """
+
+        if not isinstance(config, ReplaySessionConfig):
+            raise TypeError("config must be ReplaySessionConfig")
+        if not isinstance(selection, Mapping):
+            raise TypeError("selection must be an object")
+        entry, window = self._bound_training_entry_and_window(config, selection)
+        dataset = await asyncio.to_thread(self._dataset_builder.create, entry, window)
+        broker = self._broker_config(config, dataset)
+        range_start_ms = dataset.replay_start_ms
+        range_end_ms = range_start_ms + config.horizon_ms
+        initial_price = (
+            dataset.warmup_rows[-1].close
+            if dataset.warmup_rows
+            else dataset.replay_rows[0].open
+        )
+        marks: list[dict[str, object]] = [
+            {"event_time_ms": range_start_ms, "price": initial_price}
+        ]
+        for row in dataset.replay_rows:
+            reveal_time_ms = row.close_time_ms + 1
+            if reveal_time_ms <= range_start_ms:
+                continue
+            if reveal_time_ms > range_end_ms:
+                break
+            marks.append({"event_time_ms": reveal_time_ms, "price": row.close})
+        if marks[-1]["event_time_ms"] != range_end_ms:
+            marks.append(
+                {
+                    "event_time_ms": range_end_ms,
+                    "price": marks[-1]["price"],
+                }
+            )
+        return {
+            "schema_version": "replay.hedge-hybrid-seed.v1",
+            "source_kind": (
+                "BAR" if config.source_kind is SourceKind.BAR else "AGG_TRADE"
+            ),
+            "source_fingerprint": entry.source_fingerprint,
+            "data_epoch": dataset.data_epoch,
+            "range_start_ms": range_start_ms,
+            "range_end_ms": range_end_ms,
+            "max_mark_gap_ms": window.interval_ms,
+            "marks": marks,
+            "broker_config": broker.to_dict(),
+        }
+
+    @staticmethod
+    def _bound_training_entry_and_window(
+        config: ReplaySessionConfig,
+        selection: Mapping[str, object],
+    ) -> tuple[ReplayCatalogEntry, EligibleWindow]:
+        identity_payload = selection.get("identity")
+        bounds_payload = selection.get("source_bounds")
+        if not isinstance(identity_payload, Mapping) or not isinstance(
+            bounds_payload, Mapping
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "training selection metadata is incomplete",
+                details={"reason": "SELECTION_COMMITMENT_INVALID"},
+            )
+        try:
+            identity = ReplaySeriesIdentity.from_dict(identity_payload)
+            selected_interval = str(selection["selected_base_interval"])
+            interval_ms = int(selection["interval_ms"])
+            selected_start_ms = int(selection["selected_start_ms"])
+            bounds = SeriesBounds(
+                earliest_open_ms=int(bounds_payload["earliest_open_ms"]),
+                latest_source_open_ms=int(bounds_payload["latest_source_open_ms"]),
+                latest_closed_open_ms=int(bounds_payload["latest_closed_open_ms"]),
+                total_count=int(bounds_payload["total_count"]),
+            )
+            source_fingerprint = str(selection["source_fingerprint"])
+            catalog_epoch = str(selection["catalog_epoch"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "training selection metadata is invalid",
+                details={"reason": "SELECTION_COMMITMENT_INVALID"},
+            ) from exc
+        source_revision_value = selection.get("source_revision")
+        source_revision = (
+            None if source_revision_value is None else str(source_revision_value)
+        )
+        agg_trade_catalog_epoch_value = selection.get("agg_trade_catalog_epoch")
+        agg_trade_catalog_epoch = (
+            None
+            if agg_trade_catalog_epoch_value is None
+            else str(agg_trade_catalog_epoch_value)
+        )
+        if interval_ms < 1:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "training selection interval is invalid",
+                details={"reason": "SELECTION_COMMITMENT_INVALID"},
+            )
+        expected_identity = ReplaySeriesIdentity(
+            config.exchange,
+            config.market_type,
+            config.symbol,
+        )
+        parsed_interval_ms = parse_interval_ms(selected_interval)
+        replay_bars, horizon_remainder = divmod(config.horizon_ms, interval_ms)
+        warmup_start_ms = selected_start_ms - config.warmup_bars * interval_ms
+        replay_end_open_ms = selected_start_ms + (replay_bars - 1) * interval_ms
+        digests = (source_fingerprint, catalog_epoch)
+        if source_revision is not None:
+            digests = (*digests, source_revision)
+        if agg_trade_catalog_epoch is not None:
+            digests = (*digests, agg_trade_catalog_epoch)
+        if (
+            identity != expected_identity
+            or selected_interval != config.base_interval
+            or parsed_interval_ms != interval_ms
+            or horizon_remainder != 0
+            or replay_bars < 1
+            or any(
+                len(value) != 71
+                or not value.startswith("sha256:")
+                or any(character not in "0123456789abcdef" for character in value[7:])
+                for value in digests
+            )
+            or bounds.total_count < 1
+            or bounds.earliest_open_ms < 0
+            or bounds.latest_closed_open_ms < bounds.earliest_open_ms
+            or bounds.latest_source_open_ms < bounds.latest_closed_open_ms
+            or warmup_start_ms < bounds.earliest_open_ms
+            or replay_end_open_ms > bounds.latest_closed_open_ms
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "training selection commitment is inconsistent",
+                details={"reason": "SELECTION_COMMITMENT_INVALID"},
+            )
+        return (
+            ReplayCatalogEntry(
+                identity=identity,
+                base_intervals=(selected_interval,),
+                selected_base_interval=selected_interval,
+                bounds=bounds,
+                gap_summary=EMPTY_GAP_SUMMARY,
+                eligible_ranges=(),
+                quality=DataFidelity.EXACT_BAR_COVERAGE,
+                source_fingerprint=source_fingerprint,
+                catalog_epoch=catalog_epoch,
+                limitations=(),
+                source_revision=source_revision,
+            ),
+            EligibleWindow(
+                interval=selected_interval,
+                interval_ms=interval_ms,
+                warmup_start_ms=warmup_start_ms,
+                replay_start_ms=selected_start_ms,
+                replay_end_open_ms=replay_end_open_ms,
+                warmup_bars=config.warmup_bars,
+                replay_bars=replay_bars,
+            ),
+        )
+
+    @staticmethod
+    def _bar_paging_manifest(
+        config: ReplaySessionConfig,
+        selection: Mapping[str, object] | None,
+        dataset: BarDatasetSnapshot,
+    ) -> dict[str, object] | None:
+        """Bind future BAR pages without treating the eager cache as the end."""
+
+        if config.source_kind is not SourceKind.BAR:
+            return None
+        if selection is None:
+            selection = {
+                "continuous_future_end_ms": (
+                    dataset.provenance.source_latest_closed_open_ms
+                ),
+                "bar_terminal_kind": BAR_TERMINAL_SOURCE_LATEST_CLOSED,
+                "source_revision": dataset.provenance.source_revision,
+                "source_fingerprint": dataset.provenance.source_fingerprint,
+                "verified_market_halts": [],
+            }
+        terminal_value = selection.get("continuous_future_end_ms")
+        terminal_kind = selection.get("bar_terminal_kind")
+        source_revision = selection.get("source_revision")
+        source_fingerprint = selection.get("source_fingerprint")
+        if terminal_value is None:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "training BAR terminal commitment is missing",
+                details={"reason": "SELECTION_COMMITMENT_INVALID"},
+            )
+        if source_revision is None:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "training BAR source revision is missing",
+                details={"reason": "SELECTION_COMMITMENT_INVALID"},
+            )
+        try:
+            terminal_open_ms = validate_timestamp_ms(
+                terminal_value,
+                field_name="continuous_future_end_ms",
+            )
+        except (TypeError, ValueError) as exc:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "training future boundary is invalid",
+                details={"reason": "SELECTION_COMMITMENT_INVALID"},
+            ) from exc
+        if (
+            terminal_kind != BAR_TERMINAL_SOURCE_LATEST_CLOSED
+            or terminal_open_ms != dataset.provenance.source_latest_closed_open_ms
+            or terminal_open_ms < dataset.replay_end_open_ms
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "training BAR terminal is not the frozen source latest close",
+                details={"reason": "SELECTION_COMMITMENT_INVALID"},
+            )
+        digests = {
+            "source_revision": source_revision,
+            "source_fingerprint": source_fingerprint,
+        }
+        for field_name, value in digests.items():
+            if (
+                not isinstance(value, str)
+                or len(value) != 71
+                or not value.startswith("sha256:")
+            ):
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "training future source commitment is incomplete",
+                    details={"reason": "SELECTION_COMMITMENT_INVALID"},
+                )
+            try:
+                int(value[7:], 16)
+            except ValueError as exc:
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "training future source commitment is invalid",
+                    details={"reason": "SELECTION_COMMITMENT_INVALID"},
+                ) from exc
+        if (
+            source_revision != dataset.provenance.source_revision
+            or source_fingerprint != dataset.provenance.source_fingerprint
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "training future source commitment changed",
+                details={"reason": "SELECTION_COMMITMENT_INVALID"},
+            )
+        interval_ms = parse_interval_ms(dataset.interval)
+        if (
+            interval_ms is None
+            or interval_ms <= 0
+            or (terminal_open_ms - dataset.replay_start_ms) % interval_ms != 0
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "training future boundary is not aligned",
+                details={"reason": "SELECTION_COMMITMENT_INVALID"},
+            )
+        try:
+            verified_halts = validate_registered_bar_halts(
+                selection.get("verified_market_halts", []),
+                identity=dataset.identity,
+                interval_ms=interval_ms,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "training verified-halt commitment is invalid",
+                details={"reason": "SELECTION_COMMITMENT_INVALID"},
+            ) from exc
+        if any(
+            halt.start_open_ms <= dataset.replay_end_open_ms
+            or halt.resume_ms > terminal_open_ms
+            for halt in verified_halts
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "training verified-halt range is outside the paged future",
+                details={"reason": "SELECTION_COMMITMENT_INVALID"},
+            )
+        payload: dict[str, object] = {
+            "schema_version": PAGED_BAR_MANIFEST_SCHEMA_VERSION,
+            "data_epoch": dataset.data_epoch,
+            "source_revision": source_revision,
+            "source_fingerprint": source_fingerprint,
+            "terminal_open_ms": terminal_open_ms,
+            "terminal_kind": terminal_kind,
+            "page_rows": len(dataset.replay_rows),
+            "verified_market_halts": [halt.to_dict() for halt in verified_halts],
+        }
+        payload["manifest_hash"] = canonical_sha256(payload)
+        return payload
+
+    @staticmethod
+    def _validated_bar_paging_manifest(
+        payload: Mapping[str, object],
+        dataset: BarDatasetSnapshot,
+    ) -> dict[str, object]:
+        schema_version = payload.get("schema_version")
+        from .progressive_history import MANIFEST_SCHEMA, validate_manifest
+        if schema_version == MANIFEST_SCHEMA:
+            return validate_manifest(payload, dataset)
+        if schema_version != PAGED_BAR_MANIFEST_SCHEMA_VERSION:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "persisted paged BAR manifest schema is unsupported",
+                details={"schema_version": schema_version},
+            )
+        expected = {
+            "schema_version",
+            "data_epoch",
+            "source_revision",
+            "source_fingerprint",
+            "terminal_open_ms",
+            "terminal_kind",
+            "page_rows",
+            "verified_market_halts",
+            "manifest_hash",
+        }
+        if set(payload) != expected:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "persisted paged BAR manifest fields are incompatible",
+            )
+        material = dict(payload)
+        manifest_hash = material.pop("manifest_hash")
+        if material.get(
+            "data_epoch"
+        ) != dataset.data_epoch or manifest_hash != canonical_sha256(material):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "persisted paged BAR manifest identity is incompatible",
+            )
+        terminal_open_ms = validate_timestamp_ms(
+            material.get("terminal_open_ms"),
+            field_name="terminal_open_ms",
+        )
+        terminal_kind = material.get("terminal_kind")
+        page_rows = material.get("page_rows")
+        if (
+            isinstance(page_rows, bool)
+            or not isinstance(page_rows, int)
+            or page_rows < 1
+            or terminal_kind != BAR_TERMINAL_SOURCE_LATEST_CLOSED
+            or terminal_open_ms != dataset.provenance.source_latest_closed_open_ms
+            or terminal_open_ms < dataset.replay_end_open_ms
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "persisted paged BAR range is invalid",
+            )
+        for field_name in ("source_revision", "source_fingerprint"):
+            value = material.get(field_name)
+            if (
+                not isinstance(value, str)
+                or len(value) != 71
+                or not value.startswith("sha256:")
+            ):
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "persisted paged BAR source digest is invalid",
+                    details={"field": field_name},
+                )
+            try:
+                int(value[7:], 16)
+            except ValueError as exc:
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "persisted paged BAR source digest is invalid",
+                    details={"field": field_name},
+                ) from exc
+        if (
+            material.get("source_revision") != dataset.provenance.source_revision
+            or material.get("source_fingerprint")
+            != dataset.provenance.source_fingerprint
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "persisted paged BAR source commitment is incompatible",
+            )
+        interval_ms = parse_interval_ms(dataset.interval)
+        if interval_ms is None or interval_ms <= 0:
+            raise ReplayDomainError(
+                ReplayErrorCode.UNSUPPORTED_INTERVAL,
+                "persisted paged BAR interval is unsupported",
+            )
+        raw_halts = material["verified_market_halts"]
+        try:
+            verified_halts = validate_registered_bar_halts(
+                raw_halts,
+                identity=dataset.identity,
+                interval_ms=interval_ms,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "persisted paged BAR halt commitment is invalid",
+            ) from exc
+        if any(
+            halt.start_open_ms <= dataset.replay_end_open_ms
+            or halt.resume_ms > terminal_open_ms
+            for halt in verified_halts
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "persisted paged BAR halt range is outside the committed future",
+            )
+        return dict(payload)
+
+    async def create_session(
+        self,
+        config: ReplaySessionConfig,
+        *,
+        _expected_catalog_epoch: str | None = None,
+        _internal_forced_start_ms: int | None = None,
+        _internal_expected_source_fingerprint: str | None = None,
+        _internal_training_history: bool = False,
+        _internal_training_selection: Mapping[str, object] | None = None,
+        _extension_factory: Callable[..., object] | None = None,
+        _internal_execution_mode: str = PAPER_LINEAR_EXECUTION_MODE,
+    ) -> dict[str, object]:
+        if not isinstance(config, ReplaySessionConfig):
+            raise TypeError("config must be ReplaySessionConfig")
+        self._ensure_available(blind_mode=config.blind_mode)
+        if config.source_kind is SourceKind.AGG_TRADE:
+            self._require_trade_capability()
+        if config.execution_model is not ExecutionModel.PAPER_LINEAR_V1:
+            raise ReplayDomainError(
+                ReplayErrorCode.UNSUPPORTED_EXECUTION_MODEL,
+                "unsupported replay execution model",
+            )
+        capability = assess_bar_builder_capability(
+            config.base_interval, config.display_interval
+        )
+        if not capability.enabled:
+            raise ReplayDomainError(
+                ReplayErrorCode.UNSUPPORTED_INTERVAL,
+                "base/display intervals cannot be reconstructed exactly",
+                details={"reason": capability.reason},
+            )
+
+        await self._reserve_session_capacity(blind_mode=config.blind_mode)
+        try:
+            catalog_owner = (
+                self._training_history_catalog
+                if _internal_training_history
+                else self._catalog
+            )
+            bound_window: EligibleWindow | None = None
+            if _internal_training_selection is not None:
+                entry, bound_window = self._bound_training_entry_and_window(
+                    config,
+                    _internal_training_selection,
+                )
+                if (
+                    _expected_catalog_epoch is not None
+                    and entry.catalog_epoch != _expected_catalog_epoch
+                ):
+                    raise ReplayDomainError(
+                        ReplayErrorCode.DATASET_MISMATCH,
+                        "training selection catalog commitment changed",
+                        details={"reason": "SELECTION_COMMITMENT_INVALID"},
+                    )
+            else:
+                try:
+                    catalog = await asyncio.to_thread(
+                        catalog_owner.build,
+                        warmup_bars=config.warmup_bars,
+                        horizon_ms=config.horizon_ms,
+                        quality_mode=config.quality_mode,
+                    )
+                    source_catalog_epoch, source_entries = (
+                        await self._source_catalog_view(
+                            catalog,
+                            source_kind=config.source_kind,
+                        )
+                    )
+                    if (
+                        _expected_catalog_epoch is not None
+                        and source_catalog_epoch != _expected_catalog_epoch
+                    ):
+                        raise ReplayDomainError(
+                            ReplayErrorCode.DATASET_MISMATCH,
+                            "replay catalog changed after capability validation",
+                            details={"reason": "CATALOG_EPOCH_MISMATCH"},
+                        )
+                except ReplayDomainError as exc:
+                    raise self._blind_safe_dataset_error(config, exc) from exc
+                identity = ReplaySeriesIdentity(
+                    config.exchange, config.market_type, config.symbol
+                )
+                entry = next(
+                    (
+                        candidate
+                        for candidate in source_entries
+                        if candidate.identity == identity
+                    ),
+                    None,
+                )
+                if entry is None:
+                    raise ReplayDomainError(
+                        ReplayErrorCode.UNSUPPORTED_SOURCE,
+                        "replay series is not present in source catalog: "
+                        f"{identity.key}",
+                        details={"identity": identity.to_dict()},
+                    )
+            if (
+                _internal_expected_source_fingerprint is not None
+                and entry.source_fingerprint != _internal_expected_source_fingerprint
+            ):
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "training source changed after start selection",
+                    details={"reason": "SOURCE_FINGERPRINT_MISMATCH"},
+                )
+            if entry.selected_base_interval != config.base_interval:
+                raise ReplayDomainError(
+                    ReplayErrorCode.UNSUPPORTED_INTERVAL,
+                    "requested base_interval is not the catalog-selected exact base",
+                    details={
+                        "requested": config.base_interval,
+                        "selected": entry.selected_base_interval,
+                    },
+                )
+            try:
+                if bound_window is not None:
+                    if (
+                        _internal_forced_start_ms is not None
+                        and bound_window.replay_start_ms != _internal_forced_start_ms
+                    ):
+                        raise ReplayDomainError(
+                            ReplayErrorCode.DATASET_MISMATCH,
+                            "training selected start commitment changed",
+                            details={"reason": "SELECTION_COMMITMENT_INVALID"},
+                        )
+                    window = bound_window
+                elif _internal_forced_start_ms is not None:
+                    window = await self._select_manual_window(
+                        catalog_owner,
+                        entry,
+                        config,
+                        start_ms=_internal_forced_start_ms,
+                    )
+                else:
+                    window = (
+                        await self._select_random_window(
+                            catalog_owner,
+                            entry,
+                            config,
+                        )
+                        if config.start_policy is StartPolicy.RANDOM_ELIGIBLE
+                        else await self._select_manual_window(
+                            catalog_owner,
+                            entry,
+                            config,
+                            start_ms=self._required_manual_start(config),
+                        )
+                    )
+                actual_dataset = await asyncio.to_thread(
+                    self._dataset_builder.create, entry, window
+                )
+            except ReplayDomainError as exc:
+                raise self._blind_safe_dataset_error(config, exc) from exc
+            trade_dataset_ref: RawAggTradeDatasetRef | None = None
+            if config.source_kind is SourceKind.AGG_TRADE:
+                trade_dataset_ref = await self._freeze_trade_dataset(
+                    config,
+                    actual_dataset,
+                )
+            bar_paging_manifest = self._bar_paging_manifest(
+                config,
+                _internal_training_selection,
+                actual_dataset,
+            )
+            return await self._create_from_dataset(
+                config=config,
+                actual_dataset=actual_dataset,
+                trade_dataset_ref=trade_dataset_ref,
+                bar_paging_manifest=bar_paging_manifest,
+                restore_checkpoint=None,
+                forked=False,
+                extension_factory=_extension_factory,
+                execution_mode=_internal_execution_mode,
+            )
+        except ReplayDomainError as exc:
+            if config.blind_mode:
+                raise self._blind_safe_dataset_error(config, exc) from exc
+            raise
+        except Exception as exc:
+            # A dependency exception may embed a database path, partition name,
+            # or real timestamp.  The blind service boundary must therefore
+            # convert even unexpected data-access failures to a fixed envelope.
+            if config.blind_mode:
+                raise self._blind_unexpected_dataset_error() from exc
+            raise
+        finally:
+            self._release_session_capacity_reservation()
+
+    async def create_progressive_session(
+        self,
+        config: ReplaySessionConfig,
+        *,
+        feed_id: str,
+        initial_dataset: BarDatasetSnapshot | None = None,
+        training_selection: Mapping[str, object] | None = None,
+        initial_horizon_ms: int | None = None,
+        extension_factory: Callable[..., object] | None = None,
+        execution_mode: str = PAPER_LINEAR_EXECUTION_MODE,
+    ) -> dict[str, object]:
+        """Bind an immutable prefix while persisting the complete requested horizon.
+
+        Training supplies its saved selection and prefix length, so recovery reads
+        that archive revision instead of selecting against a moving catalog.
+        """
+        self._ensure_available(blind_mode=config.blind_mode)
+        await self._reserve_session_capacity(blind_mode=config.blind_mode)
+        try:
+            feed = self.progressive_history.status(feed_id)
+            if (
+                config.source_kind is not SourceKind.BAR
+                or config.base_interval != "1m"
+                or config.execution_model is not ExecutionModel.PAPER_LINEAR_V1
+                or execution_mode not in (PAPER_LINEAR_EXECUTION_MODE, TOUCH_OR_TAPE_EXECUTION_MODE)
+                or feed["end_ms"] - feed["start_ms"] != config.horizon_ms
+                or (config.start_policy is StartPolicy.MANUAL
+                    and config.requested_start_ms != feed["start_ms"])
+            ):
+                raise ReplayDomainError(ReplayErrorCode.DATASET_MISMATCH,
+                    "Progressive session does not match its frozen horizon or execution model")
+            if training_selection is not None:
+                if (initial_dataset is not None or type(initial_horizon_ms) is not int
+                        or initial_horizon_ms < 60_000 or initial_horizon_ms % 60_000
+                        or initial_horizon_ms > config.horizon_ms):
+                    raise ReplayDomainError(ReplayErrorCode.DATASET_MISMATCH,
+                        "Progressive training prefix commitment is invalid")
+                prefix_config = replace(config, horizon_ms=initial_horizon_ms)
+                entry, window = self._bound_training_entry_and_window(prefix_config, training_selection)
+                if (window.replay_start_ms != feed["start_ms"]
+                        or window.replay_end_open_ms + window.interval_ms > feed["ready_end_ms"]):
+                    raise ReplayDomainError(ReplayErrorCode.DATASET_MISMATCH,
+                        "Progressive training prefix is not published")
+                initial_dataset = await asyncio.to_thread(self._dataset_builder.create, entry, window)
+            elif initial_horizon_ms is not None:
+                raise ReplayDomainError(ReplayErrorCode.DATASET_MISMATCH,
+                    "Progressive prefix length requires a saved training selection")
+            if (initial_dataset is None or config.warmup_bars != initial_dataset.warmup_bars
+                    or (config.exchange, config.market_type, config.symbol) != (
+                        initial_dataset.identity.exchange, initial_dataset.identity.market_type,
+                        initial_dataset.identity.symbol)):
+                raise ReplayDomainError(ReplayErrorCode.DATASET_MISMATCH,
+                    "Progressive session initial dataset does not match its market or warmup")
+            capability = assess_bar_builder_capability(config.base_interval, config.display_interval)
+            if not capability.enabled:
+                raise ReplayDomainError(ReplayErrorCode.UNSUPPORTED_INTERVAL,
+                    "Progressive BAR display interval is unsupported")
+            manifest = self.progressive_history.manifest(feed_id, initial_dataset)
+            return await self._create_from_dataset(
+                config=config, actual_dataset=initial_dataset, bar_paging_manifest=manifest,
+                restore_checkpoint=None, forked=False, extension_factory=extension_factory,
+                execution_mode=execution_mode,
+            )
+        except ReplayDomainError as exc:
+            if config.blind_mode:
+                raise self._blind_safe_dataset_error(config, exc) from exc
+            raise
+        except Exception as exc:
+            if config.blind_mode:
+                raise self._blind_unexpected_dataset_error() from exc
+            raise
+        finally:
+            self._release_session_capacity_reservation()
+
+    async def get_session(self, session_id: str) -> dict[str, object]:
+        async with self._lease_handle(session_id) as handle:
+            return await self._session_payload(handle)
+
+    async def get_session_state(self, session_id: str, *, include_config: bool = False) -> dict[str, object]:
+        """Return cursor/state authority without serializing component history."""
+
+        async with self._lease_handle(session_id) as handle:
+            state = (await handle.actor.snapshot()).to_dict()
+            if include_config:
+                state["config"] = handle.config.to_dict()
+            return state
+
+    async def preview_order(
+        self,
+        session_id: str,
+        order: Mapping[str, object],
+    ) -> dict[str, object]:
+        """Preview one order against an actor-serialized immutable snapshot."""
+
+        async with self._lease_handle(session_id) as handle:
+            snapshot = await handle.actor.public_snapshot()
+            components = snapshot.get("components")
+            if not isinstance(components, Mapping):
+                raise ReplayDomainError(
+                    ReplayErrorCode.PERSISTENCE_DEGRADED,
+                    "replay broker projection is unavailable",
+                )
+            raw_orders = components.get("orders")
+            raw_position = components.get("position")
+            raw_account = components.get("account")
+            if (
+                not isinstance(raw_orders, list)
+                or not isinstance(raw_position, Mapping)
+                or not isinstance(raw_account, Mapping)
+            ):
+                raise ReplayDomainError(
+                    ReplayErrorCode.PERSISTENCE_DEGRADED,
+                    "replay broker projection is invalid",
+                )
+            try:
+                request = OrderRequest.from_mapping(order)
+                preview = build_order_preview(
+                    config=handle.broker_config,
+                    request=request,
+                    position=position_state_from_dict(raw_position),
+                    account=Account(**raw_account),  # type: ignore[arg-type]
+                    orders=(ReplayOrder.from_dict(item) for item in raw_orders),
+                )
+            except ReplayDomainError:
+                raise
+            except (TypeError, ValueError) as exc:
+                raise ReplayDomainError(
+                    ReplayErrorCode.ORDER_REJECTED,
+                    "order preview violates the order contract",
+                ) from exc
+            return {
+                "protocol": REPLAY_PROTOCOL,
+                "session_id": handle.session_id,
+                "revision": snapshot["revision"],
+                "state": snapshot["state"],
+                "state_hash": snapshot["state_hash"],
+                "cursor": snapshot["cursor"],
+                "execution_fidelity": self._execution_fidelity(handle.config),
+                "preview": preview,
+            }
+
+    async def order_capacity(
+        self,
+        session_id: str,
+        context: Mapping[str, object],
+    ) -> dict[str, object]:
+        """Return quantity-independent capacity from an actor snapshot."""
+
+        async with self._lease_handle(session_id) as handle:
+            snapshot = await handle.actor.public_snapshot()
+            components = snapshot.get("components")
+            if not isinstance(components, Mapping):
+                raise ReplayDomainError(
+                    ReplayErrorCode.PERSISTENCE_DEGRADED,
+                    "replay broker projection is unavailable",
+                )
+            raw_orders = components.get("orders")
+            raw_position = components.get("position")
+            raw_account = components.get("account")
+            if (
+                not isinstance(raw_orders, list)
+                or not isinstance(raw_position, Mapping)
+                or not isinstance(raw_account, Mapping)
+            ):
+                raise ReplayDomainError(
+                    ReplayErrorCode.PERSISTENCE_DEGRADED,
+                    "replay broker projection is invalid",
+                )
+            try:
+                request = OrderCapacityRequest.from_mapping(context)
+                capacity = build_order_capacity(
+                    config=handle.broker_config,
+                    request=request,
+                    position=position_state_from_dict(raw_position),
+                    account=Account(**raw_account),  # type: ignore[arg-type]
+                    orders=(ReplayOrder.from_dict(item) for item in raw_orders),
+                )
+            except ReplayDomainError:
+                raise
+            except (TypeError, ValueError) as exc:
+                raise ReplayDomainError(
+                    ReplayErrorCode.ORDER_REJECTED,
+                    "order capacity violates the order contract",
+                ) from exc
+            return {
+                "protocol": REPLAY_PROTOCOL,
+                "session_id": handle.session_id,
+                "revision": snapshot["revision"],
+                "state": snapshot["state"],
+                "state_hash": snapshot["state_hash"],
+                "cursor": snapshot["cursor"],
+                "execution_fidelity": self._execution_fidelity(handle.config),
+                "capacity": capacity,
+            }
+
+    async def plan_source_chunk(
+        self,
+        session_id: str,
+        *,
+        target_time_ms: int,
+        max_events: int,
+        screen_interactions: bool = False,
+        preserve_valuation: bool = False,
+        indexed: bool = False,
+        prepare_tape: bool = False,
+    ) -> dict[str, object]:
+        """Return one bounded, read-only source scan plan for training replay."""
+
+        async with self._lease_handle(session_id) as handle:
+            return await handle.actor.source_chunk_plan(
+                target_time_ms=target_time_ms,
+                max_events=max_events,
+                screen_interactions=screen_interactions,
+                preserve_valuation=preserve_valuation,
+                indexed=indexed,
+                prepare_tape=prepare_tape,
+            )
+
+    def prepared_history_repository(self, session_id: str, data_epoch: str):
+        from .broker.prepared_display import PreparedDisplayRepository
+        handle = self._sessions.get(session_id)
+        index = None if handle is None else getattr(handle.actor, "_prepared_bar_interval", None)
+        if index is None or index.display.revision is None or handle.actor._data_epoch != data_epoch:
+            return self.history_repository
+        return PreparedDisplayRepository(self.history_repository, index.display)
+
+    async def scan_source_goal(
+        self,
+        session_id: str,
+        *,
+        max_events: int,
+    ) -> dict[str, object]:
+        """Return one actor-serialized, read-only ordered-source goal scan."""
+
+        async with self._lease_handle(session_id) as handle:
+            return await handle.actor.scan_source_goal(max_events=max_events)
+
+    async def source_events_page(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int,
+        limit: int,
+    ) -> dict[str, object]:
+        """Return one actor-serialized page from the revealed source prefix."""
+
+        async with self._lease_handle(session_id) as handle:
+            return await handle.actor.source_events_page(
+                after_sequence=after_sequence,
+                limit=limit,
+            )
+
+    async def summary_authority(self, session_id: str) -> dict[str, object]:
+        """Expose trusted hashes to the training planner, never component data."""
+
+        async with self._lease_handle(session_id) as handle:
+            return await handle.actor.summary_authority()
+
+    async def ensure_advance_recovery_controller(
+        self,
+        session_id: str,
+        *,
+        client_instance_id: str,
+    ) -> None:
+        """Restore only the original durable advance client's expired lease."""
+
+        async with self._lease_handle(session_id) as handle:
+            snapshot = await handle.actor.public_snapshot()
+            owner = snapshot.get("controller_client_id")
+            if owner == client_instance_id:
+                await handle.actor.heartbeat(client_instance_id)
+                return
+            if owner is not None:
+                raise ReplayDomainError(
+                    ReplayErrorCode.CONTROLLER_CONFLICT,
+                    "another client owns the replay controller lease",
+                    details={"controller_client_id": owner},
+                )
+            await handle.actor.submit(
+                ReplayCommand(
+                    protocol=REPLAY_PROTOCOL,
+                    command_id=f"advance-recovery-{uuid.uuid4().hex}",
+                    client_instance_id=client_instance_id,
+                    expected_revision=int(snapshot["revision"]),
+                    type=CommandType.ACQUIRE_CONTROLLER,
+                    payload={},
+                )
+            )
+
+    async def prepare_period_summaries(
+        self,
+        session_id: str,
+        *,
+        run_id: str,
+        set_id: str,
+        rule_revision: int,
+        rule_hash: str,
+    ) -> dict[str, object]:
+        """Build bounded exact-reducer summaries from one trusted paused seed."""
+
+        started_wall = time.perf_counter()
+        started_cpu = time.process_time()
+        async with self._lease_handle(session_id) as handle:
+            public = await handle.actor.public_snapshot()
+            if public.get("state") != SessionState.PAUSED.value:
+                raise ReplayDomainError(
+                    ReplayErrorCode.INVALID_STATE_TRANSITION,
+                    "period summaries can be prepared only while replay is paused",
+                )
+            if not isinstance(rule_revision, int) or isinstance(rule_revision, bool):
+                raise TypeError("rule_revision must be an integer")
+            if rule_revision < 1:
+                raise ValueError("rule_revision must be positive")
+
+            codec = CheckpointCodec()
+            payload: dict[str, object] | None = None
+            authority: dict[str, object] | None = None
+            for _attempt in range(3):
+                try:
+                    checkpoint = codec.decode(await handle.actor.checkpoint())
+                except CheckpointError as exc:
+                    raise ReplayDomainError(
+                        ReplayErrorCode.DATASET_MISMATCH,
+                        "period-summary seed checkpoint is invalid",
+                    ) from exc
+                observed = await handle.actor.summary_authority()
+                source_cursor = checkpoint.get("source_cursor")
+                if not isinstance(source_cursor, Mapping):
+                    raise ReplayDomainError(
+                        ReplayErrorCode.DATASET_MISMATCH,
+                        "period-summary seed cursor is invalid",
+                    )
+                if (
+                    checkpoint.get("session_state") == SessionState.PAUSED.value
+                    and checkpoint.get("source_sequence")
+                    == observed.get("source_cursor", {}).get("source_sequence")  # type: ignore[union-attr]
+                    and checkpoint.get("event_chain_hash")
+                    == observed.get("event_chain_hash")
+                    and checkpoint.get("domain_command_position")
+                    == observed.get("domain_command_position")
+                    and canonical_sha256(
+                        checkpoint.get("component_state", {})  # type: ignore[arg-type]
+                    )
+                    == observed.get("component_state_hash")
+                ):
+                    payload = checkpoint
+                    authority = observed
+                    break
+                await asyncio.sleep(0)
+            if payload is None or authority is None:
+                raise ReplayDomainError(
+                    ReplayErrorCode.REVISION_CONFLICT,
+                    "replay changed while capturing the period-summary seed",
+                )
+            if authority.get("has_active_trading_path") is True:
+                raise ReplayDomainError(
+                    ReplayErrorCode.INVALID_STATE_TRANSITION,
+                    "period summaries cannot skip an active trading path",
+                )
+            component_state = payload.get("component_state")
+            source_cursor = payload.get("source_cursor")
+            if not isinstance(component_state, Mapping) or not isinstance(
+                source_cursor, Mapping
+            ):
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "period-summary seed components are invalid",
+                )
+
+            if handle.trade_dataset_ref is None:
+                source = self._bar_source(
+                    actor_dataset=handle.actor_dataset,
+                    actual_dataset=handle.actual_dataset,
+                    paging_manifest=handle.bar_paging_manifest,
+                )
+                total_events = source.remaining_count()
+                source_kind = "BAR"
+            else:
+                source = TradeReplaySource(
+                    PagedReplayTradeReader(
+                        self._raw_trade_archive,
+                        handle.trade_dataset_ref,
+                        page_rows=self.settings.trade_page_rows,
+                    ),
+                    time_offset_ms=(
+                        handle.actor_dataset.replay_start_ms
+                        - handle.trade_dataset_ref.start_time_ms
+                    ),
+                    blind_mode=handle.config.blind_mode,
+                )
+                total_events = handle.trade_dataset_ref.row_count
+                source_kind = "AGG_TRADE"
+            base_sequence = int(source_cursor["source_sequence"])
+            try:
+                source = source.fork_at_sequence(
+                    base_sequence,
+                    last_event_time_ms=source_cursor["last_event_time_ms"],  # type: ignore[arg-type]
+                )
+            except (TypeError, ValueError, ReplayDomainError) as exc:
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "period-summary source cannot restore the seed cursor",
+                ) from exc
+
+            eligible_events = (
+                total_events - base_sequence - PERIOD_SUMMARY_MIN_TAIL_EVENTS
+            )
+            if eligible_events < PERIOD_SUMMARY_MIN_SKIP_EVENTS:
+                raise ReplayDomainError(
+                    ReplayErrorCode.SCAN_LIMIT_EXCEEDED,
+                    "not enough future source events remain for a period summary",
+                    details={
+                        "required_skip_events": PERIOD_SUMMARY_MIN_SKIP_EVENTS,
+                        "required_tail_events": PERIOD_SUMMARY_MIN_TAIL_EVENTS,
+                        "remaining_events": max(0, total_events - base_sequence),
+                    },
+                )
+            candidate_count = min(
+                MAX_PERIOD_SUMMARY_CANDIDATES,
+                max(1, eligible_events // PERIOD_SUMMARY_MIN_SKIP_EVENTS),
+            )
+            candidate_sequences = tuple(
+                sorted(
+                    {
+                        base_sequence
+                        + max(
+                            PERIOD_SUMMARY_MIN_SKIP_EVENTS,
+                            (eligible_events * index) // candidate_count,
+                        )
+                        for index in range(1, candidate_count + 1)
+                    }
+                )
+            )
+
+            reducer = self._broker(
+                handle.config,
+                handle.actor_dataset,
+                handle.broker_config,
+                trade_dataset_ref=handle.trade_dataset_ref,
+                bar_paging_manifest=handle.bar_paging_manifest,
+                actual_dataset=handle.actual_dataset,
+                max_closed_bars_override=self._component_max_closed_bars(
+                    component_state
+                ),
+            )
+            try:
+                reducer.restore(component_state)
+            except Exception as exc:
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "period-summary reducer rejected the seed components",
+                ) from exc
+
+            chain = str(payload["event_chain_hash"])
+            base_component_hash = canonical_sha256(component_state)
+            candidates: list[EncodedPeriodSummaryCandidate] = []
+            total_compressed = 0
+            endpoint_index = 0
+            while endpoint_index < len(candidate_sequences):
+                event = source.next()
+                if event is None:
+                    raise ReplayDomainError(
+                        ReplayErrorCode.DATASET_MISMATCH,
+                        "period-summary source ended before its candidate boundary",
+                    )
+                projection = reducer.apply_source_event(event)
+                if inspect.isawaitable(projection):
+                    await projection
+                cursor = source.cursor()
+                chain = next_source_chain_hash(
+                    chain,
+                    event,
+                    cursor.source_sequence,
+                )
+                if cursor.source_sequence == candidate_sequences[endpoint_index]:
+                    state = dict(reducer.snapshot())
+                    blob, raw_bytes, blob_hash, state_hash = encode_component_state(
+                        state
+                    )
+                    total_compressed += len(blob)
+                    if total_compressed > MAX_PERIOD_SUMMARY_TOTAL_COMPRESSED_BYTES:
+                        raise ReplayDomainError(
+                            ReplayErrorCode.SCAN_LIMIT_EXCEEDED,
+                            "period-summary compressed cache budget was exceeded",
+                            details={
+                                "limit_bytes": (
+                                    MAX_PERIOD_SUMMARY_TOTAL_COMPRESSED_BYTES
+                                )
+                            },
+                        )
+                    summary = ReplayPeriodSummary(
+                        summary_id=f"{set_id}-{endpoint_index + 1:02d}",
+                        run_id=run_id,
+                        session_id=session_id,
+                        source_kind=source_kind,
+                        data_epoch=str(authority["data_epoch"]),
+                        snapshot_ref_hash=str(authority["snapshot_ref_hash"]),
+                        session_config_hash=str(authority["session_config_hash"]),
+                        execution_version=str(authority["execution_version"]),
+                        rule_revision=rule_revision,
+                        rule_hash=rule_hash,
+                        base_source_sequence=base_sequence,
+                        base_domain_command_position=int(
+                            payload["domain_command_position"]
+                        ),
+                        base_event_chain_hash=str(payload["event_chain_hash"]),
+                        base_component_state_hash=base_component_hash,
+                        end_source_sequence=cursor.source_sequence,
+                        end_virtual_time_ms=int(cursor.last_event_time_ms),
+                        end_source_cursor={
+                            "source_sequence": cursor.source_sequence,
+                            "last_event_time_ms": cursor.last_event_time_ms,
+                            "last_base_bar_open_ms": (cursor.last_base_bar_open_ms),
+                            "at_end": cursor.at_end,
+                        },
+                        end_event_chain_hash=chain,
+                        end_component_state=state,
+                        end_component_state_hash=state_hash,
+                    )
+                    candidates.append(
+                        EncodedPeriodSummaryCandidate.from_summary(
+                            summary,
+                            component_blob=blob,
+                            component_raw_bytes=raw_bytes,
+                            component_blob_hash=blob_hash,
+                        )
+                    )
+                    endpoint_index += 1
+                if (
+                    cursor.source_sequence - base_sequence
+                ) % PERIOD_SUMMARY_YIELD_EVENTS == 0:
+                    await asyncio.sleep(0)
+
+            elapsed_wall_ms = max(
+                0,
+                int(round((time.perf_counter() - started_wall) * 1_000)),
+            )
+            elapsed_cpu_ms = max(
+                0,
+                int(round((time.process_time() - started_cpu) * 1_000)),
+            )
+            build_metadata = {
+                "schema_version": "replay.period-summary-build-proof.v1",
+                "algorithm_version": PERIOD_SUMMARY_ALGORITHM_VERSION,
+                "set_id": set_id,
+                "run_id": run_id,
+                "session_id": session_id,
+                "source_kind": source_kind,
+                "data_epoch": str(authority["data_epoch"]),
+                "snapshot_ref_hash": str(authority["snapshot_ref_hash"]),
+                "session_config_hash": str(authority["session_config_hash"]),
+                "execution_version": str(authority["execution_version"]),
+                "rule_revision": rule_revision,
+                "rule_hash": rule_hash,
+                "base_source_sequence": base_sequence,
+                "base_domain_command_position": int(payload["domain_command_position"]),
+                "base_event_chain_hash": str(payload["event_chain_hash"]),
+                "base_component_state_hash": base_component_hash,
+                "candidate_summary_hashes": [
+                    candidate.summary_hash for candidate in candidates
+                ],
+                "source_event_count": (
+                    candidates[-1].end_source_sequence - base_sequence
+                ),
+                "candidate_count": len(candidates),
+                "compressed_bytes": total_compressed,
+            }
+            return {
+                "metadata": build_metadata,
+                "build_proof_hash": canonical_sha256(build_metadata),
+                "candidates": tuple(candidates),
+                "source_event_count": build_metadata["source_event_count"],
+                "build_wall_ms": elapsed_wall_ms,
+                "build_cpu_ms": elapsed_cpu_ms,
+            }
+
+    async def apply_period_summary(
+        self,
+        session_id: str,
+        summary: ReplayPeriodSummary,
+        *,
+        client_instance_id: str,
+        expected_revision: int,
+    ) -> dict[str, object]:
+        async with self._lease_handle(session_id) as handle:
+            return await handle.actor.apply_period_summary(
+                summary,
+                client_instance_id=client_instance_id,
+                expected_revision=expected_revision,
+            )
+
+    async def command(
+        self,
+        session_id: str,
+        command: ReplayCommand,
+        *,
+        _training_internal: bool = False,
+    ) -> dict[str, object]:
+        if (
+            command.type
+            in {
+                InternalCommandType.ADJUST_CAPITAL,
+                InternalCommandType.EXECUTE_HISTORICAL_BOOK_CLOSE,
+                InternalCommandType.EXECUTE_REVEALED_REFERENCE_CLOSE,
+                InternalCommandType.REVEAL_HISTORY_AUTHORIZED,
+                InternalCommandType.FAST_FORWARD_EMPTY_ACCOUNT,
+                InternalCommandType.FAST_FORWARD_FINAL_STATE,
+                InternalCommandType.RECORDED_INTERVAL,
+                InternalCommandType.INDEXED_INTERVAL,
+                InternalCommandType.SHARED_INDEXED_INTERVAL,
+                InternalCommandType.MULTI_SHARED_INDEXED_INTERVAL,
+                InternalCommandType.STEP_DEFER_TERMINAL,
+                InternalCommandType.FINALIZE_DEFERRED_TERMINAL,
+            }
+            and not _training_internal
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.INVALID_STATE_TRANSITION,
+                "internal training command is unavailable on replay.v1",
+            )
+        async with self._lease_handle(session_id) as handle:
+            try:
+                group = getattr(self, "_multi_mutation_groups", {}).get(session_id)
+                if group is not None and group.commands.get(session_id) == command:
+                    # Read all group idempotency records in one worker call.
+                    # The writer still checks uniqueness and candidate revisions.
+                    existing = group.command_records[session_id]
+                else:
+                    existing = await self.store.get_command(session_id, command.command_id)
+                if existing is not None:
+                    result = self._replay_stored_command(existing, command)
+                else:
+                    # A durable command ACK remains readable even if a later,
+                    # derived report write put persistence in sticky degraded
+                    # mode.  Only genuinely new mutations require availability.
+                    self._ensure_available(blind_mode=handle.config.blind_mode)
+                    if group is not None and group.commands.get(session_id) == command:
+                        result = await handle.actor.submit(command, _group=group)
+                    else:
+                        result = await handle.actor.submit(command)
+                self._metrics["commands"] = int(self._metrics["commands"] or 0) + 1
+                payload = self._command_result_payload(result)
+                if command.type in {
+                    CommandType.REVEAL_HISTORY,
+                    InternalCommandType.REVEAL_HISTORY_AUTHORIZED,
+                } and result.data.get("revealed"):
+                    payload["data"] = {
+                        **dict(payload["data"]),  # type: ignore[arg-type]
+                        "actual_history": self._actual_history(handle),
+                    }
+                if existing is None and result.state is SessionState.ENDED:
+                    await self._persist_report_after_command(handle)
+                return {
+                    "protocol": REPLAY_PROTOCOL,
+                    "session_id": session_id,
+                    **payload,
+                }
+            except ReplayDomainError as exc:
+                if (
+                    handle.config.blind_mode
+                    and exc.code is ReplayErrorCode.PERSISTENCE_DEGRADED
+                ):
+                    raise self._blind_safe_internal_error(exc.code) from exc
+                raise
+            except Exception as exc:
+                if handle.config.blind_mode:
+                    raise self._blind_safe_internal_error(
+                        ReplayErrorCode.PERSISTENCE_DEGRADED
+                    ) from exc
+                raise
+
+    async def fork_session(self, session_id: str) -> dict[str, object]:
+        blind_mode = False
+        try:
+            async with self._lease_handle(session_id) as source:
+                blind_mode = source.config.blind_mode
+                checkpoint = await source.actor.checkpoint()
+                await self._reserve_session_capacity(blind_mode=blind_mode)
+                try:
+                    result = await self._create_from_dataset(
+                        config=source.config,
+                        actual_dataset=source.actual_dataset,
+                        restore_checkpoint=checkpoint,
+                        forked=True,
+                        synthetic_origin_ms=source.synthetic_origin_ms,
+                        broker_config=source.broker_config,
+                        trade_dataset_ref=source.trade_dataset_ref,
+                        bar_paging_manifest=source.bar_paging_manifest,
+                    )
+                finally:
+                    self._release_session_capacity_reservation()
+                self._metrics["forks"] = int(self._metrics["forks"] or 0) + 1
+                result["forked_from_session_id"] = session_id
+                return result
+        except ReplayDomainError as exc:
+            if blind_mode:
+                raise self._blind_safe_dataset_error(True, exc) from exc
+            raise
+        except Exception as exc:
+            if blind_mode:
+                raise self._blind_unexpected_dataset_error() from exc
+            raise
+
+    async def fork_session_at_checkpoint(
+        self,
+        session_id: str,
+        *,
+        checkpoint_id: int,
+        extension_factory: Callable[..., object],
+    ) -> dict[str, object]:
+        """Create an isolated session from one exact durable checkpoint."""
+
+        blind_mode = False
+        try:
+            async with self._lease_handle(session_id) as source:
+                blind_mode = source.config.blind_mode
+                checkpoints = await self.store.load_valid_checkpoints(session_id)
+                checkpoint = next(
+                    (
+                        candidate
+                        for candidate in checkpoints
+                        if candidate.checkpoint_id == checkpoint_id
+                    ),
+                    None,
+                )
+                if checkpoint is None:
+                    raise ReplayDomainError(
+                        ReplayErrorCode.DATASET_MISMATCH,
+                        "review checkpoint is unavailable",
+                    )
+                await self._reserve_session_capacity(blind_mode=blind_mode)
+                try:
+                    result = await self._create_from_dataset(
+                        config=source.config,
+                        actual_dataset=source.actual_dataset,
+                        restore_checkpoint=checkpoint.payload,
+                        forked=True,
+                        synthetic_origin_ms=source.synthetic_origin_ms,
+                        broker_config=source.broker_config,
+                        trade_dataset_ref=source.trade_dataset_ref,
+                        bar_paging_manifest=source.bar_paging_manifest,
+                        extension_factory=extension_factory,
+                    )
+                finally:
+                    self._release_session_capacity_reservation()
+                self._metrics["forks"] = int(self._metrics["forks"] or 0) + 1
+                result["forked_from_session_id"] = session_id
+                result["forked_from_checkpoint_id"] = checkpoint_id
+                return result
+        except ReplayDomainError as exc:
+            if blind_mode:
+                raise self._blind_safe_dataset_error(True, exc) from exc
+            raise
+        except Exception as exc:
+            if blind_mode:
+                raise self._blind_unexpected_dataset_error() from exc
+            raise
+
+    async def fork_session_from_checkpoint_blob(
+        self,
+        session_id: str,
+        *,
+        checkpoint: bytes,
+        extension_factory: Callable[..., object] | None = None,
+    ) -> dict[str, object]:
+        """Fork from a checksum-verified ReviewMode anchor, not the recent ring."""
+
+        blind_mode = False
+        checkpoint_bytes = bytes(checkpoint)
+        try:
+            # Decode before reserving capacity so malformed persisted evidence
+            # cannot create a partial child session.
+            CheckpointCodec().decode(checkpoint_bytes)
+            async with self._lease_handle(session_id) as source:
+                blind_mode = source.config.blind_mode
+                await self._reserve_session_capacity(blind_mode=blind_mode)
+                try:
+                    result = await self._create_from_dataset(
+                        config=source.config,
+                        actual_dataset=source.actual_dataset,
+                        restore_checkpoint=checkpoint_bytes,
+                        forked=True,
+                        synthetic_origin_ms=source.synthetic_origin_ms,
+                        broker_config=source.broker_config,
+                        trade_dataset_ref=source.trade_dataset_ref,
+                        bar_paging_manifest=source.bar_paging_manifest,
+                        extension_factory=extension_factory,
+                    )
+                finally:
+                    self._release_session_capacity_reservation()
+                self._metrics["forks"] = int(self._metrics["forks"] or 0) + 1
+                result["forked_from_session_id"] = session_id
+                result["forked_from_anchor_sha256"] = (
+                    f"sha256:{hashlib.sha256(checkpoint_bytes).hexdigest()}"
+                )
+                return result
+        except ReplayDomainError as exc:
+            if blind_mode:
+                raise self._blind_safe_dataset_error(True, exc) from exc
+            raise
+        except Exception as exc:
+            if blind_mode:
+                raise self._blind_unexpected_dataset_error() from exc
+            raise
+
+    async def report(self, session_id: str) -> dict[str, object]:
+        async with self._lease_handle(session_id) as handle:
+            report = dict(await handle.actor.report())
+            if report:
+                report_hash = str(report.get("report_hash", ""))
+                if report_hash:
+                    await self.store.save_report(session_id, report, report_hash)
+            payload: dict[str, object] = {
+                "protocol": REPLAY_PROTOCOL,
+                "session_id": session_id,
+                "data_fidelity": self._data_fidelity(handle.config),
+                "execution_fidelity": self._execution_fidelity(handle.config),
+                "revealed": (await handle.actor.public_snapshot())["revealed"],
+                "report": report,
+            }
+            if payload["revealed"]:
+                payload["actual_history"] = self._actual_history(handle)
+            return payload
+
+    async def journal(self, session_id: str) -> dict[str, object]:
+        async with self._lease_handle(session_id) as handle:
+            snapshot = await handle.actor.public_snapshot()
+            return {
+                "protocol": REPLAY_PROTOCOL,
+                "session_id": session_id,
+                "entries": snapshot["journal"],
+            }
+
+    async def subscribe(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int | None,
+        data_epoch: str | None,
+    ) -> tuple[ReplaySessionActor, ActorStreamSubscription]:
+        actor: ReplaySessionActor | None = None
+        subscription: ActorStreamSubscription | None = None
+        try:
+            async with self._lease_handle(session_id) as handle:
+                actor = handle.actor
+                snapshot = await actor.snapshot()
+                if data_epoch is not None and data_epoch != snapshot.data_epoch:
+                    raise ReplayDomainError(
+                        ReplayErrorCode.DATASET_MISMATCH,
+                        "replay stream data_epoch does not match the session",
+                    )
+                subscription = await actor.subscribe(
+                    after_sequence=after_sequence,
+                    max_pending=self.settings.event_subscriber_queue,
+                )
+                return actor, subscription
+        except BaseException:
+            if actor is not None and subscription is not None:
+                # Once actor.subscribe returns, this service coroutine owns the
+                # token until the tuple reaches the WebSocket layer.  Context
+                # manager exit is an await/cancellation point, so transfer
+                # cleanup synchronously before propagating any handoff failure.
+                actor.request_unsubscribe(subscription.token)
+            raise
+
+    async def heartbeat(self, session_id: str, client_instance_id: str, *, _renew_group=True) -> None:
+        async with self._lease_handle(session_id) as handle:
+            await handle.actor.heartbeat(client_instance_id)
+        group = getattr(self.training, "_prepared_controller_groups", {}).get(session_id)
+        if _renew_group and group is not None and group[0] == client_instance_id:
+            for sid in group[1]:
+                if sid == session_id:
+                    continue
+                # Never load or acquire a removed/released/foreign adapter as
+                # a side effect of a websocket heartbeat.
+                async with self._lifecycle_lock:
+                    self._ensure_accepting()
+                    member = self._sessions.get(sid)
+                    if (member is None or member.evicting or sid in self._pending_session_deletions
+                            or member.actor._controller_client_id != client_instance_id):
+                        continue
+                    self._activate_handle_lease_locked(member)
+                try:
+                    await member.actor.heartbeat(client_instance_id)
+                except ReplayDomainError as exc:
+                    if exc.code is not ReplayErrorCode.CONTROLLER_CONFLICT:
+                        raise
+                finally:
+                    self._release_handle_lease(member)
+
+    async def release_session_to_hub(self, session_id: str) -> None:
+        """Pause, checkpoint and evict one adapter before the Hub becomes visible."""
+
+        self._ensure_accepting()
+        # Lazy recovery must remain leased until ownership is transferred to the
+        # eviction lane. Otherwise an idle reaper can evict the freshly
+        # recovered handle after get_session() releases its transient lease but
+        # before this method acquires _prune_lock.
+        handle = await self._acquire_handle_lease(session_id)
+        lease_active = True
+        try:
+            async with self._prune_lock:
+                async with self._lifecycle_lock:
+                    if self._sessions.get(session_id) is not handle:
+                        raise ReplayDomainError(
+                            ReplayErrorCode.REVISION_CONFLICT,
+                            "replay session ownership changed before Hub release",
+                        )
+                    # This method owns exactly one lease. Any additional lease
+                    # represents a concurrent request and preserves the existing
+                    # fail-closed busy contract.
+                    if handle.evicting or handle.in_flight != 1:
+                        raise ReplayDomainError(
+                            ReplayErrorCode.REVISION_CONFLICT,
+                            "replay session is busy",
+                        )
+                    # No await is permitted between releasing our lease and
+                    # claiming eviction. _prune_lock excludes the reaper while
+                    # the lifecycle lock protects the handle state transition.
+                    self._release_handle_lease(handle)
+                    lease_active = False
+                    handle.evicting = True
+                    handle.eviction_complete.clear()
+                await self._evict_claimed_handle(session_id, handle, reason="hub")
+        finally:
+            if lease_active:
+                self._release_handle_lease(handle)
+
+    async def discard_session(self, session_id: str) -> None:
+        """Evict and delete one non-primary training adapter after detachment."""
+
+        self._ensure_accepting()
+        durable = await self.store.get_session(session_id)
+        if durable is None:
+            return
+        deleted = await self.delete_sessions_atomically(
+            (session_id,),
+            lambda: self.store.delete_session(session_id),
+        )
+        if not deleted:
+            raise ReplayDomainError(
+                ReplayErrorCode.PERSISTENCE_DEGRADED,
+                "detached replay session could not be deleted",
+                details={"session_id": session_id},
+            )
+
+    async def delete_sessions_atomically(
+        self,
+        session_ids: Sequence[str],
+        delete: Callable[[], Awaitable[_TaskResult]],
+    ) -> _TaskResult:
+        """Fence recovery while actors and their durable archive are deleted.
+
+        The fence spans actor eviction and the caller-owned SQLite transaction.
+        Requests already using a target make deletion fail closed as busy, while
+        requests that arrive after the claim wait and then perform a fresh
+        durable lookup.
+        """
+
+        self._ensure_accepting()
+        normalized = tuple(dict.fromkeys(session_ids))
+        if not normalized or any(not session_id for session_id in normalized):
+            raise ValueError("session_ids must contain non-empty identifiers")
+
+        deletion_complete = asyncio.Event()
+        claimed: dict[str, ReplaySessionHandle] = {}
+        delete_succeeded = False
+        async with self._prune_lock:
+            try:
+                while True:
+                    pending_recoveries: tuple[ReplayRecoveryClaim, ...]
+                    async with self._lifecycle_lock:
+                        self._ensure_accepting()
+                        pending_recoveries = tuple(
+                            claim
+                            for session_id in normalized
+                            if (claim := self._pending_recoveries.get(session_id))
+                            is not None
+                        )
+                    if not pending_recoveries:
+                        break
+                    await asyncio.gather(
+                        *(claim.complete.wait() for claim in pending_recoveries)
+                    )
+
+                async with self._lifecycle_lock:
+                    self._ensure_accepting()
+                    for session_id in normalized:
+                        if session_id in self._pending_session_deletions:
+                            raise ReplayDomainError(
+                                ReplayErrorCode.REVISION_CONFLICT,
+                                "replay session deletion is already in progress",
+                                details={"session_id": session_id},
+                            )
+                        handle = self._sessions.get(session_id)
+                        if handle is not None and (
+                            handle.evicting or handle.in_flight != 0
+                        ):
+                            raise ReplayDomainError(
+                                ReplayErrorCode.REVISION_CONFLICT,
+                                "replay session is busy",
+                                details={"session_id": session_id},
+                            )
+
+                    for session_id in normalized:
+                        self._pending_session_deletions[session_id] = deletion_complete
+                        handle = self._sessions.get(session_id)
+                        if handle is not None:
+                            handle.evicting = True
+                            handle.eviction_complete.clear()
+                            claimed[session_id] = handle
+                    self._lifecycle_changed.set()
+
+                for session_id, handle in claimed.items():
+                    await self._evict_claimed_handle(
+                        session_id,
+                        handle,
+                        reason="hub",
+                    )
+
+                async def execute_delete() -> _TaskResult:
+                    result = await delete()
+                    history = getattr(self, "_progressive_history", None)
+                    archive_dir = self.settings.replay_history_archive_dir
+                    if history is None and archive_dir is not None and (Path(archive_dir) / "progressive-index.sqlite3").exists():
+                        history = self.progressive_history
+                    if history is not None:
+                        for session_id in normalized:
+                            if await self.store.get_session(session_id) is None:
+                                await asyncio.to_thread(history.release, self._progressive_session_owner(session_id))
+                    return result
+
+                delete_task = asyncio.create_task(
+                    execute_delete(),
+                    name="replay-session-archive-delete",
+                )
+                try:
+                    result = await asyncio.shield(delete_task)
+                except asyncio.CancelledError:
+                    try:
+                        await self._await_task_uninterruptibly(delete_task)
+                    except BaseException:
+                        pass
+                    else:
+                        delete_succeeded = True
+                    raise
+                delete_succeeded = True
+                return result
+            finally:
+                cleanup_task = asyncio.create_task(
+                    self._finish_session_deletion(
+                        normalized,
+                        deletion_complete=deletion_complete,
+                        claimed=claimed,
+                        delete_succeeded=delete_succeeded,
+                    ),
+                    name="replay-session-deletion-fence-release",
+                )
+                try:
+                    await asyncio.shield(cleanup_task)
+                except asyncio.CancelledError:
+                    await self._await_task_uninterruptibly(cleanup_task)
+                    raise
+
+    async def _finish_session_deletion(
+        self,
+        session_ids: Sequence[str],
+        *,
+        deletion_complete: asyncio.Event,
+        claimed: Mapping[str, ReplaySessionHandle],
+        delete_succeeded: bool,
+    ) -> None:
+        """Release a deletion fence without leaving cancellation-visible ghosts."""
+
+        async with self._lifecycle_lock:
+            for session_id, handle in claimed.items():
+                if self._sessions.get(session_id) is handle and handle.evicting:
+                    handle.evicting = False
+                    handle.eviction_complete.set()
+            for session_id in session_ids:
+                if self._pending_session_deletions.get(session_id) is deletion_complete:
+                    self._pending_session_deletions.pop(session_id, None)
+                if delete_succeeded:
+                    self._unavailable_sessions.pop(session_id, None)
+            # Invalidate durable rows captured by an acquisition before this
+            # fence was claimed. That acquisition must loop and read SQLite
+            # again instead of recovering a deleted record.
+            self._session_generation += 1
+            deletion_complete.set()
+            self._lifecycle_changed.set()
+
+    async def shutdown(self, *, step_timeout: float = 5.0) -> None:
+        async with self._shutdown_lock:
+            if self._closed:
+                return
+            async with self._lifecycle_lock:
+                self._accepting = False
+                self._prune_abort.set()
+            errors: list[str] = []
+            force_shutdown_pause_sessions: frozenset[str] = frozenset()
+            self._reaper_stop.set()
+            reaper = self._reaper_task
+            if reaper is not None:
+                try:
+                    await reaper
+                except Exception as exc:
+                    errors.append(f"reaper: {exc}")
+                self._reaper_task = None
+
+            if self.training is not None:
+                try:
+                    force_shutdown_pause_sessions = await self.training.shutdown()
+                except Exception as exc:
+                    errors.append(f"training: {exc}")
+
+            # Close the prune lane before draining accepted work. A capacity
+            # request that was queued before shutdown will observe accepting=0
+            # when it enters this serialized section and cannot touch an actor.
+            async with self._prune_lock:
+                pass
+            if not await self._wait_for_pending_lifecycle_drain(timeout=step_timeout):
+                owners = tuple(self._pending_lifecycle_owners)
+                for owner in owners:
+                    owner.cancel()
+                # A cancelled create may already have committed its row and must
+                # retain store ownership until its compensating delete finishes.
+                # ``step_timeout`` bounds the graceful drain before cancellation;
+                # abandoning cancellation cleanup would close SQLite underneath
+                # an accepted transaction and can leave an invisible orphan.
+                await self._wait_for_pending_lifecycle_drain(timeout=None)
+
+            handles = tuple(self._sessions.items())
+            for session_id, handle in handles:
+                try:
+                    await handle.actor.shutdown(
+                        step_timeout=step_timeout,
+                        force_pause_reason=(
+                            session_id in force_shutdown_pause_sessions
+                        ),
+                    )
+                except Exception as exc:
+                    errors.append(f"{session_id}: {exc}")
+                finally:
+                    self._datasets.release(session_id)
+                    if handle.trade_pin_token is not None:
+                        self._raw_trade_archive.release_dataset(handle.trade_pin_token)
+            if not await self._wait_for_lease_drain(timeout=step_timeout):
+                owners = tuple(self._lease_owners)
+                for owner in owners:
+                    owner.cancel()
+                if not await self._wait_for_lease_drain(timeout=step_timeout):
+                    errors.append(
+                        "leases: replay requests did not release after cancellation"
+                    )
+            async with self._lifecycle_lock:
+                self._sessions.clear()
+                self._session_generation += 1
+            close_indexes = getattr(self._repository, "close_shared_market_backfill", None)
+            if callable(close_indexes):
+                await asyncio.to_thread(close_indexes, min(step_timeout, 1.0))
+            try:
+                await self.store.close()
+            except Exception as exc:
+                errors.append(f"store: {exc}")
+            self._closed = True
+            if errors:
+                self._metrics["shutdown_failures"] = len(errors)
+                self._metrics["last_shutdown_error"] = "; ".join(errors)[:500]
+                raise ReplayDomainError(
+                    ReplayErrorCode.PERSISTENCE_DEGRADED,
+                    "ReplayService shutdown failed",
+                    details={"errors": tuple(errors)},
+                )
+
+    def diagnostics(self, *, redact_paths: bool = False) -> dict[str, object]:
+        persistence = self.store.diagnostics()
+        if redact_paths:
+            persistence = {**persistence, "path": "<redacted>"}
+        repository_diagnostics = getattr(self._repository, "diagnostics", None)
+        repository = (
+            repository_diagnostics(redact_paths=redact_paths)
+            if callable(repository_diagnostics)
+            else {
+                "backend": (
+                    f"{type(self._repository).__module__}."
+                    f"{type(self._repository).__qualname__}"
+                )
+            }
+        )
+        trade_history = dict(self._raw_trade_archive.diagnostics())
+        if redact_paths:
+            for field_name in ("root", "origin", "path"):
+                if field_name in trade_history:
+                    trade_history[field_name] = "<redacted>"
+        return {
+            **self._metrics,
+            "enabled": True,
+            "accepting": self._accepting,
+            "closed": self._closed,
+            "sessions": {
+                session_id: handle.actor.diagnostics()
+                for session_id, handle in self._sessions.items()
+            },
+            "pending_session_reservations": self._pending_session_reservations,
+            "pending_handle_acquisitions": self._pending_handle_acquisitions,
+            "pending_recoveries": tuple(sorted(self._pending_recoveries)),
+            "pending_session_deletions": tuple(sorted(self._pending_session_deletions)),
+            "pending_lifecycle_owners": len(self._pending_lifecycle_owners),
+            "active_lease_owners": len(self._lease_owners),
+            "unavailable_sessions": {
+                session_id: error.code.value
+                for session_id, error in self._unavailable_sessions.items()
+            },
+            "catalog": self._catalog.diagnostics(),
+            "bar_history": repository,
+            "trade_history": trade_history,
+            "dataset_pins": dict(self._datasets.diagnostics()),
+            "training_available": True,
+            "persistence": persistence,
+        }
+
+    @staticmethod
+    async def _await_task_uninterruptibly(
+        task: asyncio.Task[_TaskResult],
+    ) -> _TaskResult:
+        """Resolve an owned cleanup task despite repeated outer cancellation."""
+
+        while True:
+            if task.done():
+                return task.result()
+            try:
+                return await asyncio.shield(task)
+            except asyncio.CancelledError:
+                if task.done():
+                    return task.result()
+
+    async def _pin_trade_dataset(
+        self,
+        dataset_ref: RawAggTradeDatasetRef,
+        *,
+        task_name: str,
+    ) -> str:
+        """Acquire an archive pin without losing ownership on cancellation."""
+
+        pin_task = asyncio.create_task(
+            asyncio.to_thread(
+                self._raw_trade_archive.pin_dataset,
+                dataset_ref,
+            ),
+            name=task_name,
+        )
+        try:
+            return await asyncio.shield(pin_task)
+        except asyncio.CancelledError:
+            # ``to_thread`` cannot stop an in-progress checksum validation.  It
+            # may therefore publish a pin after this request is cancelled.  Take
+            # back the eventual token and release it before cancellation escapes.
+            try:
+                token = await self._await_task_uninterruptibly(pin_task)
+            except BaseException:
+                pass
+            else:
+                self._raw_trade_archive.release_dataset(token)
+            raise
+
+    async def _shutdown_actor_uninterruptibly(
+        self,
+        actor: ReplaySessionActor,
+        *,
+        step_timeout: float,
+        task_name: str,
+    ) -> None:
+        shutdown_error: BaseException | None = None
+        shutdown_task = asyncio.create_task(
+            actor.shutdown(step_timeout=step_timeout),
+            name=task_name,
+        )
+        try:
+            await self._await_task_uninterruptibly(shutdown_task)
+        except BaseException as exc:
+            shutdown_error = exc
+        actor_task = actor.task
+        if actor_task is not None and not actor_task.done():
+            actor_task.cancel()
+            try:
+                await self._await_task_uninterruptibly(actor_task)
+            except BaseException:
+                pass
+        if shutdown_error is not None:
+            raise shutdown_error
+
+    async def _abort_unregistered_actor_uninterruptibly(
+        self,
+        actor: ReplaySessionActor,
+    ) -> None:
+        """Stop an unpublished actor without issuing a durable shutdown mutation."""
+
+        actor_task = actor.task
+        if actor_task is None:
+            return
+        if not actor_task.done():
+            actor_task.cancel()
+        try:
+            await self._await_task_uninterruptibly(actor_task)
+        except BaseException:
+            # Cancellation is the expected physical stop for an actor whose
+            # session is being rolled back before service registration.
+            pass
+
+    async def _create_from_dataset(
+        self,
+        *,
+        config: ReplaySessionConfig,
+        actual_dataset: BarDatasetSnapshot,
+        trade_dataset_ref: RawAggTradeDatasetRef | None = None,
+        bar_paging_manifest: Mapping[str, object] | None = None,
+        restore_checkpoint: bytes | None,
+        forked: bool,
+        synthetic_origin_ms: int | None = None,
+        broker_config: BrokerConfig | None = None,
+        extension_factory: Callable[..., object] | None = None,
+        execution_mode: str = PAPER_LINEAR_EXECUTION_MODE,
+    ) -> dict[str, object]:
+        session_id = self._session_id_factory()
+        if (
+            session_id in self._sessions
+            or await self.store.get_session(session_id) is not None
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.REVISION_CONFLICT,
+                "replay session id collision",
+            )
+        origin = synthetic_origin_ms
+        actor_config = config
+        actor_dataset = actual_dataset
+        if config.blind_mode:
+            if origin is None:
+                origin = self._synthetic_origin(config.base_interval)
+            actor_dataset = remap_bar_snapshot_time(
+                actual_dataset,
+                synthetic_replay_start_ms=origin,
+            )
+            if config.start_policy is StartPolicy.MANUAL:
+                actor_config = replace(config, requested_start_ms=origin)
+        if bar_paging_manifest is not None:
+            bar_paging_manifest = self._validated_bar_paging_manifest(
+                bar_paging_manifest,
+                actual_dataset,
+            )
+        broker = broker_config or self._broker_config(actor_config, actor_dataset)
+        if restore_checkpoint is not None:
+            checkpoint_execution_mode = self._checkpoint_execution_mode(
+                restore_checkpoint
+            )
+            if checkpoint_execution_mode is not None:
+                execution_mode = checkpoint_execution_mode
+        if config.source_kind is SourceKind.AGG_TRADE and trade_dataset_ref is None:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_INCOMPLETE,
+                "aggregate-trade session is missing its immutable dataset ref",
+            )
+        reducer = self._broker(
+            actor_config,
+            actor_dataset,
+            broker,
+            trade_dataset_ref=trade_dataset_ref,
+            bar_paging_manifest=bar_paging_manifest,
+            actual_dataset=actual_dataset,
+            execution_mode=execution_mode,
+            max_closed_bars_override=(
+                None
+                if restore_checkpoint is None
+                else self._checkpoint_max_closed_bars(restore_checkpoint)
+            ),
+        )
+        self._datasets.pin(session_id, actor_dataset)
+        trade_pin_token: str | None = None
+        actor: ReplaySessionActor | None = None
+        persisted = False
+        registered = False
+        try:
+            from .progressive_history import MANIFEST_SCHEMA
+            if bar_paging_manifest is not None and bar_paging_manifest["schema_version"] == MANIFEST_SCHEMA:
+                self.progressive_history.pin(str(bar_paging_manifest["feed_id"]), self._progressive_session_owner(session_id))
+            if trade_dataset_ref is not None:
+                trade_pin_token = await self._pin_trade_dataset(
+                    trade_dataset_ref,
+                    task_name=f"replay-create-pin-{session_id}",
+                )
+            actor = self._actor(
+                session_id=session_id,
+                config=actor_config,
+                dataset=actor_dataset,
+                trade_dataset_ref=trade_dataset_ref,
+                bar_paging_manifest=bar_paging_manifest,
+                actual_dataset=actual_dataset,
+                reducer=reducer,
+                restore_checkpoint=restore_checkpoint,
+                recovery_target=None,
+            )
+            await actor.start()
+            initial_checkpoint = actor.latest_checkpoint_blob()
+            if initial_checkpoint is None:
+                raise RuntimeError(
+                    "new replay actor did not create an initial checkpoint"
+                )
+            snapshot = await actor.public_snapshot()
+            durable_state = await actor.durable_state()
+            persisted_ref, persisted_blob = self._persisted_dataset(
+                actual_dataset,
+                trade_dataset_ref,
+                bar_paging_manifest=bar_paging_manifest,
+            )
+            # A progressive snapshot is an initial cache, not the training end.
+            # Persist the fixed requested boundary while the dataset keeps only
+            # verified prefix rows; the source reports pending beyond that prefix.
+            from .progressive_history import MANIFEST_SCHEMA
+            actual_replay_end_ms = (
+                int(bar_paging_manifest["terminal_open_ms"])
+                if bar_paging_manifest is not None
+                and bar_paging_manifest["schema_version"] == MANIFEST_SCHEMA
+                else actual_dataset.replay_end_open_ms
+            )
+            extension_write = None
+            if extension_factory is not None:
+                extension_ref, extension_blob = self._persisted_extension_dataset(
+                    actual_dataset,
+                    trade_dataset_ref,
+                )
+                extension_write = extension_factory(
+                    session_id=session_id,
+                    session_state=durable_state,
+                    component_state=snapshot["components"],
+                    broker_config=broker.to_dict(),
+                    dataset_ref=extension_ref,
+                    dataset_blob=extension_blob,
+                    actual_replay_start_ms=actual_dataset.replay_start_ms,
+                    actual_replay_end_ms=actual_replay_end_ms,
+                )
+                if not callable(extension_write):
+                    raise TypeError("replay persistence extension must be callable")
+            persist_task = asyncio.create_task(
+                self.store.create_session(
+                    session_id=session_id,
+                    config=actor_config.to_dict(),
+                    broker_config=broker.to_dict(),
+                    session_state=durable_state,
+                    dataset_ref=persisted_ref,
+                    dataset_blob=canonical_json_bytes(persisted_blob),
+                    actual_replay_start_ms=actual_dataset.replay_start_ms,
+                    actual_replay_end_ms=actual_replay_end_ms,
+                    synthetic_origin_ms=origin,
+                    initial_checkpoint=initial_checkpoint,
+                    component_state=snapshot["components"],  # type: ignore[arg-type]
+                    extension_write=extension_write,  # type: ignore[arg-type]
+                ),
+                name=f"replay-create-persist-{session_id}",
+            )
+            try:
+                await asyncio.shield(persist_task)
+            except asyncio.CancelledError:
+                # sqlite work submitted through to_thread cannot be cancelled.
+                # Resolve its actual outcome so a committed row is always
+                # compensated before propagating request cancellation.  A second
+                # cancellation (for example service shutdown after client
+                # disconnect) must not cancel the owned persistence task.
+                try:
+                    await self._await_task_uninterruptibly(persist_task)
+                except BaseException:
+                    pass
+                else:
+                    persisted = True
+                raise
+            persisted = True
+
+            assert actor is not None
+            created_at_ms = self._validated_now_ms()
+            handle = ReplaySessionHandle(
+                session_id=session_id,
+                actor=actor,
+                config=actor_config,
+                broker_config=broker,
+                actual_dataset=actual_dataset,
+                actor_dataset=actor_dataset,
+                synthetic_origin_ms=origin,
+                created_at_ms=created_at_ms,
+                last_activity_ms=created_at_ms,
+                trade_dataset_ref=trade_dataset_ref,
+                trade_pin_token=trade_pin_token,
+                bar_paging_manifest=bar_paging_manifest,
+            )
+            payload = {
+                "protocol": REPLAY_PROTOCOL,
+                "session_id": session_id,
+                "data_fidelity": self._data_fidelity(handle.config),
+                "execution_fidelity": self._execution_fidelity(handle.config),
+                "snapshot": snapshot,
+                "forked": forked,
+            }
+
+            # The capacity reservation was acquired while accepting.  Once the
+            # durable row exists, shutdown must let this accepted transaction
+            # publish and return its ID.  Acquire explicitly so there is no await
+            # (and therefore no cancellation point) between registration and
+            # returning the prebuilt response.
+            await self._lifecycle_lock.acquire()
+            try:
+                # create_session/fork_session already acquired a capacity
+                # reservation while the service was accepting work.  Once the
+                # durable row exists, shutdown must let that accepted transaction
+                # publish and return its ID; rejecting here would strand an
+                # unobservable orphan in replay_session.  Shutdown drains the
+                # reservation before stopping every published actor.
+                if session_id in self._sessions:
+                    raise ReplayDomainError(
+                        ReplayErrorCode.REVISION_CONFLICT,
+                        "replay session id collision",
+                    )
+                self._sessions[session_id] = handle
+                self._session_generation += 1
+                self._metrics["sessions_created"] = (
+                    int(self._metrics["sessions_created"] or 0) + 1
+                )
+                registered = True
+            finally:
+                self._lifecycle_lock.release()
+            return payload
+        except BaseException:
+            if registered:
+                # Registration and return are deliberately cancellation-free.
+                # This branch protects against an unexpected synchronous failure
+                # without tearing down a handle already owned by the service.
+                raise
+            compensation_error: BaseException | None = None
+            if persisted:
+                try:
+                    delete_task = asyncio.create_task(
+                        self.store.delete_session(session_id),
+                        name=f"replay-create-compensate-{session_id}",
+                    )
+                    deleted = await self._await_task_uninterruptibly(delete_task)
+                    if not deleted:
+                        raise RuntimeError(
+                            "persisted replay session disappeared before compensation"
+                        )
+                except BaseException as exc:
+                    compensation_error = exc
+            if actor is not None:
+                await self._abort_unregistered_actor_uninterruptibly(actor)
+            self._datasets.release(session_id)
+            if trade_pin_token is not None:
+                self._raw_trade_archive.release_dataset(trade_pin_token)
+            if compensation_error is not None:
+                if config.blind_mode:
+                    raise self._blind_safe_internal_error(
+                        ReplayErrorCode.PERSISTENCE_DEGRADED
+                    ) from compensation_error
+                raise ReplayDomainError(
+                    ReplayErrorCode.PERSISTENCE_DEGRADED,
+                    "failed to compensate an incomplete replay session creation",
+                    details={
+                        "reason": (
+                            f"{type(compensation_error).__name__}: {compensation_error}"
+                        )
+                    },
+                ) from compensation_error
+            if bar_paging_manifest is not None and bar_paging_manifest["schema_version"] == MANIFEST_SCHEMA:
+                self.progressive_history.release(self._progressive_session_owner(session_id))
+            raise
+
+    async def _recover_record(
+        self,
+        record: Mapping[str, object],
+    ) -> ReplaySessionHandle:
+        session_id = str(record["session_id"])
+        dataset_record = await self.store.load_dataset(session_id)
+        if dataset_record is None:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "replay dataset reference is missing",
+            )
+        config_payload = record["config"]
+        broker_payload = record["broker_config"]
+        if not isinstance(config_payload, Mapping) or not isinstance(
+            broker_payload, Mapping
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "persisted replay config is invalid",
+            )
+        config = ReplaySessionConfig.from_dict(config_payload)
+        broker_config = BrokerConfig.from_dict(broker_payload)
+        try:
+            decoded = json.loads(bytes(dataset_record["snapshot_blob"]).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "persisted replay dataset JSON is invalid",
+            ) from exc
+        if not isinstance(decoded, Mapping):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "persisted replay dataset must be an object",
+            )
+        trade_dataset_ref: RawAggTradeDatasetRef | None = None
+        bar_paging_manifest: Mapping[str, object] | None = None
+        if config.source_kind is SourceKind.AGG_TRADE:
+            expected = {
+                "schema_version",
+                "bar_dataset",
+                "trade_dataset_ref",
+            }
+            if (
+                set(decoded) != expected
+                or decoded["schema_version"] != TRADE_SESSION_DATASET_SCHEMA_VERSION
+                or not isinstance(decoded["bar_dataset"], Mapping)
+                or not isinstance(decoded["trade_dataset_ref"], Mapping)
+            ):
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "persisted aggregate-trade dataset bundle is incompatible",
+                )
+            actual_dataset = BarDatasetSnapshot.from_dict(decoded["bar_dataset"])
+            trade_dataset_ref = RawAggTradeDatasetRef.from_dict(
+                decoded["trade_dataset_ref"]
+            )
+            if trade_dataset_ref.data_epoch != record["data_epoch"]:
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "persisted trade dataset epoch does not match session",
+                )
+        else:
+            expected = {
+                "schema_version",
+                "bar_dataset",
+                "paging_manifest",
+            }
+            if (
+                set(decoded) != expected
+                or decoded.get("schema_version")
+                != PAGED_BAR_SESSION_DATASET_SCHEMA_VERSION
+                or not isinstance(decoded.get("bar_dataset"), Mapping)
+                or not isinstance(decoded.get("paging_manifest"), Mapping)
+            ):
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "persisted paged BAR dataset bundle is incompatible",
+                )
+            actual_dataset = BarDatasetSnapshot.from_dict(decoded["bar_dataset"])
+            bar_paging_manifest = self._validated_bar_paging_manifest(
+                decoded["paging_manifest"],
+                actual_dataset,
+            )
+            if actual_dataset.data_epoch != record["data_epoch"]:
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "persisted BAR dataset epoch does not match session",
+                )
+        origin_value = dataset_record["synthetic_origin_ms"]
+        origin = None if origin_value is None else int(origin_value)
+        if config.blind_mode and origin is None:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "blind replay session is missing its synthetic time origin",
+            )
+        actor_dataset = (
+            remap_bar_snapshot_time(actual_dataset, synthetic_replay_start_ms=origin)
+            if config.blind_mode
+            else actual_dataset
+        )
+        checkpoints = await self.store.load_valid_checkpoints(session_id)
+        if not checkpoints:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "replay session has no valid checkpoint",
+            )
+        self._datasets.pin(session_id, actor_dataset)
+        trade_pin_token: str | None = None
+        last_error: BaseException | None = None
+        actor: ReplaySessionActor | None = None
+        try:
+            if trade_dataset_ref is not None:
+                trade_pin_token = await self._pin_trade_dataset(
+                    trade_dataset_ref,
+                    task_name=f"replay-recovery-pin-{session_id}",
+                )
+            for checkpoint_index, checkpoint in enumerate(checkpoints):
+                tail = await self.store.recovery_mutations_after(
+                    session_id,
+                    mutation_id=checkpoint.mutation_id,
+                )
+                target = ActorRecoveryTarget(
+                    mutations=tail,
+                    revision=int(record["revision"]),
+                    event_sequence=int(record["event_sequence"]),
+                    command_log_offset=int(record["command_log_offset"]),
+                    state_hash=str(record["state_hash"]),
+                )
+                reducer = self._broker(
+                    config,
+                    actor_dataset,
+                    broker_config,
+                    trade_dataset_ref=trade_dataset_ref,
+                    bar_paging_manifest=bar_paging_manifest,
+                    actual_dataset=actual_dataset,
+                    max_closed_bars_override=self._checkpoint_max_closed_bars(
+                        checkpoint.payload
+                    ),
+                    execution_mode=(
+                        self._checkpoint_execution_mode(checkpoint.payload)
+                        or PAPER_LINEAR_EXECUTION_MODE
+                    ),
+                )
+                candidate = self._actor(
+                    session_id=session_id,
+                    config=config,
+                    dataset=actor_dataset,
+                    trade_dataset_ref=trade_dataset_ref,
+                    bar_paging_manifest=bar_paging_manifest,
+                    actual_dataset=actual_dataset,
+                    reducer=reducer,
+                    restore_checkpoint=checkpoint.payload,
+                    retained_checkpoints=tuple(
+                        (item.payload, item.is_initial)
+                        for item in checkpoints[checkpoint_index:]
+                    ),
+                    recovery_target=target,
+                )
+                try:
+                    await candidate.start()
+                except asyncio.CancelledError:
+                    try:
+                        await self._shutdown_actor_uninterruptibly(
+                            candidate,
+                            step_timeout=0.5,
+                            task_name=f"replay-recovery-cleanup-{session_id}",
+                        )
+                    except BaseException:
+                        pass
+                    raise
+                except BaseException as exc:
+                    try:
+                        await self._shutdown_actor_uninterruptibly(
+                            candidate,
+                            step_timeout=0.5,
+                            task_name=f"replay-recovery-reject-{session_id}",
+                        )
+                    except BaseException:
+                        pass
+                    last_error = exc
+                    continue
+                actor = candidate
+                break
+            if actor is None:
+                raise last_error or RuntimeError("all replay checkpoints were rejected")
+            handle = ReplaySessionHandle(
+                session_id=session_id,
+                actor=actor,
+                config=config,
+                broker_config=broker_config,
+                actual_dataset=actual_dataset,
+                actor_dataset=actor_dataset,
+                synthetic_origin_ms=origin,
+                created_at_ms=int(record["created_at_ms"]),
+                last_activity_ms=int(record["updated_at_ms"]),
+                trade_dataset_ref=trade_dataset_ref,
+                trade_pin_token=trade_pin_token,
+                bar_paging_manifest=bar_paging_manifest,
+            )
+            async with self._lifecycle_lock:
+                self._ensure_available(blind_mode=config.blind_mode)
+                existing = self._sessions.get(session_id)
+                if existing is not None:
+                    raise ReplayDomainError(
+                        ReplayErrorCode.REVISION_CONFLICT,
+                        "replay session recovery raced another actor",
+                    )
+                self._sessions[session_id] = handle
+                self._session_generation += 1
+                self._metrics["sessions_recovered"] = (
+                    int(self._metrics["sessions_recovered"] or 0) + 1
+                )
+            return handle
+        except BaseException:
+            self._datasets.release(session_id)
+            if trade_pin_token is not None:
+                self._raw_trade_archive.release_dataset(trade_pin_token)
+            if actor is not None:
+                try:
+                    await self._shutdown_actor_uninterruptibly(
+                        actor,
+                        step_timeout=0.5,
+                        task_name=f"replay-recovery-rollback-{session_id}",
+                    )
+                except BaseException:
+                    pass
+            raise
+
+    def _actor(
+        self,
+        *,
+        session_id: str,
+        config: ReplaySessionConfig,
+        dataset: BarDatasetSnapshot,
+        trade_dataset_ref: RawAggTradeDatasetRef | None,
+        bar_paging_manifest: Mapping[str, object] | None,
+        actual_dataset: BarDatasetSnapshot,
+        reducer: ConservativeBarBroker,
+        restore_checkpoint: bytes | None,
+        retained_checkpoints: Sequence[tuple[bytes, bool]] = (),
+        recovery_target: ActorRecoveryTarget | None,
+    ) -> ReplaySessionActor:
+        if trade_dataset_ref is None:
+
+            def source_factory() -> BarReplaySource | PagedBarReplaySource:
+                return self._bar_source(
+                    actor_dataset=dataset,
+                    actual_dataset=actual_dataset,
+                    paging_manifest=bar_paging_manifest,
+                )
+        else:
+            time_offset_ms = dataset.replay_start_ms - trade_dataset_ref.start_time_ms
+
+            def source_factory() -> TradeReplaySource:
+                return TradeReplaySource(
+                    PagedReplayTradeReader(
+                        self._raw_trade_archive,
+                        trade_dataset_ref,
+                        page_rows=self.settings.trade_page_rows,
+                    ),
+                    time_offset_ms=time_offset_ms,
+                    blind_mode=config.blind_mode,
+                )
+
+        async def durable_command_lookup(command):
+            stored = await self.store.get_command(session_id, command.command_id)
+            return None if stored is None else self._replay_stored_command(stored, command)
+
+        return ReplaySessionActor(
+            session_id=session_id,
+            config=config,
+            source_factory=source_factory,
+            initial_virtual_time_ms=dataset.replay_start_ms,
+            command_queue_size=self.settings.command_queue_size,
+            event_buffer_size=self.settings.event_buffer_size,
+            max_emit_fps=self.settings.max_emit_fps,
+            controller_ttl_seconds=self.settings.controller_ttl_seconds,
+            checkpoint_event_interval=self.settings.checkpoint_event_interval,
+            checkpoint_virtual_ms=self.settings.checkpoint_virtual_ms,
+            reducer=reducer,
+            restore_checkpoint=restore_checkpoint,
+            retained_checkpoints=retained_checkpoints,
+            mutation_hook=self._persist_mutation,
+            durable_command_lookup=durable_command_lookup,
+            recovery_target=recovery_target,
+            prepared_cache_path=str(
+                self.store.path.parent / (self.store.path.name + ".prepared")
+                / (canonical_sha256({"session_id": session_id}).split(":")[-1] + ".zlib")
+            ),
+        )
+
+    def _bar_source(
+        self,
+        *,
+        actor_dataset: BarDatasetSnapshot,
+        actual_dataset: BarDatasetSnapshot,
+        paging_manifest: Mapping[str, object] | None,
+    ) -> BarReplaySource | PagedBarReplaySource:
+        if paging_manifest is None:
+            return BarReplaySource(actor_dataset)
+        manifest = self._validated_bar_paging_manifest(
+            paging_manifest,
+            actual_dataset,
+        )
+        from .progressive_history import MANIFEST_SCHEMA
+        if manifest["schema_version"] == MANIFEST_SCHEMA:
+            from .sources.progressive_bar_source import ProgressiveBarReplaySource
+            history = self.progressive_history
+            feed = history.status(manifest["feed_id"])
+            if feed["end_ms"] - 60_000 != manifest["terminal_open_ms"]:
+                raise ReplayDomainError(ReplayErrorCode.DATASET_MISMATCH, "Progressive feed horizon changed")
+            return ProgressiveBarReplaySource(actor_dataset, actual_snapshot=actual_dataset,
+                history=history, feed_id=manifest["feed_id"], page_rows=manifest["page_rows"])
+        timeline_delta_ms = (
+            actor_dataset.replay_start_ms - actual_dataset.replay_start_ms
+        )
+        terminal_open_ms = int(manifest["terminal_open_ms"]) + timeline_delta_ms
+        terminal_kind = str(manifest["terminal_kind"])
+        source_revision = str(manifest["source_revision"])
+        source_fingerprint = str(manifest["source_fingerprint"])
+        page_rows = int(manifest["page_rows"])
+        verified_halts = self._actor_bar_halts(
+            manifest,
+            actual_dataset=actual_dataset,
+            actor_dataset=actor_dataset,
+        )
+
+        def load_page(
+            public_start_ms: int,
+            public_end_ms: int,
+            expected_count: int,
+        ) -> tuple[ReplayBar, ...]:
+            return self._load_bar_source_page(
+                actual_dataset=actual_dataset,
+                source_revision=source_revision,
+                timeline_delta_ms=timeline_delta_ms,
+                public_start_ms=public_start_ms,
+                public_end_ms=public_end_ms,
+                expected_count=expected_count,
+            )
+
+        source = PagedBarReplaySource(
+            actor_dataset,
+            terminal_open_ms=terminal_open_ms,
+            terminal_kind=terminal_kind,
+            source_revision=source_revision,
+            source_fingerprint=source_fingerprint,
+            page_rows=page_rows,
+            page_loader=load_page,
+            verified_halts=verified_halts,
+        )
+        shared_query = getattr(self._repository, "shared_market_at_revision", None)
+        if callable(shared_query):
+            def shared_factory(start_ms, end_ms):
+                return shared_query(
+                    source_revision, actual_dataset.identity.symbol, actual_dataset.interval,
+                    start_ms=start_ms-timeline_delta_ms, end_ms=end_ms-timeline_delta_ms,
+                    exchange=actual_dataset.identity.exchange,
+                    market_type=actual_dataset.identity.market_type, offset_ms=timeline_delta_ms,
+                )
+            source._archive.shared_factory = shared_factory
+        return source
+
+    @staticmethod
+    def _actor_bar_halts(
+        paging_manifest: Mapping[str, object] | None,
+        *,
+        actual_dataset: BarDatasetSnapshot,
+        actor_dataset: BarDatasetSnapshot,
+    ) -> tuple[ReplayBarHalt, ...]:
+        if paging_manifest is None:
+            return ()
+        raw_halts = paging_manifest.get("verified_market_halts")
+        if raw_halts is None:
+            return ()
+        interval_ms = parse_interval_ms(actual_dataset.interval)
+        if interval_ms is None or interval_ms <= 0:
+            raise ReplayDomainError(
+                ReplayErrorCode.UNSUPPORTED_INTERVAL,
+                "paged BAR halt interval is unsupported",
+            )
+        try:
+            halts = validate_registered_bar_halts(
+                raw_halts,
+                identity=actual_dataset.identity,
+                interval_ms=interval_ms,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "paged BAR halt commitment is invalid",
+            ) from exc
+        timeline_delta_ms = (
+            actor_dataset.replay_start_ms - actual_dataset.replay_start_ms
+        )
+        return tuple(halt.shifted(timeline_delta_ms) for halt in halts)
+
+    def _load_bar_source_page(
+        self,
+        *,
+        actual_dataset: BarDatasetSnapshot,
+        source_revision: str,
+        timeline_delta_ms: int,
+        public_start_ms: int,
+        public_end_ms: int,
+        expected_count: int,
+    ) -> tuple[ReplayBar, ...]:
+        actual_start_ms = public_start_ms - timeline_delta_ms
+        actual_end_ms = public_end_ms - timeline_delta_ms
+        query_at_revision = getattr(self._repository, "query_bars_at_revision", None)
+        if not callable(query_at_revision):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "paged BAR source revision is unavailable",
+            )
+        try:
+            raw_rows = query_at_revision(
+                source_revision,
+                actual_dataset.identity.symbol,
+                actual_dataset.interval,
+                start_ms=actual_start_ms,
+                end_ms=actual_end_ms,
+                limit=expected_count,
+                order="ASC",
+                exchange=actual_dataset.identity.exchange,
+                market_type=actual_dataset.identity.market_type,
+            )
+        except ReplayHistoryArchiveError as exc:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_INCOMPLETE,
+                "paged BAR archive could not provide the committed source range",
+            ) from exc
+        if not isinstance(raw_rows, list) or len(raw_rows) != expected_count:
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_INCOMPLETE,
+                "paged BAR archive range is incomplete",
+                details={
+                    "expected_count": expected_count,
+                    "actual_count": len(raw_rows)
+                    if isinstance(raw_rows, list)
+                    else None,
+                },
+            )
+        entry = ReplayCatalogEntry(
+            identity=actual_dataset.identity,
+            base_intervals=(actual_dataset.interval,),
+            selected_base_interval=actual_dataset.interval,
+            bounds=SeriesBounds(
+                earliest_open_ms=actual_dataset.provenance.source_earliest_open_ms,
+                latest_source_open_ms=actual_dataset.provenance.source_latest_open_ms,
+                latest_closed_open_ms=(
+                    actual_dataset.provenance.source_latest_closed_open_ms
+                ),
+                total_count=actual_dataset.provenance.row_count,
+            ),
+            gap_summary=EMPTY_GAP_SUMMARY,
+            eligible_ranges=(),
+            quality=DataFidelity.EXACT_BAR_COVERAGE,
+            source_fingerprint=actual_dataset.provenance.source_fingerprint,
+            catalog_epoch=actual_dataset.provenance.catalog_epoch,
+            limitations=(),
+            source_revision=source_revision,
+        )
+        interval_ms = parse_interval_ms(actual_dataset.interval)
+        if interval_ms is None or interval_ms <= 0:
+            raise ReplayDomainError(
+                ReplayErrorCode.UNSUPPORTED_INTERVAL,
+                "paged BAR interval is unsupported",
+            )
+        rows = []
+        for index, raw in enumerate(raw_rows):
+            expected_open_ms = actual_start_ms + index * interval_ms
+            row = validate_replay_repository_bar(
+                raw,
+                identity=entry.identity,
+                interval=entry.selected_base_interval or actual_dataset.interval,
+                interval_ms=interval_ms,
+                expected_open_ms=expected_open_ms,
+                now_ms=self._now_ms(),
+            )
+            rows.append(row.with_time_offset(timeline_delta_ms))
+        return tuple(rows)
+
+    async def _persist_mutation(self, mutation: ActorMutation) -> None:
+        group = getattr(self, "_multi_mutation_groups", {}).get(mutation.session_id)
+        if group is not None and group.matches(mutation):
+            await group.stage(mutation)
+            return
+        if mutation.command is not None:
+            result = (
+                None
+                if mutation.result is None
+                else self._command_result_payload(mutation.result)
+            )
+            error = mutation.error
+            await self.store.commit_command(
+                session_id=mutation.session_id,
+                command=mutation.command.to_dict(),
+                accepted=error is None,
+                result=result,
+                error_code=None if error is None else error.code.value,
+                error_message=None if error is None else error.message,
+                error_details=None if error is None else dict(error.details),
+                session_state=mutation.session_state,
+                checkpoint=mutation.checkpoint,
+                source_events=mutation.source_events,
+                component_state=mutation.component_state,
+                previous_component_state=mutation.previous_component_state,
+                history_frames=mutation.history_frames,
+            )
+            return
+        if mutation.kind == "source_event":
+            if len(mutation.source_events) != 1:
+                raise ReplayDomainError(
+                    ReplayErrorCode.PERSISTENCE_DEGRADED,
+                    "autonomous source transaction must contain exactly one event",
+                )
+            await self.store.commit_source_event(
+                session_id=mutation.session_id,
+                source_event=mutation.source_events[0],
+                session_state=mutation.session_state,
+                checkpoint=mutation.checkpoint,
+                component_state=mutation.component_state,
+                previous_component_state=mutation.previous_component_state,
+            )
+            return
+        if mutation.checkpoint is None:
+            raise ReplayDomainError(
+                ReplayErrorCode.PERSISTENCE_DEGRADED,
+                "internal replay mutation requires a checkpoint",
+            )
+        await self.store.commit_state(
+            session_id=mutation.session_id,
+            kind=mutation.kind,
+            payload={"events": [event.to_dict() for event in mutation.events]},
+            session_state=mutation.session_state,
+            checkpoint=mutation.checkpoint,
+            component_state=mutation.component_state,
+            previous_component_state=mutation.previous_component_state,
+        )
+
+    @asynccontextmanager
+    async def _lease_handle(
+        self,
+        session_id: str,
+    ) -> AsyncIterator[ReplaySessionHandle]:
+        handle = await self._acquire_handle_lease(session_id)
+        try:
+            yield handle
+        finally:
+            self._release_handle_lease(handle)
+
+    async def _acquire_handle_lease(self, session_id: str) -> ReplaySessionHandle:
+        # This counter is event-loop confined and its synchronous finally is
+        # deliberately cancellation-safe. Shutdown waits for every accepted
+        # acquisition before closing the store.
+        self._ensure_accepting()
+        self._pending_handle_acquisitions += 1
+        self._track_pending_lifecycle_owner()
+        try:
+            while True:
+                wait_for_deletion: asyncio.Event | None = None
+                wait_for_eviction: asyncio.Event | None = None
+                wait_for_recovery: ReplayRecoveryClaim | None = None
+                observed_session_generation = 0
+                async with self._lifecycle_lock:
+                    self._ensure_accepting()
+                    wait_for_deletion = self._pending_session_deletions.get(session_id)
+                    if wait_for_deletion is not None:
+                        handle = None
+                    else:
+                        handle = self._sessions.get(session_id)
+                        if handle is not None:
+                            if handle.evicting:
+                                wait_for_eviction = handle.eviction_complete
+                            else:
+                                self._activate_handle_lease_locked(handle)
+                                return handle
+                        else:
+                            unavailable = self._unavailable_sessions.get(session_id)
+                            if unavailable is not None:
+                                raise unavailable
+                            wait_for_recovery = self._pending_recoveries.get(session_id)
+                            observed_session_generation = self._session_generation
+                if wait_for_deletion is not None:
+                    await wait_for_deletion.wait()
+                    continue
+                if wait_for_eviction is not None:
+                    await wait_for_eviction.wait()
+                    continue
+                if wait_for_recovery is not None:
+                    await wait_for_recovery.complete.wait()
+                    if wait_for_recovery.error is not None:
+                        raise wait_for_recovery.error
+                    continue
+
+                record = await self.store.get_session(session_id)
+                if record is None:
+                    raise ReplayDomainError(
+                        ReplayErrorCode.SESSION_NOT_FOUND,
+                        "replay session does not exist",
+                        details={"session_id": session_id},
+                    )
+                blind_mode = self._persisted_blind_mode(record)
+                if record["degraded_reason"] is not None:
+                    if blind_mode:
+                        raise self._blind_safe_internal_error(
+                            ReplayErrorCode.PERSISTENCE_DEGRADED
+                        )
+                    raise ReplayDomainError(
+                        ReplayErrorCode.PERSISTENCE_DEGRADED,
+                        "replay session is unavailable after a recovery failure",
+                        details={"reason": record["degraded_reason"]},
+                    )
+
+                await self._prune_reclaimable_sessions()
+                recovery_claim: ReplayRecoveryClaim | None = None
+                start_recovery = False
+                restart_lookup = False
+                wait_for_deletion = None
+                async with self._lifecycle_lock:
+                    self._ensure_available(blind_mode=blind_mode)
+                    wait_for_deletion = self._pending_session_deletions.get(session_id)
+                    if wait_for_deletion is not None:
+                        handle = None
+                    elif self._session_generation != observed_session_generation:
+                        restart_lookup = True
+                    else:
+                        handle = self._sessions.get(session_id)
+                        if handle is not None:
+                            if handle.evicting:
+                                wait_for_eviction = handle.eviction_complete
+                            else:
+                                self._activate_handle_lease_locked(handle)
+                                return handle
+                        else:
+                            recovery_claim = self._pending_recoveries.get(session_id)
+                            if recovery_claim is None:
+                                self._ensure_session_capacity_locked()
+                                self._pending_session_reservations += 1
+                                self._track_pending_lifecycle_owner()
+                                recovery_claim = ReplayRecoveryClaim()
+                                self._pending_recoveries[session_id] = recovery_claim
+                                start_recovery = True
+                if wait_for_deletion is not None:
+                    await wait_for_deletion.wait()
+                    continue
+                if restart_lookup:
+                    continue
+                if wait_for_eviction is not None:
+                    await wait_for_eviction.wait()
+                    continue
+                assert recovery_claim is not None
+                if not start_recovery:
+                    await recovery_claim.complete.wait()
+                    if recovery_claim.error is not None:
+                        raise recovery_claim.error
+                    continue
+                try:
+                    recovered = await self._recover_record(record)
+                    async with self._lifecycle_lock:
+                        self._ensure_available(blind_mode=blind_mode)
+                        if self._sessions.get(session_id) is not recovered:
+                            raise ReplayDomainError(
+                                ReplayErrorCode.REVISION_CONFLICT,
+                                "replay session recovery lost actor ownership",
+                            )
+                        self._activate_handle_lease_locked(recovered)
+                        self._finish_recovery_claim(session_id, recovery_claim)
+                        return recovered
+                except asyncio.CancelledError:
+                    raise
+                except BaseException as exc:
+                    error = self._recovery_error(exc, blind_mode=blind_mode)
+                    recovery_claim.error = error
+                    raise error from exc
+                finally:
+                    self._finish_recovery_claim(session_id, recovery_claim)
+        finally:
+            if self._pending_handle_acquisitions < 1:
+                raise RuntimeError("replay handle acquisition count underflow")
+            self._pending_handle_acquisitions -= 1
+            self._untrack_pending_lifecycle_owner()
+            self._lifecycle_changed.set()
+
+    def _activate_handle_lease_locked(self, handle: ReplaySessionHandle) -> None:
+        if handle.evicting:
+            raise RuntimeError("cannot lease an evicting replay session")
+        handle.in_flight += 1
+        owner = asyncio.current_task()
+        if owner is None:
+            raise RuntimeError("replay lease requires an asyncio task owner")
+        self._lease_owners[owner] = self._lease_owners.get(owner, 0) + 1
+        handle.activity_generation += 1
+        handle.last_activity_ms = self._validated_now_ms()
+
+    def _release_handle_lease(self, handle: ReplaySessionHandle) -> None:
+        if handle.in_flight < 1:
+            raise RuntimeError("replay session lease count underflow")
+        handle.in_flight -= 1
+        owner = asyncio.current_task()
+        if owner is None or self._lease_owners.get(owner, 0) < 1:
+            raise RuntimeError("replay lease owner count underflow")
+        remaining = self._lease_owners[owner] - 1
+        if remaining:
+            self._lease_owners[owner] = remaining
+        else:
+            self._lease_owners.pop(owner, None)
+        handle.activity_generation += 1
+        handle.last_activity_ms = self._validated_now_ms()
+        self._lifecycle_changed.set()
+
+    async def _reserve_session_capacity(self, *, blind_mode: bool) -> None:
+        # Reaping may await actor mailboxes and shutdown, so it deliberately runs
+        # before the short reservation critical section.
+        await self._prune_reclaimable_sessions()
+        async with self._lifecycle_lock:
+            self._ensure_available(blind_mode=blind_mode)
+            self._ensure_session_capacity_locked()
+            self._pending_session_reservations += 1
+            self._track_pending_lifecycle_owner()
+
+    def _release_session_capacity_reservation(self) -> None:
+        if self._pending_session_reservations < 1:
+            raise RuntimeError("replay session capacity reservation underflow")
+        self._pending_session_reservations -= 1
+        self._untrack_pending_lifecycle_owner()
+        self._lifecycle_changed.set()
+
+    def _finish_recovery_claim(
+        self,
+        session_id: str,
+        claim: ReplayRecoveryClaim,
+    ) -> None:
+        # No await is permitted here: this is the cancellation-safe release
+        # path for both the single-flight claim and its capacity reservation.
+        if self._pending_recoveries.get(session_id) is not claim:
+            return
+        self._pending_recoveries.pop(session_id, None)
+        self._release_session_capacity_reservation()
+        claim.complete.set()
+
+    def _ensure_session_capacity_locked(self) -> None:
+        if (
+            len(self._sessions) + self._pending_session_reservations
+            >= self.settings.max_active_sessions
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.SCAN_LIMIT_EXCEEDED,
+                "active replay session limit exceeded",
+                details={"limit": self.settings.max_active_sessions},
+            )
+
+    async def _session_reaper_loop(self) -> None:
+        interval_seconds = min(
+            30.0,
+            max(0.1, self.settings.idle_ttl_seconds / 4),
+        )
+        while not self._reaper_stop.is_set():
+            try:
+                await asyncio.wait_for(
+                    self._reaper_stop.wait(),
+                    timeout=interval_seconds,
+                )
+                return
+            except TimeoutError:
+                pass
+            try:
+                await self._prune_reclaimable_sessions(capacity_pressure=False)
+            except Exception as exc:
+                self._metrics["reaper_failures"] = (
+                    int(self._metrics["reaper_failures"] or 0) + 1
+                )
+                self._metrics["last_reaper_error"] = (f"{type(exc).__name__}: {exc}")[
+                    :500
+                ]
+
+    async def _prune_reclaimable_sessions(
+        self,
+        *,
+        capacity_pressure: bool = True,
+    ) -> None:
+        async with self._prune_lock:
+            if not self._accepting or self._closed:
+                return
+            await self._prune_reclaimable_sessions_exclusive(
+                capacity_pressure=capacity_pressure
+            )
+
+    async def _prune_reclaimable_sessions_exclusive(
+        self,
+        *,
+        capacity_pressure: bool,
+    ) -> None:
+        idle_ttl_ms = self.settings.idle_ttl_seconds * 1_000
+        async with self._lifecycle_lock:
+            candidates = tuple(
+                (
+                    session_id,
+                    handle,
+                    handle.activity_generation,
+                )
+                for session_id, handle in self._sessions.items()
+                if (
+                    session_id not in self._pending_recoveries
+                    and not handle.evicting
+                    and handle.in_flight == 0
+                    and not handle.actor.has_active_subscribers()
+                )
+            )
+        for session_id, handle, observed_generation in candidates:
+            # A stream subscription materializes the actor's cached snapshot, but
+            # later commands are intentionally handled without refreshing that
+            # cache.  Capacity and TTL decisions therefore have to enter the
+            # mailbox and observe the actor's current state.
+            snapshot = await self._snapshot_for_prune(handle.actor)
+            if snapshot is None:
+                return
+            ended = snapshot.state is SessionState.ENDED
+            activity_age_ms = self._validated_now_ms() - handle.last_activity_ms
+            ended_handoff_complete = activity_age_ms >= _ENDED_SESSION_HANDOFF_GRACE_MS
+            idle = (
+                snapshot.controller_client_id is None and activity_age_ms >= idle_ttl_ms
+            )
+            if not idle and not (
+                ended and (capacity_pressure or ended_handoff_complete)
+            ):
+                continue
+            reason = "ended" if ended else "idle_ttl"
+            async with self._lifecycle_lock:
+                if (
+                    not self._accepting
+                    or self._prune_abort.is_set()
+                    or self._sessions.get(session_id) is not handle
+                    or handle.evicting
+                    or handle.in_flight != 0
+                    or handle.actor.has_active_subscribers()
+                    or handle.activity_generation != observed_generation
+                ):
+                    continue
+                activity_age_ms = self._validated_now_ms() - handle.last_activity_ms
+                if (
+                    reason == "ended"
+                    and not capacity_pressure
+                    and activity_age_ms < _ENDED_SESSION_HANDOFF_GRACE_MS
+                ):
+                    continue
+                if reason == "idle_ttl" and activity_age_ms < idle_ttl_ms:
+                    continue
+                handle.evicting = True
+                handle.eviction_complete.clear()
+            await self._evict_claimed_handle(
+                session_id,
+                handle,
+                reason=reason,
+            )
+
+    async def _evict_claimed_handle(
+        self,
+        session_id: str,
+        handle: ReplaySessionHandle,
+        *,
+        reason: str,
+    ) -> None:
+        try:
+            await handle.actor.shutdown(
+                step_timeout=_EVICTION_SHUTDOWN_STEP_TIMEOUT_SECONDS
+            )
+        except BaseException:
+            async with self._lifecycle_lock:
+                if self._sessions.get(session_id) is handle:
+                    handle.evicting = False
+                    handle.eviction_complete.set()
+            raise
+
+        release_error: BaseException | None = None
+        try:
+            self._datasets.release(session_id)
+            if handle.trade_pin_token is not None:
+                self._raw_trade_archive.release_dataset(handle.trade_pin_token)
+        except BaseException as exc:
+            release_error = exc
+        finally:
+            async with self._lifecycle_lock:
+                if self._sessions.get(session_id) is handle:
+                    self._sessions.pop(session_id, None)
+                    self._session_generation += 1
+                    self._metrics["sessions_evicted"] = (
+                        int(self._metrics["sessions_evicted"] or 0) + 1
+                    )
+                    metric = (
+                        "ended_sessions_evicted"
+                        if reason == "ended"
+                        else (
+                            "hub_sessions_evicted"
+                            if reason == "hub"
+                            else "idle_sessions_evicted"
+                        )
+                    )
+                    self._metrics[metric] = int(self._metrics[metric] or 0) + 1
+                handle.eviction_complete.set()
+        if release_error is not None:
+            raise release_error
+
+    async def _snapshot_for_prune(
+        self,
+        actor: ReplaySessionActor,
+    ) -> ActorSnapshot | None:
+        snapshot_task = asyncio.create_task(actor.snapshot())
+        abort_task = asyncio.create_task(self._prune_abort.wait())
+        try:
+            done, _pending = await asyncio.wait(
+                (snapshot_task, abort_task),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if abort_task in done:
+                snapshot_task.cancel()
+                await asyncio.gather(snapshot_task, return_exceptions=True)
+                return None
+            abort_task.cancel()
+            await asyncio.gather(abort_task, return_exceptions=True)
+            return await snapshot_task
+        finally:
+            for task in (snapshot_task, abort_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(snapshot_task, abort_task, return_exceptions=True)
+
+    async def _wait_for_pending_lifecycle_drain(
+        self,
+        *,
+        timeout: float | None,
+    ) -> bool:
+        async def wait() -> None:
+            while True:
+                async with self._lifecycle_lock:
+                    drained = (
+                        self._pending_session_reservations == 0
+                        and self._pending_handle_acquisitions == 0
+                        and not self._pending_recoveries
+                        and not self._pending_session_deletions
+                    )
+                    if drained:
+                        return
+                    self._lifecycle_changed.clear()
+                await self._lifecycle_changed.wait()
+
+        if timeout is None:
+            await wait()
+        else:
+            try:
+                await asyncio.wait_for(wait(), timeout=max(0.01, timeout))
+            except TimeoutError:
+                return False
+        return True
+
+    def _track_pending_lifecycle_owner(self) -> None:
+        owner = asyncio.current_task()
+        if owner is None:
+            raise RuntimeError("replay lifecycle work requires an asyncio task owner")
+        self._pending_lifecycle_owners[owner] = (
+            self._pending_lifecycle_owners.get(owner, 0) + 1
+        )
+
+    def _untrack_pending_lifecycle_owner(self) -> None:
+        owner = asyncio.current_task()
+        if owner is None or self._pending_lifecycle_owners.get(owner, 0) < 1:
+            raise RuntimeError("replay lifecycle owner count underflow")
+        remaining = self._pending_lifecycle_owners[owner] - 1
+        if remaining:
+            self._pending_lifecycle_owners[owner] = remaining
+        else:
+            self._pending_lifecycle_owners.pop(owner, None)
+
+    async def _wait_for_lease_drain(self, *, timeout: float) -> bool:
+        async def wait() -> None:
+            while self._lease_owners:
+                self._lifecycle_changed.clear()
+                if not self._lease_owners:
+                    return
+                await self._lifecycle_changed.wait()
+
+        try:
+            await asyncio.wait_for(wait(), timeout=max(0.01, timeout))
+        except TimeoutError:
+            return False
+        return True
+
+    async def _session_payload(self, handle: ReplaySessionHandle) -> dict[str, object]:
+        snapshot = await handle.actor.public_snapshot()
+        return {
+            "protocol": REPLAY_PROTOCOL,
+            "session_id": handle.session_id,
+            "data_fidelity": self._data_fidelity(handle.config),
+            "execution_fidelity": self._execution_fidelity(handle.config),
+            "snapshot": snapshot,
+        }
+
+    @staticmethod
+    def _command_result_payload(result: CommandResult) -> dict[str, object]:
+        cursor = result.cursor
+        return {
+            "command_id": result.command_id,
+            "revision": result.revision,
+            "sequence": result.sequence,
+            "state": result.state.value,
+            "state_hash": result.state_hash,
+            "cursor": {
+                "virtual_time_ms": cursor.virtual_time_ms,
+                "source_sequence": cursor.source_sequence,
+                "last_base_bar_open_ms": cursor.last_base_bar_open_ms,
+                "last_trade_time_ms": cursor.last_trade_time_ms,
+                "last_agg_trade_id": cursor.last_agg_trade_id,
+                "at_end": cursor.at_end,
+            },
+            "data": dict(result.data),
+        }
+
+    @staticmethod
+    def _replay_stored_command(
+        stored: StoredCommand, command: ReplayCommand
+    ) -> CommandResult:
+        fingerprint = canonical_sha256(command.to_dict())
+        if fingerprint != stored.fingerprint:
+            raise ReplayDomainError(
+                ReplayErrorCode.COMMAND_ID_REUSED,
+                "command_id was reused with a different canonical command",
+                details={"command_id": command.command_id},
+            )
+        if not stored.accepted:
+            code = (
+                ReplayErrorCode(stored.error_code)
+                if stored.error_code is not None
+                else ReplayErrorCode.INVALID_STATE_TRANSITION
+            )
+            raise ReplayDomainError(
+                code,
+                stored.error_message or "persisted replay command was rejected",
+                details=stored.error_details,
+            )
+        payload = stored.result
+        if not isinstance(payload, Mapping):
+            raise ReplayDomainError(
+                ReplayErrorCode.PERSISTENCE_DEGRADED,
+                "persisted accepted command result is missing",
+            )
+        cursor_payload = payload.get("cursor")
+        if not isinstance(cursor_payload, Mapping):
+            raise ReplayDomainError(
+                ReplayErrorCode.PERSISTENCE_DEGRADED,
+                "persisted command cursor is invalid",
+            )
+        return CommandResult(
+            command_id=str(payload["command_id"]),
+            revision=int(payload["revision"]),
+            sequence=int(payload["sequence"]),
+            state=SessionState(str(payload["state"])),
+            state_hash=str(payload["state_hash"]),
+            cursor=ReplayCursor(**cursor_payload),  # type: ignore[arg-type]
+            data=payload.get("data", {}),  # type: ignore[arg-type]
+        )
+
+    @staticmethod
+    def _broker(
+        config: ReplaySessionConfig,
+        dataset: BarDatasetSnapshot,
+        broker_config: BrokerConfig,
+        *,
+        trade_dataset_ref: RawAggTradeDatasetRef | None = None,
+        bar_paging_manifest: Mapping[str, object] | None = None,
+        actual_dataset: BarDatasetSnapshot | None = None,
+        execution_mode: str = PAPER_LINEAR_EXECUTION_MODE,
+        max_closed_bars_override: int | None = None,
+    ) -> ConservativeBarBroker:
+        dataset_retention_bound = min(10_000, max(1, dataset.row_count))
+        if max_closed_bars_override is not None:
+            if (
+                isinstance(max_closed_bars_override, bool)
+                or not isinstance(max_closed_bars_override, int)
+                or max_closed_bars_override < 1
+                or max_closed_bars_override > dataset_retention_bound
+            ):
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_MISMATCH,
+                    "checkpoint closed-bar retention is incompatible",
+                )
+            max_closed_bars = max_closed_bars_override
+        elif config.source_kind is SourceKind.BAR:
+            max_closed_bars = min(
+                dataset_retention_bound,
+                max(BAR_REPLAY_RETAINED_TAIL_BARS, config.warmup_bars),
+            )
+        else:
+            max_closed_bars = dataset_retention_bound
+        if config.source_kind is SourceKind.AGG_TRADE:
+            if trade_dataset_ref is None:
+                raise ReplayDomainError(
+                    ReplayErrorCode.DATASET_INCOMPLETE,
+                    "aggregate-trade broker is missing its dataset ref",
+                )
+            builder: ReplayBarBuilder | TradeReplayBarBuilder = TradeReplayBarBuilder(
+                base_interval=config.base_interval,
+                display_interval=config.display_interval,
+                replay_start_ms=dataset.replay_start_ms,
+                replay_end_time_ms=dataset.replay_rows[-1].close_time_ms,
+                warmup_bars=dataset.warmup_rows,
+                max_closed_bars=max_closed_bars,
+            )
+        else:
+            verified_halts = ReplayService._actor_bar_halts(
+                bar_paging_manifest,
+                actual_dataset=actual_dataset or dataset,
+                actor_dataset=dataset,
+            )
+            builder = ReplayBarBuilder(
+                base_interval=config.base_interval,
+                display_interval=config.display_interval,
+                replay_start_ms=dataset.replay_start_ms,
+                warmup_bars=dataset.warmup_rows,
+                max_closed_bars=max_closed_bars,
+                verified_halts=verified_halts,
+            )
+        return ConservativeBarBroker(
+            config=broker_config,
+            bar_builder=builder,
+            execution_mode=execution_mode,
+        )
+
+    @staticmethod
+    def _component_max_closed_bars(
+        component_state: Mapping[str, object],
+    ) -> int | None:
+        builder = component_state.get("bar_builder")
+        if not isinstance(builder, Mapping):
+            return None
+        value = builder.get("max_closed_bars")
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            return None
+        return value
+
+    @classmethod
+    def _checkpoint_max_closed_bars(cls, checkpoint: bytes) -> int | None:
+        try:
+            payload = CheckpointCodec().decode(checkpoint)
+        except (CheckpointError, TypeError, ValueError):
+            return None
+        component_state = payload.get("component_state")
+        if not isinstance(component_state, Mapping):
+            return None
+        return cls._component_max_closed_bars(component_state)
+
+    @staticmethod
+    def _checkpoint_execution_mode(checkpoint: bytes) -> str | None:
+        """Recover the internal broker execution contract from immutable state."""
+
+        try:
+            payload = CheckpointCodec().decode(checkpoint)
+        except (CheckpointError, TypeError, ValueError):
+            return None
+        component_state = payload.get("component_state")
+        if not isinstance(component_state, Mapping):
+            return None
+        model_version = component_state.get("model_version")
+        if model_version in {
+            BAR_TOUCH_OR_TAPE_MODEL_VERSION,
+            AGG_TRADE_TOUCH_OR_TAPE_MODEL_VERSION,
+            BAR_TOUCH_OR_TAPE_HEDGE_MODEL_VERSION,
+            AGG_TRADE_TOUCH_OR_TAPE_HEDGE_MODEL_VERSION,
+        }:
+            return TOUCH_OR_TAPE_EXECUTION_MODE
+        return None
+
+    @staticmethod
+    def _broker_config(
+        config: ReplaySessionConfig,
+        dataset: BarDatasetSnapshot,
+    ) -> BrokerConfig:
+        first = dataset.replay_rows[0]
+        scale = max(
+            8,
+            *(
+                max(0, -Decimal(value).as_tuple().exponent)
+                for value in (
+                    first.open,
+                    first.high,
+                    first.low,
+                    first.close,
+                )
+            ),
+        )
+        scale = min(scale, 18)
+        tick = format(Decimal(1).scaleb(-scale), "f")
+        with localcontext() as context:
+            context.prec = 60
+            max_notional = Decimal(config.initial_equity) * Decimal(config.max_leverage)
+        max_notional_text = format(max_notional, "f")
+        return BrokerConfig(
+            initial_equity=config.initial_equity,
+            quote_asset=config.quote_asset,
+            maker_bps=config.fee_model.maker_bps,
+            taker_bps=config.fee_model.taker_bps,
+            market_slippage_bps=config.slippage_model.market_bps,
+            initial_mark_price=first.open,
+            position_mode=PositionMode(config.position_mode),
+            instrument=InstrumentFilters(
+                price_tick=tick,
+                quantity_step="0.00000001",
+                min_quantity="0.00000001",
+                max_quantity="1000000000",
+                min_notional="0.01",
+                max_notional=max_notional_text,
+                quote_step="0.00000001",
+            ),
+            limits=BrokerLimits(
+                max_leverage=config.max_leverage,
+                max_position_notional=max_notional_text,
+                max_order_quantity="1000000000",
+                max_open_orders=256,
+                max_orders=4_096,
+                max_fills=8_192,
+                max_ledger_entries=65_536,
+                max_warnings=4_096,
+            ),
+        )
+
+    def _require_trade_capability(self) -> None:
+        diagnostics = self._raw_trade_archive.diagnostics()
+        if not diagnostics.get("enabled"):
+            raise ReplayDomainError(
+                ReplayErrorCode.ARCHIVE_DISABLED,
+                "aggregate-trade replay archive is disabled",
+            )
+        if diagnostics.get("state") != "ready":
+            raise ReplayDomainError(
+                ReplayErrorCode.ARCHIVE_DEGRADED,
+                "aggregate-trade replay archive is degraded",
+            )
+        if not diagnostics.get("verified_partitions_available"):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_INCOMPLETE,
+                "aggregate-trade replay archive has no official contiguous "
+                "daily availability",
+            )
+
+    async def _select_random_window(
+        self,
+        catalog: ReplayCatalog,
+        entry: ReplayCatalogEntry,
+        config: ReplaySessionConfig,
+    ) -> EligibleWindow:
+        window, _catalog_epoch = await self._select_random_window_bound(
+            catalog,
+            entry,
+            config,
+        )
+        return window
+
+    @staticmethod
+    def _bar_tail_reachable_ranges(
+        entry: ReplayCatalogEntry,
+    ) -> tuple[EligibleWindowRange, ...]:
+        """Keep starts that can reach the immutable latest closed BAR.
+
+        Exact reviewed exchange halts are traversable by the paged BAR
+        schedule.  Every other gap is a data-integrity boundary, so only starts
+        after the final such gap may become an open-ended training Run.
+        """
+
+        if entry.bounds is None or entry.selected_base_interval is None:
+            return ()
+        interval_ms = parse_interval_ms(entry.selected_base_interval)
+        if interval_ms is None or interval_ms <= 0:
+            raise ReplayDomainError(
+                ReplayErrorCode.UNSUPPORTED_INTERVAL,
+                "BAR tail reachability requires a fixed base interval",
+            )
+        reachable_floor_ms = entry.bounds.earliest_open_ms
+        for gap in entry.gap_summary.gaps:
+            halt = match_verified_market_halt(
+                entry.identity,
+                gap,
+                interval_ms=interval_ms,
+            )
+            if (
+                halt is not None
+                and halt.resume_ms <= entry.bounds.latest_closed_open_ms
+            ):
+                continue
+            reachable_floor_ms = max(
+                reachable_floor_ms,
+                gap.end_ms + interval_ms,
+            )
+
+        reachable: list[EligibleWindowRange] = []
+        for candidate in entry.eligible_ranges:
+            if candidate.last_start_ms < reachable_floor_ms:
+                continue
+            first_start_ms = candidate.first_start_ms
+            if first_start_ms < reachable_floor_ms:
+                offset = (
+                    reachable_floor_ms - first_start_ms + candidate.interval_ms - 1
+                ) // candidate.interval_ms
+                first_start_ms += offset * candidate.interval_ms
+            if first_start_ms > candidate.last_start_ms:
+                continue
+            reachable.append(
+                replace(
+                    candidate,
+                    first_start_ms=first_start_ms,
+                    count=(
+                        (candidate.last_start_ms - first_start_ms)
+                        // candidate.interval_ms
+                    )
+                    + 1,
+                )
+            )
+        return tuple(reachable)
+
+    async def _select_manual_window(
+        self,
+        catalog: ReplayCatalog,
+        entry: ReplayCatalogEntry,
+        config: ReplaySessionConfig,
+        *,
+        start_ms: int,
+    ) -> EligibleWindow:
+        window, _trade_catalog_epoch = await self._select_manual_window_bound(
+            catalog,
+            entry,
+            config,
+            start_ms=start_ms,
+        )
+        return window
+
+    async def _select_manual_window_bound(
+        self,
+        catalog: ReplayCatalog,
+        entry: ReplayCatalogEntry,
+        config: ReplaySessionConfig,
+        *,
+        start_ms: int,
+    ) -> tuple[EligibleWindow, str | None]:
+        selection_entry = entry
+        trade_catalog_epoch: str | None = None
+        if config.source_kind is SourceKind.BAR:
+            selection_entry = replace(
+                entry,
+                eligible_ranges=self._bar_tail_reachable_ranges(entry),
+            )
+        else:
+            trade_catalog_epoch, eligible_ranges = (
+                await self._trade_eligible_ranges(entry)
+            )
+            selection_entry = replace(entry, eligible_ranges=eligible_ranges)
+        return (
+            catalog.select_manual(selection_entry, start_ms=start_ms),
+            trade_catalog_epoch,
+        )
+
+    async def _select_random_window_bound(
+        self,
+        catalog: ReplayCatalog,
+        entry: ReplayCatalogEntry,
+        config: ReplaySessionConfig,
+        *,
+        minimum_history_bars: int | None = None,
+    ) -> tuple[EligibleWindow, str | None]:
+        required_history_bars = (
+            config.warmup_bars if minimum_history_bars is None else minimum_history_bars
+        )
+        if config.source_kind is SourceKind.BAR:
+            eligible_ranges = self._minimum_history_ranges(
+                entry,
+                self._bar_tail_reachable_ranges(entry),
+                configured_warmup_bars=config.warmup_bars,
+                minimum_history_bars=required_history_bars,
+            )
+            return (
+                catalog.select_random_from_ranges(
+                    entry,
+                    eligible_ranges=eligible_ranges,
+                    seed=config.random_seed,
+                    selection_namespace=(
+                        "bar_source_latest_reachable.v1"
+                        if required_history_bars == config.warmup_bars
+                        else (
+                            "bar_source_latest_reachable.minimum_history.v1:"
+                            f"{required_history_bars}"
+                        )
+                    ),
+                ),
+                None,
+            )
+        trade_catalog_epoch, trade_ranges = await self._trade_eligible_ranges(entry)
+        eligible_ranges = self._minimum_history_ranges(
+            entry,
+            trade_ranges,
+            configured_warmup_bars=config.warmup_bars,
+            minimum_history_bars=required_history_bars,
+        )
+        return (
+            catalog.select_random_from_ranges(
+                entry,
+                eligible_ranges=eligible_ranges,
+                seed=config.random_seed,
+                selection_namespace=(
+                    "agg_trade_official_availability.approximate_bars.v1"
+                    if required_history_bars == config.warmup_bars
+                    else (
+                        "agg_trade_official_availability.minimum_history.v1:"
+                        f"{required_history_bars}"
+                    )
+                ),
+            ),
+            trade_catalog_epoch,
+        )
+
+    @staticmethod
+    def _minimum_history_ranges(
+        entry: ReplayCatalogEntry,
+        ranges: Sequence[EligibleWindowRange],
+        *,
+        configured_warmup_bars: int,
+        minimum_history_bars: int,
+    ) -> tuple[EligibleWindowRange, ...]:
+        if minimum_history_bars < configured_warmup_bars:
+            raise ValueError("minimum history cannot be smaller than catalog warmup")
+        extra_bars = minimum_history_bars - configured_warmup_bars
+        if extra_bars == 0:
+            return tuple(ranges)
+        restricted: list[EligibleWindowRange] = []
+        for candidate in ranges:
+            source = next(
+                (
+                    source_range
+                    for source_range in entry.eligible_ranges
+                    if source_range.interval == candidate.interval
+                    and source_range.interval_ms == candidate.interval_ms
+                    and source_range.warmup_bars == candidate.warmup_bars
+                    and source_range.replay_bars == candidate.replay_bars
+                    and source_range.contains(candidate.first_start_ms)
+                    and source_range.contains(candidate.last_start_ms)
+                ),
+                None,
+            )
+            if source is None:
+                raise ValueError(
+                    "eligible range is not bound to its source catalog range"
+                )
+            first_start_ms = max(
+                candidate.first_start_ms,
+                source.first_start_ms + extra_bars * candidate.interval_ms,
+            )
+            if first_start_ms > candidate.last_start_ms:
+                continue
+            restricted.append(
+                replace(
+                    candidate,
+                    first_start_ms=first_start_ms,
+                    count=(
+                        (candidate.last_start_ms - first_start_ms)
+                        // candidate.interval_ms
+                    )
+                    + 1,
+                )
+            )
+        return tuple(restricted)
+
+    async def _trade_eligible_ranges(
+        self,
+        entry: ReplayCatalogEntry,
+    ) -> tuple[str | None, tuple[EligibleWindowRange, ...]]:
+        if entry.selected_base_interval is None:
+            return None, ()
+        if parse_interval_ms(entry.selected_base_interval) is None:
+            raise ReplayDomainError(
+                ReplayErrorCode.UNSUPPORTED_INTERVAL,
+                "aggregate-trade selection requires a fixed BAR interval",
+            )
+        snapshot = getattr(self._raw_trade_archive, "selection_snapshot", None)
+        try:
+            if callable(snapshot):
+                catalog_epoch, selection_windows = await asyncio.to_thread(
+                    snapshot,
+                    exchange=entry.identity.exchange,
+                    market_type=entry.identity.market_type,
+                    symbol=entry.identity.symbol,
+                )
+                trade_catalog_epoch = self._validated_trade_catalog_epoch(
+                    catalog_epoch
+                )
+            else:
+                selection_windows = await asyncio.to_thread(
+                    self._raw_trade_archive.list_selection_windows,
+                    exchange=entry.identity.exchange,
+                    market_type=entry.identity.market_type,
+                    symbol=entry.identity.symbol,
+                )
+                trade_catalog_epoch = None
+            return (
+                trade_catalog_epoch,
+                self._intersect_trade_eligible_ranges(entry, selection_windows),
+            )
+        except Exception as exc:
+            diagnostics = self._raw_trade_archive.diagnostics()
+            code = (
+                ReplayErrorCode.ARCHIVE_DEGRADED
+                if diagnostics.get("state") != "ready"
+                else ReplayErrorCode.DATASET_INCOMPLETE
+            )
+            raise ReplayDomainError(
+                code,
+                "official aggregate-trade daily availability is unavailable",
+            ) from exc
+
+    @staticmethod
+    def _validated_trade_catalog_epoch(value: object) -> str:
+        epoch = str(value)
+        if (
+            len(epoch) != 71
+            or not epoch.startswith("sha256:")
+            or any(character not in "0123456789abcdef" for character in epoch[7:])
+        ):
+            raise ValueError("aggregate-trade selection catalog epoch is invalid")
+        return epoch
+
+    @staticmethod
+    def _intersect_trade_eligible_ranges(
+        entry: ReplayCatalogEntry,
+        selection_windows: Sequence[RawAggTradeSelectionWindow],
+    ) -> tuple[EligibleWindowRange, ...]:
+        windows = tuple(sorted(selection_windows, key=lambda item: item.start_time_ms))
+        previous_end: int | None = None
+        for window in windows:
+            if not isinstance(window, RawAggTradeSelectionWindow):
+                raise TypeError(
+                    "aggregate-trade selection coverage contains an invalid window"
+                )
+            if previous_end is not None and window.start_time_ms <= previous_end:
+                raise ValueError("aggregate-trade selection coverage windows overlap")
+            previous_end = window.end_time_ms
+
+        intersections: list[EligibleWindowRange] = []
+        for candidate in entry.eligible_ranges:
+            forward_span_ms = candidate.replay_bars * candidate.interval_ms
+            for coverage in windows:
+                last_start_for_coverage = coverage.end_time_ms - forward_span_ms + 1
+                unaligned_first = max(
+                    candidate.first_start_ms,
+                    coverage.start_time_ms,
+                )
+                unaligned_last = min(
+                    candidate.last_start_ms,
+                    last_start_for_coverage,
+                )
+                if unaligned_first > unaligned_last:
+                    continue
+                first_offset = max(
+                    0,
+                    (
+                        unaligned_first
+                        - candidate.first_start_ms
+                        + candidate.interval_ms
+                        - 1
+                    )
+                    // candidate.interval_ms,
+                )
+                first_start_ms = (
+                    candidate.first_start_ms + first_offset * candidate.interval_ms
+                )
+                last_offset = (
+                    unaligned_last - candidate.first_start_ms
+                ) // candidate.interval_ms
+                last_start_ms = (
+                    candidate.first_start_ms + last_offset * candidate.interval_ms
+                )
+                if first_start_ms > last_start_ms:
+                    continue
+                intersections.append(
+                    EligibleWindowRange(
+                        interval=candidate.interval,
+                        interval_ms=candidate.interval_ms,
+                        first_start_ms=first_start_ms,
+                        last_start_ms=last_start_ms,
+                        count=(
+                            (last_start_ms - first_start_ms) // candidate.interval_ms
+                        )
+                        + 1,
+                        warmup_bars=candidate.warmup_bars,
+                        replay_bars=candidate.replay_bars,
+                    )
+                )
+        return tuple(intersections)
+
+    async def _freeze_trade_dataset(
+        self,
+        config: ReplaySessionConfig,
+        dataset: BarDatasetSnapshot,
+    ) -> RawAggTradeDatasetRef:
+        try:
+            reference = await asyncio.to_thread(
+                self._raw_trade_archive.freeze_dataset,
+                exchange=config.exchange,
+                market_type=config.market_type,
+                symbol=config.symbol,
+                start_time_ms=dataset.replay_start_ms,
+                end_time_ms=dataset.replay_rows[-1].close_time_ms,
+                page_rows=self.settings.trade_page_rows,
+            )
+        except ReplayDomainError as exc:
+            raise self._blind_safe_dataset_error(config, exc) from exc
+        except Exception as exc:
+            diagnostics = self._raw_trade_archive.diagnostics()
+            code = (
+                ReplayErrorCode.ARCHIVE_DEGRADED
+                if diagnostics.get("state") != "ready"
+                else ReplayErrorCode.DATASET_INCOMPLETE
+            )
+            raise ReplayDomainError(
+                code,
+                "no checksum-verified contiguous aggregate-trade dataset covers "
+                "the selected replay window",
+            ) from exc
+        expected_identity = (
+            config.exchange.lower(),
+            config.market_type.lower(),
+            config.symbol.upper(),
+        )
+        if (
+            reference.exchange,
+            reference.market_type,
+            reference.symbol,
+        ) != expected_identity or (
+            reference.start_time_ms,
+            reference.end_time_ms,
+        ) != (
+            dataset.replay_start_ms,
+            dataset.replay_rows[-1].close_time_ms,
+        ):
+            raise ReplayDomainError(
+                ReplayErrorCode.DATASET_MISMATCH,
+                "frozen aggregate-trade dataset identity or time range changed",
+            )
+        return reference
+
+    @staticmethod
+    def _blind_safe_dataset_error(
+        config_or_blind_mode: ReplaySessionConfig | bool,
+        error: ReplayDomainError,
+    ) -> ReplayDomainError:
+        blind_mode = (
+            config_or_blind_mode
+            if isinstance(config_or_blind_mode, bool)
+            else config_or_blind_mode.blind_mode
+        )
+        if blind_mode:
+            details: dict[str, object] = {"blind_redacted": True}
+            # The caller supplied an opaque catalog epoch. Its retry signal
+            # reveals no dates, paths, or dataset identity; losing it makes a
+            # transient catalog refresh look like an unsupported frozen start.
+            if (
+                error.code is ReplayErrorCode.DATASET_MISMATCH
+                and error.details.get("reason") == "CATALOG_EPOCH_MISMATCH"
+            ):
+                details["reason"] = "CATALOG_EPOCH_MISMATCH"
+            return ReplayDomainError(
+                error.code,
+                "blind replay dataset validation failed",
+                details=details,
+            )
+        return ReplayDomainError(
+            error.code,
+            error.message,
+            details=dict(error.details),
+        )
+
+    @staticmethod
+    def _blind_unexpected_dataset_error() -> ReplayDomainError:
+        return ReplayDomainError(
+            ReplayErrorCode.DATASET_INCOMPLETE,
+            "blind replay dataset validation failed",
+            details={"blind_redacted": True},
+        )
+
+    @staticmethod
+    def _persisted_extension_dataset(
+        dataset: BarDatasetSnapshot,
+        trade_dataset_ref: RawAggTradeDatasetRef | None,
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        """Encode the immutable archive segment owned by a training Run."""
+
+        if trade_dataset_ref is not None:
+            return ReplayService._persisted_dataset(dataset, trade_dataset_ref)
+        reference = dataset.snapshot_ref().to_dict()
+        if dataset.provenance.source_revision is not None:
+            reference["source_revision"] = dataset.provenance.source_revision
+        return reference, dataset.to_dict()
+
+    @staticmethod
+    def _persisted_dataset(
+        dataset: BarDatasetSnapshot,
+        trade_dataset_ref: RawAggTradeDatasetRef | None,
+        *,
+        bar_paging_manifest: Mapping[str, object] | None = None,
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        bar_reference = dataset.snapshot_ref().to_dict()
+        if dataset.provenance.source_revision is not None:
+            # The archive revision is persistence-only: it protects the
+            # immutable history objects used by this Run.
+            bar_reference["source_revision"] = dataset.provenance.source_revision
+        if trade_dataset_ref is None:
+            if bar_paging_manifest is None:
+                raise ValueError("BAR persistence requires a paging manifest")
+            reference = {
+                "schema_version": PAGED_BAR_SESSION_REF_SCHEMA_VERSION,
+                "data_epoch": dataset.data_epoch,
+                "source_kind": SourceKind.BAR.value,
+                "bar_snapshot_ref": bar_reference,
+                "paging_manifest": dict(bar_paging_manifest),
+            }
+            bundle = {
+                "schema_version": PAGED_BAR_SESSION_DATASET_SCHEMA_VERSION,
+                "bar_dataset": dataset.to_dict(),
+                "paging_manifest": dict(bar_paging_manifest),
+            }
+            return reference, bundle
+        reference = {
+            "schema_version": TRADE_SESSION_REF_SCHEMA_VERSION,
+            "data_epoch": trade_dataset_ref.data_epoch,
+            "bar_data_epoch": dataset.data_epoch,
+            "source_kind": SourceKind.AGG_TRADE.value,
+            "trade_dataset_ref": trade_dataset_ref.to_dict(),
+            # Keep BAR source classification in the lightweight row because
+            # schema v3 stores the large snapshot body outside SQLite.  Archive
+            # pins must never depend on reopening that body.
+            "bar_snapshot_ref": bar_reference,
+        }
+        bundle = {
+            "schema_version": TRADE_SESSION_DATASET_SCHEMA_VERSION,
+            "bar_dataset": dataset.to_dict(),
+            "trade_dataset_ref": trade_dataset_ref.to_dict(),
+        }
+        return reference, bundle
+
+    @staticmethod
+    def _data_fidelity(config: ReplaySessionConfig) -> str:
+        return (
+            DataFidelity.VERIFIED_AGG_TRADE_APPROXIMATE_BARS.value
+            if config.source_kind is SourceKind.AGG_TRADE
+            else DataFidelity.EXACT_BAR_COVERAGE.value
+        )
+
+    @staticmethod
+    def _execution_fidelity(config: ReplaySessionConfig) -> str:
+        return (
+            ExecutionFidelity.AGG_TRADE_TAPE.value
+            if config.source_kind is SourceKind.AGG_TRADE
+            else ExecutionFidelity.BAR_CONSERVATIVE.value
+        )
+
+    async def _persist_report(self, handle: ReplaySessionHandle) -> None:
+        report = dict(await handle.actor.report())
+        report_hash = str(report.get("report_hash", ""))
+        if report_hash:
+            await self.store.save_report(handle.session_id, report, report_hash)
+
+    async def _persist_report_after_command(
+        self,
+        handle: ReplaySessionHandle,
+    ) -> None:
+        """Persist the derived report without rewriting a committed command ACK."""
+
+        try:
+            await self._persist_report(handle)
+        except asyncio.CancelledError:
+            # Lifecycle cancellation remains observable.  The accepted command
+            # is durable and can be reconciled by command_id after restart.
+            raise
+        except Exception:
+            # The actor mutation and its command result committed atomically
+            # before report generation.  A derived/report-table failure must
+            # not present that accepted command as rejected or permanently
+            # unknown to an idempotent retry.
+            self._metrics["report_persistence_failures"] = (
+                int(self._metrics["report_persistence_failures"] or 0) + 1
+            )
+
+    @staticmethod
+    def _actual_history(handle: ReplaySessionHandle) -> dict[str, int]:
+        replay_end_open_ms = handle.actual_dataset.replay_end_open_ms
+        if handle.bar_paging_manifest is not None:
+            replay_end_open_ms = int(handle.bar_paging_manifest["terminal_open_ms"])
+        return {
+            "replay_start_ms": handle.actual_dataset.replay_start_ms,
+            "replay_end_open_ms": replay_end_open_ms,
+        }
+
+    @staticmethod
+    def _catalog_entry_payload(
+        entry: ReplayCatalogEntry, *, blind_mode: bool
+    ) -> dict[str, object]:
+        if not blind_mode:
+            # The archive revision is an internal server-side pin.  The public
+            # replay.v1 catalog contract is strict and clients commit only to
+            # the derived catalog epoch, so do not expand that wire shape.
+            payload = entry.to_hash_dict()
+            payload.pop("source_revision", None)
+            return {**payload, "catalog_epoch": entry.catalog_epoch}
+        return {
+            "identity": entry.identity.to_dict(),
+            "base_intervals": list(entry.base_intervals),
+            "selected_base_interval": entry.selected_base_interval,
+            "eligible_window_count": entry.eligible_window_count,
+            "quality": entry.quality.value if entry.quality is not None else None,
+            "limitations": list(entry.limitations),
+            "catalog_epoch": entry.catalog_epoch,
+            "bounds": None,
+            "eligible_ranges": [],
+        }
+
+    @staticmethod
+    def _required_manual_start(config: ReplaySessionConfig) -> int:
+        if config.requested_start_ms is None:
+            raise ReplayDomainError(
+                ReplayErrorCode.NO_ELIGIBLE_WINDOW,
+                "manual replay start requires requested_start_ms",
+            )
+        return config.requested_start_ms
+
+    @staticmethod
+    def _synthetic_origin(interval: str) -> int:
+        interval_ms = parse_interval_ms(interval)
+        if interval_ms is None or interval_ms <= 0:
+            raise ReplayDomainError(
+                ReplayErrorCode.UNSUPPORTED_INTERVAL,
+                "cannot align synthetic timeline to base interval",
+            )
+        return compute_bucket_start_ms(
+            SYNTHETIC_TIME_ANCHOR_MS,
+            interval_ms,
+            interval=interval,
+        )
+
+    @staticmethod
+    def _all_local_intervals(_identity: ReplaySeriesIdentity) -> tuple[str, ...]:
+        from app.data_engine.interval_policy import VALID_INTERVALS
+
+        return tuple(VALID_INTERVALS)
+
+    def _ensure_accepting(self) -> None:
+        if self._closed or not self._accepting:
+            raise ReplayDomainError(
+                ReplayErrorCode.REPLAY_DISABLED,
+                "replay service is not accepting new work",
+            )
+
+    def _ensure_available(self, *, blind_mode: bool = False) -> None:
+        self._ensure_accepting()
+        if self.store.degraded_reason is not None:
+            details: dict[str, object] = (
+                {"blind_redacted": True}
+                if blind_mode
+                else {"reason": self.store.degraded_reason}
+            )
+            raise ReplayDomainError(
+                ReplayErrorCode.PERSISTENCE_DEGRADED,
+                "replay persistence is degraded",
+                details=details,
+            )
+
+    def _validated_now_ms(self) -> int:
+        value = self._now_ms()
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("ReplayService clock must return a non-negative integer")
+        return value
+
+    def now_ms(self) -> int:
+        """Return the validated process clock for replay-owned short-lived contracts."""
+
+        return self._validated_now_ms()
+
+    @staticmethod
+    def _recovery_error(
+        error: BaseException,
+        *,
+        blind_mode: bool = False,
+    ) -> ReplayDomainError:
+        if blind_mode:
+            code = (
+                error.code
+                if isinstance(error, ReplayDomainError)
+                else ReplayErrorCode.DATASET_MISMATCH
+            )
+            return ReplayService._blind_safe_internal_error(code)
+        if isinstance(error, ReplayDomainError):
+            return error
+        return ReplayDomainError(
+            ReplayErrorCode.DATASET_MISMATCH,
+            "replay session recovery failed",
+            details={"reason": f"{type(error).__name__}: {error}"},
+        )
+
+    @staticmethod
+    def _persisted_blind_mode(record: Mapping[str, object]) -> bool:
+        config = record.get("config")
+        if not isinstance(config, Mapping):
+            return True
+        # Only an explicit, well-typed False opts out. Corrupt persisted
+        # metadata fails closed so recovery errors cannot disclose real data.
+        return config.get("blind_mode") is not False
+
+    @staticmethod
+    def _blind_safe_internal_error(code: ReplayErrorCode) -> ReplayDomainError:
+        return ReplayDomainError(
+            code,
+            "blind replay internal operation failed",
+            details={"blind_redacted": True},
+        )

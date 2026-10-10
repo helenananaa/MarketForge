@@ -2,6 +2,8 @@
 node_modules/
 dist/
 *.tsbuildinfo
+__pycache__/
+*.pyc
 
 # Local credentials and environment overrides
 .env
@@ -9,3 +11,10 @@ dist/
 !.env.example
 *.pem
 *.key
+.local/agents/
+/.playwright-cli/
+/.local/candlescope-runtime/
+/output/playwright/
+/output/candlescope-workbench/
+/output/trading-capabilities/
+/.local/capability-qa/

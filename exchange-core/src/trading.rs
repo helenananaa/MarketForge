@@ -1,3 +1,4 @@
+use crate::history::History;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -24,10 +25,16 @@ pub struct SpotTradingEngine {
     accounts: SpotAccountStore,
     risk: SpotRiskEngine,
     log: EventLog,
-    clearing_events: Vec<SpotClearingEvent>,
+    clearing_events: History<SpotClearingEvent>,
 }
 
 impl SpotTradingEngine {
+    pub(crate) fn reservation_balance(&self, id: AccountId) -> Option<(Money, PositionQty)> {
+        self.accounts.reservation_balance(id)
+    }
+    pub(crate) fn expiring_order_ids(&self, market_time_ms: u64) -> Vec<OrderId> {
+        self.book.expiring_order_ids(market_time_ms)
+    }
     pub fn new(config: SpotClearingConfig) -> Self {
         Self::new_with_risk(config, SpotRiskConfig::default())
     }
@@ -38,7 +45,7 @@ impl SpotTradingEngine {
             accounts: SpotAccountStore::new(config),
             risk: SpotRiskEngine::new(risk_config),
             log: EventLog::new(),
-            clearing_events: Vec::new(),
+            clearing_events: History::default(),
         }
     }
 
@@ -70,8 +77,23 @@ impl SpotTradingEngine {
             .sync_account_balances(account_id, cash_balance, position_qty)
     }
 
+    #[cfg(test)]
+    pub(crate) fn sync_account_balances_reference(
+        &mut self,
+        account_id: AccountId,
+        cash_balance: Money,
+        position_qty: PositionQty,
+    ) -> Result<SpotAccountSnapshot, ClearingError> {
+        self.accounts
+            .sync_account_balances_reference(account_id, cash_balance, position_qty)
+    }
+
     pub fn order_owner(&self, order_id: OrderId) -> Option<AccountId> {
         self.book.order_owner(order_id)
+    }
+
+    pub fn resting_orders_for_account(&self, account_id: AccountId) -> Vec<crate::model::Order> {
+        self.book.resting_orders_for_account(account_id)
     }
 
     pub fn resting_order_ids_for_account_on_side(
@@ -90,6 +112,14 @@ impl SpotTradingEngine {
     }
 
     fn apply_inner(&mut self, command: Command) -> Result<SpotTradingExecution, ClearingError> {
+        if matches!(
+            command,
+            Command::SetConditionalOrder { .. }
+                | Command::SetPositionProtection { .. }
+                | Command::NewOrderWithProtection { .. }
+        ) {
+            return Err(ClearingError::WrongMarketKind); // Requires the exchange actor transaction.
+        }
         if matches!(command, Command::SetMarkPrice(_)) {
             return Err(ClearingError::WrongMarketKind);
         }
@@ -129,6 +159,20 @@ impl SpotTradingEngine {
 
     pub fn account_snapshots(&self) -> Vec<SpotAccountSnapshot> {
         self.accounts.snapshots()
+    }
+
+    pub(crate) fn reservation_changes(&self) -> &crate::account::ReservationChanges {
+        &self.accounts.reservation_changes
+    }
+
+    pub(crate) fn reservation_changes_mut(&mut self) -> &mut crate::account::ReservationChanges {
+        &mut self.accounts.reservation_changes
+    }
+
+    pub(crate) fn reservation_balances(
+        &self,
+    ) -> impl Iterator<Item = (AccountId, Money, crate::account::PositionQty)> + '_ {
+        self.accounts.reservation_balances()
     }
 
     pub fn command_log(&self) -> &[CommandRecord] {
@@ -213,13 +257,17 @@ pub struct PerpTradingEngine {
     accounts: PerpAccountStore,
     risk: PerpRiskEngine,
     log: EventLog,
-    clearing_events: Vec<PerpClearingEvent>,
+    clearing_events: History<PerpClearingEvent>,
     #[serde(default)]
     pending_liquidations: BTreeMap<AccountId, PendingLiquidation>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PendingLiquidation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_hedge_positions: Option<Box<crate::HedgePositions>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remaining_hedge_positions: Option<Box<crate::HedgePositions>>,
     pub account_id: AccountId,
     pub initial_position_qty: PositionQty,
     pub remaining_position_qty: PositionQty,
@@ -229,6 +277,18 @@ pub struct PendingLiquidation {
 }
 
 impl PerpTradingEngine {
+    pub(crate) fn liquidatable_account_ids(&self) -> Vec<AccountId> {
+        self.accounts.liquidatable_account_ids()
+    }
+    pub(crate) fn reservation_balance(
+        &self,
+        id: AccountId,
+    ) -> Result<Option<Money>, ClearingError> {
+        self.accounts.reservation_balance(id)
+    }
+    pub(crate) fn expiring_order_ids(&self, market_time_ms: u64) -> Vec<OrderId> {
+        self.book.expiring_order_ids(market_time_ms)
+    }
     pub fn new(
         config: PerpClearingConfig,
         initial_mark_price_tick: crate::model::PriceTick,
@@ -246,7 +306,7 @@ impl PerpTradingEngine {
             accounts: PerpAccountStore::new(config, initial_mark_price_tick)?,
             risk: PerpRiskEngine::new(risk_config),
             log: EventLog::new(),
-            clearing_events: Vec::new(),
+            clearing_events: History::default(),
             pending_liquidations: BTreeMap::new(),
         })
     }
@@ -277,6 +337,20 @@ impl PerpTradingEngine {
             .sync_cross_margin_account(account_id, cash_balance, context)
     }
 
+    pub(crate) fn margin_inputs(
+        &self,
+        affected: Option<&std::collections::BTreeSet<AccountId>>,
+    ) -> Vec<crate::perp::PerpMarginInputs> {
+        self.accounts.margin_inputs(affected)
+    }
+
+    pub(crate) fn sync_cross_margin_accounts(
+        &mut self,
+        requests: &[(AccountId, Money, PerpCrossMarginContext)],
+    ) -> Result<(), ClearingError> {
+        self.accounts.sync_cross_margin_accounts(requests)
+    }
+
     pub fn order_owner(&self, order_id: OrderId) -> Option<AccountId> {
         self.book.order_owner(order_id)
     }
@@ -289,6 +363,26 @@ impl PerpTradingEngine {
     }
 
     fn apply_inner(&mut self, command: Command) -> Result<PerpTradingExecution, ClearingError> {
+        if matches!(
+            command,
+            Command::SetConditionalOrder { .. }
+                | Command::SetPositionProtection { .. }
+                | Command::NewOrderWithProtection { .. }
+        ) {
+            return Err(ClearingError::WrongMarketKind); // Requires the exchange actor transaction.
+        }
+        if let Command::SettleFunding(mut settlement) = command {
+            let clearing_events = self.accounts.settle_funding(&mut settlement)?;
+            self.clearing_events.extend(clearing_events.iter().cloned());
+            let recorded = self
+                .log
+                .record(Command::SettleFunding(settlement), Vec::new());
+            return Ok(PerpTradingExecution {
+                command: recorded.command,
+                events: recorded.events,
+                clearing_events,
+            });
+        }
         if let Command::SetMarkPrice(mark_price) = command {
             let clearing_events = self.accounts.set_mark_price_tick(mark_price.price_tick)?;
             self.clearing_events.extend(clearing_events.iter().cloned());
@@ -333,7 +427,11 @@ impl PerpTradingEngine {
             });
         }
 
-        let events = self.book.apply(command.clone());
+        let mut guard = ReduceOnlyMatching {
+            accounts: &self.accounts,
+            positions: BTreeMap::new(),
+        };
+        let events = self.book.apply_guarded(command.clone(), &mut guard);
         let recorded = self.log.record(command, events);
         let clearing_events =
             self.settle_recorded_events(&recorded.command.command, &recorded.events)?;
@@ -378,6 +476,10 @@ impl PerpTradingEngine {
         self.book.order_ids_for_account(account_id)
     }
 
+    pub fn resting_orders_for_account(&self, account_id: AccountId) -> Vec<crate::model::Order> {
+        self.book.resting_orders_for_account(account_id)
+    }
+
     fn ensure_pending_liquidation(&mut self, account_id: AccountId) -> Result<(), ClearingError> {
         if self.pending_liquidations.contains_key(&account_id) {
             return Ok(());
@@ -389,13 +491,15 @@ impl PerpTradingEngine {
         if snapshot.margin_status != PerpMarginStatus::Liquidatable {
             return Err(ClearingError::AccountNotLiquidatable);
         }
-        if snapshot.position_qty == 0 {
+        if !snapshot.has_open_position() {
             return Err(ClearingError::InvalidLiquidationQuantity);
         }
 
         self.pending_liquidations.insert(
             account_id,
             PendingLiquidation {
+                initial_hedge_positions: snapshot.hedge_positions.clone(),
+                remaining_hedge_positions: snapshot.hedge_positions.clone(),
                 account_id,
                 initial_position_qty: snapshot.position_qty,
                 remaining_position_qty: snapshot.position_qty,
@@ -420,26 +524,47 @@ impl PerpTradingEngine {
         let before = self
             .account_snapshot(account_id)
             .ok_or(ClearingError::AccountNotFound)?;
-        if before.position_qty == 0 {
+        if !before.has_open_position() {
             return self.finalize_externally_flattened_liquidation(order_id, pending);
         }
-        if before.position_qty.signum() != pending.initial_position_qty.signum()
+        if let Some(positions) = &before.hedge_positions {
+            let remaining = pending
+                .remaining_hedge_positions
+                .as_ref()
+                .ok_or(ClearingError::InvalidLiquidationQuantity)?;
+            if positions.long.qty > remaining.long.qty || positions.short.qty > remaining.short.qty
+            {
+                return Err(ClearingError::InvalidLiquidationQuantity);
+            }
+        } else if before.position_qty.signum() != pending.initial_position_qty.signum()
             || before.position_qty.abs() > pending.remaining_position_qty.abs()
         {
             return Err(ClearingError::InvalidLiquidationQuantity);
         }
 
-        let side = if before.position_qty > 0 {
+        let (position_side, position_qty) = if let Some(positions) = &before.hedge_positions {
+            let long_has_depth =
+                positions.long.qty > 0 && self.book.fill_quote(Side::Sell, None, 1)?.qty > 0;
+            if positions.long.qty > 0 && (long_has_depth || positions.short.qty == 0) {
+                (crate::PositionSide::Long, positions.long.qty)
+            } else {
+                (crate::PositionSide::Short, -positions.short.qty)
+            }
+        } else {
+            (crate::PositionSide::Both, before.position_qty)
+        };
+        let side = if position_qty > 0 {
             Side::Sell
-        } else if before.position_qty < 0 {
+        } else if position_qty < 0 {
             Side::Buy
         } else {
             return Err(ClearingError::InvalidLiquidationQuantity);
         };
-        let qty = u64::try_from(before.position_qty.unsigned_abs())
+        let qty = u64::try_from(position_qty.unsigned_abs())
             .map_err(|_| ClearingError::InvalidLiquidationQuantity)?;
 
         let command = Command::NewOrder(NewOrder {
+            position_side,
             order_id,
             account_id,
             side,
@@ -464,12 +589,19 @@ impl PerpTradingEngine {
         let after_trade = self
             .account_snapshot(account_id)
             .ok_or(ClearingError::AccountNotFound)?;
-        if after_trade.position_qty.signum() != 0
+        if let (Some(before), Some(after)) = (&before.hedge_positions, &after_trade.hedge_positions)
+        {
+            if after.long.qty > before.long.qty || after.short.qty > before.short.qty {
+                return Err(ClearingError::InvalidLiquidationQuantity);
+            }
+        } else if after_trade.position_qty.signum() != 0
             && after_trade.position_qty.signum() != pending.initial_position_qty.signum()
         {
             return Err(ClearingError::InvalidLiquidationQuantity);
         }
-        if after_trade.position_qty.abs() > before.position_qty.abs() {
+        if before.hedge_positions.is_none()
+            && after_trade.position_qty.abs() > before.position_qty.abs()
+        {
             return Err(ClearingError::InvalidLiquidationQuantity);
         }
         let accumulated_notional = pending
@@ -482,11 +614,12 @@ impl PerpTradingEngine {
             .ok_or(ClearingError::InvalidLiquidationQuantity)?;
         if let Some(state) = self.pending_liquidations.get_mut(&account_id) {
             state.remaining_position_qty = after_trade.position_qty;
+            state.remaining_hedge_positions = after_trade.hedge_positions.clone();
             state.accumulated_notional = accumulated_notional;
             state.attempt_count = attempt_count;
         }
 
-        if after_trade.position_qty != 0 {
+        if after_trade.has_open_position() {
             self.append_liquidation_status_change_if_missing(
                 &mut execution,
                 account_id,
@@ -501,11 +634,12 @@ impl PerpTradingEngine {
         // while cumulative fee rounding and the insurance/ADL/loss waterfall
         // retain the same semantics as a one-shot liquidation.
         self.pending_liquidations.remove(&account_id);
-        let liquidation_events = self.accounts.apply_liquidation_settlement(
+        let liquidation_events = self.accounts.apply_liquidation_settlement_for_legs(
             account_id,
             order_id,
             accumulated_notional,
             pending.initial_position_qty,
+            pending.initial_hedge_positions.as_deref(),
         )?;
         self.clearing_events
             .extend(liquidation_events.iter().cloned());
@@ -560,14 +694,25 @@ impl PerpTradingEngine {
         order_id: OrderId,
         pending: PendingLiquidation,
     ) -> Result<PerpTradingExecution, ClearingError> {
-        let side = if pending.initial_position_qty > 0 {
+        let (position_side, remaining_position) =
+            if let Some(p) = &pending.remaining_hedge_positions {
+                if p.long.qty > 0 {
+                    (crate::PositionSide::Long, p.long.qty)
+                } else {
+                    (crate::PositionSide::Short, -p.short.qty)
+                }
+            } else {
+                (crate::PositionSide::Both, pending.remaining_position_qty)
+            };
+        let side = if remaining_position > 0 {
             Side::Sell
         } else {
             Side::Buy
         };
-        let qty = u64::try_from(pending.remaining_position_qty.unsigned_abs())
+        let qty = u64::try_from(remaining_position.unsigned_abs())
             .map_err(|_| ClearingError::InvalidLiquidationQuantity)?;
         let command = Command::NewOrder(NewOrder {
+            position_side,
             order_id,
             account_id: pending.account_id,
             side,
@@ -590,11 +735,12 @@ impl PerpTradingEngine {
         let liquidation_events = if pending.accumulated_notional == 0 {
             Vec::new()
         } else {
-            self.accounts.apply_liquidation_settlement(
+            self.accounts.apply_liquidation_settlement_for_legs(
                 pending.account_id,
                 order_id,
                 pending.accumulated_notional,
                 pending.initial_position_qty,
+                pending.initial_hedge_positions.as_deref(),
             )?
         };
         self.clearing_events
@@ -610,12 +756,65 @@ impl PerpTradingEngine {
         self.book.snapshot()
     }
 
+    pub fn mark_price_tick(&self) -> i64 {
+        self.accounts.mark_price_tick()
+    }
+
+    pub(crate) fn position_exit_qty(
+        &self,
+        side: Side,
+        qty: u64,
+        lot: u64,
+        cap: Option<Money>,
+    ) -> u64 {
+        let Some(cap) = cap else {
+            return qty;
+        };
+        let mut low = 0;
+        let mut high = qty / lot;
+        while low < high {
+            let mid = low + (high - low) / 2 + 1;
+            let allowed = self
+                .book
+                .fill_quote(side, None, mid * lot)
+                .is_ok_and(|q| q.notional <= cap);
+            if allowed {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+        low * lot
+    }
+
     pub fn account_snapshot(&self, account_id: AccountId) -> Option<PerpAccountSnapshot> {
         self.accounts.account_snapshot(account_id)
     }
 
     pub fn account_snapshots(&self) -> Vec<PerpAccountSnapshot> {
         self.accounts.snapshots()
+    }
+
+    pub(crate) fn reservation_changes(&self) -> &crate::account::ReservationChanges {
+        &self.accounts.reservation_changes
+    }
+
+    pub(crate) fn reservation_changes_mut(&mut self) -> &mut crate::account::ReservationChanges {
+        &mut self.accounts.reservation_changes
+    }
+
+    pub(crate) fn reservation_balances(
+        &self,
+    ) -> impl Iterator<Item = Result<(AccountId, Money), ClearingError>> + '_ {
+        self.accounts.reservation_balances()
+    }
+
+    pub(crate) fn open_position_accounts(&self) -> impl Iterator<Item = AccountId> + '_ {
+        self.accounts.open_position_accounts()
+    }
+
+    pub(crate) fn has_open_position(&self, account_id: AccountId) -> bool {
+        self.accounts.has_open_position(account_id)
     }
 
     pub fn command_log(&self) -> &[CommandRecord] {
@@ -652,6 +851,7 @@ impl PerpTradingEngine {
                 } => {
                     if let Command::NewOrder(order) = command
                         && order.order_id == *order_id
+                        && !self.book.is_reduce_order(*order_id)
                     {
                         self.accounts.reserve_resting_order(
                             *order_id,
@@ -671,8 +871,13 @@ impl PerpTradingEngine {
                     new_qty,
                     ..
                 } => {
-                    self.accounts
-                        .amend_order_reservation(*order_id, *new_price_tick, *new_qty)?;
+                    if !self.book.is_reduce_order(*order_id) {
+                        self.accounts.amend_order_reservation(
+                            *order_id,
+                            *new_price_tick,
+                            *new_qty,
+                        )?;
+                    }
                 }
                 Event::OrderAccepted { .. }
                 | Event::OrderRejected { .. }
@@ -685,6 +890,70 @@ impl PerpTradingEngine {
         }
 
         Ok(clearing_events)
+    }
+}
+
+#[derive(Clone)]
+struct ReduceOnlyMatching<'a> {
+    accounts: &'a PerpAccountStore,
+    positions: BTreeMap<AccountId, PerpAccountSnapshot>,
+}
+impl ReduceOnlyMatching<'_> {
+    fn position(&mut self, id: AccountId) -> Option<&mut PerpAccountSnapshot> {
+        if !self.positions.contains_key(&id) {
+            self.positions
+                .insert(id, self.accounts.account_snapshot(id)?);
+        }
+        self.positions.get_mut(&id)
+    }
+}
+impl crate::engine::MatchingGuard for ReduceOnlyMatching<'_> {
+    fn cap(
+        &mut self,
+        id: AccountId,
+        side: Side,
+        leg: crate::PositionSide,
+        reduce: bool,
+        qty: u64,
+    ) -> u64 {
+        if !reduce {
+            return qty;
+        }
+        let Some(a) = self.position(id) else {
+            return 0;
+        };
+        let Some(position) = crate::position_protection::position_qty(a, leg) else {
+            return 0;
+        };
+        if position == 0 || (position > 0) != (side == Side::Sell) {
+            return 0;
+        }
+        u128::from(qty).min(position.unsigned_abs()) as u64
+    }
+    fn settle(&mut self, t: &crate::Trade) {
+        for (id, side, leg) in [
+            (
+                t.maker_account_id,
+                t.taker_side.opposite(),
+                t.maker_position_side,
+            ),
+            (t.taker_account_id, t.taker_side, t.taker_position_side),
+        ] {
+            if let Some(a) = self.position(id) {
+                let q = i128::from(t.qty);
+                if let Some(p) = a.hedge_positions.as_mut() {
+                    match (leg, side) {
+                        (crate::PositionSide::Long, Side::Buy) => p.long.qty += q,
+                        (crate::PositionSide::Long, Side::Sell) => p.long.qty -= q,
+                        (crate::PositionSide::Short, Side::Sell) => p.short.qty += q,
+                        (crate::PositionSide::Short, Side::Buy) => p.short.qty -= q,
+                        _ => {}
+                    }
+                } else {
+                    a.position_qty += if side == Side::Buy { q } else { -q };
+                }
+            }
+        }
     }
 }
 
@@ -714,9 +983,14 @@ fn risk_context(book: &OrderBook, command: &Command) -> Result<RiskContext, Clea
         Command::NewOrder(order) => {
             book.fill_quote(order.side, order.kind.limit_price_tick(), order.qty)?
         }
-        Command::CancelOrder(_) | Command::AmendOrder(_) | Command::SetMarkPrice(_) => {
-            Default::default()
-        }
+        Command::CancelOrder(_)
+        | Command::ExpireOrder { .. }
+        | Command::AmendOrder(_)
+        | Command::SetMarkPrice(_)
+        | Command::SettleFunding(_)
+        | Command::SetConditionalOrder { .. }
+        | Command::SetPositionProtection { .. }
+        | Command::NewOrderWithProtection { .. } => Default::default(),
     };
     Ok(RiskContext {
         best_bid: book.best_bid(),
@@ -739,6 +1013,7 @@ mod tests {
 
     fn limit(order_id: u64, account_id: u64, side: Side, price_tick: i64, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id,
             side,
@@ -750,6 +1025,7 @@ mod tests {
 
     fn market(order_id: u64, account_id: u64, side: Side, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id,
             side,
@@ -761,6 +1037,7 @@ mod tests {
 
     fn unpriced_ioc(order_id: u64, account_id: u64, side: Side, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id,
             side,
@@ -772,6 +1049,7 @@ mod tests {
 
     fn unpriced_fok(order_id: u64, account_id: u64, side: Side, qty: u64) -> Command {
         Command::NewOrder(NewOrder {
+            position_side: crate::model::PositionSide::Both,
             order_id,
             account_id,
             side,
@@ -1157,6 +1435,7 @@ mod tests {
         assert_eq!(
             engine.account_snapshot(20),
             Some(PerpAccountSnapshot {
+                hedge_positions: None,
                 account_id: 20,
                 cash_balance: 10_000,
                 position_qty: 4,
@@ -1172,11 +1451,13 @@ mod tests {
                 reserved_margin: 0,
                 available_cash: 9_960,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
         assert_eq!(
             engine.account_snapshot(10),
             Some(PerpAccountSnapshot {
+                hedge_positions: None,
                 account_id: 10,
                 cash_balance: 10_000,
                 position_qty: -4,
@@ -1192,6 +1473,7 @@ mod tests {
                 reserved_margin: 60,
                 available_cash: 9_900,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
     }
@@ -1214,6 +1496,7 @@ mod tests {
         assert_eq!(
             engine.account_snapshot(20),
             Some(PerpAccountSnapshot {
+                hedge_positions: None,
                 account_id: 20,
                 cash_balance: 100,
                 position_qty: 0,
@@ -1229,6 +1512,7 @@ mod tests {
                 reserved_margin: 100,
                 available_cash: 0,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
 
@@ -1264,6 +1548,7 @@ mod tests {
         assert_eq!(
             engine.account_snapshot(20),
             Some(PerpAccountSnapshot {
+                hedge_positions: None,
                 account_id: 20,
                 cash_balance: 100,
                 position_qty: 0,
@@ -1279,6 +1564,7 @@ mod tests {
                 reserved_margin: 0,
                 available_cash: 100,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
     }
@@ -1303,6 +1589,7 @@ mod tests {
         assert_eq!(
             engine.account_snapshot(20),
             Some(PerpAccountSnapshot {
+                hedge_positions: None,
                 account_id: 20,
                 cash_balance: 100,
                 position_qty: 0,
@@ -1318,6 +1605,7 @@ mod tests {
                 reserved_margin: 40,
                 available_cash: 60,
                 fees_paid: 0,
+                funding_pnl: 0,
             })
         );
     }
@@ -1472,6 +1760,8 @@ mod tests {
         assert_eq!(
             engine.pending_liquidation(20),
             Some(&PendingLiquidation {
+                initial_hedge_positions: None,
+                remaining_hedge_positions: None,
                 account_id: 20,
                 initial_position_qty: 10,
                 remaining_position_qty: 10,
@@ -1528,6 +1818,8 @@ mod tests {
         assert_eq!(
             engine.pending_liquidation(20),
             Some(&PendingLiquidation {
+                initial_hedge_positions: None,
+                remaining_hedge_positions: None,
                 account_id: 20,
                 initial_position_qty: 10,
                 remaining_position_qty: 3,
@@ -1607,6 +1899,8 @@ mod tests {
         engine
             .accounts
             .settle_trade(&Trade {
+                maker_position_side: Default::default(),
+                taker_position_side: Default::default(),
                 trade_id: 999,
                 maker_order_id: 999,
                 maker_account_id: 20,
@@ -1686,6 +1980,7 @@ mod tests {
         assert!(matches!(
             execution.command.command,
             Command::NewOrder(NewOrder {
+                position_side: crate::model::PositionSide::Both,
                 order_id: 4,
                 account_id: 20,
                 side: Side::Sell,

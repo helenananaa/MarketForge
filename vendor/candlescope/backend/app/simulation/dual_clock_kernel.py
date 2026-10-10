@@ -1,0 +1,308 @@
+"""BAR-signal / aggregate-trade-execution deterministic reference loop."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from decimal import Decimal
+from typing import Any, Callable, Mapping
+
+from app.core.config import getenv
+from app.market_dataset.snapshot import MarketDatasetError, MarketEvent, sha256_hex
+from app.market_dataset.trades import assert_trade_stream
+
+from .kernel import SimulationResult, _decision_record
+from .trade_bar_builder import TradeBarBuilder
+from .trade_kernel import TradeSimulationKernel, _wire_order
+from .linear_perp_account_v2 import LinearPerpetualAccountV2
+
+DualClockStrategyFn = Callable[[tuple[MarketEvent, ...], MarketEvent], list[dict]]
+
+
+@dataclass(slots=True)
+class DualClockSimulationKernel:
+    signal_interval: str
+    gap_policy: str = "REJECT"
+    max_events: int = 2_000_000
+    checkpoint_event_interval: int = 10_000
+    slippage_bps: Decimal = Decimal("0")
+    taker_fee_bps: Decimal = Decimal("0")
+    maker_fee_bps: Decimal = Decimal("0")
+    funding_rate: Decimal = Decimal("0")
+    funding_interval_ms: int = 28_800_000
+    initial_balance: Decimal = Decimal("10000")
+    account_model: str = "LINEAR_PERP_ONE_WAY_V1"
+    funding_mode: str = "OFF"
+    leverage: Decimal = Decimal("1")
+    host_policy_revision: str | None = None
+    execution_model_revision: str | None = None
+    participation_rate: Decimal | None = None
+    latency_ms: int = 0
+    latency_events: int = 0
+    order_end_policy: str = "CANCEL_AT_END"
+    equity_curve_event_interval: int = 1
+    equity_curve_mode: str | None = None
+    scale_stream_decisions: bool = False
+    execution_reporter: Callable[[dict], None] | None = field(default=None, repr=False)
+    execution: TradeSimulationKernel = field(init=False)
+    builder: TradeBarBuilder = field(init=False)
+    decisions: list[dict[str, Any]] = field(default_factory=list)
+    execution_event_count: int = 0
+    _last_source_sequence: int | None = None
+    frozen_intents: list[dict] = field(default_factory=list)
+    _decision_chain_hash: str = "sha256:GENESIS"
+    _decision_count: int = 0
+
+    def __post_init__(self) -> None:
+        self.builder = TradeBarBuilder(self.signal_interval, gap_policy=self.gap_policy)
+        self.signal_interval = self.builder.interval
+        self.execution = TradeSimulationKernel(
+            max_events=self.max_events,
+            checkpoint_event_interval=0,
+            slippage_bps=self.slippage_bps,
+            taker_fee_bps=self.taker_fee_bps,
+            maker_fee_bps=self.maker_fee_bps,
+            funding_rate=self.funding_rate,
+            funding_interval_ms=self.funding_interval_ms,
+            initial_balance=self.initial_balance,
+            account_model=self.account_model,
+            funding_mode=self.funding_mode,
+            leverage=self.leverage,
+            host_policy_revision=self.host_policy_revision,
+            execution_model_revision=self.execution_model_revision,
+            participation_rate=self.participation_rate,
+            latency_ms=self.latency_ms,
+            latency_events=self.latency_events,
+            order_end_policy=self.order_end_policy,
+            equity_curve_event_interval=self.equity_curve_event_interval,
+            equity_curve_mode=self.equity_curve_mode,
+            execution_reporter=self.execution_reporter,
+        )
+
+    @property
+    def account(self):
+        return self.execution.account
+
+    @property
+    def projected_position_qty(self) -> Decimal:
+        return self.execution.projected_position_qty
+
+    def snapshot(self, *, history_encoder=None) -> dict[str, Any]:
+        extended = history_encoder is not None and getattr(history_encoder, "extended", False)
+        return {
+            "schemaVersion": "candlescope.dual-clock-kernel/1",
+            "signal_interval": self.signal_interval,
+            "gap_policy": self.gap_policy,
+            "execution": self.execution.snapshot(history_encoder=history_encoder),
+            "bar_builder": self.builder.snapshot(),
+            "scale_stream_decisions": self.scale_stream_decisions,
+            "decisions": history_encoder("dual_decisions", self.decisions) if extended else list(self.decisions),
+            **(
+                {
+                    "decision_chain_hash": self._decision_chain_hash,
+                    "decision_count": self._decision_count,
+                }
+                if self.scale_stream_decisions
+                else {}
+            ),
+            "execution_event_count": self.execution_event_count,
+            "last_source_sequence": self._last_source_sequence,
+            **(
+                {"frozen_intents": history_encoder("dual_frozen_intents", self.frozen_intents) if extended else list(self.frozen_intents)}
+                if self.execution_model_revision is not None
+                else {}
+            ),
+        }
+
+    def restore(self, payload: Mapping[str, Any]) -> None:
+        if (
+            payload.get("schemaVersion") != "candlescope.dual-clock-kernel/1"
+            or payload.get("signal_interval") != self.signal_interval
+            or payload.get("gap_policy") != self.gap_policy
+            or bool(payload.get("scale_stream_decisions") or False)
+            != self.scale_stream_decisions
+        ):
+            raise MarketDatasetError(
+                "dual-clock checkpoint identity changed", code="CHECKPOINT_CORRUPT"
+            )
+        self.execution.restore(payload["execution"])
+        self.builder.restore(payload["bar_builder"])
+        self.decisions = [dict(item) for item in payload.get("decisions") or []]
+        if self.scale_stream_decisions:
+            self._decision_chain_hash = str(
+                payload.get("decision_chain_hash") or "sha256:GENESIS"
+            )
+            self._decision_count = int(payload.get("decision_count") or 0)
+        self.execution_event_count = int(payload.get("execution_event_count") or 0)
+        self._last_source_sequence = (
+            None
+            if payload.get("last_source_sequence") is None
+            else int(payload["last_source_sequence"])
+        )
+        self.frozen_intents = list(payload.get("frozen_intents") or [])
+
+    def run(
+        self,
+        events: tuple[MarketEvent, ...],
+        strategy: DualClockStrategyFn,
+        *,
+        warmup_events: int = 0,
+        finalize: bool = False,
+        checkpoint_callback: Callable[[MarketEvent], None] | None = None,
+    ) -> SimulationResult:
+        lazy_curve = getenv("BACKTEST_LAZY_DUAL_CURVE_ENABLED", "1").strip() == "1"
+        trades = tuple(event for event in events if event.role == "TRADES")
+        if len(trades) > self.max_events:
+            raise MarketDatasetError(
+                "trade event budget exceeded", code="BUDGET_EXCEEDED"
+            )
+        if trades:
+            source_kind = assert_trade_stream(trades)
+            if source_kind != "AGG_TRADE":
+                raise MarketDatasetError(
+                    "dual-clock execution requires AGG_TRADE", code="FIDELITY_MISLABEL"
+                )
+        for trade in events:
+            if trade.role in {"INSTRUMENT_RULES", "MARK_INDEX", "FUNDING"}:
+                self.execution._last_event = trade
+                self.execution.account.apply(trade)
+                if checkpoint_callback is not None:
+                    checkpoint_callback(trade)
+                continue
+            if trade.role != "TRADES":
+                raise MarketDatasetError(
+                    "dual-clock kernel received unsupported role",
+                    code="FIDELITY_MISLABEL",
+                )
+            source_sequence = int(
+                trade.payload.get("source_sequence") or trade.sequence
+            )
+            if self._last_source_sequence is not None:
+                if source_sequence <= self._last_source_sequence:
+                    raise MarketDatasetError(
+                        "aggregate trade cursor did not advance",
+                        code="DATA_GAP_REJECTED",
+                    )
+                if source_sequence != self._last_source_sequence + 1:
+                    raise MarketDatasetError(
+                        "aggregate trade id gap rejected",
+                        code="DATA_GAP_REJECTED",
+                    )
+
+            completed = self.builder.push(trade)
+            for bar in completed:
+                intents = strategy((bar,), bar)
+                if bar.sequence <= warmup_events:
+                    intents = []
+                decision = _decision_record(
+                    intents,
+                    sequence=bar.sequence,
+                    watermark_ms=bar.event_time_ms,
+                )
+                if self.scale_stream_decisions:
+                    self._decision_chain_hash = "sha256:" + sha256_hex(
+                        {"previous": self._decision_chain_hash, "decision": decision}
+                    )
+                    self._decision_count += 1
+                else:
+                    self.decisions.append(decision)
+                if self.execution_model_revision is not None and intents:
+                    self.frozen_intents.append(
+                        {
+                            "sequence": bar.sequence,
+                            "intents": [dict(intent) for intent in intents],
+                        }
+                    )
+                # The signal exists immediately before this boundary trade, so
+                # its first eligible print is the current authoritative event.
+                self.execution._enqueue_many(
+                    intents, current_sequence=trade.sequence - 1
+                )
+
+            self.execution._last_event = trade
+            if isinstance(self.execution.account, LinearPerpetualAccountV2):
+                self.execution.account.validate_ready()
+            else:
+                self.execution.account.mark = Decimal(str(trade.payload["price"]))
+            self.execution._apply_funding(trade)
+            self.execution._match(trade)
+            sample_curve = (
+                self.equity_curve_mode == "UTC_DAILY_CLOSE_V1"
+                or self.execution_model_revision is None
+                or self.execution_event_count == 0
+                or (self.execution_event_count + 1) % self.equity_curve_event_interval == 0
+            )
+            if sample_curve or not lazy_curve:
+                curve_point = {
+                    "sequence": trade.sequence,
+                    "event_time_ms": trade.event_time_ms,
+                    "equity": str(self.execution.account.equity()),
+                    "position_qty": str(self.execution.account.position_qty),
+                    "wallet_balance": str(self.execution.account.quote_balance),
+                    "available_balance": str(
+                        self.execution.account.available_balance()
+                        if isinstance(self.execution.account, LinearPerpetualAccountV2)
+                        else self.execution.account.equity()
+                    ),
+                }
+                if self.equity_curve_mode == "UTC_DAILY_CLOSE_V1":
+                    self.execution._record_equity_point(curve_point)
+                elif (
+                    self.execution_model_revision is None
+                    or self.execution_event_count == 0
+                    or (self.execution_event_count + 1) % self.equity_curve_event_interval
+                    == 0
+                ):
+                    self.execution.equity_curve.append(curve_point)
+            self.execution_event_count += 1
+            self._last_source_sequence = source_sequence
+            if checkpoint_callback is not None:
+                checkpoint_callback(trade)
+        self.execution._append_terminal_curve_point()
+        if finalize:
+            self.execution.finalize_orders()
+        return self.result()
+
+    def result(self) -> SimulationResult:
+        if (type(self.execution) is TradeSimulationKernel
+                and getenv("BACKTEST_DIRECT_DUAL_RESULT_ENABLED", "1").strip() == "1"):
+            # The inner decision/ledger/report hashes are replaced by the dual
+            # clock result. Build only the financial evidence that survives.
+            fills, ledger = self.execution._financial_result()
+            fill_hash = sha256_hex(fills)
+            orders = [_wire_order(order) for order in self.execution.orders]
+            rejected = list(self.execution.rejected)
+            curve = list(self.execution.equity_curve)
+            ambiguity = self.execution.ambiguity_count
+        else:
+            base = self.execution.result()
+            fills, ledger = base.fills, dict(base.ledger)
+            fill_hash, orders = base.fill_hash, base.orders
+            rejected, curve = base.rejected, base.equity_curve
+            ambiguity = base.ambiguity_count
+        ledger["signal_event_count"] = self.builder.signal_count
+        ledger["execution_event_count"] = self.execution_event_count
+        ledger_hash = sha256_hex(ledger)
+        return SimulationResult(
+            decision_hash=(
+                self._decision_chain_hash
+                if self.scale_stream_decisions
+                else sha256_hex(self.decisions)
+            ),
+            fill_hash=fill_hash,
+            ledger_hash=ledger_hash,
+            report_hash=sha256_hex(
+                {
+                    "fidelity_mode": "AGG_TRADE_EXECUTION",
+                    "source_event_kind": "AGG_TRADE",
+                    "report_label": "AGGREGATED_TRADE_SEQUENCE",
+                    "fills": fills,
+                    "ledger": ledger,
+                }
+            ),
+            ambiguity_count=ambiguity,
+            fills=fills,
+            orders=orders,
+            rejected=rejected,
+            ledger=ledger,
+            equity_curve=curve,
+        )

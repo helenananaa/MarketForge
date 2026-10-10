@@ -1,3 +1,5 @@
+mod account_activity;
+mod account_events;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     convert::Infallible,
@@ -14,7 +16,20 @@ use std::{
 };
 
 pub mod auth;
+mod bot_history;
+pub mod bot_plugins;
+mod competition;
+mod historical_queries;
 pub mod journal;
+pub mod platform;
+mod realtime;
+#[cfg(test)]
+mod realtime_tests;
+mod room_portal;
+mod room_runtime;
+mod scheduler_delta;
+mod simulation_ws;
+pub mod storage_audit;
 
 use axum::{
     Json, Router,
@@ -31,28 +46,27 @@ use axum::{
 };
 use exchange_core::{
     AccountSnapshots, ActorExecution, ActorExecutionResult, ActorRejectReason, AgentTemplate,
-    AssetLedgerEntry, BookSnapshot, Event, GatewayRequest, InstrumentId, MarketExecution,
-    MarketStatus, MarketView, Money, OrderAction, OrderGateway, OrderId, Participant,
-    ParticipantId, PortfolioAccountSnapshot, RoomId, RoomManager, RoomManagerError,
-    RoomNetWorthSnapshot, ScenarioConfig, SimulationClock, SpotAccountSnapshot, SpotClearingEvent,
-    TradingApi, VenueAccountSnapshot, VenueAccountVenueSnapshot, VenueToVenueTransfer,
-    VenueTransfer,
-    model::{AccountId, Command, OrderKind, SetMarkPrice},
+    AssetLedgerEntry, BookSnapshot, EXTERNAL_ACTIONS_PER_STEP, Event, GatewayRequest, InstrumentId,
+    MarketExecution, MarketStatus, MarketView, Money, OrderAction, OrderGateway, OrderId,
+    Participant, ParticipantId, ParticipantObservation, PortfolioAccountSnapshot, RoomId,
+    RoomManager, RoomManagerError, RoomNetWorthSnapshot, STRATEGY_PROTOCOL_VERSION, ScenarioConfig,
+    SimulationClock, SpotAccountSnapshot, SpotClearingEvent, TradingApi, TrainingStatus,
+    VenueAccountSnapshot, VenueAccountVenueSnapshot, VenueToVenueTransfer, VenueTransfer,
+    model::{AccountId, CancelOrder, Command, OrderKind, SetMarkPrice},
     perp::{PerpAccountSnapshot, PerpClearingEvent},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::{Mutex as AsyncMutex, Notify, broadcast, watch};
 use tower_http::cors::CorsLayer;
 
-#[cfg(test)]
-use crate::auth::DEFAULT_USER_ID;
 use crate::auth::{AuthError, AuthPolicy, USER_ID_HEADER};
 use crate::journal::{
-    AccountLedgerProjection, ExecutionPage, JournalError, JournalExecution, JournalMutation,
-    JournalRecovery, JournalSnapshot, JournalStore, JournalStoreBundle, JournalTransfer,
-    MAX_ROOM_LEASE_DURATION_MS, MarketTickProjection, OrderProjection, PendingJournalMutation,
-    PositionSnapshotProjection, RoomLeaseClaim, RoomMutation, RoomRoutingRecord, RoomWriterLease,
-    TradeProjection, journal_stores_from_env,
+    AccountLedgerProjection, ControlIdempotencyRecord, ExecutionPage, JournalError,
+    JournalExecution, JournalMutation, JournalRecovery, JournalSnapshot, JournalStore,
+    JournalStoreBundle, JournalTransfer, MAX_ROOM_LEASE_DURATION_MS, MarketTickProjection,
+    OrderProjection, PendingJournalMutation, PositionSnapshotProjection, RoomLeaseClaim,
+    RoomMutation, RoomRoutingRecord, RoomWriterLease, TradeProjection, control_request_fingerprint,
+    journal_stores_from_env,
 };
 use crate::journal_worker::JournalCoordinator;
 
@@ -60,6 +74,8 @@ type SharedState = Arc<ServerState>;
 type ApiError = (StatusCode, Json<ErrorResponse>);
 type ApiResult<T> = Result<Json<T>, ApiError>;
 const SNAPSHOT_INTERVAL_COMMANDS: u64 = 100;
+const LIVE_SNAPSHOT_INTERVAL_COMMANDS: u64 = 1000;
+const LIVE_SNAPSHOT_INTERVAL_STEPS: u64 = 100;
 const ROOM_EVENT_CHANNEL_CAPACITY: usize = 1_024;
 const ROOM_EVENT_CACHE_CAPACITY: usize = 1_024;
 const IDEMPOTENCY_KEY_HEADER: &str = "idempotency-key";
@@ -74,11 +90,18 @@ pub const ROOM_LEASE_RENEW_INTERVAL_MS_ENV: &str = "MARKETFORGE_ROOM_LEASE_RENEW
 const DEFAULT_ROOM_LEASE_DURATION_MS: u64 = 15_000;
 const DEFAULT_ROOM_LEASE_RENEW_INTERVAL_MS: u64 = 5_000;
 const MIN_ROOM_LEASE_RENEW_INTERVAL_MS: u64 = 10;
-const DEFAULT_CORS_ORIGINS: &[&str] = &["http://127.0.0.1:57304", "http://localhost:57304"];
+const DEFAULT_CORS_ORIGINS: &[&str] = &[
+    "http://127.0.0.1:57304",
+    "http://localhost:57304",
+    "http://127.0.0.1:15173",
+    "http://localhost:15173",
+];
+const SYSTEM_POSITION_EXIT_ORDER_ID_BASE: OrderId = 8_000_000_000_000_000_000;
+const SYSTEM_CONDITIONAL_ORDER_ID_BASE: OrderId = 7_000_000_000_000_000_000;
 const SYSTEM_LIQUIDATION_ORDER_ID_BASE: OrderId = 9_000_000_000_000_000_000;
 
 struct ServerState {
-    app: AsyncMutex<AppState>,
+    app: room_runtime::StateStore,
     lifecycle: RuntimeLifecycle,
     started_at: Instant,
 }
@@ -86,7 +109,7 @@ struct ServerState {
 impl ServerState {
     fn new(app: AppState) -> Self {
         Self {
-            app: AsyncMutex::new(app),
+            app: room_runtime::StateStore::new(app),
             lifecycle: RuntimeLifecycle::new(),
             started_at: Instant::now(),
         }
@@ -108,6 +131,13 @@ struct RuntimeLifecycleInner {
     active_sse_connections: AtomicUsize,
     sse_connections_started: AtomicU64,
     sse_resync_required: AtomicU64,
+    scheduler_steps_total: AtomicU64,
+    scheduler_step_errors_total: AtomicU64,
+    agent_errors_total: AtomicU64,
+    checkpoint_writes_total: AtomicU64,
+    checkpoint_duration_ms_total: AtomicU64,
+    scheduler_phase_us_total: [AtomicU64; 5],
+    replayed_commands_total: AtomicU64,
     drained: Notify,
     shutdown: watch::Sender<bool>,
 }
@@ -123,6 +153,12 @@ struct RuntimeLifecycleMetricsSnapshot {
     active_sse_connections: usize,
     sse_connections_started: u64,
     sse_resync_required: u64,
+    scheduler_steps_total: u64,
+    scheduler_step_errors_total: u64,
+    agent_errors_total: u64,
+    checkpoint_writes_total: u64,
+    checkpoint_duration_ms_total: u64,
+    replayed_commands_total: u64,
 }
 
 impl RuntimeLifecycle {
@@ -139,6 +175,13 @@ impl RuntimeLifecycle {
                 active_sse_connections: AtomicUsize::new(0),
                 sse_connections_started: AtomicU64::new(0),
                 sse_resync_required: AtomicU64::new(0),
+                scheduler_steps_total: AtomicU64::new(0),
+                scheduler_step_errors_total: AtomicU64::new(0),
+                agent_errors_total: AtomicU64::new(0),
+                checkpoint_writes_total: AtomicU64::new(0),
+                checkpoint_duration_ms_total: AtomicU64::new(0),
+                scheduler_phase_us_total: std::array::from_fn(|_| AtomicU64::new(0)),
+                replayed_commands_total: AtomicU64::new(0),
                 drained: Notify::new(),
                 shutdown,
             }),
@@ -222,6 +265,45 @@ impl RuntimeLifecycle {
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    fn record_scheduler_step(&self, succeeded: bool) {
+        self.inner
+            .scheduler_steps_total
+            .fetch_add(1, Ordering::Relaxed);
+        if !succeeded {
+            self.inner
+                .scheduler_step_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn record_agent_error(&self) {
+        self.inner
+            .agent_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_checkpoint(&self, duration_ms: u64) {
+        self.inner
+            .checkpoint_writes_total
+            .fetch_add(1, Ordering::Relaxed);
+        self.inner
+            .checkpoint_duration_ms_total
+            .fetch_add(duration_ms, Ordering::Relaxed);
+    }
+
+    fn record_scheduler_phase(&self, index: usize, started: Instant) {
+        self.inner.scheduler_phase_us_total[index].fetch_add(
+            u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
+    }
+
+    fn record_replayed_commands(&self, count: u64) {
+        self.inner
+            .replayed_commands_total
+            .fetch_add(count, Ordering::Relaxed);
+    }
+
     fn metrics_snapshot(&self) -> RuntimeLifecycleMetricsSnapshot {
         RuntimeLifecycleMetricsSnapshot {
             accepting_durable_writes: self.is_accepting_durable_writes(),
@@ -233,6 +315,18 @@ impl RuntimeLifecycle {
             active_sse_connections: self.inner.active_sse_connections.load(Ordering::Relaxed),
             sse_connections_started: self.inner.sse_connections_started.load(Ordering::Relaxed),
             sse_resync_required: self.inner.sse_resync_required.load(Ordering::Relaxed),
+            scheduler_steps_total: self.inner.scheduler_steps_total.load(Ordering::Relaxed),
+            scheduler_step_errors_total: self
+                .inner
+                .scheduler_step_errors_total
+                .load(Ordering::Relaxed),
+            agent_errors_total: self.inner.agent_errors_total.load(Ordering::Relaxed),
+            checkpoint_writes_total: self.inner.checkpoint_writes_total.load(Ordering::Relaxed),
+            checkpoint_duration_ms_total: self
+                .inner
+                .checkpoint_duration_ms_total
+                .load(Ordering::Relaxed),
+            replayed_commands_total: self.inner.replayed_commands_total.load(Ordering::Relaxed),
         }
     }
 
@@ -423,12 +517,17 @@ mod json_i128_option {
 }
 
 struct AppState {
+    bot_registry: exchange_core::BotRegistry,
     rooms: RoomManager,
     executions: BTreeMap<RoomId, VecDeque<RoomExecutionSummary>>,
     room_event_senders: BTreeMap<RoomId, broadcast::Sender<RoomExecutionSummary>>,
     next_order_id: OrderId,
+    order_ids: Option<Arc<AtomicU64>>,
     base_url: String,
     agent_workers: BTreeMap<RoomId, AgentWorkerHandle>,
+    schedulers: BTreeMap<RoomId, exchange_core::SchedulerState>,
+    training_runs: BTreeMap<String, exchange_core::TrainingRun>,
+    platform: platform::PlatformData,
     journal: JournalCoordinator,
     auth_policy: AuthPolicy,
     room_lease_runtime: Option<RoomLeaseRuntimeState>,
@@ -449,7 +548,7 @@ enum RoomLeaseRuntimeMode {
     RoomLeased,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct RoomLeaseRuntimeState {
     config: RoomLeaseRuntimeConfig,
     leases: BTreeMap<RoomId, RoomWriterLease>,
@@ -493,12 +592,17 @@ impl AppState {
             JournalCoordinator::with_read_stores(journal.writer, journal.readers)
         };
         Self {
+            bot_registry: exchange_core::BotRegistry::with_builtins(),
             rooms: RoomManager::new(),
             executions: BTreeMap::new(),
             room_event_senders: BTreeMap::new(),
             next_order_id: 1,
+            order_ids: None,
             base_url: base_url.into(),
             agent_workers: BTreeMap::new(),
+            schedulers: BTreeMap::new(),
+            training_runs: BTreeMap::new(),
+            platform: platform::PlatformData::default(),
             journal,
             auth_policy,
             room_lease_runtime: None,
@@ -511,6 +615,17 @@ impl AppState {
         auth_policy: AuthPolicy,
         room_lease_config: Option<RoomLeaseRuntimeConfig>,
     ) -> Result<Self, JournalError> {
+        if auth_policy.is_accounts()
+            && room_lease_config
+                .as_ref()
+                .is_some_and(|c| c.mode == RoomLeaseRuntimeMode::RoomLeased)
+        {
+            return Err(JournalError::Recovery(
+                "account competitions currently require the single-active runtime".into(),
+            ));
+        }
+        let platform = journal.writer.load_platform()?;
+        auth_policy.install_sessions(&platform.sessions);
         let mut recovery = journal.writer.load_recovery()?;
         let next_order_id = next_order_id_from_recovery(&recovery)?;
         let room_lease_runtime = room_lease_config
@@ -523,7 +638,11 @@ impl AppState {
         {
             retain_recovery_rooms(&mut recovery, &runtime.leases);
         }
-        let rooms = recover_rooms(&recovery)?;
+        let mut rooms = recover_rooms(&recovery)?;
+        let schedulers = scheduler_states_from_recovery(&recovery)?;
+        let bot_registry = bot_plugins::bot_registry_from_env()
+            .map_err(|error| JournalError::Recovery(error.to_string()))?;
+        bot_history::restore(&mut rooms, &schedulers, &bot_registry, &mut *journal.writer)?;
         let executions = execution_summaries_from_recovery(&recovery);
         let journal = if journal.readers.is_empty() {
             JournalCoordinator::new(journal.writer)
@@ -532,12 +651,17 @@ impl AppState {
         };
 
         Ok(Self {
+            bot_registry,
             rooms,
             executions,
             room_event_senders: BTreeMap::new(),
             next_order_id,
+            order_ids: None,
             base_url: base_url.into(),
             agent_workers: BTreeMap::new(),
+            schedulers,
+            training_runs: training_runs_from_recovery(&recovery),
+            platform,
             journal,
             auth_policy,
             room_lease_runtime,
@@ -564,6 +688,20 @@ impl AppState {
         records: &[JournalExecution],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
+        if !competition::market_allowed(self, room_id) {
+            return Err(JournalError::Recovery(
+                "competition trading deadline reached".into(),
+            ));
+        }
+        if self.platform.competitions.contains_key(room_id)
+            && records
+                .iter()
+                .any(|r| matches!(r.command, Command::SetMarkPrice(_)))
+        {
+            return Err(JournalError::Recovery(
+                "competition manual price control is frozen".into(),
+            ));
+        }
         match self.room_lease_claim(room_id)? {
             Some(claim) => {
                 self.journal
@@ -581,6 +719,20 @@ impl AppState {
         transfer_records: &[JournalTransfer],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
+        if self.platform.competitions.contains_key(&mutation.room_id)
+            && matches!(
+                &mutation.mutation,
+                RoomMutation::ClockAdvanced { .. }
+                    | RoomMutation::DepositSubmitted { .. }
+                    | RoomMutation::WithdrawalSubmitted { .. }
+                    | RoomMutation::VenueToVenueTransferSubmitted { .. }
+                    | RoomMutation::TrainingProgress { .. }
+            )
+        {
+            return Err(JournalError::Recovery(
+                "competition room configuration is frozen".into(),
+            ));
+        }
         match self.room_lease_claim(&mutation.room_id)? {
             Some(claim) => {
                 self.journal
@@ -792,6 +944,16 @@ pub fn new_app_with_base_url(base_url: impl Into<String>) -> Router {
     app(shared_state(AppState::new(base_url)))
 }
 
+/// Install a prevalidated host registry for an embedded/in-memory server.
+pub fn new_app_with_bot_registry(
+    base_url: impl Into<String>,
+    registry: exchange_core::BotRegistry,
+) -> Router {
+    let mut state = AppState::new(base_url);
+    state.bot_registry = registry;
+    app(shared_state(state))
+}
+
 pub fn new_app_with_journal(base_url: impl Into<String>, journal: Box<dyn JournalStore>) -> Router {
     app(shared_state(AppState::new_with_journal(base_url, journal)))
 }
@@ -920,12 +1082,21 @@ where
     F: FnOnce() -> Result<JournalStoreBundle, JournalError>,
 {
     let journal = journal_factory()?;
-    AppState::recover_with_journal_bundle_and_auth_policy(
+    let state = AppState::recover_with_journal_bundle_and_auth_policy(
         base_url,
         journal,
         auth_policy,
         room_lease_config,
-    )
+    )?;
+    for scheduler in state.schedulers.values() {
+        for agent in &scheduler.agents {
+            state
+                .bot_registry
+                .create(&agent.template, &agent.kind_state)
+                .map_err(|error| JournalError::Recovery(error.to_string()))?;
+        }
+    }
+    Ok(state)
 }
 
 pub async fn serve(addr: SocketAddr) -> Result<(), std::io::Error> {
@@ -1175,7 +1346,23 @@ pub async fn serve_from_env() -> Result<(), io::Error> {
 }
 
 pub async fn serve_listener(listener: tokio::net::TcpListener) -> Result<(), std::io::Error> {
-    serve_listener_with_shutdown(listener, shutdown_signal()).await
+    let shutdown_file = optional_env("MARKETFORGE_SHUTDOWN_FILE")?.map(std::path::PathBuf::from);
+    if shutdown_file
+        .as_ref()
+        .is_some_and(|p| !p.is_absolute() || p.exists())
+    {
+        return Err(invalid_env_error(
+            "MARKETFORGE_SHUTDOWN_FILE must be an absolute path to a new local file".into(),
+        ));
+    }
+    serve_listener_with_shutdown(listener, async move {
+        if let Some(path)=shutdown_file {
+            tokio::select! {
+                _=shutdown_signal()=>{},
+                _=async move {loop {tokio::time::sleep(Duration::from_millis(200)).await;if path.exists(){break;}}}=>{},
+            }
+        } else {shutdown_signal().await;}
+    }).await
 }
 
 pub async fn serve_listener_with_shutdown<F>(
@@ -1201,17 +1388,22 @@ where
     )
     .await
     .map_err(|error| io::Error::other(error.to_string()))?;
+    simulation_ws::restore_auto_workers(&state).await?;
     let lease_renewer = tokio::spawn(run_room_lease_renewer(state.clone()));
+    let competition_worker = tokio::spawn(competition::run(state.clone()));
     let app = app_with_cors_origins(state.clone(), cors_origins);
     let lifecycle = state.lifecycle.clone();
     let shutdown_lifecycle = lifecycle.clone();
     println!("exchange-server listening on http://{addr}");
-    let result = axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            shutdown.await;
-            shutdown_lifecycle.begin_shutdown();
-        })
-        .await;
+    let result = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        shutdown.await;
+        shutdown_lifecycle.begin_shutdown();
+    })
+    .await;
 
     // Also enter shutdown when the listener exits unexpectedly. Axum waits for
     // request tasks, while this explicit drain additionally covers durable
@@ -1231,6 +1423,9 @@ where
     })
     .await
     .map_err(|error| io::Error::other(format!("agent shutdown worker failed: {error}")))?;
+    competition_worker
+        .await
+        .map_err(|error| io::Error::other(format!("competition worker failed: {error}")))?;
     lifecycle.wait_for_durable_writes().await;
     lease_renewer
         .await
@@ -1438,7 +1633,7 @@ fn app(state: SharedState) -> Router {
 
 fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> Router {
     let cors = CorsLayer::new()
-        .allow_origin(cors_origins)
+        .allow_origin(cors_origins.clone())
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([
             axum::http::header::CONTENT_TYPE,
@@ -1448,23 +1643,109 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
             HeaderName::from_static("last-event-id"),
         ]);
 
+    let ws_origins = Arc::new(cors_origins.clone());
     Router::new()
+        .route("/runtime", get(simulation_ws::runtime_info))
+        .route("/identity", get(room_portal::identity))
+        .route("/auth/config", get(platform::config))
+        .route("/auth/register", post(platform::register))
+        .route("/auth/login", post(platform::login))
+        .route("/auth/logout", post(platform::logout))
+        .route("/auth/me", get(platform::me))
+        .route("/invitations/redeem", post(platform::redeem))
+        .route("/rooms/{room_id}/invitations", post(platform::invite))
+        .route(
+            "/rooms/{room_id}/competition",
+            get(competition::get).post(competition::setup),
+        )
+        .route(
+            "/rooms/{room_id}/competition/ready",
+            post(competition::ready),
+        )
+        .route(
+            "/rooms/{room_id}/competition/start",
+            post(competition::start),
+        )
+        .route(
+            "/rooms/{room_id}/competition/abort",
+            post(competition::abort),
+        )
+        .route(
+            "/rooms/{room_id}/session",
+            get(room_portal::context).post(room_portal::context),
+        )
+        .route("/rooms/{room_id}/workbench", get(room_portal::overview))
+        .route(
+            "/rooms/{room_id}/ws",
+            get(move |state, headers, path, query, upgrade| {
+                simulation_ws::upgrade(state, headers, path, query, upgrade, ws_origins.clone())
+            }),
+        )
         .route("/health", get(readiness))
         .route("/health/live", get(liveness))
         .route("/health/ready", get(readiness))
         .route("/metrics", get(metrics))
         .route("/cluster/rooms", get(cluster_rooms))
+        .route("/bots", get(list_bots))
+        .route(
+            "/scenarios/background-market",
+            get(background_market_recipe),
+        )
+        .route("/training/runs", post(start_training_run))
+        .route("/training/runs/{run_id}", get(training_run_status))
+        .route("/training/runs/{run_id}/abort", post(abort_training_run))
+        .route("/training/runs/{run_id}/result", get(training_run_result))
+        .route("/training/runs/{run_id}/report", get(training_run_report))
+        .route("/rooms/{room_id}/replay", get(replay_room_isolated))
+        .route(
+            "/rooms/{room_id}/members",
+            post(upsert_room_member).get(room_portal::members),
+        )
+        .route(
+            "/rooms/{room_id}/members/{user_id}",
+            post(remove_room_member),
+        )
+        .route(
+            "/rooms/{room_id}/accounts/{account_id}/owners",
+            post(assign_account_owner),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/risk-events",
+            get(account_events::read),
+        )
+        .route(
+            "/rooms/{room_id}/accounts/{account_id}/portfolio",
+            get(account_activity::portfolio),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/account-history",
+            get(account_activity::history),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/rules",
+            get(account_activity::rules),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/conditionals",
+            get(account_activity::conditionals),
+        )
+        .route("/rooms/{room_id}/observe", get(observe_room))
         .route("/rooms", post(create_room).get(list_rooms))
         .route(
             "/rooms/{room_id}/agents",
             get(agent_status).post(start_agents),
         )
         .route("/rooms/{room_id}/agents/stop", post(stop_agents))
+        .route("/rooms/{room_id}/bots", get(room_bots))
         .route("/rooms/{room_id}/events", get(room_events))
         .route("/rooms/{room_id}/events/stream", get(room_event_stream))
         .route("/rooms/{room_id}/owner", get(room_owner))
         .route("/rooms/{room_id}/view", get(market_view))
         .route("/rooms/{room_id}/book", get(book_snapshot))
+        .route("/rooms/{room_id}/ticker", get(room_ticker))
+        .route("/rooms/{room_id}/candles", get(room_candles))
+        .route("/rooms/{room_id}/stream/public", get(public_room_stream))
+        .route("/rooms/{room_id}/stream/private", get(private_room_stream))
         .route("/rooms/{room_id}/accounts", get(account_snapshots))
         .route(
             "/rooms/{room_id}/venue/accounts",
@@ -1479,6 +1760,7 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
         .route("/rooms/{room_id}/net-worth", get(room_net_worth))
         .route("/rooms/{room_id}/clock", get(room_clock))
         .route("/rooms/{room_id}/clock/advance", post(advance_room_clock))
+        .route("/rooms/{room_id}/clock/step", post(manual_room_step))
         .route("/rooms/{room_id}/transfers", get(room_transfers))
         .route("/rooms/{room_id}/transfers/deposit", post(submit_deposit))
         .route(
@@ -1500,6 +1782,14 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
         .route(
             "/rooms/{room_id}/instruments/{instrument_id}/book",
             get(book_snapshot_for_instrument),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/ticker",
+            get(room_ticker_for_instrument),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/candles",
+            get(room_candles_for_instrument),
         )
         .route(
             "/rooms/{room_id}/instruments/{instrument_id}/accounts",
@@ -1536,6 +1826,10 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
         .route("/rooms/{room_id}/pause", post(pause_room))
         .route("/rooms/{room_id}/resume", post(resume_room))
         .route("/rooms/{room_id}/close", post(close_room))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            competition::protect,
+        ))
         .layer(cors)
         .with_state(state)
 }
@@ -1547,8 +1841,8 @@ async fn liveness() -> Json<HealthResponse> {
 async fn readiness(State(state): State<SharedState>) -> ApiResult<HealthResponse> {
     ensure_accepting_durable_writes(&state)?;
     let (journal, lease_error) = {
-        let app = state.app.lock().await;
-        (app.journal.clone(), app.room_lease_readiness_error())
+        let (summary, journal) = state.app.summary().await;
+        (journal, summary.lease_error)
     };
     if let Some(error) = lease_error {
         return Err(api_error(StatusCode::SERVICE_UNAVAILABLE, error));
@@ -1584,18 +1878,24 @@ async fn metrics(State(state): State<SharedState>) -> Response {
         owned_room_leases,
         lost_room_leases,
         room_lease_renew_failures,
+        training_running,
+        training_completed,
+        training_failed,
+        agent_error_workers,
     ) = {
-        let app = state.app.lock().await;
-        let (owned_room_leases, lost_room_leases, room_lease_renew_failures) =
-            app.room_lease_metrics();
+        let (summary, coordinator) = state.app.summary().await;
         (
-            app.rooms.room_ids().len(),
-            app.agent_workers.len(),
-            app.executions.values().map(VecDeque::len).sum::<usize>(),
-            app.journal.metrics_snapshot(),
-            owned_room_leases,
-            lost_room_leases,
-            room_lease_renew_failures,
+            summary.room_count,
+            summary.worker_count,
+            summary.cache_entries,
+            coordinator.metrics_snapshot(),
+            summary.owned_leases,
+            summary.lost_leases,
+            summary.renew_failures,
+            summary.training_running,
+            summary.training_completed,
+            summary.training_failed,
+            summary.agent_errors,
         )
     };
 
@@ -1676,6 +1976,102 @@ async fn metrics(State(state): State<SharedState>) -> Response {
         "SSE streams closed with a resync_required event.",
         "counter",
         lifecycle.sse_resync_required,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_scheduler_steps_total",
+        "Scheduler steps attempted since process start.",
+        "counter",
+        lifecycle.scheduler_steps_total,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_scheduler_step_errors_total",
+        "Scheduler steps that failed since process start.",
+        "counter",
+        lifecycle.scheduler_step_errors_total,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_agent_errors_total",
+        "Background agent workers that recorded a last_error.",
+        "counter",
+        lifecycle.agent_errors_total,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_agent_error_workers",
+        "Currently registered agent workers with a last_error.",
+        "gauge",
+        agent_error_workers,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_training_runs_running",
+        "Loaded training runs in Created or Running.",
+        "gauge",
+        training_running,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_training_runs_completed",
+        "Loaded training runs in Completed.",
+        "gauge",
+        training_completed,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_training_runs_failed",
+        "Loaded training runs in Failed or Aborted.",
+        "gauge",
+        training_failed,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_checkpoint_writes_total",
+        "State checkpoints written since process start.",
+        "counter",
+        lifecycle.checkpoint_writes_total,
+    );
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_checkpoint_duration_ms_total",
+        "Cumulative milliseconds spent building checkpoints.",
+        "counter",
+        lifecycle.checkpoint_duration_ms_total,
+    );
+    for (index, phase) in ["wait", "clone", "apply", "snapshot", "journal"]
+        .iter()
+        .enumerate()
+    {
+        append_prometheus_metric(
+            &mut body,
+            &format!("marketforge_scheduler_{phase}_us_total"),
+            "Cumulative scheduler phase microseconds; phases are disjoint, not request latency percentiles.",
+            "counter",
+            state.lifecycle.inner.scheduler_phase_us_total[index].load(Ordering::Relaxed),
+        );
+    }
+    for (name, (calls, micros)) in exchange_core::performance::PHASES
+        .iter()
+        .zip(exchange_core::performance::snapshot())
+    {
+        for (suffix, value) in [("calls_total", calls), ("us_total", micros)] {
+            append_prometheus_metric(
+                &mut body,
+                &format!("marketforge_core_{name}_{suffix}"),
+                "Process-wide core work; timings may nest and are not latency percentiles.",
+                "counter",
+                value,
+            );
+        }
+    }
+    append_prometheus_metric(
+        &mut body,
+        "marketforge_replayed_commands_total",
+        "Commands replayed by isolated history replay since process start.",
+        "counter",
+        lifecycle.replayed_commands_total,
     );
     append_prometheus_metric(
         &mut body,
@@ -1820,19 +2216,44 @@ fn append_prometheus_metric(
     writeln!(body, "{name} {value}").expect("writing metrics to a String cannot fail");
 }
 
+/// The backend owns the training recipe; frontends only choose its room name.
+async fn background_market_recipe(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+) -> ApiResult<CreateRoomRequest> {
+    let state = state.app.metadata().await;
+    current_user_id(&headers, &state.auth_policy)?;
+    serde_json::from_str(include_str!(
+        "../../scripts/fixtures/background_market.json"
+    ))
+    .map(Json)
+    .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))
+}
+
+async fn list_bots(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+) -> ApiResult<Vec<exchange_core::BotDescriptor>> {
+    let state = state.app.metadata().await;
+    current_user_id(&headers, &state.auth_policy)?;
+    Ok(Json(state.bot_registry.descriptors()))
+}
+
 async fn create_room(
     State(state): State<SharedState>,
     headers: HeaderMap,
     Json(payload): Json<serde_json::Value>,
 ) -> ApiResult<CreateRoomResponse> {
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
+        let shared = state.clone();
+        let mut state = lock_state(&shared).await?;
         let user_id = current_user_id(&headers, &state.auth_policy)?;
         let request = parse_create_room_payload(payload)?;
-        validate_agent_templates(&request.scenario.room_id, &request.agents)?;
-        if !request.agents.is_empty() && request.autostart_agents.unwrap_or(true) {
-            ensure_agent_workers_supported(&state.auth_policy)?;
-        }
+        validate_agent_templates(
+            &request.scenario.room_id,
+            &request.agents,
+            &state.bot_registry,
+        )?;
         let mut candidate_rooms = state.rooms.clone();
         let seed_commands = request.scenario.seed_commands();
         let next_order_id = next_api_order_id_after_commands(state.next_order_id, &seed_commands)?;
@@ -1906,14 +2327,24 @@ async fn create_room(
 
         if !request.agents.is_empty() && request.autostart_agents.unwrap_or(true) {
             agent_status = start_agent_worker_for_room(
+                &shared,
                 &mut state,
                 room_id.clone(),
-                user_id.clone(),
                 StartAgentsRequest {
                     agents: request.agents,
                     interval_ms: request.agent_interval_ms,
                 },
-            )?;
+            )
+            .await?;
+        } else if !request.agents.is_empty() {
+            // Preserve pre-entry bot configuration even when creation does not start it.
+            let mut scheduler = exchange_core::SchedulerState::new(
+                room_id.clone(),
+                request.agents,
+                exchange_core::SchedulerMode::Manual,
+            );
+            scheduler.bots_enabled = false;
+            install_scheduler(&mut state, scheduler).await?;
         }
 
         Ok(Json(CreateRoomResponse {
@@ -1976,6 +2407,19 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
                 )));
             }
         }
+    }
+
+    // Validate the original journal's cursor ordering before adding recovery
+    // boundaries. Automatic fills can advance a snapshot beyond the cursor of
+    // a later training metadata record; that is not a journal regression.
+    for checkpoint in &recovery.runtime_checkpoints {
+        mutations_by_room
+            .entry(checkpoint.room_id.as_str())
+            .or_default()
+            .push(checkpoint);
+    }
+    for mutations in mutations_by_room.values_mut() {
+        mutations.sort_by_key(|mutation| mutation.mutation_seq);
     }
 
     let snapshots_by_room = recovery.snapshots.iter().fold(
@@ -2090,9 +2534,8 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
 
             let automatic_replay = if record.participant_id.is_none() {
                 rooms
-                    .execution_history(&room.room_id)
+                    .execution_history_from(&room.room_id, 0)
                     .map_err(|error| JournalError::Recovery(format!("{error:?}")))?
-                    .iter()
                     .find(|execution| execution.command_seq == record.command_seq)
                     .cloned()
             } else {
@@ -2118,6 +2561,16 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
                     .restore_room_status(&room.room_id, record.execution.status)
                     .map_err(|error| JournalError::Recovery(format!("{error:?}")))?;
             }
+            let paused_for_scheduler_replay = record.execution.accepted
+                && rooms
+                    .status(&room.room_id)
+                    .map_err(|error| JournalError::Recovery(format!("{error:?}")))?
+                    == MarketStatus::Paused;
+            if paused_for_scheduler_replay {
+                rooms
+                    .restore_room_status(&room.room_id, MarketStatus::Running)
+                    .map_err(|error| JournalError::Recovery(format!("{error:?}")))?;
+            }
             let replayed = match record.execution.instrument_id.as_deref() {
                 Some(instrument_id) => {
                     rooms.apply_to_instrument(&room.room_id, instrument_id, record.command.clone())
@@ -2125,7 +2578,15 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
                 None => rooms.apply(&room.room_id, record.command.clone()),
             }
             .map_err(|error| JournalError::Recovery(format!("{error:?}")))?;
-            let replayed_summary = RoomExecutionSummary::from_execution(replayed);
+            if paused_for_scheduler_replay {
+                rooms
+                    .restore_room_status(&room.room_id, MarketStatus::Paused)
+                    .map_err(|error| JournalError::Recovery(format!("{error:?}")))?;
+            }
+            let mut replayed_summary = RoomExecutionSummary::from_execution(replayed);
+            if paused_for_scheduler_replay {
+                replayed_summary.status = record.execution.status;
+            }
             if !execution_summary_matches(&record.execution, &replayed_summary) {
                 return Err(JournalError::Recovery(format!(
                     "replayed execution diverged for room {} command_seq {}",
@@ -2173,7 +2634,85 @@ fn recover_rooms(recovery: &JournalRecovery) -> Result<RoomManager, JournalError
         }
     }
 
+    for tick in &recovery.last_market_ticks {
+        rooms.restore_last_trade_price(&tick.room_id, &tick.instrument_id, tick.price_tick);
+    }
     Ok(rooms)
+}
+
+fn recover_rooms_for_full_replay(recovery: &JournalRecovery) -> Result<RoomManager, JournalError> {
+    let mut full = recovery.clone();
+    full.runtime_checkpoints.clear();
+    full.snapshots.clear();
+    full.mutations
+        .retain(|record| !matches!(record.mutation, RoomMutation::StateCheckpoint { .. }));
+    recover_rooms(&full)
+}
+
+fn training_runs_from_recovery(
+    recovery: &JournalRecovery,
+) -> BTreeMap<String, exchange_core::TrainingRun> {
+    let mut runs = BTreeMap::new();
+    let mut mutations = recovery.mutations.clone();
+    mutations.sort_by_key(|mutation| mutation.mutation_seq);
+    for mutation in mutations {
+        if let RoomMutation::TrainingProgress { run }
+        | RoomMutation::SchedulerProgress {
+            training: Some(run),
+            ..
+        }
+        | RoomMutation::SchedulerDelta {
+            training: Some(run),
+            ..
+        } = mutation.mutation
+        {
+            runs.insert(run.spec.run_id.clone(), *run);
+        }
+    }
+    runs
+}
+
+fn scheduler_states_from_recovery(
+    recovery: &JournalRecovery,
+) -> Result<BTreeMap<RoomId, exchange_core::SchedulerState>, JournalError> {
+    let mut mutations_by_room = BTreeMap::<&str, Vec<&JournalMutation>>::new();
+    for mutation in &recovery.mutations {
+        mutations_by_room
+            .entry(mutation.room_id.as_str())
+            .or_default()
+            .push(mutation);
+    }
+    let mut schedulers = BTreeMap::new();
+    for (room_id, mut mutations) in mutations_by_room {
+        mutations.sort_by_key(|mutation| mutation.mutation_seq);
+        let base = mutations
+            .iter()
+            .rposition(|m| matches!(m.mutation, RoomMutation::SchedulerProgress { .. }));
+        let mut current = None;
+        for mutation in mutations.iter().skip(base.unwrap_or(0)) {
+            match &mutation.mutation {
+                RoomMutation::SchedulerProgress { state, .. } => {
+                    if state.room_id != room_id {
+                        return Err(JournalError::Recovery(
+                            "scheduler checkpoint room mismatch".into(),
+                        ));
+                    }
+                    current = Some(state.clone());
+                }
+                RoomMutation::SchedulerDelta { delta, .. } => {
+                    let prior = current.as_mut().ok_or_else(|| {
+                        JournalError::Recovery("scheduler delta without full checkpoint".into())
+                    })?;
+                    delta.apply(prior)?;
+                }
+                _ => {}
+            }
+        }
+        if let Some(state) = current {
+            schedulers.insert(room_id.to_string(), state);
+        }
+    }
+    Ok(schedulers)
 }
 
 fn replay_room_mutation(
@@ -2260,6 +2799,17 @@ fn replay_room_mutation(
         RoomMutation::StatusChanged { status } => rooms
             .restore_room_status(&record.room_id, *status)
             .map_err(|error| JournalError::Recovery(format!("{error:?}"))),
+        RoomMutation::SchedulerProgress { clock_steps, .. }
+        | RoomMutation::SchedulerDelta { clock_steps, .. } => {
+            if *clock_steps == 0 {
+                return Ok(());
+            }
+            rooms
+                .advance_clock(&record.room_id, *clock_steps)
+                .map(|_| ())
+                .map_err(|error| JournalError::Recovery(format!("{error:?}")))
+        }
+        RoomMutation::TrainingProgress { .. } => Ok(()),
     }
 }
 
@@ -2289,6 +2839,8 @@ fn execution_summary_matches(
         && stored.status == replayed.status
         && stored.accepted == replayed.accepted
         && stored.reject_reason == replayed.reject_reason
+        && stored.price_updates == replayed.price_updates
+        && stored.funding_settlement == replayed.funding_settlement
         && stored.clearing_event_count == replayed.clearing_event_count
         && clearing_event_summaries_match(
             stored.clearing_event_count,
@@ -2447,15 +2999,18 @@ fn execution_summaries_from_recovery(
 }
 
 fn next_order_id_from_recovery(recovery: &JournalRecovery) -> Result<OrderId, JournalError> {
-    let mut next_order_id = 1;
+    let mut next_order_id = recovery.next_order_id.unwrap_or(1).max(1);
+    if next_order_id >= SYSTEM_CONDITIONAL_ORDER_ID_BASE {
+        return Err(JournalError::Recovery(
+            "API order cursor uses the reserved system-order range".into(),
+        ));
+    }
     for execution in &recovery.executions {
-        let Command::NewOrder(order) = &execution.command else {
+        let Some(order) = execution.command.new_order() else {
             continue;
         };
-        if order.order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE {
-            if execution.participant_id.is_none()
-                && is_system_liquidation_command(&execution.command)
-            {
+        if order.order_id >= SYSTEM_CONDITIONAL_ORDER_ID_BASE {
+            if execution.participant_id.is_none() && is_system_exit_command(&execution.command) {
                 continue;
             }
             return Err(JournalError::Recovery(format!(
@@ -2480,10 +3035,10 @@ fn next_api_order_id_after_commands(
 ) -> Result<OrderId, (StatusCode, Json<ErrorResponse>)> {
     let mut next_order_id = current;
     for command in commands {
-        let Command::NewOrder(order) = command else {
+        let Some(order) = command.new_order() else {
             continue;
         };
-        if order.order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE {
+        if order.order_id >= SYSTEM_CONDITIONAL_ORDER_ID_BASE {
             return Err(api_error(
                 StatusCode::BAD_REQUEST,
                 format!(
@@ -2501,6 +3056,21 @@ fn next_api_order_id_after_commands(
         next_order_id = next_order_id.max(following_order_id);
     }
     Ok(next_order_id)
+}
+
+fn is_system_exit_command(command: &Command) -> bool {
+    if let Some(order) = command.new_order()
+        && (SYSTEM_CONDITIONAL_ORDER_ID_BASE..SYSTEM_POSITION_EXIT_ORDER_ID_BASE)
+            .contains(&order.order_id)
+        && !order.reduce_only
+        && matches!(order.kind, OrderKind::Market | OrderKind::Limit { .. })
+    {
+        return true;
+    }
+    is_system_liquidation_command(command)
+        || matches!(command, Command::NewOrder(order)
+        if (SYSTEM_POSITION_EXIT_ORDER_ID_BASE..SYSTEM_LIQUIDATION_ORDER_ID_BASE).contains(&order.order_id)
+            && order.reduce_only && matches!(order.kind, OrderKind::ImmediateOrCancel { price_tick: None } | OrderKind::Limit { .. }))
 }
 
 fn is_system_liquidation_command(command: &Command) -> bool {
@@ -2526,7 +3096,7 @@ fn command_from_actor_execution(execution: &ActorExecution) -> Option<Command> {
         ActorExecutionResult::Accepted(MarketExecution::Perp(execution)) => {
             Some(execution.command.command.clone())
         }
-        ActorExecutionResult::Rejected(_) => None,
+        ActorExecutionResult::Rejected(_) => execution.rejected_command.clone(),
     }
 }
 
@@ -2538,10 +3108,8 @@ async fn journal_new_executions(
     first_record: JournalExecution,
 ) -> Result<(), JournalError> {
     let new_history = candidate_rooms
-        .execution_history(room_id)
+        .execution_history_from(room_id, previous_history_len)
         .map_err(|error| JournalError::Recovery(format!("{error:?}")))?
-        .iter()
-        .skip(previous_history_len)
         .cloned()
         .collect::<Vec<_>>();
     let mut journal_records = vec![first_record];
@@ -2634,6 +3202,16 @@ fn latest_persisted_command_seq(state: &AppState, room_id: &str) -> Option<u64> 
         .get(room_id)
         .and_then(|executions| executions.back())
         .map(|execution| execution.command_seq)
+        .or_else(|| {
+            // A checkpoint may cover every command, leaving the suffix cache
+            // empty. The committed actor still carries its command cursor.
+            state
+                .rooms
+                .simulation_room(room_id)
+                .ok()?
+                .next_command_seq()
+                .checked_sub(1)
+        })
 }
 
 fn next_persisted_command_cursor(state: &AppState, room_id: &str) -> Result<u64, JournalError> {
@@ -2645,16 +3223,12 @@ async fn list_rooms(
     headers: HeaderMap,
 ) -> ApiResult<ListRoomsResponse> {
     let (user_id, room_ids, journal) = {
-        let state = lock_state(&state).await?;
+        let room_ids = state.app.room_ids().await;
+        let app = state.app.metadata().await;
         (
-            current_user_id(&headers, &state.auth_policy)?,
-            state
-                .rooms
-                .room_ids()
-                .into_iter()
-                .map(str::to_string)
-                .collect::<Vec<_>>(),
-            state.journal.clone(),
+            current_user_id(&headers, &app.auth_policy)?,
+            room_ids,
+            app.journal.clone(),
         )
     };
     let mut rooms = Vec::new();
@@ -2669,6 +3243,519 @@ async fn list_rooms(
     }
 
     Ok(Json(ListRoomsResponse { rooms }))
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct StartTrainingRequest {
+    pub run_id: String,
+    pub scenario: ScenarioConfig,
+    #[serde(default)]
+    pub agents: Vec<AgentTemplate>,
+    pub trainee_account_id: AccountId,
+    pub target_qty: u64,
+    pub horizon_steps: u64,
+    #[serde(default)]
+    pub manual_agents: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TrainingRunResponse {
+    pub api_version: String,
+    pub run: exchange_core::TrainingRun,
+    pub score: exchange_core::TrainingScore,
+}
+
+async fn start_training_run(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Json(request): Json<StartTrainingRequest>,
+) -> ApiResult<TrainingRunResponse> {
+    {
+        let app = lock_state(&state).await?;
+        current_user_id(&headers, &app.auth_policy)?;
+    }
+    run_durable_state_transaction(state.clone(), async move {
+        let shared = state.clone();
+        let mut app = lock_state(&shared).await?;
+        if let Some(existing) = app.training_runs.get(&request.run_id).cloned() {
+            return Ok(Json(TrainingRunResponse {
+                api_version: "training.v1".to_string(),
+                score: existing.score(),
+                run: existing,
+            }));
+        }
+        let room_id = request.scenario.room_id.clone();
+        validate_agent_templates(&room_id, &request.agents, &app.bot_registry)?;
+        if app.rooms.status(&room_id).is_ok() {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                format!("room {room_id} already exists"),
+            ));
+        }
+        let user_id = current_user_id(&headers, &app.auth_policy)?;
+        let mut candidate = app.rooms.clone();
+        let bootstrap = candidate
+            .create_room(request.scenario.clone())
+            .map_err(api_error_from_room)?;
+        let ticker = candidate
+            .ticker(
+                &room_id,
+                candidate
+                    .room(&room_id)
+                    .map_err(api_error_from_room)?
+                    .primary_instrument_id(),
+            )
+            .map_err(api_error_from_room)?;
+        let reference = ticker.mid_tick.ok_or_else(|| {
+            api_error(
+                StatusCode::CONFLICT,
+                "training start requires a two-sided book for P0".to_string(),
+            )
+        })?;
+        let spec = exchange_core::TrainingSpec::low_slippage_buy(
+            request.run_id.clone(),
+            request.scenario.clone(),
+            request.agents.clone(),
+            request.trainee_account_id,
+            request.target_qty,
+            request.horizon_steps,
+            reference,
+        )
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, format!("{error:?}")))?;
+        let mut run = exchange_core::TrainingRun::new(spec);
+        run.start()
+            .map_err(|error| api_error(StatusCode::CONFLICT, format!("{error:?}")))?;
+        let account_ids = scenario_account_ids(&request.scenario);
+        let seed_commands = request.scenario.seed_commands();
+        let next_order_id = next_api_order_id_after_commands(app.next_order_id, &seed_commands)?;
+        let seed_records = seed_commands
+            .into_iter()
+            .zip(bootstrap.seed_executions.iter().cloned())
+            .map(|(command, execution)| JournalExecution::seed(command, execution))
+            .collect::<Vec<_>>();
+        let lease_config = app
+            .room_lease_runtime
+            .as_ref()
+            .map(|runtime| runtime.config.clone());
+        let initial_lease = if let Some(config) = &lease_config {
+            Some(
+                app.journal
+                    .create_room_with_writer_lease(
+                        &user_id,
+                        &request.scenario,
+                        &bootstrap,
+                        &account_ids,
+                        &seed_records,
+                        None,
+                        &config.instance_id,
+                        Some(&config.owner_url),
+                        config.lease_duration,
+                    )
+                    .await
+                    .map_err(api_error_from_journal)?,
+            )
+        } else {
+            app.journal
+                .create_room(
+                    &user_id,
+                    &request.scenario,
+                    &bootstrap,
+                    &account_ids,
+                    &seed_records,
+                    None,
+                )
+                .await
+                .map_err(api_error_from_journal)?;
+            None
+        };
+        if let Some(lease) = initial_lease
+            && let Some(runtime) = app.room_lease_runtime.as_mut()
+        {
+            runtime.leases.insert(room_id.clone(), lease);
+            runtime.lost_rooms.remove(&room_id);
+        }
+        app.replace_room_executions(
+            room_id.clone(),
+            seed_records
+                .iter()
+                .map(|record| record.execution.clone())
+                .collect(),
+        );
+        let cursor = command_cursor_after_actor(&bootstrap)?;
+        app.append_room_mutation(
+            &PendingJournalMutation::new(
+                room_id.clone(),
+                cursor,
+                RoomMutation::TrainingProgress {
+                    run: Box::new(run.clone()),
+                },
+            ),
+            &[],
+            &[],
+            None,
+        )
+        .await
+        .map_err(api_error_from_journal)?;
+        app.rooms = candidate;
+        app.next_order_id = next_order_id;
+        if !request.agents.is_empty() && request.manual_agents {
+            let scheduler = exchange_core::SchedulerState::new(
+                &room_id,
+                request.agents,
+                exchange_core::SchedulerMode::Manual,
+            );
+            install_scheduler(&mut app, scheduler).await?;
+        } else if !request.agents.is_empty() {
+            start_agent_worker_for_room(
+                &shared,
+                &mut app,
+                room_id,
+                StartAgentsRequest {
+                    agents: request.agents,
+                    interval_ms: Some(50),
+                },
+            )
+            .await?;
+        }
+        app.training_runs
+            .insert(request.run_id.clone(), run.clone());
+        Ok(Json(TrainingRunResponse {
+            api_version: "training.v1".to_string(),
+            score: run.score(),
+            run,
+        }))
+    })
+    .await
+}
+
+fn command_cursor_after_actor(bootstrap: &exchange_core::RoomBootstrap) -> Result<u64, ApiError> {
+    Ok(bootstrap
+        .seed_executions
+        .last()
+        .map(|execution| execution.command_seq.saturating_add(1))
+        .unwrap_or(0))
+}
+
+async fn training_run_status(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+) -> ApiResult<TrainingRunResponse> {
+    let app = lock_state(&state).await?;
+    let _ = current_user_id(&headers, &app.auth_policy)?;
+    let run = app.training_runs.get(&run_id).cloned().ok_or_else(|| {
+        api_error(
+            StatusCode::NOT_FOUND,
+            format!("training run {run_id} not found"),
+        )
+    })?;
+    Ok(Json(TrainingRunResponse {
+        api_version: "training.v1".to_string(),
+        score: run.score(),
+        run,
+    }))
+}
+
+async fn abort_training_run(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+) -> ApiResult<TrainingRunResponse> {
+    {
+        let app = lock_state(&state).await?;
+        current_user_id(&headers, &app.auth_policy)?;
+    }
+    run_durable_state_transaction(state.clone(), async move {
+        let mut app = lock_state(&state).await?;
+        let mut run = app.training_runs.get(&run_id).cloned().ok_or_else(|| {
+            api_error(
+                StatusCode::NOT_FOUND,
+                format!("training run {run_id} not found"),
+            )
+        })?;
+        run.abort()
+            .map_err(|error| api_error(StatusCode::CONFLICT, format!("{error:?}")))?;
+        let mut candidate_rooms = app.rooms.clone();
+        let settle = settle_training_residuals(&mut candidate_rooms, &mut run)?;
+        let records = settle
+            .into_iter()
+            .filter_map(|execution| {
+                command_from_actor_execution(&execution)
+                    .map(|command| JournalExecution::system(command, execution))
+            })
+            .collect::<Vec<_>>();
+        if !records.is_empty() {
+            app.journal
+                .append_executions(&records, None)
+                .await
+                .map_err(api_error_from_journal)?;
+            app.append_room_executions(
+                &run.spec.room_id,
+                records
+                    .iter()
+                    .map(|record| record.execution.clone())
+                    .collect(),
+            );
+        }
+        persist_training_progress(&mut app, &run, &[]).await?;
+        app.rooms = candidate_rooms;
+        Ok(Json(TrainingRunResponse {
+            api_version: "training.v1".to_string(),
+            score: run.score(),
+            run,
+        }))
+    })
+    .await
+}
+
+async fn training_run_result(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+) -> ApiResult<TrainingRunResponse> {
+    training_run_status(State(state), headers, Path(run_id)).await
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TrainingReportResponse {
+    pub json: serde_json::Value,
+    pub markdown: String,
+}
+
+async fn training_run_report(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+) -> ApiResult<TrainingReportResponse> {
+    let app = lock_state(&state).await?;
+    current_user_id(&headers, &app.auth_policy)?;
+    let run = app.training_runs.get(&run_id).cloned().ok_or_else(|| {
+        api_error(
+            StatusCode::NOT_FOUND,
+            format!("training run {run_id} not found"),
+        )
+    })?;
+    Ok(Json(TrainingReportResponse {
+        json: exchange_core::training_report_json(&run),
+        markdown: exchange_core::training_report_markdown(&run),
+    }))
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct ReplayQuery {
+    pub at_command_seq: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct IsolatedReplayResponse {
+    pub room_id: String,
+    pub replayed_commands: usize,
+    pub live_room_untouched: bool,
+    pub book: BookSnapshot,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomMemberRequest {
+    pub user_id: String,
+    pub role: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoomMemberResponse {
+    pub room_id: String,
+    pub user_id: String,
+    pub role: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AssignAccountRequest {
+    pub user_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AssignAccountResponse {
+    pub room_id: String,
+    pub account_id: AccountId,
+    pub user_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ObserveQuery {
+    pub account_id: AccountId,
+    pub instrument_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ObservationResponse {
+    pub api_version: String,
+    pub observation: ParticipantObservation,
+}
+
+fn journal_write_error(error: JournalError) -> ApiError {
+    if let JournalError::Recovery(message) = &error
+        && (message.contains("invalid role")
+            || message.contains("cannot be assigned")
+            || message.contains("is not a member"))
+    {
+        return api_error(StatusCode::BAD_REQUEST, message.clone());
+    }
+    api_error_from_journal(error)
+}
+
+fn training_assignment_frozen(app: &AppState, room_id: &str) -> bool {
+    app.training_runs
+        .values()
+        .any(|run| run.spec.room_id == room_id && !matches!(run.status, TrainingStatus::Created))
+}
+
+async fn upsert_room_member(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Json(request): Json<RoomMemberRequest>,
+) -> ApiResult<RoomMemberResponse> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let app = lock_room_state(&state, &room_id).await?;
+    competition::guard_management(&app, &room_id)?;
+    let journal = { app.journal.clone() };
+    journal
+        .upsert_room_member(&room_id, &request.user_id, &request.role)
+        .await
+        .map_err(journal_write_error)?;
+    Ok(Json(RoomMemberResponse {
+        room_id,
+        user_id: request.user_id,
+        role: request.role,
+    }))
+}
+
+async fn remove_room_member(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, user_id)): Path<(String, String)>,
+    Json(_): Json<serde_json::Value>,
+) -> ApiResult<RoomMemberResponse> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let app = lock_room_state(&state, &room_id).await?;
+    competition::guard_management(&app, &room_id)?;
+    let journal = { app.journal.clone() };
+    journal
+        .remove_room_member(&room_id, &user_id)
+        .await
+        .map_err(journal_write_error)?;
+    Ok(Json(RoomMemberResponse {
+        room_id,
+        user_id,
+        role: "removed".to_string(),
+    }))
+}
+
+async fn assign_account_owner(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, account_id)): Path<(String, AccountId)>,
+    Json(request): Json<AssignAccountRequest>,
+) -> ApiResult<AssignAccountResponse> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let app = lock_room_state(&state, &room_id).await?;
+    competition::guard_management(&app, &room_id)?;
+    let journal = {
+        if training_assignment_frozen(&app, &room_id) {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                format!("account assignment is frozen after training start in room {room_id}"),
+            ));
+        }
+        app.journal.clone()
+    };
+    journal
+        .assign_account_owner(&room_id, account_id, &request.user_id)
+        .await
+        .map_err(journal_write_error)?;
+    Ok(Json(AssignAccountResponse {
+        room_id,
+        account_id,
+        user_id: request.user_id,
+    }))
+}
+
+async fn observe_room(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Query(query): Query<ObserveQuery>,
+) -> ApiResult<ObservationResponse> {
+    authorize_room_read(
+        &state,
+        &headers,
+        &room_id,
+        RoomReadAccess::ViewAccount(query.account_id),
+    )
+    .await?;
+    let app = state.app.read_room(&room_id).await;
+    let instrument_id = query.instrument_id.unwrap_or_else(|| {
+        app.rooms
+            .room(&room_id)
+            .map(|room| room.primary_instrument_id().to_string())
+            .unwrap_or_default()
+    });
+    let mut observation = app
+        .rooms
+        .participant_observation(&room_id, &instrument_id, query.account_id)
+        .map_err(api_error_from_room)?;
+    room_portal::public_observation(&mut observation, query.account_id);
+    Ok(Json(ObservationResponse {
+        api_version: STRATEGY_PROTOCOL_VERSION.to_string(),
+        observation,
+    }))
+}
+
+async fn replay_room_isolated(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Query(query): Query<ReplayQuery>,
+) -> ApiResult<IsolatedReplayResponse> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let journal = {
+        let app = lock_room_state(&state, &room_id).await?;
+        app.journal.clone()
+    };
+    let mut recovery = journal
+        .load_room_replay(&room_id)
+        .await
+        .map_err(api_error_from_journal)?;
+    recovery.snapshots.clear();
+    recovery
+        .mutations
+        .retain(|record| !matches!(record.mutation, RoomMutation::StateCheckpoint { .. }));
+    if let Some(at) = query.at_command_seq {
+        recovery
+            .executions
+            .retain(|execution| execution.command_seq <= at);
+        recovery
+            .mutations
+            .retain(|mutation| mutation.command_cursor <= at.saturating_add(1));
+    }
+    let replayed_commands = recovery.executions.len();
+    state
+        .lifecycle
+        .record_replayed_commands(replayed_commands as u64);
+    let rooms = recover_rooms(&recovery).map_err(api_error_from_journal)?;
+    let instrument_id = rooms
+        .room(&room_id)
+        .map_err(api_error_from_room)?
+        .primary_instrument_id()
+        .to_string();
+    let book = rooms
+        .book_snapshot_for(&room_id, &instrument_id)
+        .map_err(api_error_from_room)?;
+    Ok(Json(IsolatedReplayResponse {
+        room_id,
+        replayed_commands,
+        live_room_untouched: true,
+        book,
+    }))
 }
 
 async fn cluster_rooms(
@@ -2688,7 +3775,7 @@ async fn cluster_rooms(
     }
     let limit = query_limit(query.limit);
     let (user_id, journal) = {
-        let state = lock_state(&state).await?;
+        let state = state.app.metadata().await;
         (
             current_user_id(&headers, &state.auth_policy)?,
             state.journal.clone(),
@@ -2729,9 +3816,25 @@ async fn start_agents(
 ) -> ApiResult<AgentWorkerStatus> {
     let authorization =
         authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let mut state = lock_state(&state).await?;
-    ensure_agent_workers_supported(&state.auth_policy)?;
-    start_agent_worker_for_room(&mut state, room_id, authorization.user_id, request).map(Json)
+    let _ = authorization;
+    run_durable_state_transaction(state.clone(), async move {
+        let mut app = lock_room_state(&state, &room_id).await?;
+        competition::guard_management(&app, &room_id)?;
+        start_agent_worker_for_room(&state, &mut app, room_id, request)
+            .await
+            .map(Json)
+    })
+    .await
+}
+
+async fn room_bots(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+) -> ApiResult<Option<exchange_core::SchedulerState>> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let app = lock_room_state(&state, &room_id).await?;
+    Ok(Json(app.schedulers.get(&room_id).cloned()))
 }
 
 async fn agent_status(
@@ -2740,7 +3843,7 @@ async fn agent_status(
     Path(room_id): Path<String>,
 ) -> ApiResult<AgentWorkerStatus> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = lock_room_state(&state, &room_id).await?;
     Ok(Json(agent_status_for_room(&state, &room_id)))
 }
 
@@ -2750,11 +3853,20 @@ async fn stop_agents(
     Path(room_id): Path<String>,
 ) -> ApiResult<AgentWorkerStatus> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let mut state = lock_state(&state).await?;
-    if let Some(worker) = state.agent_workers.remove(&room_id) {
-        worker.stop();
-    }
-    Ok(Json(AgentWorkerStatus::stopped(room_id)))
+    run_durable_state_transaction(state.clone(), async move {
+        let mut app = lock_room_state(&state, &room_id).await?;
+        competition::guard_management(&app, &room_id)?;
+        if let Some(mut scheduler) = app.schedulers.get(&room_id).cloned() {
+            scheduler.bots_enabled = false;
+            install_scheduler(&mut app, scheduler).await?;
+        }
+        if let Some(worker) = app.agent_workers.get(&room_id) {
+            worker.bots_enabled.store(false, Ordering::Release);
+            worker.control.epoch.fetch_add(1, Ordering::AcqRel);
+        }
+        Ok(Json(agent_status_for_room(&app, &room_id)))
+    })
+    .await
 }
 
 async fn room_events(
@@ -2773,7 +3885,7 @@ async fn room_events(
         authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
     let limit = query.limit.unwrap_or(100).clamp(1, 500);
     let cached_history = {
-        let state = lock_state(&state).await?;
+        let state = lock_room_state(&state, &room_id).await?;
         state.executions.get(&room_id).cloned().unwrap_or_default()
     };
     let cached_latest_command_seq = cached_history.back().map(|execution| execution.command_seq);
@@ -2864,7 +3976,7 @@ async fn room_event_stream(
     }
     let authorization =
         authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let mut state = lock_state(&state).await?;
+    let mut state = lock_room_state(&state, &room_id).await?;
 
     let latest_command_seq = state
         .executions
@@ -3122,6 +4234,99 @@ fn request_idempotency_key(headers: &HeaderMap) -> Result<Option<String>, ApiErr
     Ok(Some(value.to_string()))
 }
 
+fn control_conflict_error(key: &str) -> ApiError {
+    api_error(
+        StatusCode::CONFLICT,
+        format!("idempotency key {key:?} was already used for a different control request"),
+    )
+}
+
+fn control_fingerprint(operation: &str, params: serde_json::Value) -> String {
+    control_request_fingerprint(operation, params)
+}
+
+fn control_record(
+    user_id: impl Into<String>,
+    room_id: impl Into<String>,
+    key: impl Into<String>,
+    fingerprint: impl Into<String>,
+    response: &impl Serialize,
+) -> Result<ControlIdempotencyRecord, ApiError> {
+    Ok(ControlIdempotencyRecord {
+        user_id: user_id.into(),
+        room_id: room_id.into(),
+        idempotency_key: key.into(),
+        request_fingerprint: fingerprint.into(),
+        response_json: serde_json::to_value(response).map_err(api_error_from_json)?,
+    })
+}
+
+async fn load_control_replay<T: DeserializeOwned>(
+    state: &AppState,
+    user_id: &str,
+    room_id: &str,
+    key: &str,
+    fingerprint: &str,
+) -> Result<Option<T>, ApiError> {
+    let Some(existing) = state
+        .journal
+        .find_control_idempotency(user_id, room_id, key)
+        .await
+        .map_err(api_error_from_journal)?
+    else {
+        return Ok(None);
+    };
+    if existing.request_fingerprint != fingerprint {
+        return Err(control_conflict_error(key));
+    }
+    serde_json::from_value(existing.response_json)
+        .map(Some)
+        .map_err(api_error_from_json)
+}
+
+async fn append_control_mutation(
+    state: &mut AppState,
+    pending: PendingJournalMutation,
+    execution_records: &[JournalExecution],
+    transfer_records: &[JournalTransfer],
+    snapshot: Option<&JournalSnapshot>,
+) -> Result<Option<serde_json::Value>, ApiError> {
+    match state
+        .append_room_mutation(&pending, execution_records, transfer_records, snapshot)
+        .await
+    {
+        Ok(()) => Ok(None),
+        Err(JournalError::ControlIdempotencyConflict {
+            user_id,
+            room_id,
+            idempotency_key,
+        }) => {
+            let existing = state
+                .journal
+                .find_control_idempotency(&user_id, &room_id, &idempotency_key)
+                .await
+                .map_err(api_error_from_journal)?
+                .ok_or_else(|| {
+                    api_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!(
+                            "control idempotency key {idempotency_key:?} conflicted but was not found"
+                        ),
+                    )
+                })?;
+            if pending
+                .control_idempotency
+                .as_ref()
+                .is_some_and(|record| record.request_fingerprint != existing.request_fingerprint)
+            {
+                return Err(control_conflict_error(&idempotency_key));
+            }
+            Ok(Some(existing.response_json))
+        }
+        Err(error) => Err(api_error_from_journal(error)),
+    }
+}
+
 async fn room_orders(
     State(state): State<SharedState>,
     headers: HeaderMap,
@@ -3162,6 +4367,7 @@ async fn room_orders_response(
             instrument_id.as_deref(),
             query.account_id,
             query_limit(query.limit),
+            query.order_id,
         )
         .await
         .map_err(api_error_from_journal)?;
@@ -3370,6 +4576,7 @@ enum RoomReadAccess {
     Room,
     Admin,
     Account(AccountId),
+    ViewAccount(AccountId),
 }
 
 impl RoomReadAccess {
@@ -3389,22 +4596,44 @@ async fn authorize_room_read(
     room_id: &str,
     access: RoomReadAccess,
 ) -> Result<AuthorizedJournalRead, ApiError> {
+    let state_handle = state;
     let (user_id, journal, room_leased) = {
-        let state = lock_state(state).await?;
+        let state = state.app.metadata().await;
         let user_id = current_user_id(headers, &state.auth_policy)?;
         let room_leased = state
             .room_lease_runtime
             .as_ref()
             .is_some_and(|runtime| runtime.config.mode == RoomLeaseRuntimeMode::RoomLeased);
-        if !room_leased {
-            state.rooms.status(room_id).map_err(api_error_from_room)?;
-        }
         (user_id, state.journal.clone(), room_leased)
     };
+    if !room_leased {
+        state_handle
+            .app
+            .read_room(room_id)
+            .await
+            .rooms
+            .status(room_id)
+            .map_err(api_error_from_room)?;
+    }
 
     let allowed = match access {
         RoomReadAccess::Room => journal.user_can_access_room(&user_id, room_id).await,
         RoomReadAccess::Admin => journal.user_can_administer_room(&user_id, room_id).await,
+        RoomReadAccess::ViewAccount(0) => journal.user_can_access_room(&user_id, room_id).await,
+        RoomReadAccess::ViewAccount(account_id) => {
+            let role = journal
+                .user_room_role(&user_id, room_id)
+                .await
+                .map_err(api_error_from_journal)?;
+            if role.as_deref() == Some("spectator") {
+                let app = state.app.metadata().await;
+                Ok(competition::spectator_can_view_accounts(&app, room_id))
+            } else {
+                journal
+                    .user_can_access_account(&user_id, room_id, account_id)
+                    .await
+            }
+        }
         RoomReadAccess::Account(account_id) => {
             journal
                 .user_can_access_account(&user_id, room_id, account_id)
@@ -3422,7 +4651,7 @@ async fn authorize_room_read(
     let message = match access {
         RoomReadAccess::Room => format!("user {user_id} cannot access room {room_id}"),
         RoomReadAccess::Admin => format!("user {user_id} cannot administer room {room_id}"),
-        RoomReadAccess::Account(account_id) => {
+        RoomReadAccess::Account(account_id) | RoomReadAccess::ViewAccount(account_id) => {
             format!("user {user_id} cannot access account {account_id} in room {room_id}")
         }
     };
@@ -3435,7 +4664,7 @@ async fn room_owner(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomOwnerResponse> {
     let (user_id, journal) = {
-        let app = lock_state(&state).await?;
+        let app = state.app.metadata().await;
         (
             current_user_id(&headers, &app.auth_policy)?,
             app.journal.clone(),
@@ -3476,7 +4705,7 @@ fn room_owner_response(lease: RoomWriterLease) -> RoomOwnerResponse {
 }
 
 async fn ensure_room_owned(state: &SharedState, room_id: &str) -> Result<(), ApiError> {
-    let mut app = lock_state(state).await?;
+    let mut app = lock_room_state(state, room_id).await?;
     let Some(runtime) = app.room_lease_runtime.as_ref() else {
         return app
             .rooms
@@ -3542,6 +4771,7 @@ async fn ensure_room_owned(state: &SharedState, room_id: &str) -> Result<(), Api
             )));
         }
         let rooms = recover_rooms(&recovery)?;
+        let scheduler = scheduler_states_from_recovery(&recovery)?.remove(room_id);
         let room = rooms
             .simulation_room(room_id)
             .map_err(|error| JournalError::Recovery(format!("{error:?}")))?
@@ -3554,7 +4784,14 @@ async fn ensure_room_owned(state: &SharedState, room_id: &str) -> Result<(), Api
         let cached_executions = execution_summaries_from_recovery(&recovery)
             .remove(room_id)
             .unwrap_or_default();
-        Ok((room, history, cached_executions, next_order_id))
+        Ok((
+            room,
+            history,
+            cached_executions,
+            next_order_id,
+            scheduler,
+            recovery.last_market_ticks,
+        ))
     }) {
         Ok(recovered) => recovered,
         Err(error) => {
@@ -3593,7 +4830,7 @@ async fn ensure_room_owned(state: &SharedState, room_id: &str) -> Result<(), Api
         }
     };
 
-    let (room, history, cached_executions, next_order_id) = recovered;
+    let (room, history, cached_executions, next_order_id, scheduler, last_market_ticks) = recovered;
     app.rooms.remove_room(room_id);
     if let Err(error) = app.rooms.restore_simulation_room(room, history) {
         let _ = journal.release_room_writer_lease(&renewed.claim).await;
@@ -3603,10 +4840,34 @@ async fn ensure_room_owned(state: &SharedState, room_id: &str) -> Result<(), Api
         }
         return Err(api_error_from_room(error));
     }
+    let bot_registry = app.bot_registry.clone();
+    if let Err(error) = bot_history::restore_async(
+        &mut app.rooms,
+        room_id,
+        scheduler.as_ref(),
+        &bot_registry,
+        &journal,
+    )
+    .await
+    {
+        let _ = journal.release_room_writer_lease(&renewed.claim).await;
+        if let Some(runtime) = app.room_lease_runtime.as_mut() {
+            runtime.leases.remove(room_id);
+            runtime.lost_rooms.insert(room_id.to_string());
+        }
+        return Err(api_error_from_journal(error));
+    }
     app.executions
         .insert(room_id.to_string(), cached_executions);
+    for tick in last_market_ticks {
+        app.rooms
+            .restore_last_trade_price(&tick.room_id, &tick.instrument_id, tick.price_tick);
+    }
     app.next_order_id = app.next_order_id.max(next_order_id);
     app.room_event_senders.remove(room_id);
+    if let Some(scheduler) = scheduler {
+        app.schedulers.insert(room_id.to_string(), scheduler);
+    }
     if let Some(runtime) = app.room_lease_runtime.as_mut() {
         runtime.leases.insert(room_id.to_string(), renewed);
         runtime.lost_rooms.remove(room_id);
@@ -3648,10 +4909,14 @@ async fn market_view_response(
     instrument_id: Option<InstrumentId>,
 ) -> ApiResult<MarketView> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     let room = state.rooms.room(&room_id).map_err(api_error_from_room)?;
     let venue_id = room.venue_id().to_string();
     let instrument_id = instrument_id.unwrap_or_else(|| room.primary_instrument_id().to_string());
+    let simulation = state
+        .rooms
+        .simulation_room(&room_id)
+        .map_err(api_error_from_room)?;
     Ok(Json(MarketView {
         room_id: room_id.clone(),
         venue_id,
@@ -3665,6 +4930,10 @@ async fn market_view_response(
             .rooms
             .account_snapshots_for(&room_id, &instrument_id)
             .map_err(api_error_from_room)?,
+        instruments: simulation.instrument_ids(),
+        perp_price: simulation
+            .perp_price_snapshot(&instrument_id)
+            .map_err(|error| api_error_from_room(RoomManagerError::Actor(error)))?,
     }))
 }
 
@@ -3691,7 +4960,7 @@ async fn book_snapshot_response(
     instrument_id: Option<InstrumentId>,
 ) -> ApiResult<BookSnapshot> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Room).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     let instrument_id = match instrument_id {
         Some(instrument_id) => instrument_id,
         None => state
@@ -3705,6 +4974,727 @@ async fn book_snapshot_response(
         .book_snapshot_for(&room_id, &instrument_id)
         .map(Json)
         .map_err(api_error_from_room)
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TickerResponse {
+    pub api_version: String,
+    pub room_id: String,
+    pub instrument_id: InstrumentId,
+    pub market_time_ms: u64,
+    pub ticker: exchange_core::Ticker,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub perp_price: Option<exchange_core::PerpPriceSnapshot>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct CandleQuery {
+    pub interval_ms: Option<u64>,
+    pub after_open_time_ms: Option<u64>,
+    pub before_open_time_ms: Option<u64>,
+    pub limit: Option<usize>,
+    pub instrument_id: Option<InstrumentId>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CandleResponse {
+    pub api_version: String,
+    pub room_id: String,
+    pub instrument_id: InstrumentId,
+    pub interval_ms: u64,
+    pub market_time_ms: u64,
+    pub candles: Vec<exchange_core::Candle>,
+    pub next_after_open_time_ms: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct UserStreamEvent {
+    pub api_version: String,
+    pub stream: String,
+    pub stream_seq: u64,
+    pub command_seq: Option<u64>,
+    pub kind: String,
+    pub payload: serde_json::Value,
+}
+
+async fn room_ticker(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+) -> ApiResult<TickerResponse> {
+    ticker_response(state, headers, room_id, None).await
+}
+
+async fn room_ticker_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+) -> ApiResult<TickerResponse> {
+    ticker_response(state, headers, room_id, Some(instrument_id)).await
+}
+
+async fn ticker_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+) -> ApiResult<TickerResponse> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Room).await?;
+    let state = state.app.read_room(&room_id).await;
+    let instrument_id = match instrument_id {
+        Some(instrument_id) => instrument_id,
+        None => state
+            .rooms
+            .room(&room_id)
+            .map(|room| room.primary_instrument_id().to_string())
+            .map_err(api_error_from_room)?,
+    };
+    let clock = state.rooms.clock(&room_id).map_err(api_error_from_room)?;
+    let ticker = state
+        .rooms
+        .ticker(&room_id, &instrument_id)
+        .map_err(api_error_from_room)?;
+    let perp_price = state
+        .rooms
+        .simulation_room(&room_id)
+        .map_err(api_error_from_room)?
+        .perp_price_snapshot(&instrument_id)
+        .map_err(|error| api_error_from_room(RoomManagerError::Actor(error)))?;
+    Ok(Json(TickerResponse {
+        api_version: "http.v1".to_string(),
+        room_id,
+        instrument_id,
+        market_time_ms: clock.market_time_ms(),
+        ticker,
+        perp_price,
+    }))
+}
+
+async fn room_candles(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Query(query): Query<CandleQuery>,
+) -> ApiResult<CandleResponse> {
+    candles_response(state, headers, room_id, query.instrument_id.clone(), query).await
+}
+
+async fn room_candles_for_instrument(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path((room_id, instrument_id)): Path<(String, String)>,
+    Query(query): Query<CandleQuery>,
+) -> ApiResult<CandleResponse> {
+    candles_response(state, headers, room_id, Some(instrument_id), query).await
+}
+
+async fn candles_response(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    instrument_id: Option<InstrumentId>,
+    query: CandleQuery,
+) -> ApiResult<CandleResponse> {
+    let authorized = authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Room).await?;
+    let interval_ms = query.interval_ms.unwrap_or(1_000);
+    if interval_ms == 0 {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "interval_ms must be greater than zero".to_string(),
+        ));
+    }
+    let state_handle = state.clone();
+    let state = state.app.read_room(&room_id).await;
+    let instrument_id = match instrument_id {
+        Some(instrument_id) => instrument_id,
+        None => state
+            .rooms
+            .room(&room_id)
+            .map(|room| room.primary_instrument_id().to_string())
+            .map_err(api_error_from_room)?,
+    };
+    let clock = state.rooms.clock(&room_id).map_err(api_error_from_room)?;
+    drop(state);
+    let durable = authorized
+        .journal
+        .query_candles(
+            &authorized.user_id,
+            &room_id,
+            &instrument_id,
+            interval_ms,
+            clock.market_time_ms(),
+            query.after_open_time_ms,
+        )
+        .await
+        .map_err(api_error_from_journal)?;
+    let mut candles = match durable {
+        Some(candles) => candles,
+        None => {
+            let state = state_handle.app.read_room(&room_id).await;
+            state
+                .rooms
+                .candles(&room_id, &instrument_id, interval_ms)
+                .map_err(api_error_from_room)?
+        }
+    };
+    if let Some(after) = query.after_open_time_ms {
+        candles.retain(|candle| candle.open_time_ms > after);
+    }
+    if let Some(before) = query.before_open_time_ms {
+        candles.retain(|candle| candle.open_time_ms < before);
+    }
+    if let Some(limit) = query.limit {
+        if !(1..=2_000).contains(&limit) {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "candle limit must be 1..2000",
+            ));
+        }
+        candles.drain(..candles.len().saturating_sub(limit));
+    }
+    let next_after_open_time_ms = candles.last().map(|candle| candle.open_time_ms);
+    Ok(Json(CandleResponse {
+        api_version: "http.v1".to_string(),
+        room_id,
+        instrument_id,
+        interval_ms,
+        market_time_ms: clock.market_time_ms(),
+        candles,
+        next_after_open_time_ms,
+    }))
+}
+
+async fn public_room_stream(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Query(query): Query<RoomEventStreamQuery>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<SseEvent, Infallible>>>, ApiError> {
+    scoped_room_stream(state, headers, room_id, query, StreamScope::Public).await
+}
+
+async fn private_room_stream(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+    Query(query): Query<RoomEventStreamQuery>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<SseEvent, Infallible>>>, ApiError> {
+    scoped_room_stream(state, headers, room_id, query, StreamScope::Private).await
+}
+
+#[derive(Clone, Copy)]
+enum StreamScope {
+    Public,
+    Private,
+}
+
+async fn scoped_room_stream(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    query: RoomEventStreamQuery,
+    scope: StreamScope,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<SseEvent, Infallible>>>, ApiError> {
+    let access = match scope {
+        StreamScope::Public => RoomReadAccess::Room,
+        StreamScope::Private => RoomReadAccess::Room,
+    };
+    let authorization = authorize_room_read(&state, &headers, &room_id, access).await?;
+    if matches!(scope, StreamScope::Private)
+        && authorization
+            .journal
+            .user_room_role(&authorization.user_id, &room_id)
+            .await
+            .map_err(api_error_from_journal)?
+            .as_deref()
+            == Some("spectator")
+    {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            format!(
+                "user {} cannot subscribe to private streams in room {room_id}",
+                authorization.user_id
+            ),
+        ));
+    }
+    if let Some(requested_scope) = query.scope.as_deref() {
+        let expected = match scope {
+            StreamScope::Public => "public",
+            StreamScope::Private => "private",
+        };
+        if requested_scope != expected {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                format!("cursor scope {requested_scope:?} does not match {expected} stream"),
+            ));
+        }
+    }
+    let user_id = authorization.user_id.clone();
+    let journal = authorization.journal.clone();
+    let lifecycle = state.lifecycle.clone();
+    let shutdown = lifecycle.subscribe_shutdown();
+    let mut app = lock_room_state(&state, &room_id).await?;
+    let receiver = app.room_event_receiver(&room_id);
+    let cached = app.executions.get(&room_id).cloned().unwrap_or_default();
+    let latest_seq = cached
+        .back()
+        .map(|execution| execution.command_seq)
+        .or_else(|| latest_persisted_command_seq(&app, &room_id));
+    let snapshot = match scope {
+        StreamScope::Public => public_stream_snapshot(&app, &room_id, latest_seq)?,
+        StreamScope::Private => {
+            private_stream_snapshot(&app, &journal, &room_id, &user_id, latest_seq).await?
+        }
+    };
+    let after = query.after_command_seq;
+    let fetched = stream_history_executions(&app, &journal, &room_id, &cached, after).await?;
+    drop(app);
+    let connection = lifecycle.open_sse_connection();
+    let stream_name = match scope {
+        StreamScope::Public => "public",
+        StreamScope::Private => "private",
+    };
+    let mut seq = 0_u64;
+    let mut initial = VecDeque::new();
+    let snapshot_seq = snapshot
+        .get("cursor")
+        .and_then(|cursor| cursor.get("command_seq"))
+        .and_then(|value| value.as_u64());
+    let caught_up = match (after, latest_seq) {
+        (Some(cursor), Some(latest)) => cursor >= latest,
+        (Some(_), None) => fetched.is_empty(),
+        (None, _) => true,
+    };
+    let fills_next = after.is_none_or(|cursor| {
+        caught_up
+            || fetched
+                .first()
+                .is_some_and(|execution| execution.command_seq == cursor + 1)
+    });
+    let resume_deltas = after.is_some() && fills_next && !caught_up;
+    if after.is_some() && !fills_next {
+        seq += 1;
+        initial.push_back(UserStreamEvent {
+            api_version: "http.v1".to_string(),
+            stream: stream_name.to_string(),
+            stream_seq: seq,
+            command_seq: snapshot_seq,
+            kind: "resync_required".to_string(),
+            payload: serde_json::json!({"code": "resync_required"}),
+        });
+    }
+    let mut min_command_seq = after;
+    if !resume_deltas {
+        seq += 1;
+        initial.push_back(UserStreamEvent {
+            api_version: "http.v1".to_string(),
+            stream: stream_name.to_string(),
+            stream_seq: seq,
+            command_seq: snapshot_seq,
+            kind: "snapshot".to_string(),
+            payload: snapshot,
+        });
+        min_command_seq = snapshot_seq;
+    } else {
+        for execution in fetched {
+            if after.is_some_and(|cursor| execution.command_seq <= cursor) {
+                continue;
+            }
+            if let Some(event) =
+                scoped_event_from_execution(&execution, scope, &user_id, &journal, seq + 1).await
+            {
+                seq = event.stream_seq;
+                min_command_seq = execution.command_seq.into();
+                initial.push_back(event);
+            }
+        }
+        if !initial.iter().any(|event| event.kind == "execution") {
+            seq += 1;
+            initial.push_back(UserStreamEvent {
+                api_version: "http.v1".to_string(),
+                stream: stream_name.to_string(),
+                stream_seq: seq,
+                command_seq: snapshot_seq,
+                kind: "snapshot".to_string(),
+                payload: snapshot,
+            });
+            min_command_seq = snapshot_seq;
+        }
+    }
+    let stream_state = ScopedStreamState {
+        room_id,
+        scope,
+        user_id,
+        journal,
+        stream_seq: seq,
+        min_command_seq,
+        backlog: initial,
+        receiver,
+        shutdown,
+        connection,
+        terminate: false,
+    };
+    let stream = futures_util::stream::unfold(stream_state, |mut state| async move {
+        if state.terminate || *state.shutdown.borrow() {
+            return None;
+        }
+        loop {
+            if let Some(event) = state.backlog.pop_front() {
+                let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string());
+                let sse = SseEvent::default()
+                    .id(event.stream_seq.to_string())
+                    .event(event.kind.clone())
+                    .data(data);
+                return Some((Ok(sse), state));
+            }
+            match state.receiver.recv().await {
+                Ok(execution) => {
+                    if state
+                        .min_command_seq
+                        .is_some_and(|min| execution.command_seq <= min)
+                    {
+                        continue;
+                    }
+                    if let Some(event) = scoped_event_from_execution(
+                        &execution,
+                        state.scope,
+                        &state.user_id,
+                        &state.journal,
+                        state.stream_seq + 1,
+                    )
+                    .await
+                    {
+                        if matches!(state.scope, StreamScope::Private)
+                            && !state
+                                .journal
+                                .user_can_access_room(&state.user_id, &state.room_id)
+                                .await
+                                .unwrap_or(false)
+                        {
+                            state.terminate = true;
+                            let event = SseEvent::default().event("resync_required").data(
+                                "{\"code\":\"unauthorized\",\"error\":\"permission revoked\"}",
+                            );
+                            return Some((Ok(event), state));
+                        }
+                        state.stream_seq = event.stream_seq;
+                        state.min_command_seq = Some(execution.command_seq);
+                        state.backlog.push_back(event);
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    state.connection.record_resync_required();
+                    state.terminate = true;
+                    let event = SseEvent::default()
+                        .event("resync_required")
+                        .data("{\"code\":\"resync_required\"}");
+                    return Some((Ok(event), state));
+                }
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+struct ScopedStreamState {
+    room_id: RoomId,
+    scope: StreamScope,
+    user_id: String,
+    journal: JournalCoordinator,
+    stream_seq: u64,
+    min_command_seq: Option<u64>,
+    backlog: VecDeque<UserStreamEvent>,
+    receiver: broadcast::Receiver<RoomExecutionSummary>,
+    shutdown: watch::Receiver<bool>,
+    connection: SseConnectionGuard,
+    terminate: bool,
+}
+
+fn public_stream_snapshot(
+    app: &AppState,
+    room_id: &str,
+    at_command_seq: Option<u64>,
+) -> Result<serde_json::Value, ApiError> {
+    let instrument_id = app
+        .rooms
+        .room(room_id)
+        .map(|room| room.primary_instrument_id().to_string())
+        .map_err(api_error_from_room)?;
+    let book = app
+        .rooms
+        .book_snapshot_for(room_id, &instrument_id)
+        .map_err(api_error_from_room)?;
+    let ticker = app
+        .rooms
+        .ticker(room_id, &instrument_id)
+        .map_err(api_error_from_room)?;
+    let clock = app.rooms.clock(room_id).map_err(api_error_from_room)?;
+    Ok(serde_json::json!({
+        "cursor": {
+            "room_id": room_id,
+            "scope": "public",
+            "version": "stream.v1",
+            "command_seq": at_command_seq,
+        },
+        "instrument_id": instrument_id,
+        "book": book,
+        "ticker": ticker,
+        "market_time_ms": clock.market_time_ms(),
+        "status": clock_status_name(app.rooms.status(room_id).map_err(api_error_from_room)?),
+    }))
+}
+
+async fn private_stream_snapshot(
+    app: &AppState,
+    journal: &JournalCoordinator,
+    room_id: &str,
+    user_id: &str,
+    at_command_seq: Option<u64>,
+) -> Result<serde_json::Value, ApiError> {
+    let mut payload = public_stream_snapshot(app, room_id, at_command_seq)?;
+    if let Some(cursor) = payload.get_mut("cursor") {
+        cursor["scope"] = serde_json::json!("private");
+    }
+    let instrument_id = app
+        .rooms
+        .room(room_id)
+        .map(|room| room.primary_instrument_id().to_string())
+        .map_err(api_error_from_room)?;
+    let is_admin = journal
+        .user_can_administer_room(user_id, room_id)
+        .await
+        .map_err(api_error_from_journal)?;
+    let accounts = app
+        .rooms
+        .account_snapshots_for(room_id, &instrument_id)
+        .map_err(api_error_from_room)?;
+    let account_ids = match &accounts {
+        AccountSnapshots::Spot(items) => {
+            items.iter().map(|item| item.account_id).collect::<Vec<_>>()
+        }
+        AccountSnapshots::Perp(items) => {
+            items.iter().map(|item| item.account_id).collect::<Vec<_>>()
+        }
+    };
+    let mut visible_accounts = Vec::new();
+    for account_id in account_ids {
+        if is_admin
+            || journal
+                .user_can_access_account(user_id, room_id, account_id)
+                .await
+                .map_err(api_error_from_journal)?
+        {
+            visible_accounts.push(account_id);
+        }
+    }
+    let mut orders = Vec::new();
+    for account_id in &visible_accounts {
+        let mut resting = app
+            .rooms
+            .resting_orders_for_account(room_id, &instrument_id, *account_id)
+            .map_err(api_error_from_room)?;
+        orders.append(&mut resting);
+    }
+    payload["accounts"] = serde_json::json!(visible_accounts);
+    payload["orders"] = serde_json::to_value(&orders).map_err(api_error_from_json)?;
+    Ok(payload)
+}
+
+async fn stream_history_executions(
+    _app: &AppState,
+    journal: &JournalCoordinator,
+    room_id: &str,
+    cached: &VecDeque<RoomExecutionSummary>,
+    after: Option<u64>,
+) -> Result<Vec<RoomExecutionSummary>, ApiError> {
+    let Some(after) = after else {
+        return Ok(Vec::new());
+    };
+    let oldest_cached = cached.front().map(|execution| execution.command_seq);
+    if oldest_cached.is_some_and(|oldest| oldest <= after + 1) {
+        return Ok(cached
+            .iter()
+            .filter(|execution| execution.command_seq > after)
+            .cloned()
+            .collect());
+    }
+    let page = journal
+        .query_executions(room_id, Some(after), false, ROOM_EVENT_CACHE_CAPACITY)
+        .await
+        .map_err(api_error_from_journal)?;
+    Ok(page
+        .executions
+        .into_iter()
+        .filter(|execution| execution.command_seq > after)
+        .collect())
+}
+
+fn clock_status_name(status: MarketStatus) -> &'static str {
+    match status {
+        MarketStatus::Running => "running",
+        MarketStatus::Paused => "paused",
+        MarketStatus::Closed => "closed",
+    }
+}
+
+async fn scoped_event_from_execution(
+    execution: &RoomExecutionSummary,
+    scope: StreamScope,
+    user_id: &str,
+    journal: &JournalCoordinator,
+    stream_seq: u64,
+) -> Option<UserStreamEvent> {
+    let kinds = execution
+        .events
+        .iter()
+        .map(event_kind_name)
+        .collect::<Vec<_>>();
+    let is_public = kinds.iter().any(|kind| {
+        matches!(
+            *kind,
+            "trade_printed" | "order_canceled" | "order_rested" | "order_accepted"
+        )
+    });
+    match scope {
+        StreamScope::Public if is_public || kinds.is_empty() => Some(UserStreamEvent {
+            api_version: "http.v1".to_string(),
+            stream: "public".to_string(),
+            stream_seq,
+            command_seq: Some(execution.command_seq),
+            kind: "execution".to_string(),
+            payload: serde_json::json!({
+                "command_seq": execution.command_seq,
+                "instrument_id": execution.instrument_id,
+                "events": kinds,
+                "accepted": execution.accepted,
+                "price_updates": execution.price_updates,
+                "funding_settlement": execution.funding_settlement,
+            }),
+        }),
+        StreamScope::Private => {
+            if !user_can_see_private_execution(execution, user_id, journal).await {
+                return None;
+            }
+            let mut visible = execution.clone();
+            if execution.funding_settlement.is_some()
+                && !journal
+                    .user_can_administer_room(user_id, &execution.room_id)
+                    .await
+                    .unwrap_or(false)
+            {
+                visible.clearing_events.clear();
+                for event in &execution.clearing_events {
+                    let id = match event {
+                        ClearingEventSummary::PerpFundingSettled { account_id, .. }
+                        | ClearingEventSummary::PerpMarginStatusChanged { account_id, .. } => {
+                            *account_id
+                        }
+                        _ => continue,
+                    };
+                    if journal
+                        .user_can_access_account(user_id, &execution.room_id, id)
+                        .await
+                        .unwrap_or(false)
+                    {
+                        visible.clearing_events.push(event.clone());
+                    }
+                }
+                visible.clearing_event_count = visible.clearing_events.len();
+            }
+            Some(UserStreamEvent {
+                api_version: "http.v1".to_string(),
+                stream: "private".to_string(),
+                stream_seq,
+                command_seq: Some(execution.command_seq),
+                kind: "execution".to_string(),
+                payload: serde_json::to_value(visible).unwrap_or_else(|_| serde_json::json!({})),
+            })
+        }
+        StreamScope::Public => None,
+    }
+}
+
+fn event_kind_name(event: &EventSummary) -> &'static str {
+    match event {
+        EventSummary::OrderAccepted { .. } => "order_accepted",
+        EventSummary::OrderRejected { .. } => "order_rejected",
+        EventSummary::RiskRejected { .. } => "risk_rejected",
+        EventSummary::TradePrinted { .. } => "trade_printed",
+        EventSummary::OrderPartiallyFilled { .. } => "order_partially_filled",
+        EventSummary::OrderFilled { .. } => "order_filled",
+        EventSummary::OrderRested { .. } => "order_rested",
+        EventSummary::OrderExpired { .. } => "order_expired",
+        EventSummary::OrderCanceled { .. } => "order_canceled",
+        EventSummary::CancelRejected { .. } => "cancel_rejected",
+        EventSummary::OrderAmended { .. } => "order_amended",
+        EventSummary::AmendRejected { .. } => "amend_rejected",
+    }
+}
+
+async fn user_can_see_private_execution(
+    execution: &RoomExecutionSummary,
+    user_id: &str,
+    journal: &JournalCoordinator,
+) -> bool {
+    if journal
+        .user_can_administer_room(user_id, &execution.room_id)
+        .await
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    if let Some(account_id) = execution.submit_account_id
+        && journal
+            .user_can_access_account(user_id, &execution.room_id, account_id)
+            .await
+            .unwrap_or(false)
+    {
+        return true;
+    }
+    let mut accounts = Vec::new();
+    for event in &execution.events {
+        if let EventSummary::TradePrinted {
+            maker_account_id,
+            taker_account_id,
+            ..
+        } = event
+        {
+            accounts.push(*maker_account_id);
+            accounts.push(*taker_account_id);
+        }
+    }
+    for clearing in &execution.clearing_events {
+        match clearing {
+            ClearingEventSummary::PerpFundingSettled { account_id, .. } => {
+                accounts.push(*account_id)
+            }
+            ClearingEventSummary::SpotTradeSettled {
+                buyer_account_id,
+                seller_account_id,
+                ..
+            }
+            | ClearingEventSummary::PerpTradeSettled {
+                buyer_account_id,
+                seller_account_id,
+                ..
+            } => {
+                accounts.push(*buyer_account_id);
+                accounts.push(*seller_account_id);
+            }
+            _ => {}
+        }
+    }
+    for account_id in accounts {
+        if journal
+            .user_can_access_account(user_id, &execution.room_id, account_id)
+            .await
+            .unwrap_or(false)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 async fn account_snapshots(
@@ -3730,7 +5720,7 @@ async fn account_snapshots_response(
     instrument_id: Option<InstrumentId>,
 ) -> ApiResult<AccountSnapshots> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     let instrument_id = match instrument_id {
         Some(instrument_id) => instrument_id,
         None => state
@@ -3752,7 +5742,7 @@ async fn venue_account_snapshots(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomVenueAccountsResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     state
         .rooms
         .venue_account_snapshots(&room_id)
@@ -3771,7 +5761,7 @@ async fn venue_account_snapshots_by_venue(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomVenueAccountsByVenueResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     state
         .rooms
         .venue_account_snapshots_by_venue(&room_id)
@@ -3790,7 +5780,7 @@ async fn room_portfolios(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomPortfoliosResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     state
         .rooms
         .portfolio_snapshots(&room_id)
@@ -3809,7 +5799,7 @@ async fn room_asset_ledger(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomAssetLedgerResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     state
         .rooms
         .asset_ledger(&room_id)
@@ -3828,7 +5818,7 @@ async fn room_net_worth(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomNetWorthSnapshot> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     state
         .rooms
         .net_worth_snapshot(&room_id)
@@ -3842,7 +5832,7 @@ async fn room_clock(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomClockResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Room).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     state
         .rooms
         .clock(&room_id)
@@ -3862,26 +5852,68 @@ async fn advance_room_clock(
     Json(request): Json<AdvanceClockRequest>,
 ) -> ApiResult<AdvanceClockResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let user_id = {
+        let app = lock_room_state(&state, &room_id).await?;
+        current_user_id(&headers, &app.auth_policy)?
+    };
+    let idempotency_key = request_idempotency_key(&headers)?;
+    let fingerprint = control_fingerprint(
+        "clock/advance",
+        serde_json::json!({ "steps": request.steps }),
+    );
     run_durable_state_transaction(state.clone(), async move {
-    let mut state = lock_state(&state).await?;
+    let mut state = lock_room_state(&state, &room_id).await?;
+    if let Some(key) = idempotency_key.as_deref()
+        && let Some(replayed) =
+            load_control_replay(&state, &user_id, &room_id, key, &fingerprint).await?
+    {
+        return Ok(Json(replayed));
+    }
     let command_cursor = next_persisted_command_cursor(&state, &room_id)
         .map_err(api_error_from_journal)?;
     let mut candidate_rooms = state.rooms.clone();
     let previous_history_len = candidate_rooms
-        .execution_history(&room_id)
-        .map_err(api_error_from_room)?
-        .len();
+        .execution_history_len(&room_id)
+        .map_err(api_error_from_room)?;
     let completed_transfers = candidate_rooms
         .advance_clock(&room_id, request.steps)
         .map_err(api_error_from_room)?;
     let clock = candidate_rooms
         .clock(&room_id)
         .map_err(api_error_from_room)?;
-    let execution_records = candidate_rooms
-        .execution_history(&room_id)
-        .map_err(api_error_from_room)?
+    let records = completed_transfers
         .iter()
-        .skip(previous_history_len)
+        .cloned()
+        .map(|transfer| JournalTransfer::recorded(room_id.clone(), transfer))
+        .collect::<Vec<_>>();
+    let training_run_id = state
+        .training_runs
+        .values()
+        .find(|run| run.spec.room_id == room_id)
+        .map(|run| run.spec.run_id.clone());
+    if let Some(run_id) = training_run_id.as_ref()
+        && let Some(mut run) = state.training_runs.get(run_id).cloned()
+    {
+        let new_executions = candidate_rooms
+            .execution_history_from(&room_id, previous_history_len)
+            .map_err(api_error_from_room)?
+            .cloned()
+            .collect::<Vec<_>>();
+        for execution in &new_executions {
+            apply_training_execution(&mut run, execution, None, execution_account_id(execution));
+        }
+        for _ in 0..request.steps {
+            run.on_step();
+            if run.is_finished() {
+                break;
+            }
+        }
+        settle_training_residuals(&mut candidate_rooms, &mut run)?;
+        state.training_runs.insert(run_id.clone(), run);
+    }
+    let execution_records = candidate_rooms
+        .execution_history_from(&room_id, previous_history_len)
+        .map_err(api_error_from_room)?
         .map(|execution| {
             command_from_actor_execution(execution)
                 .map(|command| JournalExecution::system(command, execution.clone()))
@@ -3907,27 +5939,47 @@ async fn advance_room_clock(
                 format!("room {room_id} disappeared while advancing its clock"),
             )
         })?;
-    let records = completed_transfers
-        .iter()
-        .cloned()
-        .map(|transfer| JournalTransfer::recorded(room_id.clone(), transfer))
-        .collect::<Vec<_>>();
-    state
-        .append_room_mutation(
-            &PendingJournalMutation::new(
+    let response = AdvanceClockResponse {
+        room_id: room_id.clone(),
+        clock,
+        completed_transfers: completed_transfers.clone(),
+    };
+    let record = idempotency_key
+        .as_ref()
+        .map(|key| {
+            control_record(
+                user_id.clone(),
                 room_id.clone(),
-                command_cursor,
-                RoomMutation::ClockAdvanced {
-                    steps: request.steps,
-                    completed_transfers: completed_transfers.clone(),
-                },
-            ),
-            &execution_records,
-            &records,
-            Some(&snapshot),
-        )
-        .await
-        .map_err(api_error_from_journal)?;
+                key.clone(),
+                fingerprint.clone(),
+                &response,
+            )
+        })
+        .transpose()?;
+    let pending = PendingJournalMutation::new(
+        room_id.clone(),
+        command_cursor,
+        RoomMutation::ClockAdvanced {
+            steps: request.steps,
+            completed_transfers: completed_transfers.clone(),
+        },
+    );
+    let pending = match record {
+        Some(record) => pending.with_control_idempotency(record),
+        None => pending,
+    };
+    if let Some(replay_json) =
+        append_control_mutation(&mut state, pending, &execution_records, &records, Some(&snapshot))
+            .await?
+    {
+        let replayed = serde_json::from_value(replay_json).map_err(api_error_from_json)?;
+        return Ok(Json(replayed));
+    }
+    if let Some(run_id) = training_run_id
+        && let Some(run) = state.training_runs.get(&run_id).cloned()
+    {
+        persist_training_progress(&mut state, &run, &[]).await?;
+    }
     state.append_room_executions(
         &room_id,
         execution_records
@@ -3937,13 +5989,30 @@ async fn advance_room_clock(
     );
     state.rooms = candidate_rooms;
 
-    Ok(Json(AdvanceClockResponse {
-        room_id,
-        clock,
-        completed_transfers,
-    }))
+    Ok(Json(response))
     })
     .await
+}
+
+async fn manual_room_step(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    Path(room_id): Path<String>,
+) -> ApiResult<exchange_core::SchedulerState> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let user_id = {
+        let app = lock_room_state(&state, &room_id).await?;
+        current_user_id(&headers, &app.auth_policy)?
+    };
+    let idempotency_key = request_idempotency_key(&headers)?;
+    let fingerprint = control_fingerprint("clock/step", serde_json::json!({}));
+    let control = idempotency_key.map(|key| ControlIdempotencyIntent {
+        user_id,
+        key,
+        fingerprint,
+    });
+    let stepped = commit_scheduler_step(state, room_id, None, true, control).await?;
+    Ok(Json(stepped))
 }
 
 async fn room_transfers(
@@ -3980,7 +6049,8 @@ async fn submit_deposit(
     )
     .await?;
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
+        let mut state = lock_room_state(&state, &room_id).await?;
+        reject_trainee_transfer(&state, &room_id, request.account_id)?;
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
         let venue_id = request.venue_id.clone();
@@ -4047,7 +6117,8 @@ async fn submit_withdrawal(
     )
     .await?;
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
+        let mut state = lock_room_state(&state, &room_id).await?;
+        reject_trainee_transfer(&state, &room_id, request.account_id)?;
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
         let venue_id = request.venue_id.clone();
@@ -4114,7 +6185,8 @@ async fn submit_venue_to_venue_transfer(
     )
     .await?;
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
+        let mut state = lock_room_state(&state, &room_id).await?;
+        reject_trainee_transfer(&state, &room_id, request.account_id)?;
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
         let from_venue_id = request.from_venue_id.clone();
@@ -4202,12 +6274,11 @@ async fn set_mark_price_for_instrument(
 ) -> ApiResult<RoomExecutionSummary> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
+        let mut state = lock_room_state(&state, &room_id).await?;
         let mut candidate_rooms = state.rooms.clone();
         let previous_history_len = candidate_rooms
-            .execution_history(&room_id)
-            .map_err(api_error_from_room)?
-            .len();
+            .execution_history_len(&room_id)
+            .map_err(api_error_from_room)?;
         let command = Command::SetMarkPrice(SetMarkPrice {
             price_tick: request.price_tick,
         });
@@ -4240,16 +6311,25 @@ async fn submit_order_response(
     instrument_id: Option<InstrumentId>,
     request: SubmitOrderRequest,
 ) -> ApiResult<OrderResponse> {
-    let authorization = authorize_room_read(
+    let _authorization = authorize_room_read(
         &state,
         &headers,
         &room_id,
         RoomReadAccess::Account(request.account_id),
     )
     .await?;
+    if let Some(reason) = order_action_precision_error(&request.action) {
+        return Err(api_error(StatusCode::BAD_REQUEST, reason));
+    }
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
-        let user_id = authorization.user_id;
+        let mut state = lock_room_state(&state, &room_id).await?;
+        let user_id = current_user_id(&headers,&state.auth_policy)?;
+        competition::guard_order(&state,&room_id,&user_id,request.account_id)?;
+        let is_admin = state
+            .journal
+            .user_can_administer_room(&user_id, &room_id)
+            .await
+            .map_err(api_error_from_journal)?;
         let idempotency_key = request_idempotency_key(&headers)?;
         let instrument_id = instrument_id.or_else(|| request.instrument_id.clone());
         let request_fingerprint = serde_json::to_string(&(instrument_id.as_deref(), &request))
@@ -4281,7 +6361,29 @@ async fn submit_order_response(
                 existing.execution,
             )));
         }
-        let first_order_id = state.next_order_id;
+        let quota_step = if is_admin {
+            None
+        } else {
+            let step = state
+                .rooms
+                .clock(&room_id)
+                .map_err(api_error_from_room)?
+                .step();
+            let count = state
+                .journal
+                .external_action_count(&user_id, &room_id, step)
+                .await
+                .map_err(api_error_from_journal)?;
+            if count >= EXTERNAL_ACTIONS_PER_STEP {
+                return Err(api_error(
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "external action quota exceeded for this simulation step",
+                ));
+            }
+            Some(step)
+        };
+        let mut order_ids = state.reserve_order_ids(u64::from(order_action_allocates_id(&request.action)))?;
+        let first_order_id = order_ids.start;
         if order_action_allocates_id(&request.action)
             && first_order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE
         {
@@ -4290,16 +6392,50 @@ async fn submit_order_response(
                 "API order-id range is exhausted",
             ));
         }
+        let order_side = order_action_side(&request.action);
+        if let Some(run) = state
+            .training_runs
+            .values()
+            .find(|run| run.spec.room_id == room_id)
+        {
+            if !run.allows_trainee_action(request.account_id, order_side) {
+                return Err(api_error(
+                    StatusCode::CONFLICT,
+                    format!("training run {} does not allow this action", run.spec.run_id),
+                ));
+            }
+            if request.account_id == run.spec.trainee_account_id
+                && let Some(qty) = order_action_qty(&request.action)
+                && qty > run.remaining_buy_capacity()
+            {
+                return Err(api_error(
+                    StatusCode::CONFLICT,
+                    "order would exceed remaining training buy capacity".to_string(),
+                ));
+            }
+        }
         let mut candidate_rooms = state.rooms.clone();
         let previous_history_len = candidate_rooms
-            .execution_history(&room_id)
-            .map_err(api_error_from_room)?
-            .len();
+            .execution_history_len(&room_id)
+            .map_err(api_error_from_room)?;
+        let observe_instrument = instrument_id
+            .clone()
+            .or_else(|| {
+                candidate_rooms
+                    .room(&room_id)
+                    .ok()
+                    .map(|room| room.primary_instrument_id().to_string())
+            });
+        let book_before = observe_instrument.as_deref().and_then(|instrument_id| {
+            candidate_rooms
+                .book_snapshot_for(&room_id, instrument_id)
+                .ok()
+        });
         let mut gateway = OrderGateway::new(&mut candidate_rooms, first_order_id);
         let execution = gateway
             .submit_action(GatewayRequest {
                 participant_id: request.participant_id.clone(),
-                room_id,
+                room_id: room_id.clone(),
                 instrument_id,
                 account_id: request.account_id,
                 action: request.action.clone(),
@@ -4307,6 +6443,18 @@ async fn submit_order_response(
             .map_err(|error| api_error_from_room(error.into_room_error()))?;
 
         let next_order_id = gateway.next_order_id();
+        if let Some(run) = state
+            .training_runs
+            .values_mut()
+            .find(|run| run.spec.room_id == room_id)
+        {
+            apply_training_execution(
+                run,
+                &execution.execution,
+                book_before.as_ref(),
+                Some(request.account_id),
+            );
+        }
         let response = OrderResponse::from_gateway_execution(
             request.participant_id,
             request.account_id,
@@ -4321,12 +6469,27 @@ async fn submit_order_response(
         );
         if let Some(idempotency_key) = idempotency_key {
             journal_record = journal_record.with_idempotency(
-                user_id,
+                user_id.clone(),
                 idempotency_key,
                 request_fingerprint,
             );
         }
+        if let Some(step) = quota_step {
+            journal_record = journal_record.with_quota(user_id.clone(), step);
+        }
         let journal_room_id = journal_record.room_id.clone();
+        let training_run_id = state
+            .training_runs
+            .values()
+            .find(|run| run.spec.room_id == room_id)
+            .map(|run| run.spec.run_id.clone());
+        let mut settled_run = None;
+        if let Some(run_id) = training_run_id.as_ref()
+            && let Some(mut run) = state.training_runs.get(run_id).cloned()
+        {
+            settle_training_residuals(&mut candidate_rooms, &mut run)?;
+            settled_run = Some((run_id.clone(), run));
+        }
         journal_new_executions(
             &mut state,
             &candidate_rooms,
@@ -4336,12 +6499,312 @@ async fn submit_order_response(
         )
         .await
         .map_err(api_error_from_journal)?;
+        order_ids.commit(next_order_id);
+        if let Some((_, run)) = settled_run {
+            persist_training_progress(&mut state, &run, &[]).await?;
+        }
         state.rooms = candidate_rooms;
         state.next_order_id = next_order_id;
 
         Ok(Json(response))
     })
     .await
+}
+
+fn order_action_side(action: &OrderAction) -> Option<exchange_core::Side> {
+    match action {
+        OrderAction::PlaceBracket { side, .. }
+        | OrderAction::PlaceUnboundedMarket { side, .. }
+        | OrderAction::PlaceProtected { side, .. }
+        | OrderAction::PlaceLimit { side, .. }
+        | OrderAction::PlaceMarket { side, .. }
+        | OrderAction::PlacePostOnly { side, .. }
+        | OrderAction::PlaceImmediateOrCancel { side, .. }
+        | OrderAction::PlaceFillOrKill { side, .. }
+        | OrderAction::PlaceReduceOnlyMarket { side, .. }
+        | OrderAction::PlaceReduceOnlyImmediateOrCancel { side, .. }
+        | OrderAction::PlaceReduceOnlyFillOrKill { side, .. } => Some(*side),
+        OrderAction::SetConditional { .. }
+        | OrderAction::SetPositionProtection { .. }
+        | OrderAction::Cancel { .. }
+        | OrderAction::Amend { .. } => None,
+    }
+}
+
+fn order_action_qty(action: &OrderAction) -> Option<u64> {
+    match action {
+        OrderAction::PlaceBracket { qty, .. }
+        | OrderAction::PlaceUnboundedMarket { qty, .. }
+        | OrderAction::PlaceProtected { qty, .. }
+        | OrderAction::PlaceLimit { qty, .. }
+        | OrderAction::PlaceMarket { qty, .. }
+        | OrderAction::PlacePostOnly { qty, .. }
+        | OrderAction::PlaceImmediateOrCancel { qty, .. }
+        | OrderAction::PlaceFillOrKill { qty, .. }
+        | OrderAction::PlaceReduceOnlyMarket { qty, .. }
+        | OrderAction::PlaceReduceOnlyImmediateOrCancel { qty, .. }
+        | OrderAction::PlaceReduceOnlyFillOrKill { qty, .. } => Some(*qty),
+        OrderAction::SetConditional { .. }
+        | OrderAction::SetPositionProtection { .. }
+        | OrderAction::Cancel { .. }
+        | OrderAction::Amend { .. } => None,
+    }
+}
+
+fn order_action_precision_error(action: &OrderAction) -> Option<String> {
+    let qty = order_action_qty(action);
+    if qty == Some(0) {
+        return Some("qty must be a positive integer".to_string());
+    }
+    let price_tick = match action {
+        OrderAction::PlaceBracket { price_tick, .. } => *price_tick,
+        OrderAction::SetConditional { .. } | OrderAction::SetPositionProtection { .. } => None,
+        OrderAction::PlaceProtected { price_tick, .. }
+        | OrderAction::PlaceLimit { price_tick, .. }
+        | OrderAction::PlacePostOnly { price_tick, .. } => Some(*price_tick),
+        OrderAction::PlaceImmediateOrCancel { price_tick, .. }
+        | OrderAction::PlaceFillOrKill { price_tick, .. }
+        | OrderAction::PlaceReduceOnlyImmediateOrCancel { price_tick, .. }
+        | OrderAction::PlaceReduceOnlyFillOrKill { price_tick, .. } => *price_tick,
+        OrderAction::Amend {
+            price_tick, qty, ..
+        } => {
+            if *qty == Some(0) {
+                return Some("qty must be a positive integer".to_string());
+            }
+            *price_tick
+        }
+        OrderAction::PlaceUnboundedMarket { .. }
+        | OrderAction::PlaceMarket { .. }
+        | OrderAction::PlaceReduceOnlyMarket { .. }
+        | OrderAction::Cancel { .. } => None,
+    };
+    if price_tick.is_some_and(|tick| tick <= 0) {
+        return Some("price_tick must be a positive integer".to_string());
+    }
+    None
+}
+
+fn reject_trainee_transfer(
+    state: &AppState,
+    room_id: &str,
+    account_id: AccountId,
+) -> Result<(), ApiError> {
+    if let Some(run) = state
+        .training_runs
+        .values()
+        .find(|run| run.spec.room_id == room_id)
+        && !run.allows_trainee_transfer(account_id)
+    {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            format!(
+                "training run {} does not allow transfers for trainee account {account_id}",
+                run.spec.run_id
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn apply_training_execution(
+    run: &mut exchange_core::TrainingRun,
+    execution: &ActorExecution,
+    book_before: Option<&BookSnapshot>,
+    submitter_account: Option<AccountId>,
+) {
+    let trainee = run.spec.trainee_account_id;
+    let submitter = submitter_account.or_else(|| new_order_account_id(execution));
+    if matches!(execution.result, ActorExecutionResult::Rejected(_)) {
+        if submitter == Some(trainee) {
+            run.record_reject();
+        }
+        return;
+    }
+    let fees = training_fees_by_trade(execution, trainee);
+    for event in execution_events(execution) {
+        match event {
+            Event::OrderRested { remaining_qty, .. }
+                if submitter == Some(trainee)
+                    && new_order_side(execution) == Some(exchange_core::Side::Buy) =>
+            {
+                run.record_open_buy(*remaining_qty);
+            }
+            Event::OrderCanceled { remaining_qty, .. } if submitter == Some(trainee) => {
+                run.record_cancel(*remaining_qty);
+            }
+            Event::TradePrinted(trade) => {
+                let trainee_order = if trade.taker_account_id == trainee {
+                    Some(trade.taker_order_id)
+                } else if trade.maker_account_id == trainee {
+                    Some(trade.maker_order_id)
+                } else {
+                    None
+                };
+                if let Some(order_id) = trainee_order {
+                    let fee = fees.get(&trade.trade_id).copied().unwrap_or(0);
+                    run.record_fill_evidence(exchange_core::TrainingFill {
+                        price_tick: trade.price_tick,
+                        qty: trade.qty,
+                        fee,
+                        order_id: Some(order_id),
+                        command_seq: Some(execution.command_seq),
+                        book_before: book_before.cloned(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn new_order_account_id(execution: &ActorExecution) -> Option<AccountId> {
+    match &execution.result {
+        ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => result
+            .command
+            .command
+            .new_order()
+            .map(|order| order.account_id),
+        ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => result
+            .command
+            .command
+            .new_order()
+            .map(|order| order.account_id),
+        ActorExecutionResult::Rejected(_) => None,
+    }
+}
+
+fn new_order_side(execution: &ActorExecution) -> Option<exchange_core::Side> {
+    match &execution.result {
+        ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
+            result.command.command.new_order().map(|order| order.side)
+        }
+        ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
+            result.command.command.new_order().map(|order| order.side)
+        }
+        ActorExecutionResult::Rejected(_) => None,
+    }
+}
+
+fn execution_events(execution: &ActorExecution) -> Vec<&Event> {
+    match &execution.result {
+        ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
+            result.events.iter().map(|record| &record.event).collect()
+        }
+        ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
+            result.events.iter().map(|record| &record.event).collect()
+        }
+        ActorExecutionResult::Rejected(_) => Vec::new(),
+    }
+}
+
+fn training_fees_by_trade(execution: &ActorExecution, trainee: AccountId) -> BTreeMap<u64, i128> {
+    let mut fees = BTreeMap::new();
+    match &execution.result {
+        ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
+            for event in &result.clearing_events {
+                let exchange_core::SpotClearingEvent::TradeSettled {
+                    trade_id,
+                    buyer_account_id,
+                    seller_account_id,
+                    buyer_fee,
+                    seller_fee,
+                    ..
+                } = event;
+                if *buyer_account_id == trainee {
+                    fees.insert(*trade_id, *buyer_fee);
+                } else if *seller_account_id == trainee {
+                    fees.insert(*trade_id, *seller_fee);
+                }
+            }
+        }
+        ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
+            for event in &result.clearing_events {
+                if let exchange_core::PerpClearingEvent::TradeSettled {
+                    trade_id,
+                    buyer_account_id,
+                    seller_account_id,
+                    buyer_fee,
+                    seller_fee,
+                    ..
+                } = event
+                {
+                    if *buyer_account_id == trainee {
+                        fees.insert(*trade_id, *buyer_fee);
+                    } else if *seller_account_id == trainee {
+                        fees.insert(*trade_id, *seller_fee);
+                    }
+                }
+            }
+        }
+        ActorExecutionResult::Rejected(_) => {}
+    }
+    fees
+}
+
+fn settle_training_residuals(
+    rooms: &mut RoomManager,
+    run: &mut exchange_core::TrainingRun,
+) -> Result<Vec<ActorExecution>, ApiError> {
+    if !run.is_finished() {
+        return Ok(Vec::new());
+    }
+    let instrument_id = rooms
+        .room(&run.spec.room_id)
+        .map_err(api_error_from_room)?
+        .primary_instrument_id()
+        .to_string();
+    let mut orders = rooms
+        .resting_orders_for_account(
+            &run.spec.room_id,
+            &instrument_id,
+            run.spec.trainee_account_id,
+        )
+        .map_err(api_error_from_room)?;
+    orders.sort_by_key(|order| order.order_id);
+    let mut executions = Vec::new();
+    for order in orders {
+        let execution = rooms
+            .apply_to_instrument(
+                &run.spec.room_id,
+                &instrument_id,
+                Command::CancelOrder(CancelOrder {
+                    order_id: order.order_id,
+                }),
+            )
+            .map_err(api_error_from_room)?;
+        run.record_cancel(order.remaining_qty);
+        executions.push(execution);
+    }
+    Ok(executions)
+}
+
+async fn persist_training_progress(
+    state: &mut AppState,
+    run: &exchange_core::TrainingRun,
+    execution_records: &[JournalExecution],
+) -> Result<(), ApiError> {
+    let cursor =
+        next_persisted_command_cursor(state, &run.spec.room_id).map_err(api_error_from_journal)?;
+    state
+        .append_room_mutation(
+            &PendingJournalMutation::new(
+                run.spec.room_id.clone(),
+                cursor,
+                RoomMutation::TrainingProgress {
+                    run: Box::new(run.clone()),
+                },
+            ),
+            execution_records,
+            &[],
+            None,
+        )
+        .await
+        .map_err(api_error_from_journal)?;
+    state
+        .training_runs
+        .insert(run.spec.run_id.clone(), run.clone());
+    Ok(())
 }
 
 fn order_action_allocates_id(action: &OrderAction) -> bool {
@@ -4356,33 +6819,8 @@ async fn pause_room(
     headers: HeaderMap,
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomStatusResponse> {
-    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
-        let command_cursor =
-            next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
-        let mut candidate_rooms = state.rooms.clone();
-        candidate_rooms
-            .pause_room(&room_id)
-            .map_err(api_error_from_room)?;
-        let status = candidate_rooms
-            .status(&room_id)
-            .map_err(api_error_from_room)?;
-        state
-            .append_room_mutation(
-                &PendingJournalMutation::new(
-                    room_id.clone(),
-                    command_cursor,
-                    RoomMutation::StatusChanged { status },
-                ),
-                &[],
-                &[],
-                None,
-            )
-            .await
-            .map_err(api_error_from_journal)?;
-        state.rooms = candidate_rooms;
-        Ok(Json(RoomStatusResponse { room_id, status }))
+    apply_room_status_control(state, headers, room_id, "pause", |rooms, room_id| {
+        rooms.pause_room(room_id)
     })
     .await
 }
@@ -4392,33 +6830,8 @@ async fn resume_room(
     headers: HeaderMap,
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomStatusResponse> {
-    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
-        let command_cursor =
-            next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
-        let mut candidate_rooms = state.rooms.clone();
-        candidate_rooms
-            .resume_room(&room_id)
-            .map_err(api_error_from_room)?;
-        let status = candidate_rooms
-            .status(&room_id)
-            .map_err(api_error_from_room)?;
-        state
-            .append_room_mutation(
-                &PendingJournalMutation::new(
-                    room_id.clone(),
-                    command_cursor,
-                    RoomMutation::StatusChanged { status },
-                ),
-                &[],
-                &[],
-                None,
-            )
-            .await
-            .map_err(api_error_from_journal)?;
-        state.rooms = candidate_rooms;
-        Ok(Json(RoomStatusResponse { room_id, status }))
+    apply_room_status_control(state, headers, room_id, "resume", |rooms, room_id| {
+        rooms.resume_room(room_id)
     })
     .await
 }
@@ -4428,41 +6841,127 @@ async fn close_room(
     headers: HeaderMap,
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomStatusResponse> {
-    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
-        let command_cursor =
-            next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
-        let mut candidate_rooms = state.rooms.clone();
-        candidate_rooms
-            .close_room(&room_id)
-            .map_err(api_error_from_room)?;
-        let status = candidate_rooms
-            .status(&room_id)
-            .map_err(api_error_from_room)?;
-        state
-            .append_room_mutation(
-                &PendingJournalMutation::new(
-                    room_id.clone(),
-                    command_cursor,
-                    RoomMutation::StatusChanged { status },
-                ),
-                &[],
-                &[],
-                None,
-            )
-            .await
-            .map_err(api_error_from_journal)?;
-        state.rooms = candidate_rooms;
-        Ok(Json(RoomStatusResponse { room_id, status }))
+    apply_room_status_control(state, headers, room_id, "close", |rooms, room_id| {
+        rooms.close_room(room_id)
     })
     .await
 }
 
-async fn lock_state(
-    state: &SharedState,
-) -> Result<tokio::sync::MutexGuard<'_, AppState>, (StatusCode, Json<ErrorResponse>)> {
+async fn apply_room_status_control(
+    state: SharedState,
+    headers: HeaderMap,
+    room_id: String,
+    operation: &'static str,
+    apply: impl Fn(&mut exchange_core::RoomManager, &str) -> Result<(), RoomManagerError>
+    + Send
+    + 'static,
+) -> ApiResult<RoomStatusResponse> {
+    authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    let user_id = {
+        let app = lock_room_state(&state, &room_id).await?;
+        current_user_id(&headers, &app.auth_policy)?
+    };
+    let idempotency_key = request_idempotency_key(&headers)?;
+    let fingerprint = control_fingerprint(operation, serde_json::json!({}));
+    run_durable_state_transaction(state.clone(), async move {
+        let mut state = lock_room_state(&state, &room_id).await?;
+        competition::guard_management(&state, &room_id)?;
+        if let Some(key) = idempotency_key.as_deref()
+            && let Some(replayed) =
+                load_control_replay(&state, &user_id, &room_id, key, &fingerprint).await?
+        {
+            return Ok(Json(replayed));
+        }
+        let command_cursor =
+            next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
+        let mut candidate_rooms = state.rooms.clone();
+        let mut settle_records = Vec::new();
+        let mut settled_runs = Vec::new();
+        if operation == "close" {
+            let run_ids = state
+                .training_runs
+                .values()
+                .filter(|run| run.spec.room_id == room_id)
+                .map(|run| run.spec.run_id.clone())
+                .collect::<Vec<_>>();
+            for run_id in run_ids {
+                let Some(mut run) = state.training_runs.get(&run_id).cloned() else {
+                    continue;
+                };
+                let _ = run.abort();
+                let cancels = settle_training_residuals(&mut candidate_rooms, &mut run)?;
+                settle_records.extend(cancels.into_iter().filter_map(|execution| {
+                    command_from_actor_execution(&execution)
+                        .map(|command| JournalExecution::system(command, execution))
+                }));
+                settled_runs.push(run);
+            }
+        }
+        apply(&mut candidate_rooms, &room_id).map_err(api_error_from_room)?;
+        let status = candidate_rooms
+            .status(&room_id)
+            .map_err(api_error_from_room)?;
+        let response = RoomStatusResponse {
+            room_id: room_id.clone(),
+            status,
+        };
+        let record = idempotency_key
+            .as_ref()
+            .map(|key| {
+                control_record(
+                    user_id.clone(),
+                    room_id.clone(),
+                    key.clone(),
+                    fingerprint.clone(),
+                    &response,
+                )
+            })
+            .transpose()?;
+        let pending = PendingJournalMutation::new(
+            room_id.clone(),
+            command_cursor,
+            RoomMutation::StatusChanged { status },
+        );
+        let pending = match record {
+            Some(record) => pending.with_control_idempotency(record),
+            None => pending,
+        };
+        if let Some(replay_json) =
+            append_control_mutation(&mut state, pending, &settle_records, &[], None).await?
+        {
+            let replayed = serde_json::from_value(replay_json).map_err(api_error_from_json)?;
+            return Ok(Json(replayed));
+        }
+        if !settle_records.is_empty() {
+            state.append_room_executions(
+                &room_id,
+                settle_records
+                    .iter()
+                    .map(|record| record.execution.clone())
+                    .collect(),
+            );
+        }
+        for run in settled_runs {
+            persist_training_progress(&mut state, &run, &[]).await?;
+        }
+        if let Some(worker) = state.agent_workers.get(&room_id) {
+            worker.control.epoch.fetch_add(1, Ordering::AcqRel);
+        }
+        state.rooms = candidate_rooms;
+        Ok(Json(response))
+    })
+    .await
+}
+
+async fn lock_state(state: &SharedState) -> Result<room_runtime::StateGuard, ApiError> {
     Ok(state.app.lock().await)
+}
+
+async fn lock_room_state(
+    state: &SharedState,
+    room: &str,
+) -> Result<room_runtime::StateGuard, ApiError> {
+    Ok(state.app.lock_room(room).await)
 }
 
 /// Runs a durable state transition in a detached Tokio task.
@@ -4497,37 +6996,115 @@ where
     })?
 }
 
-fn start_agent_worker_for_room(
+async fn install_scheduler(
+    state: &mut AppState,
+    mut scheduler: exchange_core::SchedulerState,
+) -> Result<(), ApiError> {
+    let room_id = scheduler.room_id.clone();
+    scheduler.revision = state
+        .schedulers
+        .get(&room_id)
+        .map_or(0, |s| s.revision)
+        .checked_add(1)
+        .ok_or_else(|| api_error(StatusCode::CONFLICT, "scheduler revision exhausted"))?;
+    let cursor = next_persisted_command_cursor(state, &room_id).map_err(api_error_from_journal)?;
+    state
+        .append_room_mutation(
+            &PendingJournalMutation::new(
+                &room_id,
+                cursor,
+                RoomMutation::SchedulerProgress {
+                    clock_steps: 0,
+                    state: scheduler.clone(),
+                    training: None,
+                },
+            ),
+            &[],
+            &[],
+            None,
+        )
+        .await
+        .map_err(api_error_from_journal)?;
+    state.schedulers.insert(room_id, scheduler);
+    Ok(())
+}
+
+async fn start_agent_worker_for_room(
+    shared: &SharedState,
     state: &mut AppState,
     room_id: RoomId,
-    user_id: String,
     request: StartAgentsRequest,
 ) -> Result<AgentWorkerStatus, (StatusCode, Json<ErrorResponse>)> {
+    let _ = &state.base_url;
     state
         .room_lease_claim(&room_id)
         .map_err(api_error_from_journal)?;
-    validate_agent_templates(&room_id, &request.agents)?;
-
-    if let Some(worker) = state.agent_workers.remove(&room_id) {
-        worker.stop();
-    }
-    if request.agents.is_empty() {
-        return Ok(AgentWorkerStatus::stopped(room_id));
-    }
+    validate_agent_templates(&room_id, &request.agents, &state.bot_registry)?;
 
     let interval_ms = request
         .interval_ms
         .unwrap_or(DEFAULT_AGENT_INTERVAL_MS)
         .max(1);
-    let participant_ids = request
-        .agents
-        .iter()
-        .map(|template| template.participant_id().to_string())
-        .collect::<Vec<_>>();
+    let continuity = if !state.schedulers.contains_key(&room_id)
+        && state
+            .rooms
+            .execution_history_len(&room_id)
+            .map(|len| len != 0)
+            .unwrap_or(false)
+    {
+        exchange_core::AgentContinuity::LegacyNonContinuous
+    } else {
+        exchange_core::AgentContinuity::Continuous
+    };
+    let mut scheduler = if continuity == exchange_core::AgentContinuity::LegacyNonContinuous {
+        exchange_core::SchedulerState::legacy_non_continuous(
+            room_id.clone(),
+            request.agents.clone(),
+            exchange_core::SchedulerMode::Auto { interval_ms },
+        )
+    } else {
+        exchange_core::SchedulerState::new(
+            room_id.clone(),
+            request.agents.clone(),
+            exchange_core::SchedulerMode::Auto { interval_ms },
+        )
+    };
+    if let Some(existing) = state.schedulers.get(&room_id) {
+        if !matches!(
+            existing.phase,
+            exchange_core::SchedulerPhase::Idle
+                | exchange_core::SchedulerPhase::StepComplete { .. }
+        ) {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                "finish the pending manual scheduler step before starting live trading",
+            ));
+        }
+        if existing
+            .agents
+            .iter()
+            .map(|agent| &agent.template)
+            .eq(scheduler.agents.iter().map(|agent| &agent.template))
+        {
+            scheduler = existing.clone();
+            scheduler.mode = exchange_core::SchedulerMode::Auto { interval_ms };
+        } else {
+            for agent in &mut scheduler.agents {
+                if let Some(previous) = existing
+                    .agents
+                    .iter()
+                    .find(|previous| previous.template == agent.template)
+                {
+                    *agent = previous.clone();
+                }
+            }
+        }
+    }
+    scheduler.bots_enabled = true;
+    let participant_ids = scheduler.participant_ids();
     let worker = AgentWorkerHandle::spawn(
-        state.base_url.clone(),
+        shared.clone(),
         room_id.clone(),
-        user_id,
         request.agents,
         Duration::from_millis(interval_ms),
     )
@@ -4541,39 +7118,41 @@ fn start_agent_worker_for_room(
             }),
         )
     })?;
-    state.agent_workers.insert(room_id.clone(), worker);
+    install_scheduler(state, scheduler).await?;
+    if let Some(previous) = state.agent_workers.insert(room_id.clone(), worker) {
+        previous.stop();
+    }
 
+    let market_running = state.rooms.status(&room_id) == Ok(MarketStatus::Running);
     Ok(AgentWorkerStatus {
         room_id,
-        running: true,
+        running: !participant_ids.is_empty(),
+        market_running,
+        bot_errors: BTreeMap::new(),
         interval_ms,
         participants: participant_ids,
         last_error: None,
+        lifecycle: "running".to_string(),
     })
-}
-
-fn ensure_agent_workers_supported(
-    auth_policy: &AuthPolicy,
-) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
-    if auth_policy.requires_bearer_token() {
-        return Err(api_error(
-            StatusCode::CONFLICT,
-            "HTTP agent workers are available only in loopback local-development auth mode",
-        ));
-    }
-    Ok(())
 }
 
 fn validate_agent_templates(
     room_id: &str,
     templates: &[AgentTemplate],
+    registry: &exchange_core::BotRegistry,
 ) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let mut ids = BTreeSet::new();
     for template in templates {
-        let configured_room_id = match template {
-            AgentTemplate::NoiseTrader(config) => &config.participant.room_id,
-            AgentTemplate::DcaTrader(config) => &config.participant.room_id,
-            AgentTemplate::GridTrader(config) => &config.participant.room_id,
-        };
+        if !ids.insert(template.participant_id()) {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "duplicate participant id",
+            ));
+        }
+        registry
+            .validate_template(template)
+            .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+        let configured_room_id = &template.config().room_id;
         if configured_room_id != room_id {
             return Err(api_error(
                 StatusCode::BAD_REQUEST,
@@ -4584,16 +7163,28 @@ fn validate_agent_templates(
                 ),
             ));
         }
+        let instrument_id = template.config().instrument_id.as_deref();
+        if instrument_id.is_none() {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "agent {} must set participant.instrument_id; implicit primary-market routing is not allowed",
+                    template.participant_id()
+                ),
+            ));
+        }
     }
     Ok(())
 }
 
 fn agent_status_for_room(state: &AppState, room_id: &str) -> AgentWorkerStatus {
-    state
+    let mut status = state
         .agent_workers
         .get(room_id)
         .map(|worker| worker.status(room_id.to_string()))
-        .unwrap_or_else(|| AgentWorkerStatus::stopped(room_id.to_string()))
+        .unwrap_or_else(|| AgentWorkerStatus::stopped(room_id.to_string()));
+    status.market_running &= state.rooms.status(room_id) == Ok(MarketStatus::Running);
+    status
 }
 
 fn api_error(status: StatusCode, error: impl Into<String>) -> (StatusCode, Json<ErrorResponse>) {
@@ -4616,6 +7207,7 @@ fn api_error_from_room(error: RoomManagerError) -> (StatusCode, Json<ErrorRespon
         | RoomManagerError::Actor(_)
         | RoomManagerError::Scenario(_)
         | RoomManagerError::Simulation(_)
+        | RoomManagerError::Candle(_)
         | RoomManagerError::SystemOrderIdOverflow => StatusCode::BAD_REQUEST,
     };
 
@@ -4646,6 +7238,7 @@ fn api_error_from_journal(error: JournalError) -> (StatusCode, Json<ErrorRespons
         JournalError::RoomLeaseLost { .. } | JournalError::RoomLeaseNotOwned { .. } => {
             StatusCode::SERVICE_UNAVAILABLE
         }
+        JournalError::ExternalActionQuotaExceeded { .. } => StatusCode::TOO_MANY_REQUESTS,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     };
     let (code, room_owner) = match &error {
@@ -4687,6 +7280,11 @@ impl IntoRoomError for exchange_core::GatewayError {
     fn into_room_error(self) -> RoomManagerError {
         match self {
             Self::Room(error) => error,
+            Self::MissingInstrument => {
+                RoomManagerError::Actor(exchange_core::ActorRejectReason::InstrumentNotFound {
+                    instrument_id: String::new(),
+                })
+            }
         }
     }
 }
@@ -4758,6 +7356,7 @@ pub struct RoomEventStreamQuery {
     pub after_command_seq: Option<u64>,
     #[serde(default)]
     pub replay_from_start: bool,
+    pub scope: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -4765,6 +7364,7 @@ pub struct ProjectionQuery {
     pub instrument_id: Option<InstrumentId>,
     pub account_id: Option<AccountId>,
     pub limit: Option<usize>,
+    order_id: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -4889,6 +7489,8 @@ pub struct RoomExecutionSummary {
     pub room_id: String,
     #[serde(default)]
     pub instrument_id: Option<InstrumentId>,
+    #[serde(default)]
+    pub submit_account_id: Option<AccountId>,
     pub command_seq: u64,
     /// Authoritative simulation time. Legacy journal rows may not contain it.
     #[serde(default)]
@@ -4900,6 +7502,10 @@ pub struct RoomExecutionSummary {
     #[serde(default)]
     pub clearing_events: Vec<ClearingEventSummary>,
     pub clearing_event_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub price_updates: Vec<exchange_core::PerpPriceSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub funding_settlement: Option<exchange_core::FundingSettlement>,
     #[serde(skip)]
     clearing_events_omitted: bool,
 }
@@ -4909,6 +7515,8 @@ struct RoomExecutionSummaryPayload {
     room_id: String,
     #[serde(default)]
     instrument_id: Option<InstrumentId>,
+    #[serde(default)]
+    submit_account_id: Option<AccountId>,
     command_seq: u64,
     #[serde(default)]
     market_time_ms: Option<u64>,
@@ -4919,6 +7527,10 @@ struct RoomExecutionSummaryPayload {
     #[serde(default)]
     clearing_events: Vec<ClearingEventSummary>,
     clearing_event_count: usize,
+    #[serde(default)]
+    price_updates: Vec<exchange_core::PerpPriceSnapshot>,
+    #[serde(default)]
+    funding_settlement: Option<exchange_core::FundingSettlement>,
 }
 
 impl<'de> Deserialize<'de> for RoomExecutionSummary {
@@ -4934,6 +7546,7 @@ impl<'de> Deserialize<'de> for RoomExecutionSummary {
         Ok(Self {
             room_id: payload.room_id,
             instrument_id: payload.instrument_id,
+            submit_account_id: payload.submit_account_id,
             command_seq: payload.command_seq,
             market_time_ms: payload.market_time_ms,
             status: payload.status,
@@ -4942,6 +7555,8 @@ impl<'de> Deserialize<'de> for RoomExecutionSummary {
             events: payload.events,
             clearing_events: payload.clearing_events,
             clearing_event_count: payload.clearing_event_count,
+            price_updates: payload.price_updates,
+            funding_settlement: payload.funding_settlement,
             clearing_events_omitted,
         })
     }
@@ -4949,6 +7564,7 @@ impl<'de> Deserialize<'de> for RoomExecutionSummary {
 
 impl RoomExecutionSummary {
     pub(crate) fn from_execution(execution: ActorExecution) -> Self {
+        let submit_account_id = execution_account_id(&execution);
         let (accepted, reject_reason, events, clearing_events) = match execution.result {
             ActorExecutionResult::Accepted(market_execution) => {
                 let (events, clearing_events) = summarize_market_execution(market_execution);
@@ -4966,6 +7582,7 @@ impl RoomExecutionSummary {
         Self {
             room_id: execution.room_id,
             instrument_id: Some(execution.instrument_id),
+            submit_account_id,
             command_seq: execution.command_seq,
             market_time_ms: Some(execution.market_time_ms),
             status: execution.status,
@@ -4975,6 +7592,8 @@ impl RoomExecutionSummary {
             clearing_events,
             clearing_event_count,
             clearing_events_omitted: false,
+            price_updates: execution.price_updates,
+            funding_settlement: execution.funding_settlement,
         }
     }
 }
@@ -5010,12 +7629,18 @@ pub struct StartAgentsRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AgentWorkerStatus {
+    #[serde(default)]
+    pub market_running: bool,
+    #[serde(default)]
+    pub bot_errors: BTreeMap<String, String>,
     pub room_id: String,
     pub running: bool,
     pub interval_ms: u64,
     pub participants: Vec<ParticipantId>,
     #[serde(default)]
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub lifecycle: String,
 }
 
 impl AgentWorkerStatus {
@@ -5023,9 +7648,12 @@ impl AgentWorkerStatus {
         Self {
             room_id,
             running: false,
+            market_running: false,
+            bot_errors: BTreeMap::new(),
             interval_ms: 0,
             participants: Vec::new(),
             last_error: None,
+            lifecycle: "stopped".to_string(),
         }
     }
 }
@@ -5051,6 +7679,10 @@ pub struct OrderResponse {
     pub events: Vec<EventSummary>,
     pub clearing_events: Vec<ClearingEventSummary>,
     pub clearing_event_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub price_updates: Vec<exchange_core::PerpPriceSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub funding_settlement: Option<exchange_core::FundingSettlement>,
 }
 
 impl OrderResponse {
@@ -5085,6 +7717,8 @@ impl OrderResponse {
             events: summary.events,
             clearing_events: summary.clearing_events,
             clearing_event_count: summary.clearing_event_count,
+            price_updates: summary.price_updates,
+            funding_settlement: summary.funding_settlement,
         }
     }
 }
@@ -5122,12 +7756,32 @@ fn summarize_market_execution(
 
 fn reject_reason_to_string(reason: ActorRejectReason) -> String {
     match reason {
+        ActorRejectReason::InvalidPositionProtection => "invalid position protection: perpetual position/leg, positive tick-aligned TP/SL and available trigger price required".into(),
+        ActorRejectReason::InvalidOrderProtection => {
+            "invalid order protection: only resting orders accept an expiry".into()
+        }
+        ActorRejectReason::OrderProtectionExpired {
+            deadline_market_time_ms,
+            market_time_ms,
+        } => format!(
+            "order protection expired: market_time_ms={market_time_ms}, deadline_market_time_ms={deadline_market_time_ms}; refresh observations and reconsider"
+        ),
         ActorRejectReason::MarketPaused => "market paused".to_string(),
         ActorRejectReason::MarketClosed => "market closed".to_string(),
         ActorRejectReason::InstrumentNotFound { instrument_id } => {
             format!("instrument not found: {instrument_id}")
         }
         ActorRejectReason::WrongMarketKind => "wrong market kind".to_string(),
+        ActorRejectReason::PriceLinkNotReady => {
+            "spot index unavailable or stale; only reduce-only orders and cancellations are allowed"
+                .to_string()
+        }
+        ActorRejectReason::FundingManaged => {
+            "funding is managed by the simulation clock".to_string()
+        }
+        ActorRejectReason::LinkedMarkPriceManaged => {
+            "linked perpetual mark price is managed by its spot index".to_string()
+        }
         ActorRejectReason::VenueRule(reason) => format!("venue rule rejected: {reason:?}"),
         ActorRejectReason::Clearing(error) => format!("clearing error: {error:?}"),
     }
@@ -5214,6 +7868,14 @@ pub enum EventSummary {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type")]
 pub enum ClearingEventSummary {
+    PerpFundingSettled {
+        account_id: AccountId,
+        funding_time_ms: u64,
+        rate_ppm: i32,
+        #[serde(with = "json_i128")]
+        cash_delta: i128,
+        account: PerpAccountStateSummary,
+    },
     SpotTradeSettled {
         trade_id: u64,
         buyer_account_id: AccountId,
@@ -5302,6 +7964,8 @@ impl SpotAccountStateSummary {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PerpAccountStateSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hedge_positions: Option<Box<exchange_core::HedgePositions>>,
     pub account_id: AccountId,
     #[serde(with = "json_i128")]
     pub cash_balance: i128,
@@ -5337,6 +8001,8 @@ pub struct PerpAccountStateSummary {
     pub available_cash: i128,
     #[serde(with = "json_i128")]
     pub fees_paid: i128,
+    #[serde(default, with = "json_i128")]
+    pub funding_pnl: i128,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -5349,6 +8015,8 @@ pub struct PerpSocializedLossAllocationSummary {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PerpAutoDeleveragingAllocationSummary {
+    #[serde(default, skip_serializing_if = "exchange_core::PositionSide::is_both")]
+    pub position_side: exchange_core::PositionSide,
     pub account_id: AccountId,
     #[serde(with = "json_i128")]
     pub position_delta: i128,
@@ -5364,6 +8032,7 @@ pub struct PerpAutoDeleveragingAllocationSummary {
 impl PerpAccountStateSummary {
     fn from_snapshot(snapshot: PerpAccountSnapshot) -> Self {
         Self {
+            hedge_positions: snapshot.hedge_positions,
             account_id: snapshot.account_id,
             cash_balance: snapshot.cash_balance,
             position_qty: snapshot.position_qty,
@@ -5379,6 +8048,7 @@ impl PerpAccountStateSummary {
             reserved_margin: snapshot.reserved_margin,
             available_cash: snapshot.available_cash,
             fees_paid: snapshot.fees_paid,
+            funding_pnl: snapshot.funding_pnl,
         }
     }
 }
@@ -5414,6 +8084,19 @@ impl ClearingEventSummary {
 
     fn from_perp(event: PerpClearingEvent) -> Self {
         match event {
+            PerpClearingEvent::FundingSettled {
+                account_id,
+                funding_time_ms,
+                rate_ppm,
+                cash_delta,
+                snapshot,
+            } => Self::PerpFundingSettled {
+                account_id,
+                funding_time_ms,
+                rate_ppm,
+                cash_delta,
+                account: PerpAccountStateSummary::from_snapshot(snapshot),
+            },
             PerpClearingEvent::TradeSettled {
                 trade_id,
                 buyer_account_id,
@@ -5477,6 +8160,7 @@ impl ClearingEventSummary {
                 auto_deleveraging_allocations: auto_deleveraging_allocations
                     .into_iter()
                     .map(|allocation| PerpAutoDeleveragingAllocationSummary {
+                        position_side: allocation.position_side,
                         account_id: allocation.account_id,
                         position_delta: allocation.position_delta,
                         price_tick: allocation.price_tick,
@@ -5756,6 +8440,24 @@ impl HttpTradingClient {
         HttpRoomEventStream::connect(self.clone(), room_id, None, true)
     }
 
+    pub fn room_accounts(&self, room_id: &str) -> Result<AccountSnapshots, HttpTradingError> {
+        self.get_json(&format!("/rooms/{room_id}/accounts"))
+    }
+
+    pub fn room_ticker(&self, room_id: &str) -> Result<TickerResponse, HttpTradingError> {
+        self.get_json(&format!("/rooms/{room_id}/ticker"))
+    }
+
+    pub fn room_candles(
+        &self,
+        room_id: &str,
+        interval_ms: u64,
+    ) -> Result<CandleResponse, HttpTradingError> {
+        self.get_json(&format!(
+            "/rooms/{room_id}/candles?interval_ms={interval_ms}"
+        ))
+    }
+
     pub fn room_clock(&self, room_id: &str) -> Result<RoomClockResponse, HttpTradingError> {
         self.get_json(&format!("/rooms/{room_id}/clock"))
     }
@@ -5842,6 +8544,10 @@ impl HttpTradingClient {
         self.post_json(&format!("/rooms/{room_id}/close"), &())
     }
 
+    pub fn list_bots(&self) -> Result<Vec<exchange_core::BotDescriptor>, HttpTradingError> {
+        self.get_json("/bots")
+    }
+
     pub fn start_agents(
         &self,
         room_id: &str,
@@ -5856,6 +8562,96 @@ impl HttpTradingClient {
 
     pub fn stop_agents(&self, room_id: &str) -> Result<AgentWorkerStatus, HttpTradingError> {
         self.post_json(&format!("/rooms/{room_id}/agents/stop"), &())
+    }
+
+    pub fn start_training(
+        &self,
+        request: &StartTrainingRequest,
+    ) -> Result<TrainingRunResponse, HttpTradingError> {
+        self.post_json("/training/runs", request)
+    }
+
+    pub fn training_status(&self, run_id: &str) -> Result<TrainingRunResponse, HttpTradingError> {
+        self.get_json(&format!("/training/runs/{run_id}"))
+    }
+
+    pub fn abort_training(&self, run_id: &str) -> Result<TrainingRunResponse, HttpTradingError> {
+        self.post_json(&format!("/training/runs/{run_id}/abort"), &())
+    }
+
+    pub fn training_result(&self, run_id: &str) -> Result<TrainingRunResponse, HttpTradingError> {
+        self.get_json(&format!("/training/runs/{run_id}/result"))
+    }
+
+    pub fn training_report(
+        &self,
+        run_id: &str,
+    ) -> Result<TrainingReportResponse, HttpTradingError> {
+        self.get_json(&format!("/training/runs/{run_id}/report"))
+    }
+
+    pub fn upsert_room_member(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        role: &str,
+    ) -> Result<RoomMemberResponse, HttpTradingError> {
+        self.post_json(
+            &format!("/rooms/{room_id}/members"),
+            &RoomMemberRequest {
+                user_id: user_id.to_string(),
+                role: role.to_string(),
+            },
+        )
+    }
+
+    pub fn remove_room_member(
+        &self,
+        room_id: &str,
+        user_id: &str,
+    ) -> Result<RoomMemberResponse, HttpTradingError> {
+        self.post_json(
+            &format!("/rooms/{room_id}/members/{user_id}"),
+            &serde_json::json!({}),
+        )
+    }
+
+    pub fn assign_account_owner(
+        &self,
+        room_id: &str,
+        account_id: AccountId,
+        user_id: &str,
+    ) -> Result<AssignAccountResponse, HttpTradingError> {
+        self.post_json(
+            &format!("/rooms/{room_id}/accounts/{account_id}/owners"),
+            &AssignAccountRequest {
+                user_id: user_id.to_string(),
+            },
+        )
+    }
+
+    pub fn observe_room(
+        &self,
+        room_id: &str,
+        account_id: AccountId,
+        instrument_id: Option<&str>,
+    ) -> Result<ObservationResponse, HttpTradingError> {
+        let mut path = format!("/rooms/{room_id}/observe?account_id={account_id}");
+        if let Some(instrument_id) = instrument_id {
+            path.push_str(&format!("&instrument_id={instrument_id}"));
+        }
+        self.get_json(&path)
+    }
+
+    pub fn replay_room(
+        &self,
+        room_id: &str,
+        at_command_seq: Option<u64>,
+    ) -> Result<IsolatedReplayResponse, HttpTradingError> {
+        match at_command_seq {
+            Some(seq) => self.get_json(&format!("/rooms/{room_id}/replay?at_command_seq={seq}")),
+            None => self.get_json(&format!("/rooms/{room_id}/replay")),
+        }
     }
 
     fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, HttpTradingError> {
@@ -6461,8 +9257,12 @@ pub fn run_remote_participant_once<P: Participant + ?Sized>(
     participant: &mut P,
 ) -> Result<Vec<OrderResponse>, HttpTradingError> {
     let config = participant.config().clone();
-    let view = client.market_view(&config.room_id)?;
-    participant.observe(&view);
+    let instrument_id = config.instrument_id.clone();
+    let view = match instrument_id.as_deref() {
+        Some(instrument_id) => client.market_view_for(&config.room_id, instrument_id)?,
+        None => client.market_view(&config.room_id)?,
+    };
+    participant.observe(&observation_from_market_view(&view, config.account_id));
 
     participant
         .decide()
@@ -6472,7 +9272,7 @@ pub fn run_remote_participant_once<P: Participant + ?Sized>(
                 &config.room_id,
                 &SubmitOrderRequest {
                     participant_id: config.participant_id.clone(),
-                    instrument_id: None,
+                    instrument_id: instrument_id.clone(),
                     account_id: config.account_id,
                     action,
                 },
@@ -6481,79 +9281,148 @@ pub fn run_remote_participant_once<P: Participant + ?Sized>(
         .collect()
 }
 
+fn observation_from_market_view(
+    view: &MarketView,
+    account_id: AccountId,
+) -> exchange_core::ParticipantObservation {
+    let own_account = match &view.accounts {
+        AccountSnapshots::Spot(accounts) => accounts
+            .iter()
+            .find(|account| account.account_id == account_id)
+            .cloned()
+            .map(exchange_core::AccountSnapshot::Spot),
+        AccountSnapshots::Perp(accounts) => accounts
+            .iter()
+            .find(|account| account.account_id == account_id)
+            .cloned()
+            .map(exchange_core::AccountSnapshot::Perp),
+    };
+    exchange_core::ParticipantObservation {
+        version: exchange_core::PARTICIPANT_OBSERVATION_VERSION,
+        room_id: view.room_id.clone(),
+        venue_id: view.venue_id.clone(),
+        instrument_id: view.instrument_id.clone(),
+        status: view.status,
+        step: 0,
+        market_time_ms: 0,
+        book: view.book.clone(),
+        public_trades: Vec::new(),
+        own_orders: Vec::new(),
+        own_account,
+        related_markets: vec![],
+        market_events: vec![],
+        bot_market_data: None,
+        position_protections: Vec::new(),
+        risk: None,
+        perp_price: view.perp_price.clone(),
+    }
+}
+
 const DEFAULT_AGENT_INTERVAL_MS: u64 = 1_000;
 
 struct AgentWorkerHandle {
-    stop: Arc<AtomicBool>,
+    control: realtime::Control,
+    bots_enabled: Arc<AtomicBool>,
+    bot_errors: Arc<Mutex<BTreeMap<String, String>>>,
     last_error: Arc<Mutex<Option<String>>>,
     interval_ms: u64,
     participants: Vec<ParticipantId>,
+    lifecycle: Arc<Mutex<AgentWorkerLifecycle>>,
     join: Option<thread::JoinHandle<()>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AgentWorkerLifecycle {
+    Running,
+    Paused,
+    Failed,
+    Stopped,
+}
+
+impl AgentWorkerLifecycle {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Paused => "paused",
+            Self::Failed => "failed",
+            Self::Stopped => "stopped",
+        }
+    }
 }
 
 impl AgentWorkerHandle {
     fn spawn(
-        base_url: String,
+        shared: SharedState,
         room_id: RoomId,
-        user_id: String,
         templates: Vec<AgentTemplate>,
         interval: Duration,
     ) -> Result<Self, AgentWorkerError> {
-        if templates.is_empty() {
-            return Err(AgentWorkerError::NoAgents);
-        }
-
         let interval_ms = interval.as_millis().try_into().unwrap_or(u64::MAX);
         let participants = templates
             .iter()
             .map(|template| template.participant_id().to_string())
             .collect::<Vec<_>>();
-        let stop = Arc::new(AtomicBool::new(false));
-        let worker_stop = Arc::clone(&stop);
+        let control = realtime::Control::default();
+        let worker_control = control.clone();
+        let bots_enabled = Arc::new(AtomicBool::new(true));
+        let bot_errors = Arc::new(Mutex::new(BTreeMap::new()));
+        let worker_bot_errors = bot_errors.clone();
         let last_error = Arc::new(Mutex::new(None));
         let worker_last_error = Arc::clone(&last_error);
+        let lifecycle = Arc::new(Mutex::new(AgentWorkerLifecycle::Running));
+        let worker_lifecycle = Arc::clone(&lifecycle);
+        let runtime = tokio::runtime::Handle::current();
         let join = thread::Builder::new()
             .name(format!("marketforge-agents-{room_id}"))
             .spawn(move || {
-                let client = HttpTradingClient::with_user_id(base_url, user_id);
-                let mut participants = templates
-                    .into_iter()
-                    .map(AgentTemplate::into_participant)
-                    .collect::<Vec<_>>();
-
-                while !worker_stop.load(Ordering::Relaxed) {
-                    for participant in &mut participants {
-                        if worker_stop.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        if let Err(error) =
-                            run_remote_participant_once(&client, participant.as_mut())
-                        {
-                            if let Ok(mut last_error) = worker_last_error.lock() {
-                                *last_error = Some(error.to_string());
-                            }
-                            worker_stop.store(true, Ordering::Relaxed);
-                            return;
-                        }
-                    }
-                    sleep_until_next_step(interval, &worker_stop);
+                let result = runtime.block_on(realtime::run(
+                    shared.clone(),
+                    room_id,
+                    interval,
+                    worker_control.clone(),
+                    worker_lifecycle.clone(),
+                    worker_last_error.clone(),
+                    worker_bot_errors,
+                ));
+                if let Err(error) = result {
+                    shared.lifecycle.record_agent_error();
+                    *worker_last_error.lock().unwrap() = Some(error);
+                    *worker_lifecycle.lock().unwrap() = AgentWorkerLifecycle::Failed;
+                } else {
+                    *worker_lifecycle.lock().unwrap() = AgentWorkerLifecycle::Stopped;
                 }
+                worker_control.stop.store(true, Ordering::Release);
             })
             .map_err(AgentWorkerError::Spawn)?;
 
         Ok(Self {
-            stop,
+            control,
+            bots_enabled,
+            bot_errors,
             last_error,
             interval_ms,
             participants,
+            lifecycle,
             join: Some(join),
         })
     }
 
     fn status(&self, room_id: String) -> AgentWorkerStatus {
+        let lifecycle = self
+            .lifecycle
+            .lock()
+            .ok()
+            .map(|lifecycle| lifecycle.as_str().to_string())
+            .unwrap_or_else(|| "running".to_string());
         AgentWorkerStatus {
             room_id,
-            running: !self.stop.load(Ordering::Relaxed),
+            running: !self.control.stop.load(Ordering::Acquire)
+                && self.bots_enabled.load(Ordering::Acquire)
+                && !self.participants.is_empty()
+                && lifecycle != "failed"
+                && lifecycle != "stopped",
+            market_running: !self.control.stop.load(Ordering::Acquire) && lifecycle == "running",
+            bot_errors: self.bot_errors.lock().unwrap().clone(),
             interval_ms: self.interval_ms,
             participants: self.participants.clone(),
             last_error: self
@@ -6561,11 +9430,16 @@ impl AgentWorkerHandle {
                 .lock()
                 .ok()
                 .and_then(|last_error| last_error.clone()),
+            lifecycle: if !self.bots_enabled.load(Ordering::Acquire) {
+                "stopped".into()
+            } else {
+                lifecycle
+            },
         }
     }
 
     fn request_stop(&self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.control.stop.store(true, Ordering::Release);
     }
 
     fn stop(self) {
@@ -6582,30 +9456,643 @@ impl AgentWorkerHandle {
 
 impl Drop for AgentWorkerHandle {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.control.stop.store(true, Ordering::Release);
     }
 }
 
-fn sleep_until_next_step(interval: Duration, stop: &AtomicBool) {
-    let mut slept = Duration::ZERO;
-    while slept < interval && !stop.load(Ordering::Relaxed) {
-        let remaining = interval - slept;
-        let chunk = remaining.min(Duration::from_millis(50));
-        thread::sleep(chunk);
-        slept += chunk;
+struct ControlIdempotencyIntent {
+    user_id: String,
+    key: String,
+    fingerprint: String,
+}
+
+struct ServerBotPolicy {
+    training: Option<exchange_core::TrainingRun>,
+}
+
+fn validate_bot_action_precision(request: &GatewayRequest) -> Result<(), exchange_core::BotError> {
+    match order_action_precision_error(&request.action) {
+        Some(error) => Err(exchange_core::BotError(error)),
+        None => Ok(()),
+    }
+}
+impl exchange_core::BotExecutionPolicy for ServerBotPolicy {
+    fn before_action(
+        &self,
+        request: &GatewayRequest,
+        observation: &ParticipantObservation,
+    ) -> Result<(), exchange_core::BotError> {
+        validate_bot_action_precision(request)?;
+        let Some(run) = &self.training else {
+            return Ok(());
+        };
+        if request.account_id != run.spec.trainee_account_id {
+            return Ok(());
+        }
+        let (side, additional_qty) =
+            if let OrderAction::Amend { order_id, qty, .. } = &request.action {
+                let order = observation
+                    .own_orders
+                    .iter()
+                    .find(|order| order.order_id == *order_id)
+                    .ok_or_else(|| {
+                        exchange_core::BotError("amend target is not an owned order".into())
+                    })?;
+                (
+                    Some(order.side),
+                    qty.map(|qty| qty.saturating_sub(order.remaining_qty)),
+                )
+            } else {
+                (
+                    order_action_side(&request.action),
+                    order_action_qty(&request.action),
+                )
+            };
+        if !run.allows_trainee_action(request.account_id, side) {
+            return Err(exchange_core::BotError(format!(
+                "training run {} does not allow this action",
+                run.spec.run_id
+            )));
+        }
+        if additional_qty.is_some_and(|qty| qty > run.remaining_buy_capacity()) {
+            return Err(exchange_core::BotError(
+                "order would exceed remaining training buy capacity".into(),
+            ));
+        }
+        Ok(())
+    }
+    fn after_action(
+        &mut self,
+        execution: &exchange_core::GatewayExecution,
+        book_before: &BookSnapshot,
+    ) {
+        if let Some(run) = &mut self.training {
+            apply_training_execution(
+                run,
+                &execution.execution,
+                Some(book_before),
+                Some(execution.account_id),
+            );
+        }
+    }
+}
+
+async fn commit_scheduler_step(
+    shared: SharedState,
+    room_id: RoomId,
+    scheduler: Option<exchange_core::SchedulerState>,
+    require_paused: bool,
+    control: Option<ControlIdempotencyIntent>,
+) -> Result<exchange_core::SchedulerState, (StatusCode, Json<ErrorResponse>)> {
+    commit_scheduler_work(shared, room_id, scheduler, require_paused, control, None).await
+}
+
+async fn commit_scheduler_work(
+    shared: SharedState,
+    room_id: RoomId,
+    scheduler: Option<exchange_core::SchedulerState>,
+    require_paused: bool,
+    control: Option<ControlIdempotencyIntent>,
+    realtime: Option<realtime::Work>,
+) -> Result<exchange_core::SchedulerState, ApiError> {
+    commit_scheduler_transaction(
+        shared,
+        room_id,
+        scheduler,
+        require_paused,
+        control,
+        realtime,
+        true,
+    )
+    .await
+    .map(|state| state.expect("manual/state-returning commit requests its response"))
+}
+
+async fn commit_realtime_work(
+    shared: SharedState,
+    room_id: RoomId,
+    work: realtime::Work,
+) -> Result<(), ApiError> {
+    commit_scheduler_transaction(shared, room_id, None, false, None, Some(work), false)
+        .await
+        .map(|_| ())
+}
+
+async fn commit_scheduler_transaction(
+    shared: SharedState,
+    room_id: RoomId,
+    scheduler: Option<exchange_core::SchedulerState>,
+    require_paused: bool,
+    control: Option<ControlIdempotencyIntent>,
+    realtime: Option<realtime::Work>,
+    return_state: bool,
+) -> Result<Option<exchange_core::SchedulerState>, ApiError> {
+    use scheduler_delta::Candidate;
+    let wait_started = Instant::now();
+    run_durable_state_transaction(shared.clone(), async move {
+        let mut state = lock_room_state(&shared, &room_id).await?;
+        shared.lifecycle.record_scheduler_phase(0, wait_started);
+        if !competition::market_allowed(&state, &room_id) {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                "competition market is not running",
+            ));
+        }
+        if let Some(intent) = &control
+            && let Some(replayed) = load_control_replay(
+                &state,
+                &intent.user_id,
+                &room_id,
+                &intent.key,
+                &intent.fingerprint,
+            )
+            .await?
+        {
+            return Ok(Json(return_state.then_some(replayed)));
+        }
+        if let Some(work) = &realtime {
+            let current = state
+                .schedulers
+                .get(&room_id)
+                .ok_or_else(|| api_error(StatusCode::CONFLICT, "room has no scheduler"))?;
+            if !work.is_current(current)
+                || state.rooms.status(&room_id).map_err(api_error_from_room)?
+                    != MarketStatus::Running
+            {
+                return Ok(Json(return_state.then(|| current.clone())));
+            }
+        }
+        state
+            .room_lease_claim(&room_id)
+            .map_err(api_error_from_journal)?;
+        if state.rooms.status(&room_id).map_err(api_error_from_room)? == MarketStatus::Closed {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                format!("room {room_id} is closed"),
+            ));
+        }
+        if require_paused
+            && state.rooms.status(&room_id).map_err(api_error_from_room)? != MarketStatus::Paused
+        {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                format!("manual step requires room {room_id} to be paused"),
+            ));
+        }
+        // Live work reads the locked predecessor and prepares a sparse patch.
+        // Only deterministic/manual execution needs an owned complete roster.
+        if control.is_none()
+            && realtime.as_ref().is_some_and(realtime::Work::is_state_only)
+            && !state
+                .training_runs
+                .values()
+                .any(|run| run.spec.room_id == room_id)
+        {
+            return commit_bot_state_only(
+                &shared,
+                &mut state,
+                &room_id,
+                realtime.expect("state-only live work"),
+                return_state,
+            )
+            .await
+            .map(Json);
+        }
+        let scheduler = if realtime.is_none() {
+            Some(
+                state
+                    .schedulers
+                    .get(&room_id)
+                    .cloned()
+                    .or(scheduler)
+                    .ok_or_else(|| {
+                        api_error(
+                            StatusCode::CONFLICT,
+                            format!("room {room_id} has no scheduler to step"),
+                        )
+                    })?,
+            )
+        } else {
+            None
+        };
+        let command_cursor =
+            next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
+        let clone_started = Instant::now();
+        let mut candidate_rooms = state.rooms.clone();
+        shared.lifecycle.record_scheduler_phase(1, clone_started);
+        let previous_history_len = candidate_rooms
+            .execution_history_len(&room_id)
+            .map_err(api_error_from_room)?;
+        let clock_before = candidate_rooms
+            .clock(&room_id)
+            .map_err(api_error_from_room)?;
+        let budget = match &realtime {
+            Some(work) => work.order_id_budget(),
+            None => scheduler
+                .as_ref()
+                .unwrap()
+                .agents
+                .iter()
+                .map(|agent| {
+                    (exchange_core::MAX_BOT_ACTIONS + agent.unfinished_actions.len()) as u64
+                })
+                .sum(),
+        };
+        let mut order_ids = state.reserve_order_ids(budget)?;
+        let mut next_order_id = order_ids.start;
+        let registry = state.bot_registry.clone();
+        let training = state
+            .training_runs
+            .values()
+            .find(|run| run.spec.room_id == room_id)
+            .cloned();
+        let training_run_id = training.as_ref().map(|run| run.spec.run_id.clone());
+        let manual = realtime.is_none();
+        let clock_tick = manual || matches!(realtime, Some(realtime::Work::Clock(_)));
+        let mut submissions = BTreeMap::new();
+        let apply_started = Instant::now();
+        let (candidate, order_id, result, training) = if let Some(work) = realtime {
+            let mut policy = ServerBotPolicy { training };
+            let result = work.apply(
+                &mut candidate_rooms,
+                &mut next_order_id,
+                state
+                    .schedulers
+                    .get(&room_id)
+                    .expect("live predecessor was checked"),
+                &mut policy,
+                &mut submissions,
+            );
+            (
+                candidate_rooms,
+                next_order_id,
+                result.map(Candidate::Patch),
+                policy.training,
+            )
+        } else {
+            tokio::task::spawn_blocking(move || {
+                let mut policy = ServerBotPolicy { training };
+                let result = exchange_core::run_scheduler_step_with_policy(
+                    &mut candidate_rooms,
+                    &mut next_order_id,
+                    scheduler.expect("manual scheduler was prepared"),
+                    exchange_core::CrashPoint::None,
+                    &registry,
+                    &mut policy,
+                );
+                (
+                    candidate_rooms,
+                    next_order_id,
+                    result.map(|outcome| Candidate::Full(outcome.state)),
+                    policy.training,
+                )
+            })
+            .await
+            .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        };
+        let mut candidate_rooms = candidate;
+        shared.lifecycle.record_scheduler_phase(2, apply_started);
+        let next_order_id = order_id;
+        let mut outcome = match result {
+            Ok(outcome) => {
+                if clock_tick {
+                    shared.lifecycle.record_scheduler_step(true);
+                }
+                outcome
+            }
+            Err(error) => {
+                if clock_tick {
+                    shared.lifecycle.record_scheduler_step(false);
+                }
+                return Err(api_error(StatusCode::BAD_REQUEST, format!("{error:?}")));
+            }
+        };
+        let clock_after = candidate_rooms
+            .clock(&room_id)
+            .map_err(api_error_from_room)?;
+        let clock_steps = clock_after.step().saturating_sub(clock_before.step());
+        let mut updated_training = None;
+        if let Some(run_id) = training_run_id.as_ref()
+            && let Some(mut run) = training
+        {
+            for _ in 0..if manual {
+                clock_steps.max(1)
+            } else {
+                clock_steps
+            } {
+                run.on_step();
+                if run.is_finished() {
+                    break;
+                }
+            }
+            settle_training_residuals(&mut candidate_rooms, &mut run)?;
+            updated_training = Some((run_id.clone(), run));
+        }
+        let execution_records = candidate_rooms
+            .execution_history_from(&room_id, previous_history_len)
+            .map_err(api_error_from_room)?
+            .map(|execution| {
+                let command = command_from_actor_execution(execution).ok_or_else(|| {
+                    api_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("room {room_id} produced an unjournalable scheduler execution"),
+                    )
+                })?;
+                let participant = if manual {
+                    execution_participant_id(outcome.state(), execution)
+                        .map(|id| (id, execution_account_id(execution).unwrap_or(0)))
+                } else {
+                    submissions.get(&execution.command_seq).cloned()
+                };
+                if let Some((participant_id, account_id)) = participant {
+                    Ok(JournalExecution::submitted(
+                        participant_id,
+                        account_id,
+                        command,
+                        execution.clone(),
+                    ))
+                } else {
+                    Ok(JournalExecution::system(command, execution.clone()))
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let checkpoint_started = Instant::now();
+        // Each mutation and execution remains durable. Live recovery replays
+        // the ordered tail, so a full actor checkpoint is not needed for every
+        // clock tick or ready wave. Preserve manual crash-phase checkpoints.
+        let snapshot_due = manual
+            || (clock_tick
+                && clock_after
+                    .step()
+                    .is_multiple_of(LIVE_SNAPSHOT_INTERVAL_STEPS))
+            || execution_records.iter().any(|record| {
+                record
+                    .command_seq
+                    .is_multiple_of(LIVE_SNAPSHOT_INTERVAL_COMMANDS)
+            });
+        let snapshot = if snapshot_due {
+            current_room_snapshot(
+                &candidate_rooms,
+                &room_id,
+                execution_records
+                    .last()
+                    .map(|record| record.command_seq)
+                    .or_else(|| latest_persisted_command_seq(&state, &room_id))
+                    .unwrap_or(0),
+            )
+        } else {
+            None
+        };
+        if snapshot.is_some() {
+            shared.lifecycle.record_checkpoint(
+                u64::try_from(checkpoint_started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            );
+        }
+        shared
+            .lifecycle
+            .record_scheduler_phase(3, checkpoint_started);
+        outcome.state_mut().revision = state
+            .schedulers
+            .get(&room_id)
+            .map_or(0, |s| s.revision)
+            .checked_add(1)
+            .ok_or_else(|| api_error(StatusCode::CONFLICT, "scheduler revision exhausted"))?;
+        let record = control
+            .as_ref()
+            .map(|intent| {
+                let materialized = matches!(outcome, Candidate::Patch(_))
+                    .then(|| outcome.materialize(state.schedulers.get(&room_id)));
+                control_record(
+                    intent.user_id.clone(),
+                    room_id.clone(),
+                    intent.key.clone(),
+                    intent.fingerprint.clone(),
+                    materialized.as_ref().unwrap_or_else(|| outcome.state()),
+                )
+            })
+            .transpose()?;
+        let training_progress = if manual {
+            None
+        } else {
+            updated_training
+                .as_ref()
+                .map(|(_, run)| Box::new(run.clone()))
+        };
+        if let Candidate::Patch(delta) = &outcome {
+            delta
+                .validate_predecessor(
+                    state
+                        .schedulers
+                        .get(&room_id)
+                        .expect("locked live predecessor"),
+                )
+                .map_err(api_error_from_journal)?;
+        }
+        let delta = if manual || snapshot_due || outcome.state().revision.is_multiple_of(100) {
+            None
+        } else {
+            match &outcome {
+                Candidate::Patch(delta) => Some(delta.clone()),
+                Candidate::Full(next) => state
+                    .schedulers
+                    .get(&room_id)
+                    .and_then(|prior| scheduler_delta::SchedulerDelta::between(prior, next)),
+            }
+        };
+        let progress = match delta {
+            Some(delta) => RoomMutation::SchedulerDelta {
+                clock_steps,
+                delta,
+                training: training_progress,
+            },
+            None => RoomMutation::SchedulerProgress {
+                clock_steps,
+                state: outcome.materialize(state.schedulers.get(&room_id)),
+                training: training_progress,
+            },
+        };
+        let pending = PendingJournalMutation::new(room_id.clone(), command_cursor, progress);
+        let pending = match record {
+            Some(record) => pending.with_control_idempotency(record),
+            None => pending,
+        };
+        let journal_started = Instant::now();
+        if !competition::market_allowed(&state, &room_id) {
+            return Err(api_error(
+                StatusCode::CONFLICT,
+                "competition trading deadline reached",
+            ));
+        }
+        let append_result = append_control_mutation(
+            &mut state,
+            pending,
+            &execution_records,
+            &[],
+            snapshot.as_ref(),
+        )
+        .await;
+        shared.lifecycle.record_scheduler_phase(4, journal_started);
+        if let Some(replay_json) = append_result? {
+            let replayed = serde_json::from_value(replay_json).map_err(api_error_from_json)?;
+            return Ok(Json(return_state.then_some(replayed)));
+        }
+        order_ids.commit(next_order_id);
+        if let Some((run_id, run)) = updated_training {
+            if manual {
+                persist_training_progress(&mut state, &run, &[]).await?;
+            } else {
+                state.training_runs.insert(run_id, run);
+            }
+        }
+        state.append_room_executions(
+            &room_id,
+            execution_records
+                .into_iter()
+                .map(|record| record.execution)
+                .collect(),
+        );
+        state.rooms = candidate_rooms;
+        state.next_order_id = next_order_id;
+        let response = return_state.then(|| outcome.materialize(state.schedulers.get(&room_id)));
+        match outcome {
+            Candidate::Full(next) => {
+                state.schedulers.insert(room_id, next);
+            }
+            Candidate::Patch(delta) => {
+                // This exact predecessor was validated before the durable
+                // append; the writer lock has remained held throughout it.
+                delta
+                    .apply_owned(
+                        state
+                            .schedulers
+                            .get_mut(&room_id)
+                            .expect("locked live predecessor"),
+                    )
+                    .expect("validated patch cannot fail after the durable append");
+            }
+        }
+        Ok(Json(response))
+    })
+    .await
+    .map(|json| json.0)
+}
+
+/// Empty decisions still durably advance complete bot state and the scheduler
+/// revision. They need neither a market candidate nor order-ID reservations.
+async fn commit_bot_state_only(
+    shared: &SharedState,
+    state: &mut room_runtime::StateGuard,
+    room_id: &str,
+    work: realtime::Work,
+    return_state: bool,
+) -> Result<Option<exchange_core::SchedulerState>, ApiError> {
+    let started = Instant::now();
+    let current = state
+        .schedulers
+        .get(room_id)
+        .expect("validated predecessor");
+    let step = state
+        .rooms
+        .clock(room_id)
+        .map_err(api_error_from_room)?
+        .step();
+    let mut delta = work
+        .apply_state_only(current, step)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, format!("{error:?}")))?;
+    delta.state.revision = current
+        .revision
+        .checked_add(1)
+        .ok_or_else(|| api_error(StatusCode::CONFLICT, "scheduler revision exhausted"))?;
+    delta
+        .validate_predecessor(current)
+        .map_err(api_error_from_journal)?;
+    shared.lifecycle.record_scheduler_phase(2, started);
+    let progress = if delta.state.revision.is_multiple_of(100) {
+        let mut next = current.clone();
+        delta.apply(&mut next).map_err(api_error_from_journal)?;
+        RoomMutation::SchedulerProgress {
+            clock_steps: 0,
+            state: next,
+            training: None,
+        }
+    } else {
+        RoomMutation::SchedulerDelta {
+            clock_steps: 0,
+            delta: delta.clone(),
+            training: None,
+        }
+    };
+    let cursor = next_persisted_command_cursor(state, room_id).map_err(api_error_from_journal)?;
+    let pending = PendingJournalMutation::new(room_id.to_owned(), cursor, progress);
+    if !competition::market_allowed(state, room_id) {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "competition trading deadline reached",
+        ));
+    }
+    let started = Instant::now();
+    let appended = state.append_room_mutation(&pending, &[], &[], None).await;
+    shared.lifecycle.record_scheduler_phase(4, started);
+    appended.map_err(api_error_from_journal)?;
+    // The outer durable task owns the lane through append + install, even if
+    // its caller is cancelled. Errors above leave both state and readers intact.
+    let current = state.scheduler_mut(room_id).expect("locked predecessor");
+    delta
+        .apply_owned(current)
+        .expect("validated patch after durable append");
+    Ok(return_state.then(|| current.clone()))
+}
+
+fn execution_participant_id(
+    scheduler: &exchange_core::SchedulerState,
+    execution: &exchange_core::ActorExecution,
+) -> Option<String> {
+    let account_id = execution_account_id(execution)?;
+    scheduler
+        .agents
+        .iter()
+        .find(|agent| agent.account_id() == account_id)
+        .map(|agent| agent.template.participant_id().to_string())
+}
+
+fn execution_account_id(execution: &exchange_core::ActorExecution) -> Option<AccountId> {
+    match &execution.result {
+        ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
+            match &result.command.command {
+                Command::NewOrder(order) | Command::NewOrderWithProtection { order, .. } => {
+                    Some(order.account_id)
+                }
+                Command::SetConditionalOrder { account_id, .. }
+                | Command::SetPositionProtection { account_id, .. } => Some(*account_id),
+                Command::CancelOrder(_)
+                | Command::ExpireOrder { .. }
+                | Command::AmendOrder(_)
+                | Command::SetMarkPrice(_)
+                | Command::SettleFunding(_) => None,
+            }
+        }
+        ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
+            match &result.command.command {
+                Command::NewOrder(order) | Command::NewOrderWithProtection { order, .. } => {
+                    Some(order.account_id)
+                }
+                Command::SetConditionalOrder { account_id, .. }
+                | Command::SetPositionProtection { account_id, .. } => Some(*account_id),
+                _ => None,
+            }
+        }
+        ActorExecutionResult::Rejected(_) => None,
     }
 }
 
 #[derive(Debug)]
 enum AgentWorkerError {
-    NoAgents,
     Spawn(std::io::Error),
 }
 
 impl std::fmt::Display for AgentWorkerError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoAgents => formatter.write_str("agent worker needs at least one agent"),
             Self::Spawn(error) => write!(formatter, "failed to spawn agent worker: {error}"),
         }
     }
@@ -6615,6 +10102,9 @@ impl std::error::Error for AgentWorkerError {}
 
 #[cfg(test)]
 mod tests {
+    include!("market_behavior_server_tests.rs");
+    include!("price_link_tests.rs");
+    include!("funding_tests.rs");
     use super::*;
     use axum::{
         body::Body,
@@ -6689,9 +10179,14 @@ mod tests {
         ([(CONTENT_TYPE, "text/event-stream")], body).into_response()
     }
 
+    include!("order_protection_tests.rs");
+    include!("position_protection_tests.rs");
+    include!("hedge_tests.rs");
+
     fn spot_scenario(room_id: &str) -> ScenarioConfig {
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: exchange_core::VenueRuleConfig::default(),
             venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
@@ -6723,8 +10218,11 @@ mod tests {
 
     fn synthetic_execution(room_id: &str, command_seq: u64) -> RoomExecutionSummary {
         RoomExecutionSummary {
+            price_updates: Vec::new(),
+            funding_settlement: None,
             room_id: room_id.to_string(),
             instrument_id: Some("V-BTC-SPOT".to_string()),
+            submit_account_id: None,
             command_seq,
             market_time_ms: Some(command_seq.saturating_mul(1_000)),
             status: MarketStatus::Running,
@@ -7065,6 +10563,9 @@ mod tests {
     fn recovery_keeps_only_the_bounded_execution_tail() {
         let execution_count = ROOM_EVENT_CACHE_CAPACITY + 2;
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: Vec::new(),
             executions: (0..execution_count)
                 .map(|command_seq| JournalExecution {
@@ -7075,6 +10576,7 @@ mod tests {
                     request_user_id: None,
                     idempotency_key: None,
                     request_fingerprint: None,
+                    quota_user_step: None,
                     command: Command::SetMarkPrice(SetMarkPrice {
                         price_tick: command_seq as i64,
                     }),
@@ -7161,6 +10663,7 @@ mod tests {
     fn seeded_spot_scenario(room_id: &str) -> ScenarioConfig {
         let mut scenario = spot_scenario(room_id);
         scenario.seed_orders = vec![Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: 10_000,
             account_id: 10,
             side: Side::Sell,
@@ -7174,6 +10677,7 @@ mod tests {
     fn spot_perp_scenario(room_id: &str) -> ScenarioConfig {
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: exchange_core::VenueRuleConfig::default(),
             venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
@@ -7191,6 +10695,8 @@ mod tests {
                 },
                 risk: exchange_core::PerpRiskConfig::default(),
                 initial_mark_price_tick: 100,
+                price_link: None,
+                funding: None,
             })],
             initial_portfolios: Vec::new(),
             initial_allocations: Vec::new(),
@@ -7210,6 +10716,7 @@ mod tests {
             routed_seed_orders: vec![exchange_core::ScenarioSeedOrder {
                 instrument_id: Some("V-BTC-PERP".to_string()),
                 command: Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 10_000,
                     account_id: 20,
                     side: Side::Sell,
@@ -7241,11 +10748,14 @@ mod tests {
                 },
                 risk: exchange_core::PerpRiskConfig::default(),
                 initial_mark_price_tick: 100,
+                price_link: None,
+                funding: None,
             })
         };
 
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: exchange_core::VenueRuleConfig::default(),
             venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
@@ -7280,6 +10790,7 @@ mod tests {
     ) -> ScenarioConfig {
         ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: exchange_core::VenueRuleConfig::default(),
             venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
@@ -7294,6 +10805,8 @@ mod tests {
                 },
                 risk: exchange_core::PerpRiskConfig::default(),
                 initial_mark_price_tick,
+                price_link: None,
+                funding: None,
             }),
             extra_markets: Vec::new(),
             initial_portfolios: Vec::new(),
@@ -7325,6 +10838,7 @@ mod tests {
                 kind: ParticipantKind::RuleAgent,
                 room_id: room_id.to_string(),
                 account_id,
+                instrument_id: Some("V-BTC-SPOT".to_string()),
             },
             interval_steps: 1,
             order_qty: 2,
@@ -7366,6 +10880,77 @@ mod tests {
         assert!(allowed_headers.contains("last-event-id"));
     }
 
+    #[tokio::test]
+    async fn candlescope_background_recipe_creates_a_room_with_backend_owned_accounts() {
+        let app = new_app();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/scenarios/background-market")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut recipe: CreateRoomRequest = response_json(response).await;
+        assert_eq!(recipe.agents.len(), 20);
+        recipe.autostart_agents = Some(false);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&recipe).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/rooms/background-market/observe?account_id=20")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let observed: serde_json::Value = response_json(response).await;
+        assert_eq!(
+            observed["observation"]["own_account"]["Spot"]["account_id"],
+            20
+        );
+    }
+
+    #[tokio::test]
+    async fn candlescope_origin_can_send_authenticated_idempotent_orders() {
+        let response = new_app()
+            .oneshot(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri("/rooms/example/orders")
+                    .header("origin", "http://127.0.0.1:15173")
+                    .header("access-control-request-method", "POST")
+                    .header(
+                        "access-control-request-headers",
+                        "authorization, content-type, idempotency-key",
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            "http://127.0.0.1:15173"
+        );
+    }
+
     #[test]
     fn account_summaries_preserve_i128_values() {
         let summary = SpotAccountStateSummary::from_snapshot(SpotAccountSnapshot {
@@ -7399,8 +10984,11 @@ mod tests {
         assert_eq!(normal_json["cash_balance"], 42);
 
         let execution = RoomExecutionSummary {
+            price_updates: Vec::new(),
+            funding_settlement: None,
             room_id: "i128-room".to_string(),
             instrument_id: Some("V-BTC-SPOT".to_string()),
+            submit_account_id: None,
             command_seq: 3,
             market_time_ms: Some(3_000),
             status: MarketStatus::Running,
@@ -7456,8 +11044,11 @@ mod tests {
     #[test]
     fn recovery_execution_validation_rejects_same_count_with_different_clearing_amounts() {
         let stored = RoomExecutionSummary {
+            price_updates: Vec::new(),
+            funding_settlement: None,
             room_id: "clearing-validation-room".to_string(),
             instrument_id: Some("V-BTC-SPOT".to_string()),
+            submit_account_id: None,
             command_seq: 1,
             market_time_ms: Some(1_000),
             status: MarketStatus::Running,
@@ -7504,6 +11095,7 @@ mod tests {
     fn reserved_and_max_order_ids_are_rejected_without_overflow() {
         let command_with_id = |order_id| {
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id,
                 account_id: 10,
                 side: Side::Sell,
@@ -7527,6 +11119,7 @@ mod tests {
         let mut system_record = record.clone();
         system_record.participant_id = None;
         system_record.command = Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: SYSTEM_LIQUIDATION_ORDER_ID_BASE,
             account_id: 10,
             side: Side::Sell,
@@ -7535,6 +11128,9 @@ mod tests {
             reduce_only: true,
         });
         let system_recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: Vec::new(),
             executions: vec![system_record],
             mutations: Vec::new(),
@@ -7544,6 +11140,9 @@ mod tests {
 
         record.command = command_with_id(OrderId::MAX);
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: Vec::new(),
             executions: vec![record],
             mutations: Vec::new(),
@@ -7561,6 +11160,7 @@ mod tests {
 
         let commands = [
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 1,
                 account_id: 30,
                 side: Side::Buy,
@@ -7569,6 +11169,7 @@ mod tests {
                 reduce_only: false,
             }),
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 2,
                 account_id: 10,
                 side: Side::Sell,
@@ -7577,6 +11178,7 @@ mod tests {
                 reduce_only: false,
             }),
             Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 3,
                 account_id: 20,
                 side: Side::Buy,
@@ -7615,6 +11217,9 @@ mod tests {
         }
 
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario,
@@ -7724,10 +11329,13 @@ mod tests {
                 },
                 risk: exchange_core::PerpRiskConfig::default(),
                 initial_mark_price_tick: 100,
+                price_link: None,
+                funding: None,
             })
         };
         let scenario = ScenarioConfig {
             room_id: room_id.to_string(),
+            market_events: Vec::new(),
             venue_preset: None,
             venue_rules: exchange_core::VenueRuleConfig::default(),
             venue_asset_policy: exchange_core::VenueAssetPolicyConfig::default(),
@@ -7764,6 +11372,7 @@ mod tests {
                 "seller",
                 10,
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 1,
                     account_id: 10,
                     side: Side::Sell,
@@ -7777,6 +11386,7 @@ mod tests {
                 "distressed",
                 20,
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 2,
                     account_id: 20,
                     side: Side::Buy,
@@ -7790,6 +11400,7 @@ mod tests {
                 "distressed",
                 20,
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 3,
                     account_id: 20,
                     side: Side::Buy,
@@ -7803,6 +11414,7 @@ mod tests {
                 "liquidator",
                 30,
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 4,
                     account_id: 30,
                     side: Side::Buy,
@@ -7853,6 +11465,9 @@ mod tests {
         }
 
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario,
@@ -8012,6 +11627,9 @@ mod tests {
 
         let expected_actor = serde_json::to_value(rooms.simulation_room(room_id).unwrap()).unwrap();
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario,
@@ -8042,6 +11660,7 @@ mod tests {
         source.create_room(scenario.clone()).unwrap();
         source.advance_clock(room_id, 1).unwrap();
         let command = Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: 1,
             account_id: 20,
             side: Side::Buy,
@@ -8053,6 +11672,9 @@ mod tests {
         assert_eq!(execution.command_seq, 0);
 
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario,
@@ -8100,6 +11722,7 @@ mod tests {
         assert_eq!(snapshot.actor.next_command_seq(), 0);
 
         let command = Command::NewOrder(NewOrder {
+            position_side: Default::default(),
             order_id: 1,
             account_id: 20,
             side: Side::Buy,
@@ -8110,6 +11733,9 @@ mod tests {
         let execution = source.apply(room_id, command.clone()).unwrap();
         assert_eq!(execution.command_seq, 0);
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario,
@@ -8173,6 +11799,7 @@ mod tests {
                     room_id,
                     instrument_id,
                     Command::NewOrder(NewOrder {
+                        position_side: Default::default(),
                         order_id,
                         account_id: 20,
                         side: Side::Buy,
@@ -8196,6 +11823,9 @@ mod tests {
         assert_eq!(legacy_actor.next_command_seq(), 0);
 
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario,
@@ -8254,6 +11884,7 @@ mod tests {
             .apply(
                 room_id,
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 1,
                     account_id: 10,
                     side: Side::Sell,
@@ -8267,6 +11898,7 @@ mod tests {
             .apply(
                 room_id,
                 Command::NewOrder(NewOrder {
+                    position_side: Default::default(),
                     order_id: 2,
                     account_id: 20,
                     side: Side::Buy,
@@ -8287,6 +11919,7 @@ mod tests {
             .simulation_room_mut(room_id)
             .unwrap()
             .apply(Command::NewOrder(NewOrder {
+                position_side: Default::default(),
                 order_id: 3,
                 account_id: 30,
                 side: Side::Buy,
@@ -8361,6 +11994,9 @@ mod tests {
     fn recovery_rejects_regressing_mutation_cursor() {
         let room_id = "regressing-cursor-room";
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: room_id.to_string(),
                 scenario: spot_scenario(room_id),
@@ -8790,7 +12426,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bearer_mode_rejects_http_agent_workers_before_starting_them() {
+    async fn bearer_mode_starts_internal_agent_workers() {
         let policy = AuthPolicy::from_token_json(r#"{"secret":"alice"}"#).unwrap();
         let app = new_app_with_journal_and_auth_policy(
             "http://127.0.0.1:57305",
@@ -8818,7 +12454,7 @@ mod tests {
 
         let start = StartAgentsRequest {
             agents: vec![dca_template("bearer-agent-room", "bearer-worker", 20)],
-            interval_ms: Some(10),
+            interval_ms: Some(50),
         };
         let response = app
             .clone()
@@ -8833,23 +12469,3216 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(response.status(), StatusCode::OK);
+        let status: AgentWorkerStatus = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(status.running);
+        assert_eq!(status.lifecycle, "running");
 
-        let autostart = CreateRoomRequest {
-            scenario: spot_scenario("bearer-autostart-room"),
-            agents: vec![dca_template(
-                "bearer-autostart-room",
-                "bearer-autostart-worker",
-                20,
-            )],
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/bearer-agent-room/agents/stop")
+                    .header(AUTHORIZATION, "Bearer secret")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn http_and_internal_gateway_orders_match() {
+        let mut rooms = RoomManager::new();
+        rooms
+            .create_room(spot_scenario("path-parity-room"))
+            .unwrap();
+        let mut gateway = OrderGateway::new(&mut rooms, 1);
+        let http_like = gateway
+            .submit_action(GatewayRequest {
+                participant_id: "human".to_string(),
+                room_id: "path-parity-room".to_string(),
+                instrument_id: Some("V-BTC-SPOT".to_string()),
+                account_id: 20,
+                action: OrderAction::PlaceLimit {
+                    side: Side::Buy,
+                    price_tick: 100,
+                    qty: 2,
+                },
+            })
+            .unwrap();
+
+        let mut rooms = RoomManager::new();
+        rooms
+            .create_room(spot_scenario("path-parity-room"))
+            .unwrap();
+        let mut gateway = OrderGateway::new_scheduler(&mut rooms, 1);
+        let internal = gateway
+            .submit_action(GatewayRequest {
+                participant_id: "human".to_string(),
+                room_id: "path-parity-room".to_string(),
+                instrument_id: Some("V-BTC-SPOT".to_string()),
+                account_id: 20,
+                action: OrderAction::PlaceLimit {
+                    side: Side::Buy,
+                    price_tick: 100,
+                    qty: 2,
+                },
+            })
+            .unwrap();
+        assert_eq!(http_like.execution.result, internal.execution.result);
+        assert_eq!(http_like.command, internal.command);
+    }
+
+    #[tokio::test]
+    async fn agent_without_instrument_is_rejected() {
+        let app = new_app();
+        let mut template = dca_template("instrument-required-room", "no-instrument", 20);
+        match &mut template {
+            AgentTemplate::DcaTrader(config) => config.participant.instrument_id = None,
+            _ => unreachable!(),
+        }
+        let create = CreateRoomRequest {
+            scenario: spot_scenario("instrument-required-room"),
+            agents: vec![template],
             agent_interval_ms: Some(10),
             autostart_agents: Some(true),
         };
         let response = app
-            .oneshot(create(serde_json::to_string(&autostart).unwrap()))
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_string(&create).unwrap()))
+                    .unwrap(),
+            )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn paused_manual_step_is_idempotent() {
+        let app = new_app();
+        let create = CreateRoomRequest {
+            scenario: spot_scenario("manual-step-room"),
+            agents: vec![dca_template("manual-step-room", "step-dca", 20)],
+            agent_interval_ms: Some(10_000),
+            autostart_agents: Some(false),
+        };
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_string(&create).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let start = StartAgentsRequest {
+            agents: vec![dca_template("manual-step-room", "step-dca", 20)],
+            interval_ms: Some(10_000),
+        };
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/manual-step-room/agents")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_string(&start).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/manual-step-room/pause")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let step = || {
+            Request::builder()
+                .method(Method::POST)
+                .uri("/rooms/manual-step-room/clock/step")
+                .header(IDEMPOTENCY_KEY_HEADER, "step-1")
+                .body(Body::empty())
+                .unwrap()
+        };
+        let first = app.clone().oneshot(step()).await.unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        let first_body = axum::body::to_bytes(first.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let second = app.clone().oneshot(step()).await.unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        let second_body = axum::body::to_bytes(second.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_body, second_body);
+
+        let _ = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms/manual-step-room/agents/stop")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+
+    async fn control_request(
+        app: &axum::Router,
+        uri: &str,
+        user: Option<&str>,
+        key: Option<&str>,
+        json_body: Option<serde_json::Value>,
+    ) -> axum::http::Response<Body> {
+        let mut builder = Request::builder().method(Method::POST).uri(uri);
+        if json_body.is_some() {
+            builder = builder.header("content-type", "application/json");
+        }
+        if let Some(user) = user {
+            builder = builder.header(USER_ID_HEADER, user);
+        }
+        if let Some(key) = key {
+            builder = builder.header(IDEMPOTENCY_KEY_HEADER, key);
+        }
+        let body = json_body
+            .map(|value| Body::from(value.to_string()))
+            .unwrap_or_else(Body::empty);
+        app.clone()
+            .oneshot(builder.body(body).unwrap())
+            .await
+            .unwrap()
+    }
+
+    async fn response_json<T: DeserializeOwned>(response: axum::http::Response<Body>) -> T {
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    async fn room_clock_step(app: &axum::Router, room_id: &str) -> u64 {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!("/rooms/{room_id}/clock"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let clock: RoomClockResponse = response_json(response).await;
+        clock.clock.step()
+    }
+
+    async fn create_paused_step_room(app: &axum::Router, room_id: &str) {
+        let create = CreateRoomRequest {
+            scenario: spot_scenario(room_id),
+            agents: vec![dca_template(room_id, "step-dca", 20)],
+            agent_interval_ms: Some(10_000),
+            autostart_agents: Some(false),
+        };
+        assert_eq!(
+            send_json(app, Method::POST, "/rooms", None, create)
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        let start = StartAgentsRequest {
+            agents: vec![dca_template(room_id, "step-dca", 20)],
+            interval_ms: Some(10_000),
+        };
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                &format!("/rooms/{room_id}/agents"),
+                None,
+                start,
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            control_request(app, &format!("/rooms/{room_id}/pause"), None, None, None)
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            control_request(
+                app,
+                &format!("/rooms/{room_id}/agents/stop"),
+                None,
+                None,
+                None,
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_serial_replay_returns_original_body() {
+        let app = new_app();
+        create_paused_step_room(&app, "ctrl-serial-room").await;
+        let first = control_request(
+            &app,
+            "/rooms/ctrl-serial-room/clock/step",
+            None,
+            Some("step-serial"),
+            None,
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let first_body = axum::body::to_bytes(first.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let step_after_first = room_clock_step(&app, "ctrl-serial-room").await;
+        let second = control_request(
+            &app,
+            "/rooms/ctrl-serial-room/clock/step",
+            None,
+            Some("step-serial"),
+            None,
+        )
+        .await;
+        assert_eq!(second.status(), StatusCode::OK);
+        let second_body = axum::body::to_bytes(second.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_body, second_body);
+        assert_eq!(
+            room_clock_step(&app, "ctrl-serial-room").await,
+            step_after_first
+        );
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_concurrent_same_key_steps_once() {
+        let app = new_app();
+        create_paused_step_room(&app, "ctrl-concurrent-room").await;
+        let before = room_clock_step(&app, "ctrl-concurrent-room").await;
+        let first = control_request(
+            &app,
+            "/rooms/ctrl-concurrent-room/clock/step",
+            None,
+            Some("step-concurrent"),
+            None,
+        );
+        let second = control_request(
+            &app,
+            "/rooms/ctrl-concurrent-room/clock/step",
+            None,
+            Some("step-concurrent"),
+            None,
+        );
+        let (first, second) = tokio::join!(first, second);
+        assert_eq!(first.status(), StatusCode::OK);
+        assert_eq!(second.status(), StatusCode::OK);
+        let first_body = axum::body::to_bytes(first.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let second_body = axum::body::to_bytes(second.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_body, second_body);
+        let after = room_clock_step(&app, "ctrl-concurrent-room").await;
+        assert_eq!(
+            after.saturating_sub(before),
+            1,
+            "before={before} after={after}"
+        );
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_same_key_different_operation_conflicts() {
+        let app = new_app();
+        create_paused_step_room(&app, "ctrl-conflict-room").await;
+        let before = room_clock_step(&app, "ctrl-conflict-room").await;
+        let pause = control_request(
+            &app,
+            "/rooms/ctrl-conflict-room/pause",
+            None,
+            Some("shared-key"),
+            None,
+        )
+        .await;
+        assert_eq!(pause.status(), StatusCode::OK);
+        let step = control_request(
+            &app,
+            "/rooms/ctrl-conflict-room/clock/step",
+            None,
+            Some("shared-key"),
+            None,
+        )
+        .await;
+        assert_eq!(step.status(), StatusCode::CONFLICT);
+        assert_eq!(room_clock_step(&app, "ctrl-conflict-room").await, before);
+        let advance = control_request(
+            &app,
+            "/rooms/ctrl-conflict-room/clock/advance",
+            None,
+            Some("advance-key"),
+            Some(serde_json::json!({"steps": 1})),
+        )
+        .await;
+        assert_eq!(advance.status(), StatusCode::OK);
+        let different_steps = control_request(
+            &app,
+            "/rooms/ctrl-conflict-room/clock/advance",
+            None,
+            Some("advance-key"),
+            Some(serde_json::json!({"steps": 2})),
+        )
+        .await;
+        assert_eq!(different_steps.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            room_clock_step(&app, "ctrl-conflict-room").await,
+            before + 1
+        );
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_pre_commit_failure_leaves_state_and_retry_succeeds() {
+        struct FailOnceMutationJournal {
+            inner: journal::InMemoryJournalStore,
+            remaining_failures: usize,
+        }
+
+        impl JournalStore for FailOnceMutationJournal {
+            fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
+                self.inner.load_recovery()
+            }
+
+            fn create_room(
+                &mut self,
+                owner_user_id: &str,
+                scenario: &ScenarioConfig,
+                bootstrap: &exchange_core::RoomBootstrap,
+                account_ids: &[AccountId],
+                seed_records: &[JournalExecution],
+                initial_snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                self.inner.create_room(
+                    owner_user_id,
+                    scenario,
+                    bootstrap,
+                    account_ids,
+                    seed_records,
+                    initial_snapshot,
+                )
+            }
+
+            fn append_executions(
+                &mut self,
+                records: &[JournalExecution],
+                snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                self.inner.append_executions(records, snapshot)
+            }
+
+            fn append_room_mutation(
+                &mut self,
+                mutation: &PendingJournalMutation,
+                execution_records: &[JournalExecution],
+                transfer_records: &[JournalTransfer],
+                snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                if self.remaining_failures > 0 {
+                    self.remaining_failures -= 1;
+                    return Err(JournalError::Recovery(
+                        "injected control commit failure".into(),
+                    ));
+                }
+                self.inner.append_room_mutation(
+                    mutation,
+                    execution_records,
+                    transfer_records,
+                    snapshot,
+                )
+            }
+
+            fn find_control_idempotency(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+                idempotency_key: &str,
+            ) -> Result<Option<journal::ControlIdempotencyRecord>, JournalError> {
+                self.inner
+                    .find_control_idempotency(user_id, room_id, idempotency_key)
+            }
+
+            fn user_can_administer_room(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+            ) -> Result<bool, JournalError> {
+                self.inner.user_can_administer_room(user_id, room_id)
+            }
+
+            fn user_can_access_room(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+            ) -> Result<bool, JournalError> {
+                self.inner.user_can_access_room(user_id, room_id)
+            }
+
+            fn update_room_status(
+                &mut self,
+                room_id: &str,
+                status: MarketStatus,
+            ) -> Result<(), JournalError> {
+                self.inner.update_room_status(room_id, status)
+            }
+        }
+
+        let app = new_app_with_journal(
+            "http://127.0.0.1:57305",
+            Box::new(FailOnceMutationJournal {
+                inner: journal::InMemoryJournalStore::new(),
+                remaining_failures: 1,
+            }),
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("ctrl-fail-room"),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let failed = control_request(
+            &app,
+            "/rooms/ctrl-fail-room/pause",
+            None,
+            Some("pause-fail"),
+            None,
+        )
+        .await;
+        assert_eq!(failed.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let status = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/ctrl-fail-room/view")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(status.status(), StatusCode::OK);
+        let view: MarketView = response_json(status).await;
+        assert_eq!(view.status, MarketStatus::Running);
+        let retry = control_request(
+            &app,
+            "/rooms/ctrl-fail-room/pause",
+            None,
+            Some("pause-fail"),
+            None,
+        )
+        .await;
+        assert_eq!(retry.status(), StatusCode::OK);
+        let replay = control_request(
+            &app,
+            "/rooms/ctrl-fail-room/pause",
+            None,
+            Some("pause-fail"),
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_survives_restart_without_second_step() {
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let app = recovering_app(Box::new(journal.clone()));
+        create_paused_step_room(&app, "ctrl-restart-room").await;
+        let first = control_request(
+            &app,
+            "/rooms/ctrl-restart-room/clock/step",
+            None,
+            Some("step-restart"),
+            None,
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let first_body = axum::body::to_bytes(first.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let live_step = room_clock_step(&app, "ctrl-restart-room").await;
+        drop(app);
+
+        let recovered = recovering_app(Box::new(journal));
+        let replay = control_request(
+            &recovered,
+            "/rooms/ctrl-restart-room/clock/step",
+            None,
+            Some("step-restart"),
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+        let replay_body = axum::body::to_bytes(replay.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_body, replay_body);
+        assert_eq!(
+            room_clock_step(&recovered, "ctrl-restart-room").await,
+            live_step
+        );
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_takeover_replays_and_old_fence_cannot_append() {
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let first_state = shared_state(
+            AppState::recover_with_journal_bundle_and_auth_policy(
+                "http://127.0.0.1:57305",
+                JournalStoreBundle::single(Box::new(journal.clone())),
+                AuthPolicy::local_development(),
+                Some(training_lease_config("ctrl-a", "http://127.0.0.1:57305")),
+            )
+            .unwrap(),
+        );
+        let first = app(first_state.clone());
+        create_paused_step_room(&first, "ctrl-takeover-room").await;
+        let first_step = control_request(
+            &first,
+            "/rooms/ctrl-takeover-room/clock/step",
+            None,
+            Some("step-takeover"),
+            None,
+        )
+        .await;
+        assert_eq!(first_step.status(), StatusCode::OK);
+        let first_body = axum::body::to_bytes(first_step.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let live_step = room_clock_step(&first, "ctrl-takeover-room").await;
+        let old_claim = {
+            let app = first_state.app.lock().await;
+            app.room_lease_claim("ctrl-takeover-room")
+                .unwrap()
+                .expect("writer lease")
+        };
+        release_owned_room_writer_leases(&first_state)
+            .await
+            .unwrap();
+        drop(first);
+        drop(first_state);
+
+        let recovered = leased_recovering_app(journal.clone(), "ctrl-b", "http://127.0.0.1:57306");
+        let replay = control_request(
+            &recovered,
+            "/rooms/ctrl-takeover-room/clock/step",
+            None,
+            Some("step-takeover"),
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+        let replay_body = axum::body::to_bytes(replay.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_body, replay_body);
+        assert_eq!(
+            room_clock_step(&recovered, "ctrl-takeover-room").await,
+            live_step
+        );
+
+        let mut stale = journal;
+        let fenced = stale.append_room_mutation_fenced(
+            &old_claim,
+            &PendingJournalMutation::new(
+                "ctrl-takeover-room",
+                0,
+                RoomMutation::StatusChanged {
+                    status: MarketStatus::Running,
+                },
+            ),
+            &[],
+            &[],
+            None,
+        );
+        assert!(matches!(fenced, Err(JournalError::RoomLeaseLost { .. })));
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_revoked_permission_does_not_leak_body() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("ctrl-revoke-room"),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/ctrl-revoke-room/members",
+                None,
+                serde_json::json!({"user_id":"operator","role":"admin"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let first = control_request(
+            &app,
+            "/rooms/ctrl-revoke-room/pause",
+            Some("operator"),
+            Some("pause-revoke"),
+            None,
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let remove = send_json(
+            &app,
+            Method::POST,
+            "/rooms/ctrl-revoke-room/members/operator",
+            None,
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(remove.status(), StatusCode::OK);
+        let replay = control_request(
+            &app,
+            "/rooms/ctrl-revoke-room/pause",
+            Some("operator"),
+            Some("pause-revoke"),
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(replay.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8_lossy(&body);
+        assert!(!text.contains("Paused"));
+        assert!(!text.contains("\"status\":\"Paused\""));
+    }
+
+    #[tokio::test]
+    async fn control_idempotency_postgres_restart_replays_step() {
+        let Some(database_url) = postgres_test_database_url() else {
+            return;
+        };
+        let room_id = format!(
+            "ctrl-pg-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        cleanup_postgres_room(&database_url, &room_id);
+        let live_url = database_url.clone();
+        let store =
+            tokio::task::spawn_blocking(move || PostgresJournalStore::connect_migrated(&live_url))
+                .await
+                .unwrap()
+                .unwrap();
+        let app = recovering_app(Box::new(store));
+        create_paused_step_room(&app, &room_id).await;
+        let first = control_request(
+            &app,
+            &format!("/rooms/{room_id}/clock/step"),
+            None,
+            Some("step-pg"),
+            None,
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let first_body = axum::body::to_bytes(first.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let live_step = room_clock_step(&app, &room_id).await;
+        drop(app);
+
+        let recover_url = database_url.clone();
+        let recovered_store = tokio::task::spawn_blocking(move || {
+            PostgresJournalStore::connect_migrated(&recover_url)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        let recovered = recovering_app(Box::new(recovered_store));
+        let replay = control_request(
+            &recovered,
+            &format!("/rooms/{room_id}/clock/step"),
+            None,
+            Some("step-pg"),
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+        let replay_body = axum::body::to_bytes(replay.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(first_body, replay_body);
+        assert_eq!(room_clock_step(&recovered, &room_id).await, live_step);
+        cleanup_postgres_room(&database_url, &room_id);
+    }
+
+    #[tokio::test]
+    async fn candle_query_matches_fixture_and_does_not_advance_clock() {
+        let app = new_app();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_string(&spot_scenario("candle-room")).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let buy = |price, qty| {
+            Request::builder()
+                .method(Method::POST)
+                .uri("/rooms/candle-room/orders")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_string(&SubmitOrderRequest {
+                        participant_id: "maker".to_string(),
+                        instrument_id: None,
+                        account_id: 10,
+                        action: OrderAction::PlaceLimit {
+                            side: Side::Sell,
+                            price_tick: price,
+                            qty,
+                        },
+                    })
+                    .unwrap(),
+                ))
+                .unwrap()
+        };
+        let _ = app.clone().oneshot(buy(100, 1)).await.unwrap();
+        let _ = app.clone().oneshot(buy(110, 2)).await.unwrap();
+        let take = Request::builder()
+            .method(Method::POST)
+            .uri("/rooms/candle-room/orders")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::to_string(&SubmitOrderRequest {
+                    participant_id: "taker".to_string(),
+                    instrument_id: None,
+                    account_id: 20,
+                    action: OrderAction::PlaceLimit {
+                        side: Side::Buy,
+                        price_tick: 110,
+                        qty: 3,
+                    },
+                })
+                .unwrap(),
+            ))
+            .unwrap();
+        let response = app.clone().oneshot(take).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let clock_before = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/candle-room/clock")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let before = axum::body::to_bytes(clock_before.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let candles = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/candle-room/candles?interval_ms=1000")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(candles.status(), StatusCode::OK);
+        let candle_body = axum::body::to_bytes(candles.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: CandleResponse = serde_json::from_slice(&candle_body).unwrap();
+        assert_eq!(parsed.api_version, "http.v1");
+        assert_eq!(parsed.candles.len(), 1);
+        assert_eq!(parsed.candles[0].volume, 3);
+        assert_eq!(parsed.candles[0].open_tick, 100);
+        assert_eq!(parsed.candles[0].high_tick, 110);
+        let clock_after = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/candle-room/clock")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let after = axum::body::to_bytes(clock_after.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(before, after);
+    }
+
+    #[tokio::test]
+    async fn training_start_abort_is_idempotent_and_blocks_restart() {
+        let mut scenario = spot_scenario("train-room");
+        scenario.seed_orders = vec![
+            Command::NewOrder(NewOrder {
+                position_side: Default::default(),
+                order_id: 1,
+                account_id: 10,
+                side: Side::Buy,
+                kind: OrderKind::Limit { price_tick: 99 },
+                qty: 1,
+                reduce_only: false,
+            }),
+            Command::NewOrder(NewOrder {
+                position_side: Default::default(),
+                order_id: 2,
+                account_id: 10,
+                side: Side::Sell,
+                kind: OrderKind::Limit { price_tick: 101 },
+                qty: 1,
+                reduce_only: false,
+            }),
+        ];
+        let request = StartTrainingRequest {
+            manual_agents: false,
+            run_id: "run-a".to_string(),
+            scenario,
+            agents: Vec::new(),
+            trainee_account_id: 20,
+            target_qty: 4,
+            horizon_steps: 8,
+        };
+        let app = new_app();
+        let start = || {
+            Request::builder()
+                .method(Method::POST)
+                .uri("/training/runs")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_string(&request).unwrap()))
+                .unwrap()
+        };
+        let first = app.clone().oneshot(start()).await.unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        let second = app.clone().oneshot(start()).await.unwrap();
+        assert_eq!(second.status(), StatusCode::OK);
+        let abort = || {
+            Request::builder()
+                .method(Method::POST)
+                .uri("/training/runs/run-a/abort")
+                .body(Body::empty())
+                .unwrap()
+        };
+        let a1 = app.clone().oneshot(abort()).await.unwrap();
+        assert_eq!(a1.status(), StatusCode::OK);
+        let a2 = app.clone().oneshot(abort()).await.unwrap();
+        assert_eq!(a2.status(), StatusCode::OK);
+        let result = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/training/runs/run-a/result")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(result.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: TrainingRunResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed.run.status, exchange_core::TrainingStatus::Aborted);
+        assert!(parsed.score.incomplete);
+    }
+
+    fn two_sided_training(run_id: &str, room_id: &str, horizon: u64) -> StartTrainingRequest {
+        let mut scenario = spot_scenario(room_id);
+        scenario.seed_orders = vec![
+            Command::NewOrder(NewOrder {
+                position_side: Default::default(),
+                order_id: 1,
+                account_id: 10,
+                side: Side::Buy,
+                kind: OrderKind::Limit { price_tick: 99 },
+                qty: 5,
+                reduce_only: false,
+            }),
+            Command::NewOrder(NewOrder {
+                position_side: Default::default(),
+                order_id: 2,
+                account_id: 10,
+                side: Side::Sell,
+                kind: OrderKind::Limit { price_tick: 101 },
+                qty: 5,
+                reduce_only: false,
+            }),
+        ];
+        StartTrainingRequest {
+            manual_agents: false,
+            run_id: run_id.to_string(),
+            scenario,
+            agents: Vec::new(),
+            trainee_account_id: 20,
+            target_qty: 4,
+            horizon_steps: horizon,
+        }
+    }
+
+    #[tokio::test]
+    async fn training_horizon_expires_and_aborts_cancel_residuals() {
+        let app = new_app();
+        let start = send_json(
+            &app,
+            Method::POST,
+            "/training/runs",
+            None,
+            two_sided_training("expire-run", "expire-room", 2),
+        )
+        .await;
+        assert_eq!(start.status(), StatusCode::OK);
+        let rest = send_json(
+            &app,
+            Method::POST,
+            "/rooms/expire-room/orders",
+            None,
+            limit_buy(20, 90, 1),
+        )
+        .await;
+        assert_eq!(rest.status(), StatusCode::OK);
+        let advance = send_json(
+            &app,
+            Method::POST,
+            "/rooms/expire-room/clock/advance",
+            None,
+            AdvanceClockRequest { steps: 2 },
+        )
+        .await;
+        assert_eq!(advance.status(), StatusCode::OK);
+        let result = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/training/runs/expire-run/result")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(result.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: TrainingRunResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed.run.status, exchange_core::TrainingStatus::Completed);
+        assert!(parsed.score.incomplete);
+        assert!(parsed.run.cancels >= 1);
+
+        let abort_app = new_app();
+        assert_eq!(
+            send_json(
+                &abort_app,
+                Method::POST,
+                "/training/runs",
+                None,
+                two_sided_training("abort-settle", "abort-settle-room", 8),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &abort_app,
+                Method::POST,
+                "/rooms/abort-settle-room/orders",
+                None,
+                limit_buy(20, 90, 2),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &abort_app,
+                Method::POST,
+                "/training/runs/abort-settle/abort",
+                None,
+                serde_json::json!({}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let orders = abort_app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/abort-settle-room/orders")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let order_body = axum::body::to_bytes(orders.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let order_text = String::from_utf8(order_body.to_vec()).unwrap();
+        assert!(
+            !order_text.contains("\"remaining_qty\":2")
+                || order_text.contains("canceled")
+                || order_text.contains("Cancelled")
+                || order_text.contains("\"orders\":[]")
+                || order_text.contains("\"orders\": []"),
+            "{order_text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn training_rejects_trainee_deposit_and_binds_report_book() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/training/runs",
+                None,
+                two_sided_training("xfer-run", "xfer-room", 8),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let deposit = send_json(
+            &app,
+            Method::POST,
+            "/rooms/xfer-room/transfers/deposit",
+            None,
+            serde_json::json!({
+                "account_id": 20,
+                "asset_id": "BTC",
+                "amount": 100
+            }),
+        )
+        .await;
+        assert_eq!(deposit.status(), StatusCode::CONFLICT);
+        let fill = send_json(
+            &app,
+            Method::POST,
+            "/rooms/xfer-room/orders",
+            None,
+            limit_buy(20, 101, 1),
+        )
+        .await;
+        assert_eq!(fill.status(), StatusCode::OK);
+        let report = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/training/runs/xfer-run/report")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(report.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(report.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: TrainingReportResponse = serde_json::from_slice(&body).unwrap();
+        let fills = parsed.json["facts"]["fills"].as_array().unwrap();
+        assert!(!fills.is_empty());
+        assert!(fills[0]["order_id"].is_number());
+        assert!(fills[0]["command_seq"].is_number());
+        assert!(fills[0]["book_before"]["asks"].is_array());
+        assert!(parsed.markdown.contains("order_id="));
+    }
+
+    #[tokio::test]
+    async fn training_speed_and_crash_recovery_match_on_shipped_path() {
+        let fast = new_app();
+        let slow = new_app();
+        for (app, run_id, room_id) in [
+            (&fast, "speed-fast", "speed-fast-room"),
+            (&slow, "speed-slow", "speed-slow-room"),
+        ] {
+            assert_eq!(
+                send_json(
+                    app,
+                    Method::POST,
+                    "/training/runs",
+                    None,
+                    two_sided_training(run_id, room_id, 3),
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+            assert_eq!(
+                send_json(
+                    app,
+                    Method::POST,
+                    &format!("/rooms/{room_id}/orders"),
+                    None,
+                    limit_buy(20, 101, 1),
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+        }
+        assert_eq!(
+            send_json(
+                &fast,
+                Method::POST,
+                "/rooms/speed-fast-room/clock/advance",
+                None,
+                AdvanceClockRequest { steps: 3 },
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        for _ in 0..3 {
+            assert_eq!(
+                send_json(
+                    &slow,
+                    Method::POST,
+                    "/rooms/speed-slow-room/clock/advance",
+                    None,
+                    AdvanceClockRequest { steps: 1 },
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+        }
+        async fn parse_training(app: axum::Router, run: String) -> TrainingRunResponse {
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(Method::GET)
+                        .uri(format!("/training/runs/{run}/result"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            serde_json::from_slice(&body).unwrap()
+        }
+        let fast_result = parse_training(fast.clone(), "speed-fast".to_string()).await;
+        let slow_result = parse_training(slow.clone(), "speed-slow".to_string()).await;
+        assert_eq!(fast_result.run.status, slow_result.run.status);
+        assert_eq!(fast_result.score.q, slow_result.score.q);
+        assert_eq!(
+            fast_result.score.steps_elapsed,
+            slow_result.score.steps_elapsed
+        );
+        assert_eq!(
+            fast_result.run.fills[0].price_tick,
+            slow_result.run.fills[0].price_tick
+        );
+
+        assert_eq!(
+            fast_result.run.status,
+            exchange_core::TrainingStatus::Completed
+        );
+        assert_eq!(
+            slow_result.run.status,
+            exchange_core::TrainingStatus::Completed
+        );
+    }
+
+    fn recovering_app(journal: Box<dyn JournalStore>) -> axum::Router {
+        new_app_recovering_with_journal("http://127.0.0.1:57305", journal).unwrap()
+    }
+
+    fn training_lease_config(instance_id: &str, owner_url: &str) -> RoomLeaseRuntimeConfig {
+        RoomLeaseRuntimeConfig {
+            mode: RoomLeaseRuntimeMode::RoomLeased,
+            instance_id: instance_id.to_string(),
+            owner_url: owner_url.to_string(),
+            lease_duration: Duration::from_secs(5),
+            renew_interval: Duration::from_millis(50),
+        }
+    }
+
+    fn leased_recovering_app(
+        journal: journal::SharedInMemoryJournalStore,
+        instance_id: &str,
+        owner_url: &str,
+    ) -> axum::Router {
+        let config = training_lease_config(instance_id, owner_url);
+        new_app_recovering_with_journal_factory_sync(
+            owner_url.to_string(),
+            AuthPolicy::local_development(),
+            default_cors_origins(),
+            Some(config),
+            move || Ok(JournalStoreBundle::single(Box::new(journal))),
+        )
+        .unwrap()
+    }
+
+    fn postgres_test_database_url() -> Option<String> {
+        match std::env::var("MARKETFORGE_TEST_DATABASE_URL") {
+            Ok(database_url) if !database_url.trim().is_empty() => Some(database_url),
+            _ if std::env::var("MARKETFORGE_REQUIRE_POSTGRES_TESTS").as_deref() == Ok("1") => {
+                panic!(
+                    "MARKETFORGE_REQUIRE_POSTGRES_TESTS=1 requires MARKETFORGE_TEST_DATABASE_URL"
+                );
+            }
+            _ => None,
+        }
+    }
+
+    fn unique_training_ids(prefix: &str) -> (String, String) {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        (
+            format!("{prefix}-room-{}-{suffix}", std::process::id()),
+            format!("{prefix}-run-{}-{suffix}", std::process::id()),
+        )
+    }
+
+    async fn start_two_sided_training_and_buy(
+        app: &axum::Router,
+        run_id: &str,
+        room_id: &str,
+        horizon: u64,
+    ) {
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                "/training/runs",
+                None,
+                two_sided_training(run_id, room_id, horizon),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                &format!("/rooms/{room_id}/orders"),
+                None,
+                limit_buy(20, 101, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    async fn advance_room_clock(app: &axum::Router, room_id: &str, steps: u64) {
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                &format!("/rooms/{room_id}/clock/advance"),
+                None,
+                AdvanceClockRequest { steps },
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    async fn training_result(app: &axum::Router, run_id: &str) -> TrainingRunResponse {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!("/training/runs/{run_id}/result"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "training result {run_id}"
+        );
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    async fn room_accounts(app: &axum::Router, room_id: &str) -> AccountSnapshots {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!("/rooms/{room_id}/accounts"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "accounts {room_id}");
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    async fn room_event_seqs(app: &axum::Router, room_id: &str) -> Vec<u64> {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!("/rooms/{room_id}/events?from_start=true&limit=50"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "events {room_id}");
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let events: RoomEventsResponse = serde_json::from_slice(&body).unwrap();
+        events
+            .executions
+            .iter()
+            .map(|execution| execution.command_seq)
+            .collect()
+    }
+
+    fn assert_training_pair_matches(live: &TrainingRunResponse, recovered: &TrainingRunResponse) {
+        assert_eq!(recovered.run.status, live.run.status);
+        assert_eq!(recovered.run.steps_elapsed, live.run.steps_elapsed);
+        assert_eq!(recovered.run.filled_qty, live.run.filled_qty);
+        assert_eq!(recovered.run.fees_paid, live.run.fees_paid);
+        assert_eq!(recovered.run.rejects, live.run.rejects);
+        assert_eq!(recovered.run.cancels, live.run.cancels);
+        assert_eq!(recovered.run.open_buy_qty, live.run.open_buy_qty);
+        assert_eq!(recovered.run.fills, live.run.fills);
+        assert_eq!(recovered.score, live.score);
+        assert_eq!(live.run.status, exchange_core::TrainingStatus::Completed);
+        assert_eq!(live.score.q, 1);
+        assert_eq!(live.score.steps_elapsed, 3);
+    }
+
+    fn assert_event_seqs_match_training(seqs: &[u64], run: &TrainingRunResponse) {
+        assert!(
+            seqs.windows(2).all(|window| window[0] < window[1]),
+            "{seqs:?}"
+        );
+        assert!(
+            run.run
+                .fills
+                .iter()
+                .all(|fill| fill.command_seq.is_some_and(|seq| seqs.contains(&seq))),
+            "{seqs:?} fills={:?}",
+            run.run.fills
+        );
+    }
+
+    #[tokio::test]
+    async fn training_journal_crash_recovery_matches_live_run() {
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let app = recovering_app(Box::new(journal.clone()));
+        start_two_sided_training_and_buy(&app, "mem-train", "mem-train-room", 3).await;
+        advance_room_clock(&app, "mem-train-room", 3).await;
+        let live = training_result(&app, "mem-train").await;
+        let live_accounts = room_accounts(&app, "mem-train-room").await;
+        let live_seqs = room_event_seqs(&app, "mem-train-room").await;
+        drop(app);
+
+        let recovered = recovering_app(Box::new(journal));
+        let recovered_run = training_result(&recovered, "mem-train").await;
+        assert_training_pair_matches(&live, &recovered_run);
+        assert_eq!(
+            room_accounts(&recovered, "mem-train-room").await,
+            live_accounts
+        );
+        let recovered_seqs = room_event_seqs(&recovered, "mem-train-room").await;
+        assert_eq!(recovered_seqs, live_seqs);
+        assert_event_seqs_match_training(&recovered_seqs, &recovered_run);
+    }
+
+    #[tokio::test]
+    async fn training_lease_takeover_matches_continuous_run() {
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let continuous_journal = journal::SharedInMemoryJournalStore::new();
+        let continuous = recovering_app(Box::new(continuous_journal));
+        start_two_sided_training_and_buy(&continuous, "lease-train", "lease-train-room", 3).await;
+        advance_room_clock(&continuous, "lease-train-room", 3).await;
+        let continuous_run = training_result(&continuous, "lease-train").await;
+        let continuous_accounts = room_accounts(&continuous, "lease-train-room").await;
+        let continuous_seqs = room_event_seqs(&continuous, "lease-train-room").await;
+
+        let first_state = shared_state(
+            AppState::recover_with_journal_bundle_and_auth_policy(
+                "http://127.0.0.1:57305",
+                JournalStoreBundle::single(Box::new(journal.clone())),
+                AuthPolicy::local_development(),
+                Some(training_lease_config("train-a", "http://127.0.0.1:57305")),
+            )
+            .unwrap(),
+        );
+        let first = app(first_state.clone());
+        start_two_sided_training_and_buy(&first, "lease-train", "lease-train-room", 3).await;
+        advance_room_clock(&first, "lease-train-room", 1).await;
+        release_owned_room_writer_leases(&first_state)
+            .await
+            .unwrap();
+        drop(first);
+        drop(first_state);
+
+        let recovered = leased_recovering_app(journal, "train-b", "http://127.0.0.1:57306");
+        advance_room_clock(&recovered, "lease-train-room", 2).await;
+        let recovered_run = training_result(&recovered, "lease-train").await;
+        assert_training_pair_matches(&continuous_run, &recovered_run);
+        assert_eq!(
+            room_accounts(&recovered, "lease-train-room").await,
+            continuous_accounts
+        );
+        let recovered_seqs = room_event_seqs(&recovered, "lease-train-room").await;
+        assert_eq!(recovered_seqs, continuous_seqs);
+        assert_event_seqs_match_training(&recovered_seqs, &recovered_run);
+        let owner = recovered
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/lease-train-room/owner")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(owner.status(), StatusCode::OK);
+        let owner_body = axum::body::to_bytes(owner.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let owner: RoomOwnerResponse = serde_json::from_slice(&owner_body).unwrap();
+        assert_eq!(owner.owner_id, "train-b");
+        assert_eq!(owner.fencing_token, 2);
+    }
+
+    #[tokio::test]
+    async fn training_postgres_crash_recovery_matches_live_run() {
+        let Some(database_url) = postgres_test_database_url() else {
+            return;
+        };
+        let (room_id, run_id) = unique_training_ids("pg-train");
+        cleanup_postgres_room(&database_url, &room_id);
+
+        let live_url = database_url.clone();
+        let store =
+            tokio::task::spawn_blocking(move || PostgresJournalStore::connect_migrated(&live_url))
+                .await
+                .unwrap()
+                .unwrap();
+        let app = recovering_app(Box::new(store));
+        start_two_sided_training_and_buy(&app, &run_id, &room_id, 3).await;
+        advance_room_clock(&app, &room_id, 3).await;
+        let live = training_result(&app, &run_id).await;
+        let live_accounts = room_accounts(&app, &room_id).await;
+        let live_seqs = room_event_seqs(&app, &room_id).await;
+        drop(app);
+
+        let recover_url = database_url.clone();
+        let recovered_store = tokio::task::spawn_blocking(move || {
+            PostgresJournalStore::connect_migrated(&recover_url)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        let recovered = recovering_app(Box::new(recovered_store));
+        let recovered_run = training_result(&recovered, &run_id).await;
+        assert_training_pair_matches(&live, &recovered_run);
+        assert_eq!(room_accounts(&recovered, &room_id).await, live_accounts);
+        let recovered_seqs = room_event_seqs(&recovered, &room_id).await;
+        assert_eq!(recovered_seqs, live_seqs);
+        assert_event_seqs_match_training(&recovered_seqs, &recovered_run);
+        cleanup_postgres_room(&database_url, &room_id);
+    }
+
+    #[tokio::test]
+    async fn isolated_replay_does_not_mutate_live_room() {
+        let app = new_app();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/rooms")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_string(&spot_scenario("replay-live")).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let book_before = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/replay-live/book")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let before = axum::body::to_bytes(book_before.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let replay = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/replay-live/replay")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(replay.status(), StatusCode::OK);
+        let replay_body = axum::body::to_bytes(replay.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: IsolatedReplayResponse = serde_json::from_slice(&replay_body).unwrap();
+        assert!(parsed.live_room_untouched);
+        let book_after = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/replay-live/book")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let after = axum::body::to_bytes(book_after.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(before, after);
+    }
+
+    async fn send_json(
+        app: &axum::Router,
+        method: Method,
+        uri: &str,
+        user: Option<&str>,
+        body: impl Serialize,
+    ) -> axum::http::Response<Body> {
+        let mut builder = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("content-type", "application/json");
+        if let Some(user) = user {
+            builder = builder.header(USER_ID_HEADER, user);
+        }
+        app.clone()
+            .oneshot(
+                builder
+                    .body(Body::from(serde_json::to_string(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
+    fn limit_buy(account_id: AccountId, price_tick: i64, qty: u64) -> SubmitOrderRequest {
+        SubmitOrderRequest {
+            participant_id: "p5".to_string(),
+            instrument_id: None,
+            account_id,
+            action: OrderAction::PlaceLimit {
+                side: Side::Buy,
+                price_tick,
+                qty,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn owner_can_add_spectator_who_cannot_trade() {
+        let app = new_app();
+        let response = send_json(
+            &app,
+            Method::POST,
+            "/rooms",
+            None,
+            spot_scenario("member-room"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let add = send_json(
+            &app,
+            Method::POST,
+            "/rooms/member-room/members",
+            None,
+            serde_json::json!({"user_id":"spectator","role":"spectator"}),
+        )
+        .await;
+        assert_eq!(add.status(), StatusCode::OK);
+        let trade = send_json(
+            &app,
+            Method::POST,
+            "/rooms/member-room/orders",
+            Some("spectator"),
+            limit_buy(20, 100, 1),
+        )
+        .await;
+        assert_eq!(trade.status(), StatusCode::FORBIDDEN);
+        let private = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/member-room/stream/private")
+                    .header(USER_ID_HEADER, "spectator")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(private.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn traders_are_isolated_and_instructor_is_not_trade_any_account() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("role-matrix")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        for (user, role) in [
+            ("trader-a", "trader"),
+            ("trader-b", "trader"),
+            ("coach", "instructor"),
+        ] {
+            let add = send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/members",
+                None,
+                serde_json::json!({"user_id": user, "role": role}),
+            )
+            .await;
+            assert_eq!(add.status(), StatusCode::OK);
+        }
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/accounts/10/owners",
+                None,
+                serde_json::json!({"user_id":"trader-a"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/accounts/20/owners",
+                None,
+                serde_json::json!({"user_id":"trader-b"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/orders",
+                Some("trader-a"),
+                limit_buy(10, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/orders",
+                Some("trader-a"),
+                limit_buy(20, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/orders",
+                Some("trader-b"),
+                limit_buy(10, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/orders",
+                Some("coach"),
+                limit_buy(10, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/accounts/10/owners",
+                None,
+                serde_json::json!({"user_id":"coach"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/orders",
+                Some("coach"),
+                limit_buy(10, 89, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let observe = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/role-matrix/observe?account_id=10")
+                    .header(USER_ID_HEADER, "trader-a")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(observe.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(observe.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let parsed: ObservationResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed.api_version, "strategy.v1");
+        assert_eq!(parsed.observation.version, 1);
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/members/trader-a",
+                None,
+                serde_json::json!({}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/role-matrix/orders",
+                Some("trader-a"),
+                limit_buy(10, 88, 1),
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn forged_account_illegal_precision_and_quota_are_rejected() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("quota-room")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-room/members",
+                None,
+                serde_json::json!({"user_id":"ext","role":"trader"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-room/accounts/20/owners",
+                None,
+                serde_json::json!({"user_id":"ext"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-room/orders",
+                Some("ext"),
+                limit_buy(20, 0, 1),
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-room/orders",
+                Some("ext"),
+                limit_buy(20, 80, 0),
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
+        for i in 0..EXTERNAL_ACTIONS_PER_STEP {
+            let status = send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-room/orders",
+                Some("ext"),
+                limit_buy(20, 70 + i64::from(i), 1),
+            )
+            .await
+            .status();
+            assert_eq!(status, StatusCode::OK, "action {i}");
+        }
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-room/orders",
+                Some("ext"),
+                limit_buy(20, 50, 1),
+            )
+            .await
+            .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/other-quota/orders",
+                Some("ext"),
+                limit_buy(20, 50, 1),
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("other-quota")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/other-quota/members",
+                None,
+                serde_json::json!({"user_id":"ext","role":"trader"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/other-quota/accounts/20/owners",
+                None,
+                serde_json::json!({"user_id":"ext"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/other-quota/orders",
+                Some("ext"),
+                limit_buy(20, 50, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn training_start_freezes_account_assignment() {
+        let mut scenario = spot_scenario("freeze-room");
+        scenario.seed_orders = vec![
+            Command::NewOrder(NewOrder {
+                position_side: Default::default(),
+                order_id: 1,
+                account_id: 10,
+                side: Side::Buy,
+                kind: OrderKind::Limit { price_tick: 99 },
+                qty: 1,
+                reduce_only: false,
+            }),
+            Command::NewOrder(NewOrder {
+                position_side: Default::default(),
+                order_id: 2,
+                account_id: 10,
+                side: Side::Sell,
+                kind: OrderKind::Limit { price_tick: 101 },
+                qty: 1,
+                reduce_only: false,
+            }),
+        ];
+        let app = new_app();
+        let start = send_json(
+            &app,
+            Method::POST,
+            "/training/runs",
+            None,
+            StartTrainingRequest {
+                manual_agents: false,
+                run_id: "freeze-run".to_string(),
+                scenario,
+                agents: Vec::new(),
+                trainee_account_id: 20,
+                target_qty: 4,
+                horizon_steps: 8,
+            },
+        )
+        .await;
+        assert_eq!(start.status(), StatusCode::OK);
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/freeze-room/members",
+                None,
+                serde_json::json!({"user_id":"trader-z","role":"trader"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/freeze-room/accounts/20/owners",
+                None,
+                serde_json::json!({"user_id":"trader-z"}),
+            )
+            .await
+            .status(),
+            StatusCode::CONFLICT
+        );
+        let trainee = send_json(
+            &app,
+            Method::POST,
+            "/rooms/freeze-room/orders",
+            None,
+            limit_buy(20, 101, 1),
+        )
+        .await;
+        assert_eq!(trainee.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(trainee.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+        assert!(!text.contains("DuplicateOrderId"), "{text}");
+        assert!(text.contains("\"accepted\":true"), "{text}");
+        assert!(text.contains("TradePrinted"), "{text}");
+    }
+
+    async fn assign_trader(app: &axum::Router, room_id: &str, user: &str, account_id: AccountId) {
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                &format!("/rooms/{room_id}/members"),
+                None,
+                serde_json::json!({"user_id": user, "role": "trader"}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                &format!("/rooms/{room_id}/accounts/{account_id}/owners"),
+                None,
+                serde_json::json!({"user_id": user}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    async fn exhaust_external_quota(app: &axum::Router, room_id: &str, user: &str) {
+        for i in 0..EXTERNAL_ACTIONS_PER_STEP {
+            assert_eq!(
+                send_json(
+                    app,
+                    Method::POST,
+                    &format!("/rooms/{room_id}/orders"),
+                    Some(user),
+                    limit_buy(20, 70 + i64::from(i), 1),
+                )
+                .await
+                .status(),
+                StatusCode::OK,
+                "quota fill {i}"
+            );
+        }
+        assert_eq!(
+            send_json(
+                app,
+                Method::POST,
+                &format!("/rooms/{room_id}/orders"),
+                Some(user),
+                limit_buy(20, 50, 1),
+            )
+            .await
+            .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+    }
+
+    #[tokio::test]
+    async fn training_freeze_survives_restart_and_takeover_for_terminal_states() {
+        async fn assert_assignment_frozen(app: &axum::Router, room_id: &str) {
+            assert_eq!(
+                send_json(
+                    app,
+                    Method::POST,
+                    &format!("/rooms/{room_id}/accounts/20/owners"),
+                    None,
+                    serde_json::json!({"user_id":"late-trader"}),
+                )
+                .await
+                .status(),
+                StatusCode::CONFLICT
+            );
+        }
+
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let live = recovering_app(Box::new(journal.clone()));
+        let start = send_json(
+            &live,
+            Method::POST,
+            "/training/runs",
+            None,
+            two_sided_training("freeze-restart", "freeze-restart-room", 2),
+        )
+        .await;
+        assert_eq!(start.status(), StatusCode::OK);
+        assert_assignment_frozen(&live, "freeze-restart-room").await;
+        drop(live);
+        let recovered = recovering_app(Box::new(journal.clone()));
+        assert_assignment_frozen(&recovered, "freeze-restart-room").await;
+        assert_eq!(
+            send_json(
+                &recovered,
+                Method::POST,
+                "/training/runs/freeze-restart/abort",
+                None,
+                serde_json::json!({}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_assignment_frozen(&recovered, "freeze-restart-room").await;
+        drop(recovered);
+
+        let lease_journal = journal::SharedInMemoryJournalStore::new();
+        let first_state = shared_state(
+            AppState::recover_with_journal_bundle_and_auth_policy(
+                "http://127.0.0.1:57305",
+                JournalStoreBundle::single(Box::new(lease_journal.clone())),
+                AuthPolicy::local_development(),
+                Some(training_lease_config("freeze-a", "http://127.0.0.1:57305")),
+            )
+            .unwrap(),
+        );
+        let first = app(first_state.clone());
+        assert_eq!(
+            send_json(
+                &first,
+                Method::POST,
+                "/training/runs",
+                None,
+                two_sided_training("freeze-lease", "freeze-lease-room", 2),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        release_owned_room_writer_leases(&first_state)
+            .await
+            .unwrap();
+        drop(first);
+        drop(first_state);
+        let taken = leased_recovering_app(lease_journal, "freeze-b", "http://127.0.0.1:57306");
+        assert_assignment_frozen(&taken, "freeze-lease-room").await;
+    }
+
+    #[tokio::test]
+    async fn external_action_quota_survives_restart_and_resets_on_step() {
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let app = recovering_app(Box::new(journal.clone()));
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("quota-persist")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, "quota-persist", "ext", 20).await;
+        exhaust_external_quota(&app, "quota-persist", "ext").await;
+        let replay_ok = send_json_with_key(
+            &app,
+            "/rooms/quota-persist/orders",
+            Some("ext"),
+            Some("quota-retry"),
+            limit_buy(20, 40, 1),
+        )
+        .await;
+        assert_eq!(replay_ok.status(), StatusCode::TOO_MANY_REQUESTS);
+        drop(app);
+
+        let recovered = recovering_app(Box::new(journal));
+        assert_eq!(
+            send_json(
+                &recovered,
+                Method::POST,
+                "/rooms/quota-persist/orders",
+                Some("ext"),
+                limit_buy(20, 41, 1),
+            )
+            .await
+            .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
+            send_json(
+                &recovered,
+                Method::POST,
+                "/rooms/quota-persist/clock/advance",
+                None,
+                AdvanceClockRequest { steps: 1 },
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            send_json(
+                &recovered,
+                Method::POST,
+                "/rooms/quota-persist/orders",
+                Some("ext"),
+                limit_buy(20, 42, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+    }
+
+    async fn send_json_with_key(
+        app: &axum::Router,
+        uri: &str,
+        user: Option<&str>,
+        key: Option<&str>,
+        body: impl Serialize,
+    ) -> axum::http::Response<Body> {
+        control_request(
+            app,
+            uri,
+            user,
+            key,
+            Some(serde_json::to_value(body).unwrap()),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn external_action_quota_idempotent_retry_does_not_double_count() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("quota-idem")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, "quota-idem", "ext", 20).await;
+        for i in 0..(EXTERNAL_ACTIONS_PER_STEP - 1) {
+            assert_eq!(
+                send_json(
+                    &app,
+                    Method::POST,
+                    "/rooms/quota-idem/orders",
+                    Some("ext"),
+                    limit_buy(20, 60 + i64::from(i), 1),
+                )
+                .await
+                .status(),
+                StatusCode::OK
+            );
+        }
+        let first = send_json_with_key(
+            &app,
+            "/rooms/quota-idem/orders",
+            Some("ext"),
+            Some("last-slot"),
+            limit_buy(20, 90, 1),
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let replay = send_json_with_key(
+            &app,
+            "/rooms/quota-idem/orders",
+            Some("ext"),
+            Some("last-slot"),
+            limit_buy(20, 90, 1),
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/quota-idem/orders",
+                Some("ext"),
+                limit_buy(20, 91, 1),
+            )
+            .await
+            .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+    }
+
+    #[tokio::test]
+    async fn training_settle_failure_does_not_install_live_state() {
+        struct FailTrainingPersist {
+            inner: journal::InMemoryJournalStore,
+            fail_training: bool,
+        }
+
+        impl JournalStore for FailTrainingPersist {
+            fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
+                self.inner.load_recovery()
+            }
+
+            fn create_room(
+                &mut self,
+                owner_user_id: &str,
+                scenario: &ScenarioConfig,
+                bootstrap: &RoomBootstrap,
+                account_ids: &[AccountId],
+                seed_records: &[JournalExecution],
+                initial_snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                self.inner.create_room(
+                    owner_user_id,
+                    scenario,
+                    bootstrap,
+                    account_ids,
+                    seed_records,
+                    initial_snapshot,
+                )
+            }
+
+            fn append_executions(
+                &mut self,
+                records: &[JournalExecution],
+                snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                self.inner.append_executions(records, snapshot)
+            }
+
+            fn append_room_mutation(
+                &mut self,
+                mutation: &PendingJournalMutation,
+                execution_records: &[JournalExecution],
+                transfer_records: &[JournalTransfer],
+                snapshot: Option<&JournalSnapshot>,
+            ) -> Result<(), JournalError> {
+                if self.fail_training
+                    && matches!(mutation.mutation, RoomMutation::TrainingProgress { .. })
+                {
+                    return Err(JournalError::Recovery(
+                        "injected training persist failure".into(),
+                    ));
+                }
+                self.inner.append_room_mutation(
+                    mutation,
+                    execution_records,
+                    transfer_records,
+                    snapshot,
+                )
+            }
+
+            fn user_can_administer_room(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+            ) -> Result<bool, JournalError> {
+                self.inner.user_can_administer_room(user_id, room_id)
+            }
+
+            fn user_can_access_room(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+            ) -> Result<bool, JournalError> {
+                self.inner.user_can_access_room(user_id, room_id)
+            }
+
+            fn update_room_status(
+                &mut self,
+                room_id: &str,
+                status: MarketStatus,
+            ) -> Result<(), JournalError> {
+                self.inner.update_room_status(room_id, status)
+            }
+
+            fn find_control_idempotency(
+                &mut self,
+                user_id: &str,
+                room_id: &str,
+                idempotency_key: &str,
+            ) -> Result<Option<journal::ControlIdempotencyRecord>, JournalError> {
+                self.inner
+                    .find_control_idempotency(user_id, room_id, idempotency_key)
+            }
+        }
+
+        let app = new_app_with_journal(
+            "http://127.0.0.1:57305",
+            Box::new(FailTrainingPersist {
+                inner: journal::InMemoryJournalStore::new(),
+                fail_training: true,
+            }),
+        );
+        let start = send_json(
+            &app,
+            Method::POST,
+            "/training/runs",
+            None,
+            two_sided_training("settle-fail", "settle-fail-room", 1),
+        )
+        .await;
+        assert_eq!(start.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let missing = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/training/runs/settle-fail")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn close_room_settles_training_residuals() {
+        let app = new_app();
+        let start = send_json(
+            &app,
+            Method::POST,
+            "/training/runs",
+            None,
+            two_sided_training("close-settle", "close-settle-room", 8),
+        )
+        .await;
+        assert_eq!(start.status(), StatusCode::OK);
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/close-settle-room/orders",
+                None,
+                limit_buy(20, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            control_request(&app, "/rooms/close-settle-room/close", None, None, None)
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        let orders = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/close-settle-room/orders")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(orders.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(orders.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let trainee = payload["orders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|order| order["account_id"] == 20)
+            .expect("trainee order");
+        assert_eq!(trainee["status"], "canceled", "{payload}");
+    }
+
+    async fn first_sse_data(response: axum::http::Response<Body>) -> serde_json::Value {
+        collect_sse_events(response, 1)
+            .await
+            .into_iter()
+            .next()
+            .expect("sse frame")
+    }
+
+    async fn collect_sse_from_stream(
+        stream: &mut (impl futures_util::Stream<Item = Result<axum::body::Bytes, axum::Error>> + Unpin),
+        max_frames: usize,
+    ) -> Vec<serde_json::Value> {
+        let mut events = Vec::new();
+        let mut buf = String::new();
+        for _ in 0..max_frames.max(1) * 8 {
+            if events.len() >= max_frames {
+                break;
+            }
+            match tokio::time::timeout(Duration::from_millis(500), stream.next()).await {
+                Ok(Some(Ok(chunk))) => {
+                    buf.push_str(&String::from_utf8_lossy(&chunk));
+                    while let Some(idx) = buf.find("\n\n") {
+                        let frame = buf[..idx].to_string();
+                        buf = buf[idx + 2..].to_string();
+                        if let Some(data) =
+                            frame.lines().find_map(|line| line.strip_prefix("data: "))
+                            && let Ok(value) = serde_json::from_str::<serde_json::Value>(data)
+                        {
+                            events.push(value);
+                            if events.len() >= max_frames {
+                                break;
+                            }
+                        }
+                    }
+                }
+                _ => break,
+            }
+        }
+        events
+    }
+
+    async fn collect_sse_events(
+        response: axum::http::Response<Body>,
+        max_frames: usize,
+    ) -> Vec<serde_json::Value> {
+        let mut stream = response.into_body().into_data_stream();
+        collect_sse_from_stream(&mut stream, max_frames).await
+    }
+
+    fn json_body(body: axum::body::Bytes) -> serde_json::Value {
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    fn first_order_id(value: &serde_json::Value) -> Option<u64> {
+        match value {
+            serde_json::Value::Object(map) => {
+                if let Some(id) = map.get("order_id").and_then(|item| item.as_u64()) {
+                    return Some(id);
+                }
+                map.values().find_map(first_order_id)
+            }
+            serde_json::Value::Array(items) => items.iter().find_map(first_order_id),
+            _ => None,
+        }
+    }
+
+    fn limit_cancel(account_id: AccountId, order_id: u64) -> SubmitOrderRequest {
+        SubmitOrderRequest {
+            participant_id: "p5".to_string(),
+            instrument_id: None,
+            account_id,
+            action: OrderAction::Cancel { order_id },
+        }
+    }
+
+    async fn get_json(app: &axum::Router, uri: &str, user: Option<&str>) -> serde_json::Value {
+        let mut builder = Request::builder().method(Method::GET).uri(uri);
+        if let Some(user) = user {
+            builder = builder.header(USER_ID_HEADER, user);
+        }
+        let response = app
+            .clone()
+            .oneshot(builder.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        json_body(
+            axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+    }
+
+    fn snapshot_order_ids(snapshot: &serde_json::Value, account_id: i64) -> Vec<u64> {
+        let payload = snapshot.get("payload").unwrap_or(snapshot);
+        payload["orders"]
+            .as_array()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .filter(|order| order["account_id"] == account_id)
+            .filter_map(|order| order["order_id"].as_u64())
+            .collect()
+    }
+
+    async fn observe_order_ids(
+        app: &axum::Router,
+        room_id: &str,
+        user: &str,
+        account_id: i64,
+    ) -> Vec<u64> {
+        let observed = get_json(
+            app,
+            &format!("/rooms/{room_id}/observe?account_id={account_id}"),
+            Some(user),
+        )
+        .await;
+        let observation = observed.get("observation").unwrap_or(&observed);
+        observation["own_orders"]
+            .as_array()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .filter_map(|order| order["order_id"].as_u64())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn private_stream_snapshot_includes_own_resting_orders_not_others() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("priv-rest")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, "priv-rest", "alice", 20).await;
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/priv-rest/orders",
+                Some("alice"),
+                limit_buy(20, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/priv-rest/stream/private")
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let frame = first_sse_data(response).await;
+        let snapshot = frame.get("payload").unwrap_or(&frame);
+        assert_eq!(snapshot["cursor"]["scope"], "private");
+        assert_eq!(snapshot["cursor"]["version"], "stream.v1");
+        let orders = snapshot["orders"].as_array().unwrap();
+        assert!(
+            orders.iter().any(|order| order["account_id"] == 20),
+            "{snapshot}"
+        );
+        assert!(
+            orders.iter().all(|order| order["account_id"] == 20),
+            "{snapshot}"
+        );
+        let accounts = snapshot["accounts"].as_array().unwrap();
+        assert_eq!(accounts, &vec![serde_json::json!(20)]);
+    }
+
+    #[tokio::test]
+    async fn private_stream_rest_only_and_cancel_are_visible_to_owner() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("priv-delta")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, "priv-delta", "alice", 20).await;
+        let post = send_json(
+            &app,
+            Method::POST,
+            "/rooms/priv-delta/orders",
+            Some("alice"),
+            limit_buy(20, 90, 1),
+        )
+        .await;
+        assert_eq!(post.status(), StatusCode::OK);
+        let posted = json_body(
+            axum::body::to_bytes(post.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        );
+        assert!(posted.to_string().contains("OrderRested"), "{posted}");
+        let order_id = first_order_id(&posted).expect("posted order_id");
+        let live = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/priv-delta/stream/private")
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let mut live_stream = live.into_body().into_data_stream();
+        let opened = collect_sse_from_stream(&mut live_stream, 1).await;
+        let snapshot = opened.first().expect("snapshot");
+        assert_eq!(snapshot["kind"], "snapshot");
+        assert!(
+            snapshot_order_ids(snapshot, 20).contains(&order_id),
+            "{snapshot}"
+        );
+        let cancel = send_json(
+            &app,
+            Method::POST,
+            "/rooms/priv-delta/orders",
+            Some("alice"),
+            limit_cancel(20, order_id),
+        )
+        .await;
+        assert_eq!(cancel.status(), StatusCode::OK);
+        let canceled = json_body(
+            axum::body::to_bytes(cancel.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        );
+        assert!(
+            canceled.to_string().contains("OrderCanceled")
+                || canceled.to_string().contains("canceled"),
+            "{canceled}"
+        );
+        let live_delta = collect_sse_from_stream(&mut live_stream, 4).await;
+        assert!(
+            live_delta.iter().any(|event| {
+                event["kind"] == "execution" && event.to_string().contains("OrderCanceled")
+            }),
+            "live cancel missing: {live_delta:?}"
+        );
+        let resume_cursor = snapshot["payload"]["cursor"]["command_seq"]
+            .as_u64()
+            .expect("snapshot cursor");
+        let resume = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!(
+                        "/rooms/priv-delta/stream/private?after_command_seq={resume_cursor}"
+                    ))
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let resume_events = collect_sse_events(resume, 8).await;
+        assert!(
+            resume_events.iter().any(|event| {
+                event["kind"] == "execution" && event.to_string().contains("OrderCanceled")
+            }) || resume_events.iter().any(|event| {
+                event["kind"] == "snapshot" && !snapshot_order_ids(event, 20).contains(&order_id)
+            }),
+            "{resume_events:?}"
+        );
+        let live_ids = observe_order_ids(&app, "priv-delta", "alice", 20).await;
+        assert!(
+            !live_ids.contains(&order_id),
+            "authority still has canceled order {live_ids:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn private_stream_snapshot_plus_deltas_match_authority_orders() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("priv-rebuild")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, "priv-rebuild", "alice", 20).await;
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/priv-rebuild/orders",
+                Some("alice"),
+                limit_buy(20, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/priv-rebuild/stream/private")
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let events = collect_sse_events(response, 4).await;
+        let snapshot = events
+            .iter()
+            .find(|event| event["kind"] == "snapshot")
+            .expect("snapshot");
+        let boundary = snapshot["payload"]["cursor"]["command_seq"]
+            .as_u64()
+            .or_else(|| snapshot["command_seq"].as_u64());
+        for event in &events {
+            if event["kind"] == "execution"
+                && let Some(seq) = event["command_seq"].as_u64()
+                && let Some(boundary) = boundary
+            {
+                assert!(
+                    seq > boundary,
+                    "mixed snapshot {boundary} with older delta {seq}: {event}"
+                );
+            }
+        }
+        let mut rebuilt = snapshot_order_ids(snapshot, 20);
+        rebuilt.sort_unstable();
+        let mut live = observe_order_ids(&app, "priv-rebuild", "alice", 20).await;
+        live.sort_unstable();
+        assert_eq!(rebuilt, live, "snapshot={snapshot} observe={live:?}");
+    }
+
+    #[tokio::test]
+    async fn private_stream_cache_overflow_fills_from_journal_or_resyncs() {
+        let execution_count = ROOM_EVENT_CACHE_CAPACITY + 2;
+        let (app, state) = paged_event_app(execution_count);
+        {
+            let state = state.app.lock().await;
+            let cache = state.executions.get("paged-room").unwrap();
+            assert_eq!(cache.len(), ROOM_EVENT_CACHE_CAPACITY);
+            assert_eq!(cache.front().unwrap().command_seq, 2);
+        }
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/paged-room/stream/public?after_command_seq=0")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let events = collect_sse_events(response, 8).await;
+        let resync = events
+            .iter()
+            .any(|event| event["kind"] == "resync_required");
+        let from_journal = events
+            .iter()
+            .any(|event| event["kind"] == "execution" && event["command_seq"].as_u64() == Some(1));
+        assert!(
+            resync || from_journal,
+            "cache overflow must journal-fill seq 1 or resync: {events:?}"
+        );
+        if let Some(snapshot) = events.iter().find(|event| event["kind"] == "snapshot") {
+            let boundary = snapshot["payload"]["cursor"]["command_seq"]
+                .as_u64()
+                .or_else(|| snapshot["command_seq"].as_u64());
+            for event in &events {
+                if event["kind"] == "execution"
+                    && let Some(seq) = event["command_seq"].as_u64()
+                    && let Some(boundary) = boundary
+                {
+                    assert!(
+                        seq > boundary,
+                        "mixed latest snapshot with older delta {seq}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn private_stream_reconnect_does_not_double_apply_resting_orders() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("priv-retry")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, "priv-retry", "alice", 20).await;
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/priv-retry/orders",
+                Some("alice"),
+                limit_buy(20, 90, 1),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let first = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/priv-retry/stream/private")
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let snapshot = first_sse_data(first).await;
+        let cursor = snapshot["payload"]["cursor"]["command_seq"]
+            .as_u64()
+            .expect("cursor");
+        let second = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!(
+                        "/rooms/priv-retry/stream/private?after_command_seq={cursor}"
+                    ))
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let replay = collect_sse_events(second, 6).await;
+        let mut seen = snapshot_order_ids(&snapshot, 20);
+        for event in &replay {
+            if event["kind"] == "snapshot" {
+                seen = snapshot_order_ids(event, 20);
+            }
+        }
+        seen.sort_unstable();
+        seen.dedup();
+        let mut live = observe_order_ids(&app, "priv-retry", "alice", 20).await;
+        live.sort_unstable();
+        assert_eq!(seen, live);
+        assert_eq!(seen.len(), 1, "reconnect doubled orders: {replay:?}");
+    }
+
+    #[tokio::test]
+    async fn private_stream_rejects_mismatched_scope_and_omits_others_after_revoke() {
+        let app = new_app();
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms",
+                None,
+                spot_scenario("priv-scope")
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let mismatch = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/priv-scope/stream/private?scope=public")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(mismatch.status(), StatusCode::BAD_REQUEST);
+        assign_trader(&app, "priv-scope", "alice", 20).await;
+        assert_eq!(
+            send_json(
+                &app,
+                Method::POST,
+                "/rooms/priv-scope/members/alice",
+                None,
+                serde_json::json!({}),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/priv-scope/stream/private")
+                    .header(USER_ID_HEADER, "alice")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn external_action_quota_postgres_survives_restart() {
+        let Some(database_url) = postgres_test_database_url() else {
+            return;
+        };
+        let room_id = format!(
+            "quota-pg-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        cleanup_postgres_room(&database_url, &room_id);
+        let live_url = database_url.clone();
+        let store =
+            tokio::task::spawn_blocking(move || PostgresJournalStore::connect_migrated(&live_url))
+                .await
+                .unwrap()
+                .unwrap();
+        let app = recovering_app(Box::new(store));
+        let scenario = spot_scenario(&room_id);
+        assert_eq!(
+            send_json(&app, Method::POST, "/rooms", None, scenario.clone())
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        assign_trader(&app, &room_id, "ext", 20).await;
+        exhaust_external_quota(&app, &room_id, "ext").await;
+        drop(app);
+        let recover_url = database_url.clone();
+        let recovered_store = tokio::task::spawn_blocking(move || {
+            PostgresJournalStore::connect_migrated(&recover_url)
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        let recovered = recovering_app(Box::new(recovered_store));
+        assert_eq!(
+            send_json(
+                &recovered,
+                Method::POST,
+                &format!("/rooms/{room_id}/orders"),
+                Some("ext"),
+                limit_buy(20, 33, 1),
+            )
+            .await
+            .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        cleanup_postgres_room(&database_url, &room_id);
+        let _ = scenario;
     }
 
     #[tokio::test]
@@ -9134,6 +15963,54 @@ mod tests {
         assert!(body.contains("marketforge_durable_writes_started_total 1\n"));
         assert!(body.contains("marketforge_durable_writes_completed_total 1\n"));
         assert!(body.contains("marketforge_durable_writes_failed_total 1\n"));
+        assert!(body.contains("marketforge_scheduler_steps_total 0\n"));
+        assert!(body.contains("marketforge_training_runs_running 0\n"));
+        assert!(body.contains("marketforge_replayed_commands_total 0\n"));
+    }
+
+    #[tokio::test]
+    async fn isolated_replay_increments_replayed_command_metric() {
+        let app = new_app();
+        let scenario = seeded_spot_scenario("metric-replay");
+        assert_eq!(
+            send_json(&app, Method::POST, "/rooms", None, scenario,)
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        let replay = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/rooms/metric-replay/replay")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(replay.status(), StatusCode::OK);
+        let metrics = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(metrics.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(
+            body.contains("marketforge_replayed_commands_total "),
+            "{body}"
+        );
+        assert!(
+            !body.contains("marketforge_replayed_commands_total 0\n"),
+            "{body}"
+        );
     }
 
     #[tokio::test]
@@ -9303,14 +16180,15 @@ mod tests {
         let records = Arc::new(Mutex::new(Vec::<JournalExecution>::new()));
         let release_first_append = Arc::new((Mutex::new(false), Condvar::new()));
         let (started_sender, started_receiver) = std::sync::mpsc::channel();
-        let app = new_app_with_journal(
+        let shared = shared_state(AppState::new_with_journal(
             "http://127.0.0.1:57305",
             Box::new(PausingJournal {
                 records: Arc::clone(&records),
                 first_append_started: Some(started_sender),
                 release_first_append: Arc::clone(&release_first_append),
             }),
-        );
+        ));
+        let app = app_with_cors_origins(shared.clone(), default_cors_origins());
         let room_response = app
             .clone()
             .oneshot(
@@ -9327,6 +16205,13 @@ mod tests {
             .unwrap();
         assert_eq!(room_response.status(), StatusCode::OK);
 
+        let before = shared
+            .app
+            .read_room("cancel-safe-room")
+            .await
+            .rooms
+            .book_snapshot("cancel-safe-room")
+            .unwrap();
         let order_body = serde_json::json!({
             "participant_id": "alice",
             "account_id": 20,
@@ -9356,6 +16241,11 @@ mod tests {
         })
         .await
         .unwrap();
+        let during = tokio::time::timeout(
+            Duration::from_secs(2),
+            shared.app.read_room("cancel-safe-room"),
+        )
+        .await;
         first_request.abort();
         let _ = first_request.await;
 
@@ -9365,6 +16255,12 @@ mod tests {
             wake.notify_all();
         }
 
+        let during =
+            during.expect("published market state must remain readable during journal I/O");
+        assert_eq!(
+            during.rooms.book_snapshot("cancel-safe-room").unwrap(),
+            before
+        );
         let second_response = app
             .oneshot(
                 Request::builder()
@@ -11597,6 +18493,9 @@ mod tests {
         let mut executions = seed_records;
         executions.push(submitted_record);
         let recovery = JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: "recovered-room".to_string(),
                 scenario,
@@ -11809,6 +18708,9 @@ mod tests {
         executions.push(submitted_record);
 
         let recovery = Arc::new(Mutex::new(JournalRecovery {
+            runtime_checkpoints: Vec::new(),
+            next_order_id: None,
+            last_market_ticks: Vec::new(),
             rooms: vec![journal::JournalRoom {
                 room_id: "snapshot-seq-room".to_string(),
                 scenario,
@@ -12567,12 +19469,12 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
-    #[test]
-    fn agent_worker_stops_and_reports_http_errors() {
+    #[tokio::test]
+    async fn agent_worker_stops_and_reports_missing_room_errors() {
+        let shared = Arc::new(ServerState::new(AppState::new("http://127.0.0.1:57305")));
         let worker = AgentWorkerHandle::spawn(
-            "http://127.0.0.1:0".to_string(),
+            shared,
             "agent-error-room".to_string(),
-            DEFAULT_USER_ID.to_string(),
             vec![dca_template("agent-error-room", "failing-agent", 20)],
             Duration::from_millis(1),
         )
@@ -12583,7 +19485,7 @@ mod tests {
             if !status.running {
                 break;
             }
-            thread::sleep(Duration::from_millis(10));
+            tokio::time::sleep(Duration::from_millis(10)).await;
             status = worker.status("agent-error-room".to_string());
         }
         assert!(!status.running);
@@ -13078,6 +19980,7 @@ mod tests {
                     kind: ParticipantKind::RuleAgent,
                     room_id: "remote-ai".to_string(),
                     account_id: 20,
+                    instrument_id: Some("V-BTC-SPOT".to_string()),
                 },
                 interval_steps: 1,
                 order_qty: 2,
@@ -13154,5 +20057,207 @@ mod tests {
         server.abort();
         assert_eq!(view.book.bids[0].price_tick, 100);
         assert!(view.book.bids[0].qty >= 2);
+    }
+    fn installed_example_registry() -> exchange_core::BotRegistry {
+        bot_plugins::load_bot_plugins(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../bot-plugins"),
+        )
+        .unwrap()
+    }
+    fn plugin_training_request(run_id: &str, room_id: &str) -> StartTrainingRequest {
+        let mut request = two_sided_training(run_id, room_id, 8);
+        request.manual_agents = true;
+        request.target_qty = 2;
+        request.agents = vec![AgentTemplate::Plugin(exchange_core::BotConfig {
+            participant: exchange_core::ParticipantConfig {
+                participant_id: "plugin-buyer".into(),
+                kind: exchange_core::ParticipantKind::RuleAgent,
+                room_id: room_id.into(),
+                account_id: 20,
+                instrument_id: Some("V-BTC-SPOT".into()),
+            },
+            plugin_id: "example.buy-remaining".into(),
+            plugin_version: "1.0.0".into(),
+            state_version: 1,
+            config_version: 1,
+            seed: 7,
+            config: serde_json::json!({"target_qty":2,"qty_per_step":1}),
+        })];
+        request
+    }
+
+    #[tokio::test]
+    async fn plugin_training_restart_and_idempotent_steps_preserve_score_and_state() {
+        let journal = journal::SharedInMemoryJournalStore::new();
+        let mut state =
+            AppState::new_with_journal("http://127.0.0.1:57305", Box::new(journal.clone()));
+        state.bot_registry = installed_example_registry();
+        let live_app = app(shared_state(state));
+        let response = send_json(
+            &live_app,
+            Method::POST,
+            "/training/runs",
+            None,
+            plugin_training_request("plugin-run", "plugin-room"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let before: TrainingRunResponse = response_json(response).await;
+        assert_eq!(before.run.filled_qty, 0);
+        assert_eq!(
+            control_request(&live_app, "/rooms/plugin-room/pause", None, None, None)
+                .await
+                .status(),
+            StatusCode::OK
+        );
+        let first = control_request(
+            &live_app,
+            "/rooms/plugin-room/clock/step",
+            None,
+            Some("plugin-step-0"),
+            None,
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let saved: exchange_core::SchedulerState = response_json(first).await;
+        let first_score = training_result(&live_app, "plugin-run").await;
+        assert_eq!(first_score.run.filled_qty, 1);
+        assert_eq!(first_score.run.steps_elapsed, 1);
+        assert!(first_score.run.fills[0].book_before.is_some());
+        drop(live_app);
+        let mut recovered_state = AppState::recover_with_journal_bundle_and_auth_policy(
+            "http://127.0.0.1:57305",
+            JournalStoreBundle::single(Box::new(journal)),
+            AuthPolicy::local_development(),
+            None,
+        )
+        .unwrap();
+        recovered_state.bot_registry = installed_example_registry();
+        assert_eq!(recovered_state.schedulers["plugin-room"], saved);
+        let recovered = app(shared_state(recovered_state));
+        let replay = control_request(
+            &recovered,
+            "/rooms/plugin-room/clock/step",
+            None,
+            Some("plugin-step-0"),
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), StatusCode::OK);
+        assert_eq!(
+            response_json::<exchange_core::SchedulerState>(replay).await,
+            saved
+        );
+        assert_eq!(
+            training_result(&recovered, "plugin-run")
+                .await
+                .run
+                .filled_qty,
+            1
+        );
+        let second = control_request(
+            &recovered,
+            "/rooms/plugin-room/clock/step",
+            None,
+            Some("plugin-step-1"),
+            None,
+        )
+        .await;
+        assert_eq!(second.status(), StatusCode::OK);
+        let final_run = training_result(&recovered, "plugin-run").await;
+        assert_eq!(final_run.run.status, TrainingStatus::Completed);
+        assert_eq!(final_run.run.filled_qty, 2);
+        assert_eq!(final_run.run.fills.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn invalid_plugin_configuration_is_rejected_before_room_or_training_creation() {
+        let app = new_app_with_bot_registry("http://127.0.0.1:57305", installed_example_registry());
+        for (index, id, version, params) in [
+            (0, "missing", "1.0.0", serde_json::json!({"target_qty":2})),
+            (
+                1,
+                "example.buy-remaining",
+                "2.0.0",
+                serde_json::json!({"target_qty":2}),
+            ),
+            (
+                2,
+                "example.buy-remaining",
+                "1.0.0",
+                serde_json::json!({"target_qty":0}),
+            ),
+        ] {
+            let mut request =
+                plugin_training_request(&format!("bad-{index}"), &format!("bad-room-{index}"));
+            let AgentTemplate::Plugin(config) = &mut request.agents[0] else {
+                panic!()
+            };
+            config.plugin_id = id.into();
+            config.plugin_version = version.into();
+            config.config = params;
+            let response = send_json(&app, Method::POST, "/training/runs", None, &request).await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let rooms = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/rooms")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response_json::<ListRoomsResponse>(rooms).await.rooms.len(),
+                0
+            );
+        }
+    }
+
+    #[test]
+    fn scheduled_training_bot_cannot_sell_or_overbuy() {
+        let spec = plugin_training_request("policy", "policy-room");
+        let mut training = exchange_core::TrainingRun::new(
+            exchange_core::TrainingSpec::low_slippage_buy(
+                spec.run_id,
+                spec.scenario.clone(),
+                spec.agents,
+                20,
+                2,
+                8,
+                100,
+            )
+            .unwrap(),
+        );
+        training.start().unwrap();
+        let policy = ServerBotPolicy {
+            training: Some(training),
+        };
+        let mut rooms = RoomManager::new();
+        rooms.create_room(spec.scenario).unwrap();
+        let observation = rooms
+            .participant_observation("policy-room", "V-BTC-SPOT", 20)
+            .unwrap();
+        use exchange_core::BotExecutionPolicy;
+        for action in [
+            OrderAction::PlaceMarket {
+                side: Side::Sell,
+                qty: 1,
+            },
+            OrderAction::PlaceMarket {
+                side: Side::Buy,
+                qty: 3,
+            },
+        ] {
+            let request = GatewayRequest {
+                participant_id: "buyer".into(),
+                room_id: "policy-room".into(),
+                instrument_id: Some("V-BTC-SPOT".into()),
+                account_id: 20,
+                action,
+            };
+            assert!(policy.before_action(&request, &observation).is_err());
+        }
     }
 }

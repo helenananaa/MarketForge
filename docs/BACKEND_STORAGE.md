@@ -1,5 +1,15 @@
 # Backend Storage
 
+Windows CandleScope users can run `scripts/start-candlescope-workbench.ps1` to initialize a
+project-owned PostgreSQL cluster and durable backend. Data and DPAPI-encrypted credentials are stored
+under `.local/candlescope-runtime/`; the helper binds PostgreSQL to loopback and verifies its data directory.
+`scripts/backup-candlescope-workbench.ps1` creates and checks a custom archive.
+See [workbench operations](CANDLESCOPE_WORKBENCH.md) for ports and restore verification.
+
+The managed standalone server restores committed Auto scheduler workers after journal recovery.
+Paused/closed rooms and disabled bots retain their state; recovery does not reseed participant accounts.
+Unfinished manual actions block automatic startup. Embedded recovery constructors still do not spawn workers.
+
 MarketForge keeps the matching engine in memory and persists the durable journal
 around it.
 
@@ -195,6 +205,9 @@ The client also exposes the room lifecycle calls used by trusted integrations:
 `close_room`, plus instrument-scoped `set_mark_price_for`. The corresponding
 close mutation is `POST /rooms/{room_id}/close`; like pause and resume, it is
 durably journaled as a room status change before the response is returned.
+When `Idempotency-Key` is present, the control result is inserted into
+`marketforge_control_idempotency` in that same transaction (protocol
+`control.v1`). Order request keys remain on `marketforge_executions`.
 
 An authenticated client can discover ownership without triggering takeover:
 
@@ -223,6 +236,8 @@ The migration set creates:
 - `marketforge_users`
 - `marketforge_room_members`
 - `marketforge_account_owners`
+- `marketforge_control_idempotency` (0013; `control.v1` success bodies)
+- `marketforge_external_action_counts` (0014; per `(room, user, step)` quota)
 
 `marketforge_executions` is the canonical command journal, while
 `marketforge_room_mutations` records durable state transitions that are not
@@ -403,11 +418,24 @@ Snapshots are stored in `marketforge_room_snapshots` as serialized actor state:
 
 Room creation stores an initial snapshot when seed executions exist. Submitted
 commands store a new snapshot every 100 command sequences. The execution journal
-remains the durable audit trail. Startup recovery currently selects versioned
-`StateCheckpoint` mutations; snapshot rows remain useful for compatibility,
-inspection, and migration input. Periodic snapshot rows are not yet mirrored to
-`StateCheckpoint` mutations, so they do not currently reduce replay for newly
-persisted rooms.
+remains the durable audit trail. Migration 15 connects snapshots to
+`marketforge_recovery_heads`: the same transaction stores the actor snapshot,
+next command cursor, latest room mutation sequence and order-id high water mark.
+Recovery synthesizes a `StateCheckpoint` from that boundary and reads only its
+command/mutation suffix, plus the latest scheduler and training payloads. Periodic
+checkpoint JSON is not duplicated in the mutation journal; the original bootstrap
+checkpoint remains for compatibility. Recovery-only boundaries are kept separate
+from canonical mutations, whose cursor ordering is still validated. The committed
+actor cursor supplies the next command when the execution suffix is empty.
+Startup/takeover reads use a
+repeatable-read transaction. Full historical replay still reads complete journals.
+
+Historical candles aggregate durable market ticks. The latest trade per
+instrument restores ticker/SSE state even without post-checkpoint trades.
+Older ticks without authoritative simulation time fall back to full replay.
+Snapshots still contain growing engine history; no journal rows are removed.
+See [Historical storage](HISTORICAL_STORAGE.md) for capacity measurements,
+checksummed archives, isolated restore validation and the ClickHouse mirror.
 
 Timeline responses are served from the canonical journal, not from the replayed
 actor history. This keeps `/rooms/{room_id}/events` complete even when the
@@ -436,11 +464,12 @@ alias for readiness.
 `/metrics` uses the Prometheus text exposition format and sets `Cache-Control:
 no-store`. It reports process-local gauges and counters for durable writes, SSE
 connections and resyncs, loaded rooms, agent workers, bounded event-cache use,
-and aggregate journal queue/worker activity. The
-`marketforge_journal_write_workers` and `marketforge_journal_read_workers`
-gauges expose the active topology. Metrics contain no room, account, user, or
-instrument labels, avoiding unbounded label cardinality. Counters reset when
-the process restarts.
+aggregate journal queue/worker activity, scheduler steps and errors, agent
+errors, loaded training-run status, checkpoint write time, and isolated-replay
+command counts. The `marketforge_journal_write_workers` and
+`marketforge_journal_read_workers` gauges expose the active topology. Metrics
+contain no room, account, user, or instrument labels, avoiding unbounded label
+cardinality. Counters reset when the process restarts.
 
 When room lease enforcement is enabled,
 `marketforge_room_writer_leases_owned` must match `marketforge_rooms` for the
@@ -499,3 +528,32 @@ rooms concurrently:
 MARKETFORGE_DATABASE_URL='postgres://marketforge:marketforge@127.0.0.1:55432/marketforge' \
   ./scripts/postgres_multi_active_smoke.sh
 ```
+
+## Migrations, backup, and restore
+
+Schema changes are append-only files under `exchange-server/migrations`
+(`0001`–`0014`). On startup with `MARKETFORGE_DATABASE_URL` set, the writer
+applies any not-yet-recorded versions into `marketforge_schema_migrations`.
+Already-applied versions are immutable. There is no supported downgrade path;
+roll forward with a new migration if a repair is required.
+
+Backup (PostgreSQL logical dump of the journal database):
+
+```sh
+pg_dump --format=custom --file=marketforge.dump \
+  "$MARKETFORGE_DATABASE_URL"
+```
+
+Restore onto an empty database, then start a server so it can fail closed on
+divergent recovery rather than serving mixed state:
+
+```sh
+pg_restore --clean --if-exists --dbname="$MARKETFORGE_DATABASE_URL" marketforge.dump
+cargo run -p exchange-server
+```
+
+Do not copy `target/` or in-memory journals as a backup. In-memory mode has no
+durable restore. After restore, run `./scripts/postgres_smoke.sh` against a
+throwaway room before serving production traffic. Plugin contract tests remain
+the compatibility check for CandleScope; this storage layout does not change
+the plugin JSONL protocol.

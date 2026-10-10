@@ -1,0 +1,57 @@
+{
+  "run_id": "p5-batch",
+  "scenario": {
+    "room_id": "p5-batch",
+    "market": {
+      "Spot": {
+        "instrument": {
+          "instrument_id": "V-BTC-SPOT",
+          "venue_id": "default-venue",
+          "symbol": "V-BTC-SPOT",
+          "base_asset": "V",
+          "quote_asset": "BTC",
+          "tick_size": 1,
+          "lot_size": 1
+        },
+        "clearing": { "maker_fee_ppm": 0, "taker_fee_ppm": 0 },
+        "risk": {
+          "price_tick_size": null,
+          "lot_size": null,
+          "max_order_qty": null,
+          "max_order_notional": null,
+          "allow_short": true
+        }
+      }
+    },
+    "accounts": [
+      { "Spot": { "account_id": 10, "cash_balance": 10000, "position_qty": 50 } },
+      { "Basic": { "account_id": 20, "cash_balance": 10000 } }
+    ],
+    "seed_orders": [
+      {
+        "NewOrder": {
+          "order_id": 1,
+          "account_id": 10,
+          "side": "Buy",
+          "kind": { "Limit": { "price_tick": 99 } },
+          "qty": 8,
+          "reduce_only": false
+        }
+      },
+      {
+        "NewOrder": {
+          "order_id": 2,
+          "account_id": 10,
+          "side": "Sell",
+          "kind": { "Limit": { "price_tick": 101 } },
+          "qty": 8,
+          "reduce_only": false
+        }
+      }
+    ]
+  },
+  "agents": [],
+  "trainee_account_id": 20,
+  "target_qty": 4,
+  "horizon_steps": 8
+}

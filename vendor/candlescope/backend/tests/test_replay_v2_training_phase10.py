@@ -1,0 +1,329 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from app.core.config import load_replay_settings
+from scripts import replay_v2_release_common as release_common
+from scripts import verify_replay_v2_release as release_verifier
+from scripts.benchmark_replay_fast_forward import _run_mode
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_phase10_maps_every_product_contract_scenario_to_live_evidence() -> None:
+    matrix, validated = release_verifier._validate_matrix()
+    assert matrix["production_enablement"] == "HARD_CUTOVER_DEFAULT_ON"
+    assert matrix["expected_scenarios"] == 40
+    assert [scenario["id"] for scenario in validated] == list(range(1, 41))
+    assert all(scenario["validated"] is True for scenario in validated)
+    assert {scenario["release_gate"] for scenario in validated} == {
+        "full_suite",
+        "browser",
+        "benchmark",
+        "soak",
+        "rollback",
+        "storage",
+        "real_source",
+    }
+
+
+def test_phase10_keeps_replay_and_exact_input_capabilities_default_on(
+    tmp_path: Path,
+) -> None:
+    settings = load_replay_settings(
+        {}, data_dir=tmp_path, klines_db_path=tmp_path / "candlescope.db"
+    )
+    assert settings.enabled is True
+    assert settings.replay_historical_book_enabled is True
+    assert release_verifier._validate_default_flags() == {
+        "REPLAY_ENABLED": "1",
+        "RAW_AGG_TRADE_ARCHIVE_ENABLED": "0",
+        "REPLAY_HISTORICAL_BOOK_ENABLED": "1",
+        "REPLAY_SEGMENT_DOWNLOAD_WORKER_ENABLED": "0",
+        "REPLAY_SEGMENT_AUTO_GC_ENABLED": "0",
+        "REPLAY_FAST_FORWARD_OPTIMIZATION_ENABLED": "1",
+        "REPLAY_ACCOUNT_HISTORY_ENABLED": "1",
+    }
+
+
+def test_release_artifacts_must_be_external_and_partitioned_by_full_head(
+    tmp_path: Path,
+) -> None:
+    head = "a" * 40
+    accepted = release_common.require_external_head_path(
+        tmp_path / head / "replay-v2" / "checks.json", head
+    )
+    assert accepted.is_absolute()
+    with pytest.raises(ValueError, match="full clean Git HEAD"):
+        release_common.require_external_head_path(tmp_path / "checks.json", head)
+    with pytest.raises(ValueError, match="outside the repository"):
+        release_common.require_external_head_path(
+            ROOT / "output" / head / "checks.json", head
+        )
+
+
+def test_windows_npm_command_resolves_path_batch_shim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    npm_cmd = r"F:\node\npm.cmd"
+    monkeypatch.setattr(release_common.shutil, "which", lambda value: npm_cmd)
+
+    assert release_common._resolve_windows_command("npm") == npm_cmd
+    assert release_common._resolve_windows_command(r"C:\explicit\npm.cmd") == (
+        r"C:\explicit\npm.cmd"
+    )
+    if release_common.os.name == "nt":
+        assert release_common.npm_command("npm", "run", "check") == [
+            release_common.os.environ.get("ComSpec", "cmd.exe"),
+            "/d",
+            "/s",
+            "/c",
+            subprocess.list2cmdline([npm_cmd, "run", "check"]),
+        ]
+
+
+def test_bound_json_rejects_wrong_head_schema_dirty_or_failed(tmp_path: Path) -> None:
+    path = tmp_path / "artifact.json"
+    valid = {
+        "schema_version": "expected.v1",
+        "release_evidence": {
+            "schema_version": "replay-release-evidence.v1",
+            "git_head": "a" * 40,
+            "git_dirty": False,
+        },
+        "passed": True,
+    }
+    path.write_text(json.dumps(valid), encoding="utf-8")
+    payload, evidence = release_common.load_bound_json(
+        path, expected_head="a" * 40, expected_schema="expected.v1"
+    )
+    assert payload["passed"] is True
+    assert evidence["sha256"]
+
+    for field, value, message in (
+        ("schema_version", "wrong.v1", "schema drifted"),
+        (
+            "release_evidence",
+            {**valid["release_evidence"], "git_head": "b" * 40},
+            "not bound",
+        ),
+        (
+            "release_evidence",
+            {**valid["release_evidence"], "git_dirty": True},
+            "not captured",
+        ),
+        ("passed", False, "not a passing"),
+    ):
+        mutated = dict(valid)
+        mutated[field] = value
+        path.write_text(json.dumps(mutated), encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            release_common.load_bound_json(
+                path, expected_head="a" * 40, expected_schema="expected.v1"
+            )
+
+
+def test_release_stage_reuse_accepts_only_ancestor_evidence_with_unchanged_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old_head = "a" * 40
+    new_head = "b" * 40
+    monkeypatch.setattr(release_verifier, "_is_ancestor", lambda *_args: True)
+
+    def unchanged(*args: str, **_kwargs: object) -> str:
+        if "--" in args:
+            return ""
+        return "docs/evidence/release-policy.md\n"
+
+    monkeypatch.setattr(release_verifier, "run_git", unchanged)
+    binding = release_verifier._reuse_binding("benchmark", old_head, new_head)
+    assert binding["kind"] == "VERIFIED_ANCESTOR_REUSE"
+    assert binding["captured_head"] == old_head
+    assert binding["current_head"] == new_head
+    assert binding["changed_files"] == ["docs/evidence/release-policy.md"]
+
+    monkeypatch.setattr(
+        release_verifier,
+        "run_git",
+        lambda *args, **_kwargs: (
+            "backend/app/replay/service.py\n" if "--" in args else ""
+        ),
+    )
+    with pytest.raises(ValueError, match="inputs changed"):
+        release_verifier._reuse_binding("benchmark", old_head, new_head)
+
+
+def test_release_stage_reuse_rejects_non_ancestors_and_non_reusable_stages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old_head = "a" * 40
+    new_head = "b" * 40
+    monkeypatch.setattr(release_verifier, "_is_ancestor", lambda *_args: False)
+    with pytest.raises(ValueError, match="is not an ancestor"):
+        release_verifier._reuse_binding("real_source", old_head, new_head)
+    with pytest.raises(ValueError, match="must be rerun"):
+        release_verifier._reuse_binding("v2_soak", old_head, new_head)
+
+
+def test_phase10_revert_drill_resolves_all_phase_parents(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    head = "a" * 40
+    first_parent = "b" * 40
+    second_parent = "c" * 40
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run_git(*args: str, **_kwargs: object) -> str:
+        calls.append(args)
+        return f"{head.upper()} {first_parent.upper()} {second_parent.upper()}"
+
+    monkeypatch.setattr(release_verifier, "run_git", fake_run_git)
+
+    assert release_verifier._resolve_phase_parents(head) == (
+        first_parent,
+        second_parent,
+    )
+    assert calls == [("rev-list", "--parents", "-n", "1", head)]
+
+
+def test_phase10_revert_drill_selects_mainline_only_for_merge_commits() -> None:
+    head = "a" * 40
+
+    assert release_verifier._revert_command(head, ("b" * 40,)) == [
+        "git",
+        "revert",
+        "--no-commit",
+        head,
+    ]
+    assert release_verifier._revert_command(head, ("b" * 40, "c" * 40)) == [
+        "git",
+        "revert",
+        "--no-commit",
+        "--mainline",
+        "1",
+        head,
+    ]
+
+
+def test_phase10_browser_and_rollback_tools_expose_frozen_v2_gates() -> None:
+    smoke = (ROOT / "frontend/scripts/replay-smoke.mjs").read_text(encoding="utf-8")
+    soak = (ROOT / "frontend/scripts/replay-soak.mjs").read_text(encoding="utf-8")
+    rollback = (ROOT / "frontend/scripts/replay-v2-rollback-drill.mjs").read_text(
+        encoding="utf-8"
+    )
+    package = json.loads((ROOT / "frontend/package.json").read_text(encoding="utf-8"))
+    verifier = (ROOT / "backend/scripts/verify_replay_v2_release.py").read_text(
+        encoding="utf-8"
+    )
+    for needle in (
+        "v2ArchiveLifecycleCycle",
+        "v2AccessibilityAudit",
+        "v2_keyboard_accessible",
+        "v2_reduced_motion_effective",
+        "release-stability-60m",
+        "observation-4h-non-blocking",
+        "--real-klines-source",
+        "real_bar_source_evidence",
+        "hedge_exact_training_bound",
+        "hedge_account_continuity",
+        "HEDGE_EXACT_ARCHIVE_QA",
+    ):
+        assert needle in soak
+    for needle in (
+        "--live-window",
+        "--disable-gap-maintenance",
+        '#replay-status-bar, #status-bar[data-runtime-source="replay"]',
+        "queryReplayTrainingArchive",
+        'REPLAY_TRAINING_PROTOCOL = "replay.v3"',
+        "old_build_preserved_replay_db",
+        "queryReplayStorageSnapshot",
+        "old_build_preserved_storage_semantics",
+        'data-replay-launcher="live-modal"',
+        "playback-rate",
+        "value.clockRate === 60",
+    ):
+        assert needle in rollback
+    assert "--live-window" in smoke
+    assert "--disable-gap-maintenance" in smoke
+    assert (
+        "--duration-ms 3600000 --cycles 100"
+        in package["scripts"]["soak:replay:v2:stability"]
+    )
+    assert "--cycles 10" in package["scripts"]["stress:replay:orders"]
+    assert "replay_order_advisory_requests_bounded" in soak
+    assert (
+        "--observation-only --duration-ms 14400000"
+        in package["scripts"]["soak:replay:v2:4h"]
+    )
+    assert "VERIFIED_ANCESTOR_REUSE" in verifier
+    assert "--product-v2" not in soak
+    assert "--product-v2" not in rollback
+    assert "--product-v2" not in package["scripts"]["drill:replay:v2:rollback"]
+    assert "REPLAY_PRODUCT_V2_ENABLED" not in soak
+    assert "REPLAY_PRODUCT_V2_ENABLED" not in rollback
+    assert "REPLAY_PRODUCT_V2_ENABLED" not in verifier
+    assert "replay-v1-smoke" not in verifier
+
+
+def test_release_benchmarks_use_the_current_training_wire_protocol() -> None:
+    for relative in (
+        "backend/scripts/benchmark_replay_account_history.py",
+        "backend/scripts/benchmark_replay_period_summary.py",
+    ):
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        assert "REPLAY_V2_PROTOCOL" in source
+        assert '"protocol": "replay.v2"' not in source
+        assert 'protocol="replay.v2"' not in source
+
+
+def test_release_wall_clock_metrics_are_measure_only_without_skip_flag() -> None:
+    relative_paths = (
+        "backend/scripts/benchmark_replay.py",
+        "backend/scripts/benchmark_replay_segments.py",
+        "backend/scripts/benchmark_replay_account_history.py",
+        "backend/scripts/benchmark_replay_hedge_exchange_parity.py",
+        "backend/scripts/benchmark_replay_v2_release.py",
+        "backend/scripts/verify_replay_v2_release.py",
+    )
+    sources = {
+        relative: (ROOT / relative).read_text(encoding="utf-8")
+        for relative in relative_paths
+    }
+
+    assert all("MEASURE_ONLY_NON_BLOCKING" in source for source in sources.values())
+    combined = "\n".join(sources.values())
+    for forbidden in (
+        "--skip-performance",
+        "MAX_NORMAL_P95_MS",
+        "MAX_LIQUIDATION_P95_MS",
+        "MAX_LIQUIDATION_MAX_MS",
+        "MAX_STEP_P95_MS",
+        "p95_within_frozen_limit",
+        "all_p95_within_frozen_ceiling",
+    ):
+        assert forbidden not in combined
+
+
+def test_formal_fast_forward_refreshes_controller_lease_between_chunks() -> None:
+    controller_ttl_seconds = 0.5
+    result = asyncio.run(
+        _run_mode(
+            optimized=True,
+            trade_count=2_048,
+            page_rows=128,
+            chunk_events=16,
+            tail_events=4,
+            event_spacing_ms=1,
+            controller_ttl_seconds=controller_ttl_seconds,
+        )
+    )
+    streaming = result["streaming"]
+    assert result["result"]["elapsed_seconds"] > controller_ttl_seconds
+    assert streaming["chunks"] == 128
+    assert streaming["controller_heartbeats"] == 127

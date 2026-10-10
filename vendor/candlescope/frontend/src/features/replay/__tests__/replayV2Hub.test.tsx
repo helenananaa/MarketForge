@@ -1,0 +1,1536 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import TrainingHubDialog, {
+  TrainingRunDeleteConfirmation,
+} from "../components/TrainingHubDialog.js";
+import { ReplayInitialMarketPicker } from "../ReplayApp.js";
+import { ReplayV2ApiClient, ReplayV2ApiError } from "../replayV2Api.js";
+import {
+  prepareReplayInitialMarketSelection,
+  selectReplayInitialMarketWithEpochRetry,
+} from "../replayInitialMarket.js";
+import {
+  buildTrainingRunCreateRequest,
+  buildTrainingRunPreparationRequest,
+  createTrainingRunDraft,
+  evaluateTrainingRunDraft,
+  evaluateTrainingRunSetupDraft,
+} from "../trainingHubModel.js";
+import {
+  formatReplayUtcDateTime,
+  formatTrainingEquity,
+  trainingRunStateLabel,
+} from "../trainingHubLabels.js";
+import { returnToTrainingHub } from "../trainingHubNavigation.js";
+import {
+  TrainingHubLifecycle,
+  type TrainingHubApiBoundary,
+  type TrainingHubRuntime,
+} from "../useTrainingHub.js";
+import {
+  parseTrainingRunDeleteResponse,
+  parseTrainingRunListResponse,
+  parseTrainingRunMarketSelectionResponse,
+  parseTrainingRunMutationResponse,
+  parseTrainingRunReturnResponse,
+} from "../replayV2Types.js";
+import { parseReplaySegmentPreparePlan } from "../replaySegmentTypes.js";
+import { parseReplayCapabilities, parseReplayCatalog } from "../replayParser.js";
+import { enabledCapabilities } from "./fixtures.js";
+
+
+function runCard(overrides: Record<string, unknown> = {}) {
+  return {
+    run_id: "run-1",
+    kind: "V2",
+    name: "BTC 手动训练",
+    state: "PAUSED",
+    source_kind: "BAR",
+    integrity_mode: "CHALLENGE",
+    time_disclosure_policy: "HIDE_ALL",
+    last_symbol: "BTCUSDT",
+    subscribed_track_count: 1,
+    progress: { source_sequence: 12 },
+    equity: "10000",
+    equity_status: "CURRENT",
+    settlement_asset: "USDT",
+    updated_at_ms: 1_800_000_000_000,
+    compatibility: "READY",
+    resume_action: "OPEN_ADAPTER",
+    adapter_session_id: "adapter-1",
+    status: { code: "READY", message: "训练可继续" },
+    report_available: false,
+    review_available: false,
+    ...overrides,
+  };
+}
+
+function listResponse(items = [runCard()], nextCursor: string | null = null) {
+  return {
+    protocol: "replay.v3",
+    schema_version: "replay.training.v2",
+    items,
+    next_cursor: nextCursor,
+  };
+}
+
+function mutationResponse() {
+  return {
+    protocol: "replay.v3",
+    created: true,
+    run: runCard(),
+  };
+}
+
+function segmentPlanResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    protocol: "replay.data.prepare.v1",
+    state: "PREPARE_ON_CREATE",
+    source_kind: "BAR",
+    source_estimate_kind: "BAR_ROW_MODEL",
+    identity: {
+      exchange: "binance",
+      market_type: "spot",
+      symbol: "BTCUSDT",
+      base_interval: "1m",
+    },
+    estimated_size_bytes: 394_560,
+    estimated_rows: 1_641,
+    history_policy: {
+      schema_version: "replay.data-policy.v1",
+      indicator_warmup_bars: 200,
+      visible_history_lookback: {
+        mode: "DURATION",
+        duration_ms: 12_000_000,
+      },
+      visible_history_rows_estimate: 200,
+      effective_warmup_bars_estimate: 200,
+      forward_cache_ms: 86_400_000,
+      forward_rows_estimate: 1_440,
+      estimate_kind: "EXACT",
+      max_dataset_rows: 250_000,
+      accepted: true,
+      blocked_reason: null,
+    },
+    prepare_action: "SNAPSHOT_LOCAL_BAR_RANGE",
+    existing_ready_segments: 1,
+    existing_ready_bytes: 380_000,
+    selection_loads_history: false,
+    create_loads_only_selected_range: true,
+    download_worker_enabled: false,
+    auto_gc_enabled: false,
+    failure_policy: "QUARANTINE_AND_FAIL_CLOSED",
+    historical_book: {
+      feature_enabled: false,
+      requested_mode: "OFF",
+      capability_state: "UNSUPPORTED_NO_HISTORY",
+      reason: "FEATURE_DISABLED",
+      source: "BINANCE_USDM_DIFF_DEPTH_CAPTURE_V1",
+      snapshot_and_ordered_deltas: false,
+      continuity_contract: "SNAPSHOT_BRIDGE_AND_U_u_pu",
+      pinnable: false,
+      queue_exact: false,
+      execution_fidelity: "BOOK_ASSISTED_CONTINUITY_GATED_NO_QUEUE",
+      ready_archive_bytes: 0,
+      max_archive_bytes: 1_099_511_627_776,
+    },
+    account_history: {
+      protocol: "replay.account-history.archive.v1",
+      feature_enabled: false,
+      requested_mode: "APPROX_PROXY",
+      capability_state: "UNSUPPORTED_NO_HISTORY",
+      reason: "FEATURE_DISABLED",
+      fidelity: "HISTORICAL_EXACT_INPUTS_MODELLED_ACCOUNT",
+      supported_contract_model: "LINEAR_QUOTE_SETTLED_V1",
+      supported_position_mode: "ONE_WAY",
+      supported_margin_asset_mode: "SINGLE_QUOTE",
+      historical_funding_exact: false,
+      public_kline_proxy_accepted: false,
+      ready_archive_bytes: 0,
+      max_archive_bytes: 137_438_953_472,
+      coverage: null,
+      account_history_ref: null,
+    },
+    hedge_inputs: {
+      schema_version: "replay.hedge-input-plan.v1",
+      feature_enabled: true,
+      requested_position_mode: "ONE_WAY",
+      capability_state: "NOT_REQUIRED",
+      reason: "POSITION_MODE_ONE_WAY",
+      public_fidelity: "PINNED_HISTORICAL_PUBLIC_INPUT",
+      private_fidelity: "VERSIONED_DETERMINISTIC_SIMULATION",
+      historical_exchange_private_state: false,
+      fallback_applied: false,
+      coverage: null,
+      historical_l2_ref: null,
+      hedge_public_history_ref: null,
+      simulation_manifest_ref: null,
+    },
+    ...overrides,
+  };
+}
+
+function blindCatalog() {
+  const epoch = `sha256:${"a".repeat(64)}`;
+  return parseReplayCatalog({
+    protocol: "replay.v1",
+    catalog_epoch: epoch,
+    warmup_bars: 200,
+    horizon_ms: 86_400_000,
+    quality_mode: "exact",
+    blind_mode: true,
+    entries: [{
+      identity: { exchange: "binance", market_type: "spot", symbol: "BTCUSDT" },
+      base_intervals: ["1m"],
+      selected_base_interval: "1m",
+      eligible_window_count: 50,
+      quality: "EXACT_BAR_COVERAGE",
+      limitations: [],
+      catalog_epoch: epoch,
+      bounds: null,
+      eligible_ranges: [],
+    }],
+  });
+}
+
+function hedgeCatalog() {
+  const epoch = `sha256:${"a".repeat(64)}`;
+  const startMs = 1_710_000_000_000;
+  return parseReplayCatalog({
+    protocol: "replay.v1",
+    catalog_epoch: epoch,
+    warmup_bars: 200,
+    horizon_ms: 86_400_000,
+    quality_mode: "exact",
+    blind_mode: false,
+    entries: [{
+      identity: { exchange: "binance", market_type: "futures", symbol: "BTCUSDT" },
+      base_intervals: ["1m"],
+      selected_base_interval: "1m",
+      eligible_window_count: 1,
+      quality: "EXACT_BAR_COVERAGE",
+      limitations: [],
+      catalog_epoch: epoch,
+      bounds: {
+        earliest_open_ms: startMs - 200 * 60_000,
+        latest_source_open_ms: startMs + 1_440 * 60_000,
+        latest_closed_open_ms: startMs + 1_440 * 60_000,
+        total_count: 1_641,
+      },
+      gap_summary: {
+        gaps: [],
+        gap_count: 0,
+        missing_bars: 0,
+        scanned_bars: 1_641,
+        scan_calls: 1,
+        calendar_id: "continuous",
+      },
+      source_fingerprint: `sha256:${"b".repeat(64)}`,
+      eligible_ranges: [{
+        interval: "1m",
+        interval_ms: 60_000,
+        first_start_ms: startMs,
+        last_start_ms: startMs,
+        count: 1,
+        warmup_bars: 200,
+        replay_bars: 1_440,
+      }],
+    }],
+  });
+}
+
+test("initial market selection replans exactly once after capability epoch drift", async () => {
+  const initialCatalog = blindCatalog();
+  const refreshedEpoch: `sha256:${string}` = `sha256:${"b".repeat(64)}`;
+  const refreshedCatalog = {
+    ...initialCatalog,
+    catalog_epoch: refreshedEpoch,
+    entries: initialCatalog.entries.map((entry) => ({
+      ...entry,
+      catalog_epoch: refreshedEpoch,
+    })),
+  };
+  const plannedEpochs: string[] = [];
+  const selectedEpochs: string[] = [];
+  let catalogRefreshes = 0;
+  const result = await selectReplayInitialMarketWithEpochRetry({
+    runId: "run-1",
+    catalog: initialCatalog,
+    entry: initialCatalog.entries[0]!,
+    api: {
+      async marketCatalog() {
+        catalogRefreshes += 1;
+        return refreshedCatalog;
+      },
+      async planInitialMarket(_runId, selection) {
+        plannedEpochs.push(selection.catalog_epoch);
+        return parseReplaySegmentPreparePlan(segmentPlanResponse());
+      },
+      async selectInitialMarket(_runId, selection) {
+        selectedEpochs.push(selection.catalog_epoch);
+        if (selectedEpochs.length === 1) {
+          throw new ReplayV2ApiError(
+            "CATALOG_EPOCH_MISMATCH",
+            "data capability changed after validation; refresh and try again",
+            { status: 409 },
+          );
+        }
+        return parseTrainingRunMarketSelectionResponse({
+          protocol: "replay.v3",
+          initialized: true,
+          run: runCard(),
+        });
+      },
+    },
+  });
+
+  assert.equal(result.catalogRefreshes, 1);
+  assert.equal(result.catalog.catalog_epoch, refreshedEpoch);
+  assert.equal(result.response.run.run_id, "run-1");
+  assert.equal(catalogRefreshes, 1);
+  assert.deepEqual(plannedEpochs, [initialCatalog.catalog_epoch, refreshedEpoch]);
+  assert.deepEqual(selectedEpochs, [initialCatalog.catalog_epoch, refreshedEpoch]);
+});
+
+test("initial HEDGE selection explains missing pinned inputs without exposing an internal reason code", async () => {
+  const catalog = blindCatalog();
+  const response = segmentPlanResponse();
+  const unavailablePlan = parseReplaySegmentPreparePlan({
+    ...response,
+    hedge_inputs: {
+      ...response.hedge_inputs,
+      requested_position_mode: "HEDGE",
+      capability_state: "UNSUPPORTED_NO_HISTORY",
+      reason: "NO_COMPLETE_CROSS_VERIFIED_INPUT_SET",
+    },
+  });
+
+  await assert.rejects(
+    selectReplayInitialMarketWithEpochRetry({
+      runId: "run-hedge",
+      catalog,
+      entry: catalog.entries[0]!,
+      api: {
+        async marketCatalog() {
+          return catalog;
+        },
+        async planInitialMarket() {
+          return unavailablePlan;
+        },
+        async selectInitialMarket() {
+          throw new Error("unreachable");
+        },
+      },
+    }),
+    (reason: unknown) => reason instanceof Error
+      && reason.message.includes("缺少可验证的执行价格")
+      && !reason.message.includes("NO_COMPLETE_CROSS_VERIFIED_INPUT_SET"),
+  );
+});
+
+function exactHedgeInputPlan() {
+  return {
+    schema_version: "replay.hedge-input-plan.v1",
+    feature_enabled: true,
+    requested_position_mode: "HEDGE",
+    capability_state: "AVAILABLE_EXACT",
+    reason: "CROSS_VERIFIED_PINNED_PUBLIC_AND_SIMULATION_INPUTS",
+    public_fidelity: "PINNED_HISTORICAL_PUBLIC_INPUT",
+    private_fidelity: "VERSIONED_DETERMINISTIC_SIMULATION",
+    historical_exchange_private_state: false,
+    fallback_applied: false,
+    coverage: {
+      range_start_ms: 1_710_000_000_000,
+      range_end_ms: 1_710_086_400_000,
+    },
+    historical_l2_ref: {
+      archive_id: "book-btc-202403",
+      dataset_epoch: `sha256:${"b".repeat(64)}`,
+      checksum_sha256: `sha256:${"c".repeat(64)}`,
+    },
+    hedge_public_history_ref: {
+      schema_version: "replay.hedge-public-history-ref.v1",
+      archive_id: "public-btc-202403",
+      dataset_epoch: `sha256:${"d".repeat(64)}`,
+      checksum_sha256: `sha256:${"e".repeat(64)}`,
+    },
+    simulation_manifest_ref: {
+      schema_version: "replay.hedge-simulation-manifest-ref.v1",
+      manifest_id: "simulation-btc-202403",
+      dataset_epoch: `sha256:${"f".repeat(64)}`,
+      checksum_sha256: `sha256:${"1".repeat(64)}`,
+      contract_hash: `sha256:${"2".repeat(64)}`,
+      model_version: "BINANCE_USDM_LINEAR_HEDGE_DETERMINISTIC_SIMULATION_V1",
+    },
+  };
+}
+
+function tradeCatalog() {
+  const catalog = hedgeCatalog();
+  const epoch: `sha256:${string}` = `sha256:${"c".repeat(64)}`;
+  const startMs = 1_700_000_000_000;
+  return {
+    ...catalog,
+    catalog_epoch: epoch,
+    entries: catalog.entries.map((entry) => ({
+      ...entry,
+      quality: "VERIFIED_AGG_TRADE_APPROXIMATE_BARS" as const,
+      catalog_epoch: epoch,
+      eligible_ranges: [{
+        ...entry.eligible_ranges[0]!,
+        first_start_ms: startMs,
+        last_start_ms: startMs + 60_000,
+        count: 2,
+      }],
+    })),
+  };
+}
+
+test("HEDGE prepare-plan parser accepts pinned hybrid inputs without requiring L2", () => {
+  const response = segmentPlanResponse();
+  const parsed = parseReplaySegmentPreparePlan({
+    ...response,
+    hedge_inputs: {
+      ...exactHedgeInputPlan(),
+      capability_state: "AVAILABLE_APPROX",
+      reason: "PINNED_HYBRID_PUBLIC_AND_SIMULATION_INPUTS",
+      public_fidelity: "VERSIONED_HYBRID_PUBLIC_INPUT",
+      fallback_applied: true,
+      historical_l2_ref: null,
+    },
+  });
+  assert.equal(parsed.hedge_inputs.capability_state, "AVAILABLE_APPROX");
+  assert.equal(parsed.hedge_inputs.fallback_applied, true);
+  assert.equal(parsed.hedge_inputs.historical_l2_ref, null);
+  assert.notEqual(parsed.hedge_inputs.hedge_public_history_ref, null);
+});
+
+test("initial HEDGE hybrid selection requires an explicit funding downgrade confirmation", async () => {
+  const catalog = hedgeCatalog();
+  const response = segmentPlanResponse();
+  let selectionCalls = 0;
+  const prepared = await prepareReplayInitialMarketSelection({
+    runId: "run-hybrid",
+    catalog,
+    entry: catalog.entries[0]!,
+    api: {
+      async marketCatalog() {
+        return catalog;
+      },
+      async planInitialMarket() {
+        return parseReplaySegmentPreparePlan({
+          ...response,
+          hedge_inputs: {
+            ...exactHedgeInputPlan(),
+            capability_state: "AVAILABLE_APPROX",
+            reason: "PINNED_HYBRID_PUBLIC_AND_SIMULATION_INPUTS",
+            public_fidelity: "VERSIONED_HYBRID_PUBLIC_INPUT",
+            fallback_applied: true,
+            historical_l2_ref: null,
+          },
+        });
+      },
+      async selectInitialMarket() {
+        selectionCalls += 1;
+        throw new Error("selection must wait for explicit confirmation");
+      },
+    },
+  });
+  assert.match(prepared.downgradeConfirmation ?? "", /HEDGE_HYBRID/);
+  assert.match(prepared.downgradeConfirmation ?? "", /资金费.*OFF/);
+  assert.equal(selectionCalls, 0);
+});
+
+async function settle(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+test("Phase 1 run list and mutation parsers reject unknown fields and blind history leaks", () => {
+  const parsed = parseTrainingRunListResponse(listResponse());
+  assert.equal(parsed.items[0]?.run_id, "run-1");
+  assert.equal(parseTrainingRunMutationResponse(mutationResponse()).run.adapter_session_id, "adapter-1");
+  assert.equal(
+    parseTrainingRunListResponse(listResponse([runCard({ equity: "-11.434960416" })]))
+      .items[0]?.equity,
+    "-11.434960416",
+  );
+
+  assert.throws(() => parseTrainingRunListResponse({ ...listResponse(), future: true }));
+  assert.throws(() => parseTrainingRunListResponse(listResponse([
+    runCard({ dataset_epoch: `sha256:${"b".repeat(64)}` }),
+  ])));
+  assert.throws(() => parseTrainingRunListResponse(listResponse([
+    runCard({ progress: { source_sequence: 12, actual_start_ms: 1_710_000_000_000 } }),
+  ])));
+});
+
+test("run-list API is bounded to /runs and never requests sessions or datasets", async () => {
+  const urls: string[] = [];
+  const client = new ReplayV2ApiClient({
+    fetcher: async (input) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify(listResponse()), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+  const listed = await client.listRuns({ limit: 50, compatibility: "READY" });
+  assert.equal(listed.items.length, 1);
+  assert.deepEqual(urls, ["/api/v1/replay/runs?limit=50&compatibility=READY"]);
+  assert.doesNotMatch(urls.join("\n"), /sessions|dataset|catalog/);
+});
+
+test("run-delete API uses the bounded archive route and strict response parser", async () => {
+  const requests: Array<{ url: string; method: string | undefined }> = [];
+  const client = new ReplayV2ApiClient({
+    fetcher: async (input, init) => {
+      requests.push({ url: String(input), method: init?.method });
+      return new Response(JSON.stringify({
+        protocol: "replay.v3",
+        deleted: true,
+        run_id: "run-1",
+        session_ids: ["adapter-1", "adapter-track-2"],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+  const deleted = await client.deleteRun("run-1");
+  assert.deepEqual(deleted, parseTrainingRunDeleteResponse({
+    protocol: "replay.v3",
+    deleted: true,
+    run_id: "run-1",
+    session_ids: ["adapter-1", "adapter-track-2"],
+  }));
+  assert.deepEqual(requests, [{ url: "/api/v1/replay/runs/run-1", method: "DELETE" }]);
+  assert.throws(() => parseTrainingRunDeleteResponse({
+    protocol: "replay.v3",
+    deleted: true,
+    run_id: "run-1",
+  }));
+  assert.throws(() => parseTrainingRunDeleteResponse({
+    protocol: "replay.v3",
+    deleted: true,
+    run_id: "run-1",
+    session_ids: ["adapter-1", "adapter-1"],
+  }));
+});
+
+test("Hub clears the run and every server-returned session scope after a matching archive delete", async (context) => {
+  const cleared: Array<{ runId: string; sessionIds: string[] }> = [];
+  const lifecycle = new TrainingHubLifecycle({
+    api: {
+      async listRuns() {
+        return parseTrainingRunListResponse(listResponse());
+      },
+      async capabilities() {
+        throw new Error("not used");
+      },
+      async catalog() {
+        throw new Error("not used");
+      },
+      async createRun() {
+        throw new Error("not used");
+      },
+      async deleteRun() {
+        return parseTrainingRunDeleteResponse({
+          protocol: "replay.v3",
+          deleted: true,
+          run_id: "run-1",
+          session_ids: ["adapter-1", "adapter-track-2"],
+        });
+      },
+    },
+    clearDeletedRunState: (runId, sessionIds) => {
+      cleared.push({ runId, sessionIds: [...sessionIds] });
+    },
+  });
+  context.after(() => lifecycle.dispose());
+  lifecycle.start();
+  await settle();
+
+  await lifecycle.deleteRun("run-1");
+
+  assert.deepEqual(cleared, [{
+    runId: "run-1",
+    sessionIds: ["adapter-1", "adapter-track-2"],
+  }]);
+  assert.deepEqual(lifecycle.getSnapshot().items, []);
+  assert.equal(lifecycle.getSnapshot().operation, null);
+});
+
+test("Phase 7 prepare-plan parser is exact and preserves fail-closed worker flags", () => {
+  const parsed = parseReplaySegmentPreparePlan(segmentPlanResponse());
+  assert.equal(parsed.prepare_action, "SNAPSHOT_LOCAL_BAR_RANGE");
+  assert.equal(parsed.selection_loads_history, false);
+  assert.equal(parsed.create_loads_only_selected_range, true);
+  assert.equal(parsed.download_worker_enabled, false);
+  assert.equal(parsed.auto_gc_enabled, false);
+  assert.throws(() => parseReplaySegmentPreparePlan(segmentPlanResponse({ future: true })));
+  assert.throws(() => parseReplaySegmentPreparePlan(segmentPlanResponse({
+    failure_policy: "FALLBACK",
+  })));
+});
+
+test("segment plan uses the selected create contract and never opens a dataset endpoint", async () => {
+  const requests: Array<{ url: string; body: unknown }> = [];
+  const client = new ReplayV2ApiClient({
+    fetcher: async (input, init) => {
+      requests.push({
+        url: String(input),
+        body: JSON.parse(String(init?.body)),
+      });
+      return new Response(JSON.stringify(segmentPlanResponse()), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+  const catalog = blindCatalog();
+  const draft = {
+    ...createTrainingRunDraft(catalog),
+    positionMode: "ONE_WAY" as const,
+    accountDataMode: "APPROX_PROXY" as const,
+    fundingMode: "OFF" as const,
+    bookMode: "OFF" as const,
+    startMode: "RANDOM" as const,
+    requestedStartMs: null,
+    randomRangeStartMs: Date.UTC(2020, 0, 1),
+    randomRangeEndMs: Date.UTC(2020, 0, 2),
+    timeDisclosurePolicy: "HIDE_ALL" as const,
+  };
+  const evaluation = evaluateTrainingRunDraft(
+    draft,
+    parseReplayCapabilities(enabledCapabilities()),
+    catalog,
+  );
+  const payload = buildTrainingRunPreparationRequest(draft, evaluation, catalog);
+  await client.segmentPlan(payload);
+  assert.deepEqual(requests, [{
+    url: "/api/v1/replay/runs/data-segments/plan",
+    body: payload,
+  }]);
+  assert.doesNotMatch(requests[0]?.url ?? "", /sessions|snapshot_blob/);
+});
+
+test("automatic BAR preparation accepts an empty archive and submits the frozen market", async (context) => {
+  const calls: string[] = [];
+  const lifecycle = new TrainingHubLifecycle({
+    api: {
+      async listRuns() { return parseTrainingRunListResponse(listResponse([])); },
+      async capabilities() {
+        const caps = parseReplayCapabilities(enabledCapabilities());
+        return { ...caps, sources: { ...caps.sources, bar: { enabled: false, reason: "REPLAY_BAR_HISTORY_EMPTY" } } };
+      },
+      async preparationCapabilities() {
+        return { enabled: true, progressive: true, replay_sources: { BAR: true, AGG_TRADE: false } };
+      },
+      async catalog() { return { ...hedgeCatalog(), entries: [] }; },
+      async createRun() { throw new Error("must use durable preparation"); },
+      async prepareReplay(setup, market) {
+        assert.equal(market.progressive, true);
+        calls.push(`${market.symbol}:${setup.requested_start_ms}`);
+        return parseTrainingRunMutationResponse(mutationResponse());
+      },
+    },
+    navigateToRun: (id) => calls.push(`navigate:${id}`),
+  });
+  context.after(() => lifecycle.dispose());
+  await lifecycle.openCreate();
+  const draft = lifecycle.getSnapshot().draft!;
+  assert.equal(lifecycle.getSnapshot().evaluation?.canSubmit, true);
+  await lifecycle.createRun(draft);
+  assert.deepEqual(calls, [`${draft.symbol}:${draft.requestedStartMs}`, "navigate:run-1"]);
+});
+
+test("reloaded automatic preparation retains its draft and reuses an uncertain submission", async () => {
+  const saved = new Map<string, string>();
+  const draftStorage = { getItem: (key: string) => saved.get(key) ?? null,
+    setItem: (key: string, text: string) => { saved.set(key, text); } };
+  const keys: Array<string | undefined> = [];
+  const api: TrainingHubApiBoundary = {
+    async listRuns() { return parseTrainingRunListResponse(listResponse([])); },
+    async capabilities() { return parseReplayCapabilities(enabledCapabilities()); },
+    async preparationCapabilities() { return { enabled: true, replay_sources: { BAR: true, AGG_TRADE: false } }; },
+    async catalog() { return { ...hedgeCatalog(), entries: [] }; },
+    async createRun() { throw new Error("unexpected manual creation"); },
+    async prepareReplay(_setup, _market, _progress, _signal, key) {
+      keys.push(key);
+      throw new Error("connection lost after submission");
+    },
+  };
+  const first = new TrainingHubLifecycle({ api, draftStorage });
+  await first.openCreate();
+  const draft = { ...first.getSnapshot().draft!, name: "恢复未完成准备", indicatorWarmupBars: 321 };
+  first.setDraft(draft);
+  await first.createRun(draft);
+  first.dispose();
+  const reopened = new TrainingHubLifecycle({ api, draftStorage });
+  try {
+    await reopened.openCreate();
+    assert.deepEqual(reopened.getSnapshot().draft, draft);
+    await reopened.createRun(reopened.getSnapshot().draft!);
+    assert.equal(keys.length, 2);
+    assert.ok(keys[0]);
+    assert.equal(keys[1], keys[0]);
+    const changed = { ...draft, name: "另一个训练" };
+    reopened.setDraft(changed);
+    await reopened.createRun(changed);
+    assert.notEqual(keys[2], keys[0]);
+  } finally { reopened.dispose(); }
+});
+
+test("advertised trade preparation accepts missing archives without querying an unavailable tape catalog", async (context) => {
+  const calls: string[] = [];
+  const lifecycle = new TrainingHubLifecycle({
+    api: {
+      async listRuns() { return parseTrainingRunListResponse(listResponse([])); },
+      async capabilities() {
+        const caps = parseReplayCapabilities(enabledCapabilities());
+        return { ...caps, sources: { ...caps.sources, agg_trade: { enabled: false, reason: "DATASET_INCOMPLETE" } } };
+      },
+      async preparationCapabilities() { return { enabled: true, replay_sources: { BAR: true, AGG_TRADE: true } }; },
+      async catalog(query) { assert.equal(query?.sourceKind, "BAR"); return { ...hedgeCatalog(), entries: [] }; },
+      async createRun() { throw new Error("must prepare trades"); },
+      async prepareReplay(setup) { calls.push(setup.source_kind); return parseTrainingRunMutationResponse(mutationResponse()); },
+    },
+    navigateToRun: (id) => calls.push(id),
+  });
+  context.after(() => lifecycle.dispose());
+  await lifecycle.openCreate();
+  lifecycle.setDraft({ ...lifecycle.getSnapshot().draft!, sourceKind: "AGG_TRADE" });
+  await settle();
+  assert.equal(lifecycle.getSnapshot().evaluation?.canSubmit, true);
+  await lifecycle.createRun(lifecycle.getSnapshot().draft!);
+  assert.deepEqual(calls, ["AGG_TRADE", "run-1"]);
+});
+
+test("exact account preparation preserves historical funding while filling an empty BAR archive", async (context) => {
+  const calls: string[] = [];
+  const lifecycle = new TrainingHubLifecycle({
+    api: {
+      async listRuns() { return parseTrainingRunListResponse(listResponse([])); },
+      async capabilities() { return parseReplayCapabilities(enabledCapabilities()); },
+      async preparationCapabilities() { return { enabled: true, replay_sources: { BAR: true, AGG_TRADE: false },
+        replay_account_modes: ["APPROX_PROXY", "HISTORICAL_EXACT"] }; },
+      async catalog() { return { ...hedgeCatalog(), entries: [] }; },
+      async createRun() { throw new Error("Exact preparation must retain its dependency plan"); },
+      async prepareReplay(setup) {
+        calls.push(`${setup.account_data_mode}:${setup.funding_mode}`);
+        return parseTrainingRunMutationResponse(mutationResponse());
+      },
+    },
+    navigateToRun: (id) => calls.push(id),
+  });
+  context.after(() => lifecycle.dispose());
+  await lifecycle.openCreate();
+  lifecycle.setDraft({ ...lifecycle.getSnapshot().draft!, startMode: "MANUAL", accountDataMode: "HISTORICAL_EXACT", fundingMode: "HISTORICAL_EXACT" });
+  await settle();
+  assert.equal(lifecycle.getSnapshot().automaticPreparationAvailable, true);
+  await lifecycle.createRun(lifecycle.getSnapshot().draft!);
+  assert.deepEqual(calls, ["HISTORICAL_EXACT:HISTORICAL_EXACT", "run-1"]);
+});
+
+test("Hub creates an empty run without planning a market dataset", async (context) => {
+  const calls: string[] = [];
+  const lifecycle = new TrainingHubLifecycle({
+    api: {
+      async listRuns() {
+        calls.push("runs");
+        return parseTrainingRunListResponse(listResponse([]));
+      },
+      async capabilities() {
+        calls.push("capabilities");
+        return parseReplayCapabilities(enabledCapabilities());
+      },
+      async catalog() {
+        calls.push("catalog");
+        return hedgeCatalog();
+      },
+      async segmentPlan() {
+        calls.push("segment-plan");
+        return parseReplaySegmentPreparePlan(segmentPlanResponse());
+      },
+      async createRun() {
+        calls.push("create");
+        return parseTrainingRunMutationResponse(mutationResponse());
+      },
+    },
+    navigateToRun: (runId) => calls.push(`navigate:${runId}`),
+  });
+  context.after(() => lifecycle.dispose());
+  lifecycle.start();
+  await settle();
+  assert.deepEqual(calls, ["runs"]);
+  await lifecycle.openCreate();
+  assert.deepEqual(calls, ["runs", "capabilities", "catalog"]);
+  assert.equal(lifecycle.getSnapshot().segmentPlan, null);
+  const draft = lifecycle.getSnapshot().draft;
+  assert.ok(draft);
+  await lifecycle.createRun(draft);
+  assert.deepEqual(calls.slice(-3), ["catalog", "create", "navigate:run-1"]);
+});
+
+test("hub bootstrap loads only lightweight saves; create capability work starts on demand", async (context) => {
+  const calls: string[] = [];
+  const lifecycle = new TrainingHubLifecycle({
+    api: {
+      async listRuns() {
+        calls.push("runs");
+        return parseTrainingRunListResponse(listResponse());
+      },
+      async capabilities() {
+        calls.push("capabilities");
+        return parseReplayCapabilities(enabledCapabilities());
+      },
+      async catalog() {
+        calls.push("catalog");
+        return hedgeCatalog();
+      },
+      async createRun() {
+        calls.push("create");
+        return parseTrainingRunMutationResponse(mutationResponse());
+      },
+    },
+    navigateToRun: (runId) => calls.push(`navigate:${runId}`),
+  });
+  context.after(() => lifecycle.dispose());
+
+  lifecycle.start();
+  await settle();
+  assert.deepEqual(calls, ["runs"]);
+  assert.equal(lifecycle.getSnapshot().phase, "READY");
+
+  await lifecycle.openCreate();
+  assert.deepEqual(calls, ["runs", "capabilities", "catalog"]);
+  const draft = lifecycle.getSnapshot().draft;
+  assert.ok(draft);
+  await lifecycle.createRun(draft);
+  assert.deepEqual(calls, [
+    "runs",
+    "capabilities",
+    "catalog",
+    "catalog",
+    "create",
+    "navigate:run-1",
+  ]);
+});
+
+test("returning from history preparation refreshes empty BAR capability and preserves draft", async (context) => {
+  let ready = false;
+  let capabilityCalls = 0;
+  const lifecycle = new TrainingHubLifecycle({
+    api: {
+      async listRuns() { return parseTrainingRunListResponse(listResponse([])); },
+      async capabilities() {
+        capabilityCalls += 1;
+        const base = parseReplayCapabilities(enabledCapabilities());
+        return { ...base, sources: { ...base.sources, bar: ready
+          ? base.sources.bar : { enabled: false, reason: "REPLAY_BAR_HISTORY_EMPTY" } } };
+      },
+      async catalog() { return ready ? hedgeCatalog() : { ...hedgeCatalog(), entries: [] }; },
+      async createRun() { return parseTrainingRunMutationResponse(mutationResponse()); },
+    },
+  });
+  context.after(() => lifecycle.dispose());
+  await lifecycle.openCreate();
+  assert.equal(lifecycle.getSnapshot().capabilities?.sources.bar.enabled, false);
+  const draft = lifecycle.getSnapshot().draft;
+  assert.ok(draft);
+  lifecycle.setDraft({ ...draft, name: "归档后继续", indicatorWarmupBars: 300 });
+  lifecycle.closeCreate();
+  ready = true;
+  await lifecycle.openCreate();
+  assert.equal(capabilityCalls, 2);
+  assert.equal(lifecycle.getSnapshot().capabilities?.sources.bar.enabled, true);
+  assert.ok(lifecycle.getSnapshot().catalog?.entries.length);
+  assert.equal(lifecycle.getSnapshot().draft?.name, "归档后继续");
+  assert.equal(lifecycle.getSnapshot().draft?.indicatorWarmupBars, 300);
+});
+
+test("create errors stay visible and reopening refreshes setup context without losing edits", async (context) => {
+  let catalogCalls = 0;
+  const lifecycle = new TrainingHubLifecycle({
+    api: {
+      async listRuns() {
+        return parseTrainingRunListResponse(listResponse([]));
+      },
+      async capabilities() {
+        return parseReplayCapabilities(enabledCapabilities());
+      },
+      async catalog() {
+        catalogCalls += 1;
+        return hedgeCatalog();
+      },
+      async createRun() {
+        throw new ReplayV2ApiError(
+          "CATALOG_EPOCH_MISMATCH",
+          "data capability changed after validation; refresh and try again",
+          { status: 409 },
+        );
+      },
+    },
+  });
+  context.after(() => lifecycle.dispose());
+  lifecycle.start();
+  await settle();
+  await lifecycle.openCreate();
+  const draft = lifecycle.getSnapshot().draft;
+  assert.ok(draft);
+  const preservedDraft = {
+    ...draft,
+    name: "保留这份训练",
+    indicatorWarmupBars: 300,
+  };
+  lifecycle.setDraft(preservedDraft);
+  await lifecycle.createRun(preservedDraft);
+  assert.equal(lifecycle.getSnapshot().error?.code, "CATALOG_EPOCH_MISMATCH");
+  await lifecycle.openCreate();
+  assert.equal(catalogCalls, 3);
+  assert.equal(lifecycle.getSnapshot().error, null);
+  assert.equal(lifecycle.getSnapshot().draft?.name, "保留这份训练");
+  assert.equal(lifecycle.getSnapshot().draft?.indicatorWarmupBars, 300);
+});
+
+test("create validates the source-aware catalog before posting market-independent setup", async (context) => {
+  const catalogQueries: Array<{ warmupBars?: number; horizonMs?: number; blindMode?: boolean; sourceKind?: "BAR" | "AGG_TRADE" }> = [];
+  let submitted: Record<string, unknown> | null = null;
+  const lifecycle = new TrainingHubLifecycle({
+    api: {
+      async listRuns() {
+        return parseTrainingRunListResponse(listResponse([]));
+      },
+      async capabilities() {
+        return parseReplayCapabilities(enabledCapabilities());
+      },
+      async catalog(query) {
+        catalogQueries.push(query ?? {});
+        const catalog = hedgeCatalog();
+        return catalog;
+      },
+      async createRun(payload) {
+        submitted = { ...payload };
+        return parseTrainingRunMutationResponse(mutationResponse());
+      },
+    },
+  });
+  context.after(() => lifecycle.dispose());
+  lifecycle.start();
+  await settle();
+  await lifecycle.openCreate();
+  const draft = lifecycle.getSnapshot().draft;
+  assert.ok(draft);
+  const edited = {
+    ...draft,
+    indicatorWarmupBars: 300,
+    forwardCacheMs: 43_200_000,
+  };
+  lifecycle.setDraft(edited);
+  await lifecycle.createRun(edited);
+  assert.equal(catalogQueries.length, 2);
+  assert.deepEqual(catalogQueries[0], {
+    warmupBars: 200,
+    horizonMs: 86_400_000,
+    qualityMode: "exact",
+    blindMode: false,
+    sourceKind: "BAR",
+  });
+  assert.deepEqual(catalogQueries[1], {
+    warmupBars: 300,
+    horizonMs: 43_200_000,
+    qualityMode: "exact",
+    blindMode: false,
+    sourceKind: "BAR",
+  });
+  assert.ok(submitted);
+  const submittedPayload = submitted as unknown as Record<string, unknown>;
+  assert.equal(submittedPayload.indicator_warmup_bars, 300);
+  assert.equal(submittedPayload.forward_cache_ms, 43_200_000);
+  assert.equal(submittedPayload.random_range_start_ms, edited.randomRangeStartMs);
+  assert.equal(submittedPayload.random_range_end_ms, edited.randomRangeEndMs);
+  assert.equal(Object.hasOwn(submittedPayload, "catalog_epoch"), false);
+  assert.equal(Object.hasOwn(submittedPayload, "symbol"), false);
+});
+
+test("create model defaults to a selectable ONE_WAY run and exposes fail-closed boundaries", () => {
+  const capabilities = parseReplayCapabilities(enabledCapabilities());
+  const catalog = hedgeCatalog();
+  const draft = createTrainingRunDraft(catalog);
+  const evaluation = evaluateTrainingRunSetupDraft(draft, capabilities);
+  assert.equal(evaluation.canSubmit, true);
+  assert.deepEqual(evaluation.unsupported, {
+    account_history: "精确账户只接受服务端已校验并固定的 mark/index/funding/规则归档；公开 K 线代理不算 exact",
+    funding: "HEDGE 优先使用 pinned historical funding；缺失时可明确降级为 OFF 或 Sandbox 固定模型",
+    historical_l2: "仅连续、可 pin、已验证的 Binance USD-M 历史 L2 可开启；不含真实盘口排队",
+    rule_changes: "费率、杠杆与 Sandbox 固定资金费可按白名单审计变更",
+    isolated_margin: "CROSS 与 ISOLATED 均可用；逐仓开仓前必须显式分配保证金",
+  });
+  const request = buildTrainingRunCreateRequest(draft, evaluation);
+  assert.equal(request.protocol, "replay.v3");
+  assert.equal(Object.hasOwn(request, "catalog_epoch"), false);
+  assert.equal(Object.hasOwn(request, "symbol"), false);
+  assert.equal(request.time_disclosure_policy, "NONE");
+  assert.equal(request.requested_start_ms, draft.requestedStartMs);
+  assert.equal(request.random_range_start_ms, null);
+  assert.equal(request.random_range_end_ms, null);
+  assert.equal(request.integrity_mode, "CHALLENGE");
+  assert.equal(request.funding_mode, "OFF");
+  assert.equal(request.account_data_mode, "APPROX_PROXY");
+  assert.equal(request.fixed_funding_rate, null);
+  assert.equal(request.funding_interval_ms, null);
+  assert.equal(request.book_mode, "OFF");
+  assert.equal(request.margin_mode, "CROSS");
+  assert.equal(request.position_mode, "ONE_WAY");
+  assert.equal(request.allow_rule_changes, false);
+  assert.deepEqual(request.allowed_mutations, []);
+});
+
+test("source catalog response preserves edits made while the new source is loading", async (context) => {
+  let resolveTradeCatalog: ((catalog: ReturnType<typeof hedgeCatalog>) => void) | null = null;
+  const tradeCatalogPromise = new Promise<ReturnType<typeof hedgeCatalog>>((resolve) => {
+    resolveTradeCatalog = resolve;
+  });
+  const lifecycle = new TrainingHubLifecycle({
+    api: {
+      async listRuns() {
+        return parseTrainingRunListResponse(listResponse([]));
+      },
+      async capabilities() {
+        return parseReplayCapabilities(enabledCapabilities());
+      },
+      async catalog(query) {
+        return query?.sourceKind === "AGG_TRADE"
+          ? tradeCatalogPromise
+          : hedgeCatalog();
+      },
+      async createRun() {
+        return parseTrainingRunMutationResponse(mutationResponse());
+      },
+    },
+  });
+  context.after(() => lifecycle.dispose());
+  lifecycle.start();
+  await settle();
+  await lifecycle.openCreate();
+  const initial = lifecycle.getSnapshot().draft;
+  assert.ok(initial);
+  lifecycle.setDraft({ ...initial, sourceKind: "AGG_TRADE" });
+  lifecycle.setDraft({
+    ...lifecycle.getSnapshot().draft!,
+    name: "加载时继续编辑",
+    marginMode: "ISOLATED",
+  });
+  resolveTradeCatalog!({
+    ...hedgeCatalog(),
+    entries: hedgeCatalog().entries.map((entry) => ({
+      ...entry,
+      quality: "VERIFIED_AGG_TRADE_APPROXIMATE_BARS" as const,
+    })),
+  });
+  await settle();
+  assert.equal(lifecycle.getSnapshot().draft?.sourceKind, "AGG_TRADE");
+  assert.equal(lifecycle.getSnapshot().draft?.name, "加载时继续编辑");
+  assert.equal(lifecycle.getSnapshot().draft?.marginMode, "ISOLATED");
+});
+
+test("switching to AGG_TRADE reloads source coverage and resets T0", async (context) => {
+  const queries: Array<{ sourceKind?: "BAR" | "AGG_TRADE" }> = [];
+  const lifecycle = new TrainingHubLifecycle({
+    api: {
+      async listRuns() {
+        return parseTrainingRunListResponse(listResponse([]));
+      },
+      async capabilities() {
+        return parseReplayCapabilities(enabledCapabilities());
+      },
+      async catalog(query) {
+        queries.push(query ?? {});
+        return query?.sourceKind === "AGG_TRADE" ? tradeCatalog() : hedgeCatalog();
+      },
+      async createRun() {
+        return parseTrainingRunMutationResponse(mutationResponse());
+      },
+    },
+  });
+  context.after(() => lifecycle.dispose());
+  lifecycle.start();
+  await settle();
+  await lifecycle.openCreate();
+  const draft = lifecycle.getSnapshot().draft;
+  assert.ok(draft);
+  lifecycle.setDraft({
+    ...draft,
+    sourceKind: "AGG_TRADE",
+    requestedStartMs: null,
+  });
+  await settle();
+  const switched = lifecycle.getSnapshot();
+  assert.equal(queries.at(-1)?.sourceKind, "AGG_TRADE");
+  assert.equal(switched.draft?.requestedStartMs, 1_700_000_060_000);
+  assert.equal(switched.evaluation?.errors.includes(
+    "开始时间不在当前历史源的可用覆盖范围",
+  ), false);
+});
+
+test("create rejects an explicit BAR T0 outside source coverage without rewriting it", async (context) => {
+  let createCalls = 0;
+  const lifecycle = new TrainingHubLifecycle({
+    api: {
+      async listRuns() {
+        return parseTrainingRunListResponse(listResponse([]));
+      },
+      async capabilities() {
+        return parseReplayCapabilities(enabledCapabilities());
+      },
+      async catalog() {
+        return hedgeCatalog();
+      },
+      async createRun() {
+        createCalls += 1;
+        return parseTrainingRunMutationResponse(mutationResponse());
+      },
+    },
+  });
+  context.after(() => lifecycle.dispose());
+  lifecycle.start();
+  await settle();
+  await lifecycle.openCreate();
+  const draft = lifecycle.getSnapshot().draft;
+  assert.ok(draft);
+  const explicitInvalidStart = 1_600_000_000_000;
+  const edited = { ...draft, requestedStartMs: explicitInvalidStart };
+  lifecycle.setDraft(edited);
+  await lifecycle.createRun(edited);
+  const rejected = lifecycle.getSnapshot();
+  assert.equal(rejected.draft?.requestedStartMs, explicitInvalidStart);
+  assert.equal(rejected.evaluation?.canSubmit, false);
+  assert.equal(rejected.evaluation?.errors.includes(
+    "开始时间不在当前历史源的可用覆盖范围",
+  ), true);
+  assert.equal(rejected.error?.code, "TRAINING_RUN_INVALID");
+  assert.equal(createCalls, 0);
+});
+
+test("HEDGE create model accepts explicit Sandbox funding and keeps exact inputs when available", () => {
+  const capabilities = parseReplayCapabilities(enabledCapabilities());
+  const catalog = hedgeCatalog();
+  const base = {
+    ...createTrainingRunDraft(catalog),
+    positionMode: "HEDGE" as const,
+    fundingMode: "HISTORICAL_EXACT" as const,
+    accountDataMode: "DETERMINISTIC_SIMULATION" as const,
+  };
+  const sandbox = {
+    ...base,
+    integrityMode: "SANDBOX" as const,
+    marginMode: "ISOLATED" as const,
+    fundingMode: "SANDBOX_FIXED" as const,
+    fixedFundingRate: "-0.0001",
+    fundingIntervalMs: 28_800_000,
+  };
+  const sandboxEvaluation = evaluateTrainingRunSetupDraft(sandbox, capabilities);
+  assert.equal(sandboxEvaluation.canSubmit, true);
+  const sandboxPayload = buildTrainingRunCreateRequest(sandbox, sandboxEvaluation);
+  assert.equal(sandboxPayload.funding_mode, "SANDBOX_FIXED");
+  assert.equal(sandboxPayload.fixed_funding_rate, "-0.0001");
+
+  const exactPlan = parseReplaySegmentPreparePlan(segmentPlanResponse({
+    historical_book: {
+      ...segmentPlanResponse().historical_book,
+      feature_enabled: true,
+      requested_mode: "BOOK_ASSISTED_REQUIRED",
+      capability_state: "AVAILABLE_EXACT",
+      reason: "VERIFIED_BINANCE_USDM_DIFF_DEPTH",
+      snapshot_and_ordered_deltas: true,
+      pinnable: true,
+      ready_archive_bytes: 1_024,
+    },
+    account_history: {
+      ...segmentPlanResponse().account_history,
+      feature_enabled: true,
+      requested_mode: "DETERMINISTIC_SIMULATION",
+      reason: "NO_COMPLETE_PINNABLE_ARCHIVE",
+    },
+    hedge_inputs: exactHedgeInputPlan(),
+  }));
+  assert.equal(exactPlan.account_history.requested_mode, "DETERMINISTIC_SIMULATION");
+  const exact = evaluateTrainingRunDraft(
+    base,
+    capabilities,
+    catalog,
+    exactPlan,
+  );
+  assert.equal(exact.canSubmit, true);
+  const payload = buildTrainingRunPreparationRequest(base, exact, catalog);
+  assert.deepEqual(
+    payload.hedge_public_history_ref,
+    exactPlan.hedge_inputs.hedge_public_history_ref,
+  );
+  assert.deepEqual(
+    payload.simulation_manifest_ref,
+    exactPlan.hedge_inputs.simulation_manifest_ref,
+  );
+});
+
+test("HEDGE create mode remains an explicit exchange-parity policy", () => {
+  const capabilities = parseReplayCapabilities(enabledCapabilities());
+  const catalog = hedgeCatalog();
+  const base = createTrainingRunDraft(catalog);
+  assert.equal(base.positionMode, "ONE_WAY");
+  assert.equal(base.accountDataMode, "APPROX_PROXY");
+  assert.equal(base.fundingMode, "OFF");
+  const hedge = {
+    ...base,
+    positionMode: "HEDGE" as const,
+    accountDataMode: "DETERMINISTIC_SIMULATION" as const,
+    fundingMode: "HISTORICAL_EXACT" as const,
+  };
+  const evaluation = evaluateTrainingRunSetupDraft(hedge, capabilities);
+  assert.equal(evaluation.canSubmit, true);
+  assert.equal(buildTrainingRunCreateRequest(hedge, evaluation).position_mode, "HEDGE");
+
+  const randomHedge = {
+    ...hedge,
+    startMode: "RANDOM" as const,
+    requestedStartMs: null,
+    randomRangeStartMs: hedge.requestedStartMs,
+    randomRangeEndMs: hedge.requestedStartMs,
+    timeDisclosurePolicy: "HIDE_ALL" as const,
+  };
+  const randomEvaluation = evaluateTrainingRunSetupDraft(randomHedge, capabilities);
+  assert.equal(randomEvaluation.canSubmit, true);
+  const randomPayload = buildTrainingRunCreateRequest(randomHedge, randomEvaluation);
+  assert.equal(randomPayload.start_mode, "RANDOM");
+  assert.equal(randomPayload.requested_start_ms, null);
+  assert.equal(randomPayload.position_mode, "HEDGE");
+
+  for (const supported of [
+    { ...hedge, marginMode: "ISOLATED" as const },
+  ]) {
+    assert.equal(evaluateTrainingRunSetupDraft(supported, capabilities).canSubmit, true);
+  }
+  assert.equal(evaluateTrainingRunSetupDraft({
+    ...hedge,
+    accountDataMode: "HISTORICAL_EXACT" as const,
+  }, capabilities).canSubmit, false);
+});
+
+test("Phase 9 create model enables BOOK_ASSISTED only with an exact server plan", () => {
+  const capabilities = parseReplayCapabilities(enabledCapabilities());
+  const catalog = hedgeCatalog();
+  const draft = {
+    ...createTrainingRunDraft(catalog),
+    positionMode: "HEDGE" as const,
+    fundingMode: "HISTORICAL_EXACT" as const,
+    accountDataMode: "DETERMINISTIC_SIMULATION" as const,
+    startMode: "MANUAL" as const,
+    requestedStartMs: 1_710_000_000_000,
+    bookMode: "BOOK_ASSISTED_REQUIRED" as const,
+  };
+  const unavailable = evaluateTrainingRunDraft(draft, capabilities, catalog);
+  assert.equal(unavailable.canSubmit, false);
+  assert.match(unavailable.errors.join("\n"), /exact L2/);
+  const exactBook = {
+    feature_enabled: true,
+    requested_mode: "BOOK_ASSISTED_REQUIRED",
+    capability_state: "AVAILABLE_EXACT",
+    reason: "VERIFIED_BINANCE_USDM_DIFF_DEPTH",
+    source: "BINANCE_USDM_DIFF_DEPTH_CAPTURE_V1",
+    snapshot_and_ordered_deltas: true,
+    continuity_contract: "SNAPSHOT_BRIDGE_AND_U_u_pu",
+    pinnable: true,
+    queue_exact: false,
+    execution_fidelity: "BOOK_ASSISTED_CONTINUITY_GATED_NO_QUEUE",
+    ready_archive_bytes: 1_024,
+    max_archive_bytes: 1_099_511_627_776,
+  };
+  const plan = parseReplaySegmentPreparePlan(segmentPlanResponse({
+    historical_book: exactBook,
+    hedge_inputs: exactHedgeInputPlan(),
+  }));
+  const evaluation = evaluateTrainingRunDraft(draft, capabilities, catalog, plan);
+  assert.equal(evaluation.canSubmit, true);
+  assert.equal(
+    buildTrainingRunPreparationRequest(draft, evaluation, catalog).book_mode,
+    "BOOK_ASSISTED_REQUIRED",
+  );
+});
+
+test("AGG initial market picker discloses unknown full-day download size", () => {
+  const run = parseTrainingRunListResponse(listResponse([runCard({
+    state: "AWAITING_MARKET",
+    source_kind: "AGG_TRADE",
+    last_symbol: null,
+    adapter_session_id: null,
+    resume_action: "SELECT_MARKET",
+  })])).items[0];
+  assert.ok(run);
+  const html = renderToStaticMarkup(
+    <ReplayInitialMarketPicker run={run} onInitialized={() => {}} />,
+  );
+  assert.match(html, /data-replay-agg-trade-download-note/);
+  assert.match(html, /首次选择需下载并校验整日成交档/);
+  assert.match(html, /下载量未知/);
+  assert.match(html, /replay-market-picker/);
+  assert.match(html, /只看可用/);
+  assert.doesNotMatch(html, /training-hub-card/);
+  assert.doesNotMatch(html, /合格窗口/);
+});
+
+test("hub markup exposes saves, native actions, filters and explicit unavailable capability reasons", () => {
+  const catalog = blindCatalog();
+  const draft = createTrainingRunDraft(catalog);
+  const runtime = {
+    phase: "READY",
+    items: parseTrainingRunListResponse(listResponse([
+      runCard(),
+      runCard({
+        run_id: "run-ended",
+        name: "ETH 已结束训练",
+        state: "ENDED",
+        last_symbol: "ETHUSDT",
+        adapter_session_id: "adapter-ended",
+        status: { code: "READY", message: "STALE_ENDED_STATUS: 训练可继续" },
+        report_available: true,
+      }),
+    ])).items,
+    nextCursor: null,
+    filters: { state: null, sourceKind: null, compatibility: null },
+    operation: null,
+    error: null,
+    createOpen: true,
+    capabilities: parseReplayCapabilities(enabledCapabilities()),
+    catalog,
+    draft,
+    evaluation: evaluateTrainingRunDraft(
+      draft,
+      parseReplayCapabilities(enabledCapabilities()),
+      catalog,
+    ),
+    segmentPlan: parseReplaySegmentPreparePlan(segmentPlanResponse()),
+    storageOpen: false,
+    storageInventory: null,
+    storagePlan: null,
+    storagePlanConfirmed: false,
+    storageResult: null,
+    actions: {
+      refresh() {},
+      loadNext() {},
+      setFilters() {},
+      openCreate() {},
+      closeCreate() {},
+      openStorage() {},
+      closeStorage() {},
+      refreshStorage() {},
+      planStorageGc() {},
+      confirmStoragePlan() {},
+      runStorageGc() {},
+      rehydrateStorageObject() {},
+      setDraft() {},
+      refreshCreatePlan() {},
+      createRun() {},
+      deleteRun() {},
+      continueRun() {},
+    },
+  } satisfies TrainingHubRuntime;
+  const marketRandomHtml = renderToStaticMarkup(<TrainingHubDialog runtime={{ ...runtime,
+    automaticPreparationAvailable: true,
+    draft: { ...draft, startMode: "RANDOM", randomScope: "MARKET", requestedStartMs: null,
+      randomRangeStartMs: null, randomRangeEndMs: null },
+  }} />);
+  assert.match(marketRandomHtml, /按商品随机/);
+  assert.match(marketRandomHtml, /无需填写日期/);
+  assert.match(marketRandomHtml, /交易所/);
+  assert.doesNotMatch(marketRandomHtml, /随机区间开始（UTC）|随机区间结束（UTC）|data-training-field="requested-start-utc"/);
+  const html = renderToStaticMarkup(<TrainingHubDialog runtime={runtime} />);
+  assert.doesNotMatch(html, /准备历史数据/);
+  const noCoverage: typeof catalog = { ...catalog, entries: [] };
+  const renderPreparation = (sourceKind: "BAR" | "AGG_TRADE", nextCatalog = noCoverage) =>
+    renderToStaticMarkup(<TrainingHubDialog
+      runtime={{ ...runtime, catalog: nextCatalog, draft: { ...draft, sourceKind } }}
+      onPrepareData={() => {}}
+    />);
+  assert.match(renderPreparation("BAR"), /准备历史数据/);
+  assert.match(renderPreparation("BAR"), /training-presets/);
+  assert.match(renderPreparation("BAR"), /返回后会重新检查覆盖，并保留训练设置/);
+  assert.doesNotMatch(renderPreparation("AGG_TRADE"), /准备历史数据/);
+  assert.doesNotMatch(renderPreparation("BAR", hedgeCatalog()), /准备历史数据/);
+  assert.match(html, /role="dialog"/);
+  assert.match(html, /回放训练/);
+  assert.match(html, /BTC 手动训练/);
+  assert.match(html, /继续训练/);
+  const endedNameOffset = html.indexOf("ETH 已结束训练");
+  const endedCardStart = html.lastIndexOf("<article", endedNameOffset);
+  const endedCardEnd = html.indexOf("</article>", endedNameOffset);
+  assert.notEqual(endedNameOffset, -1);
+  assert.notEqual(endedCardStart, -1);
+  assert.notEqual(endedCardEnd, -1);
+  const endedCardHtml = html.slice(endedCardStart, endedCardEnd);
+  assert.match(endedCardHtml, /训练已结束，可打开复盘/);
+  assert.match(endedCardHtml, /打开复盘/);
+  assert.doesNotMatch(endedCardHtml, /训练可继续|继续训练|STALE_ENDED_STATUS/);
+  assert.match(html, /删除/);
+  assert.doesNotMatch(html, /删除存档/);
+  assert.match(html, /新建训练/);
+  assert.match(html, /待选商品|已暂停|已结束/);
+  assert.doesNotMatch(html, />AWAITING_MARKET<|>PAUSED<|>ENDED</);
+  assert.match(html, /资金费.*OFF/);
+  assert.match(html, /完整性模式/);
+  assert.match(html, /HIDE_MINUTE/);
+  assert.match(html, /Practice 可审计变更白名单/);
+  assert.match(html, /历史盘口.*连续、可 pin/);
+  assert.match(html, /创建训练后选择商品/);
+  assert.match(html, /创建时确定开始时间，暂不绑定商品、交易所、市场类型、基础周期或数据集/);
+  assert.match(html, /检查通过后才会加入训练/);
+  assert.match(html, /缺少可近似项时自动使用清楚标记的 HEDGE_HYBRID/);
+  assert.match(html, /HEDGE 会优先绑定完整历史输入/);
+  assert.doesNotMatch(html, /DETERMINISTIC_SIMULATION[^<]*disabled|APPROX_PROXY[^<]*disabled/);
+  assert.match(html, /公开 K 线代理不算 exact/);
+  assert.match(html, /指标预热 BAR/);
+  assert.match(html, /全部可用（默认，按需加载）/);
+  assert.match(html, /像实时行情一样向左按需分页/);
+  assert.match(html, /确认时间并创建训练/);
+  assert.match(html, /确认创建后，开始时间不可更改/);
+  assert.match(html, /不含真实盘口排队/);
+  assert.doesNotMatch(html, /1710000000000|dataset_epoch|snapshot_blob/);
+});
+
+test("archive deletion uses an application-owned explicit confirmation dialog", () => {
+  const card = parseTrainingRunListResponse(listResponse()).items[0];
+  assert.ok(card);
+  const html = renderToStaticMarkup(
+    <TrainingRunDeleteConfirmation
+      card={card}
+      busy={false}
+      onCancel={() => {}}
+      onConfirm={() => {}}
+    />,
+  );
+  assert.match(html, /role="alertdialog"/);
+  assert.match(html, /永久删除训练存档/);
+  assert.match(html, /BTC 手动训练/);
+  assert.match(html, /取消/);
+  assert.match(html, /确认永久删除/);
+  assert.match(html, /本机工作区偏好/);
+});
+
+test("hub and picker labels stay user-facing", () => {
+  assert.equal(trainingRunStateLabel("AWAITING_MARKET"), "待选商品");
+  assert.equal(formatTrainingEquity("10000"), "10,000");
+  assert.equal(formatTrainingEquity("9442.0004446124365"), "9,442.00");
+  assert.equal(formatTrainingEquity("99999999999999999.995"), "100,000,000,000,000,000.00");
+  assert.equal(formatTrainingEquity("-0.001"), "0.00");
+  assert.equal(formatTrainingEquity("-1234.567"), "-1,234.57");
+  assert.equal(formatTrainingEquity("0.123456789", 8), "0.12345679");
+  assert.equal(formatReplayUtcDateTime(Date.UTC(2021, 11, 14, 12, 18)), "2021-12-14 12:18 UTC");
+});
+
+test("Hub parser rejects every retired v1 archive shape", () => {
+  assert.throws(() => parseTrainingRunListResponse(listResponse([
+    runCard({ kind: "LEGACY_V1", integrity_mode: null }),
+  ])));
+  assert.throws(() => parseTrainingRunListResponse(listResponse([
+    runCard({ compatibility: "LEGACY_ADAPTER" }),
+  ])));
+  assert.throws(() => parseTrainingRunListResponse(listResponse([
+    runCard({ resume_action: "OPEN_V1" }),
+  ])));
+  assert.throws(() => parseTrainingRunListResponse(listResponse([
+    runCard({ parent_legacy_session_id: "adapter-old" }),
+  ])));
+});
+
+test("return-to-hub waits for the server checkpoint before navigation", async () => {
+  const calls: string[] = [];
+  await returnToTrainingHub(
+    "run-1",
+    {
+      async returnToHub(runId) {
+        calls.push(`checkpoint:${runId}`);
+        return {
+          protocol: "replay.v3",
+          run_id: "run-1",
+          state: "PAUSED",
+          checkpointed: true,
+          released: true,
+        };
+      },
+    },
+    (url) => calls.push(`navigate:${url}`),
+  );
+  assert.deepEqual(calls, ["checkpoint:run-1", "navigate:/replay.html"]);
+});
+
+test("return-to-hub preserves terminal durable states and still navigates", async () => {
+  for (const state of ["ENDED", "ERROR"] as const) {
+    const parsed = parseTrainingRunReturnResponse({
+      protocol: "replay.v3",
+      run_id: `run-${state.toLowerCase()}`,
+      state,
+      checkpointed: true,
+      released: true,
+    });
+    const calls: string[] = [];
+    await returnToTrainingHub(
+      parsed.run_id,
+      { returnToHub: async () => parsed },
+      (url) => calls.push(url),
+    );
+    assert.deepEqual(calls, ["/replay.html"]);
+  }
+  assert.throws(() => parseTrainingRunReturnResponse({
+    protocol: "replay.v3",
+    run_id: "run-playing",
+    state: "PLAYING",
+    checkpointed: true,
+    released: true,
+  }));
+});
+
+
+test("market-random creation needs no dates and freezes identity across retry until the market changes", async (context) => {
+  const calls: Array<{ symbol: string; key: string | undefined }> = [];
+  const lifecycle = new TrainingHubLifecycle({
+    draftStorage: null,
+    api: {
+      async listRuns() { return parseTrainingRunListResponse(listResponse([])); },
+      async capabilities() { return parseReplayCapabilities(enabledCapabilities()); },
+      async preparationCapabilities() { return { enabled: true, replay_sources: { BAR: true, AGG_TRADE: false } }; },
+      async catalog() { return { ...hedgeCatalog(), entries: [] }; },
+      async createRun() { throw new Error("must not choose from the global catalog"); },
+      async prepareReplay(setup, market, _progress, _signal, key) {
+        assert.equal(setup.start_mode, "RANDOM");
+        assert.equal(setup.requested_start_ms, null);
+        assert.equal(setup.random_range_start_ms, null);
+        assert.equal(setup.random_range_end_ms, null);
+        assert.equal(market.random_by_market, true);
+        calls.push({ symbol: market.symbol, key });
+        throw new Error("uncertain delivery");
+      },
+    },
+  });
+  context.after(() => lifecycle.dispose());
+  await lifecycle.openCreate();
+  const draft = { ...lifecycle.getSnapshot().draft!, startMode: "RANDOM" as const,
+    randomScope: "MARKET" as const, requestedStartMs: null, randomRangeStartMs: null, randomRangeEndMs: null };
+  lifecycle.setDraft(draft);
+  assert.equal(lifecycle.getSnapshot().evaluation?.canSubmit, true);
+  await lifecycle.createRun(draft);
+  await lifecycle.createRun(draft);
+  const changed = { ...draft, symbol: "ETHUSDT" };
+  lifecycle.setDraft(changed);
+  await lifecycle.createRun(changed);
+  assert.equal(calls.length, 3);
+  assert.ok(calls[0]?.key);
+  assert.equal(calls[0]?.key, calls[1]?.key);
+  assert.notEqual(calls[0]?.key, calls[2]?.key);
+  assert.equal(calls[2]?.symbol, "ETHUSDT");
+  assert.equal(evaluateTrainingRunSetupDraft({ ...draft, symbol: "" }, parseReplayCapabilities(enabledCapabilities())).canSubmit, false);
+  assert.equal(evaluateTrainingRunSetupDraft({ ...draft, randomScope: "RANGE" }, parseReplayCapabilities(enabledCapabilities())).canSubmit, false);
+});

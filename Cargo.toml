@@ -2,6 +2,7 @@
 members = [
     "exchange-core",
     "exchange-server",
+    "marketforge-cli",
     "marketforge-candlescope-plugin",
 ]
 resolver = "3"
@@ -10,3 +11,12 @@ resolver = "3"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/helenananaa/MarketForge"
+
+# Keep incremental compilation without generating large debug symbol files.
+[profile.dev]
+debug = 0
+incremental = true
+
+[profile.test]
+debug = 0
+incremental = true
