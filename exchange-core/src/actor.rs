@@ -66,6 +66,10 @@ pub struct MarketActor {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ExchangeActor {
+    #[serde(default)]
+    conditional_orders: BTreeMap<String, crate::conditional_orders::ConditionalOrder>,
+    #[serde(default)]
+    position_protections: BTreeMap<String, crate::PositionProtection>,
     room_id: RoomId,
     config: ExchangeConfig,
     markets: BTreeMap<InstrumentId, MarketActor>,
@@ -123,6 +127,8 @@ impl ExchangeActor {
             price_links: BTreeMap::new(),
             spot_trade_prices: BTreeMap::new(),
             funding_states: BTreeMap::new(),
+            position_protections: BTreeMap::new(),
+            conditional_orders: BTreeMap::new(),
             pending_clock_executions: Vec::new(),
             funding_collateral_shortfalls: BTreeMap::new(),
         })
@@ -178,6 +184,8 @@ impl ExchangeActor {
             price_links: BTreeMap::new(),
             spot_trade_prices: BTreeMap::new(),
             funding_states: BTreeMap::new(),
+            position_protections: BTreeMap::new(),
+            conditional_orders: BTreeMap::new(),
             pending_clock_executions: Vec::new(),
             funding_collateral_shortfalls: BTreeMap::new(),
         })
@@ -1003,6 +1011,15 @@ impl ExchangeActor {
         command: Command,
         origin: CommandOrigin,
     ) -> Result<ActorExecution, ActorRejectReason> {
+        if matches!(command, Command::SetConditionalOrder { .. }) {
+            return self.apply_conditional_command(instrument_id, command);
+        }
+        if matches!(
+            command,
+            Command::SetPositionProtection { .. } | Command::NewOrderWithProtection { .. }
+        ) {
+            return self.apply_position_protection_command(instrument_id, command, origin);
+        }
         let retained = command.clone();
         let mut execution = self.apply_to_instrument_inner(instrument_id, command, origin)?;
         if matches!(execution.result, ActorExecutionResult::Rejected(_)) {
@@ -1150,7 +1167,11 @@ impl ExchangeActor {
                             .into_iter()
                             .collect(),
                     ),
-                    Command::SetMarkPrice(_) | Command::SettleFunding(_) => None,
+                    Command::SetConditionalOrder { .. }
+                    | Command::SetPositionProtection { .. }
+                    | Command::NewOrderWithProtection { .. }
+                    | Command::SetMarkPrice(_)
+                    | Command::SettleFunding(_) => None,
                 }
             } else {
                 None
@@ -3007,6 +3028,7 @@ pub enum ActorExecutionResult {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ActorRejectReason {
     InvalidOrderProtection,
+    InvalidPositionProtection,
     OrderProtectionExpired {
         deadline_market_time_ms: u64,
         market_time_ms: u64,
@@ -3122,6 +3144,9 @@ fn reject_reason_from_venue_account_error(error: VenueAccountError) -> VenueTran
         }
     }
 }
+
+include!("position_protection_actor.rs");
+include!("conditional_orders_actor.rs");
 
 #[cfg(test)]
 mod tests {

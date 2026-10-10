@@ -55,6 +55,37 @@ test("orders carry bearer identity, instrument and idempotency; u64 cancel is em
   await assert.rejects(client.order(selection, "Buy", Number.MAX_SAFE_INTEGER + 1, null, new AbortController().signal, "bad"));
   assert.equal(requests.length, 2);
 });
+
+test("perpetual protection preserves risk precision and refuses another account's protection", () => {
+  const wire = observation() as unknown as { observation: Record<string, unknown>; api_version: string };
+  wire.observation.own_account = { Perp: { account_id: 20, position_qty: 5, margin_status: "margin_call", avg_entry_price_tick: 101 } };
+  wire.observation.risk = { margin_buffer: "-9007199254740993", mark_price_tick: 100 };
+  wire.observation.position_protections = [{ account_id: 20, instrument_id: "BTC", status: "armed" }];
+  const parsed = parseObservation(wire, selection);
+  assert.equal(parsed.risk?.margin_buffer, "-9007199254740993");
+  assert.equal(parsed.margin_status, "margin_call");
+  wire.observation.position_protections = [{ account_id: 30, instrument_id: "BTC", status: "armed" }];
+  assert.throws(() => parseObservation(wire, selection), /ownership/);
+});
+
+test("entry and position protection use the scoped gateway and stable retry keys", async () => {
+  const requests: RequestInit[] = [];
+  const client = new SimulationClient({ baseUrl: "http://127.0.0.1:57305", token: "test-token", userId: "" }, async (_url, options) => {
+    requests.push(options!); return new Response('{"accepted":true,"command_seq":7,"reject_reason":null}');
+  });
+  const spec = { take_profit_tick: 110, stop_loss_tick: 90, trigger: "Mark" as const };
+  const signal = new AbortController().signal;
+  await client.order(selection, "Buy", 5, null, signal, "bracket", spec);
+  await client.protect(selection, "Both", spec, signal, "replace");
+  await client.protect(selection, "Both", null, signal, "clear");
+  const body = requests.map((r) => JSON.parse(String(r.body)));
+  assert.equal(body[0].action.PlaceBracket.price_tick, null);
+  assert.equal(body[0].account_id, 20);
+  assert.deepEqual(body[1].action.SetPositionProtection.protection, spec);
+  assert.equal(body[2].action.SetPositionProtection.protection, null);
+  await assert.rejects(client.protect(selection, "Both", { ...spec, stop_loss_tick: Number.MAX_SAFE_INTEGER + 1 }, signal, "invalid"));
+  assert.equal(requests.length, 3);
+});
 test("slow old-room reads cannot overwrite a newly connected room", async () => {
   let resolveOld!: (response: Response) => void;
   const pending = new Promise<Response>((resolve) => { resolveOld = resolve; });

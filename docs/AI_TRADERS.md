@@ -1,5 +1,7 @@
 # AI 交易员插件（agent.v1）
 
+行情历史、MCP 原生图像、合约止盈止损、风险事件与 Python 策略数据接口见 [统一交易能力](TRADING_CAPABILITIES.md)。
+
 实现入口：`python/marketforge/agents/`；随附插件：`agent-plugins/llm-trader/`。
 默认服务已改为外部框架的工具服务，接入 Codex / OpenCode 请先看 [AGENT_FRAMEWORKS.md](AGENT_FRAMEWORKS.md)。本文的模型接入循环作为显式 `--enable-legacy-model-loop` 兼容模式保留；行情、策略、价格保护和警报规则共用。
 Web 顶部的“AI 交易员 · 模型与自编策略”可配置模型、创建选手、启动/暂停、查看策略和导出执行记录。
@@ -54,6 +56,8 @@ Bearer 模式下，运营脚本使用 `MARKETFORGE_AGENT_ADMIN_TOKEN`；每个�
 
 ## 自编策略隔离环境
 
+外部框架现可使用 [持久 Docker 工作区](AGENT_WORKSPACES.md)：容器内 Python、Shell、联网和后台进程，文件持久化，调用自己账户的 API。下文是保留兼容的短周期 decide 容器模式。
+
 ```powershell
 docker build -t marketforge-strategy:1 scripts/agent-sandbox
 ```
@@ -71,7 +75,7 @@ $env:PYTHONPATH='python'
 现在支持多文件工程、PyPI 依赖、HTTPS/Git HTTPS 直接引用和 Debian 系统包。需要库时由模型声明并安装，不采用固定库白名单。
 依赖安装使用单独的联网构建容器（1 GiB 内存、2 CPU、128 进程、300 秒期限），可运行 pip 的源码构建和 apt 包安装。它不挂载宿主目录，不持有交易所或模型凭据。
 安装完成后保存不可变 Docker image ID、`pip freeze`、pip 安装报告及系统包实际版本，后续策略复用该环境，不在每个 tick 重装。
-交易代码容器使用这个环境，仍不直接联网；LLM 通过 `web_search`/`web_read` 获取外部数据，可将需要的数据写入项目文件再供策略或分析使用。代码中的直接 `requests.get`/浏览器访问不在本版开放。
+交易代码容器使用这个环境，仍不直接联网；LLM 通过 `web_search`/`web_read` 获取外部数据，可将需要的数据写入项目文件再供策略或分析使用。此限制只适用于旧 decide 容器；持久工作区允许程序直接联网。
 镜像不可用时测试/部署明确失败，绝不改用宿主 Python 执行。第三方包的构建脚本具有构建容器内部权限；构建容器的默认 bridge 出网不等同于公开网页工具的逐目标 IP 校验。
 该容器适用于本机实验，并不宣称达到了面向不可信租户的托管服务隔离认证。
 

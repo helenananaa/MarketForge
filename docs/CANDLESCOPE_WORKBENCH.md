@@ -1,5 +1,7 @@
 # CandleScope 仿真工作台
 
+行情历史、MCP 原生图像、合约止盈止损、风险事件与 Python 策略数据接口见 [统一交易能力](TRADING_CAPABILITIES.md)。
+
 MarketForge 负责房间、撮合、订单、账户、费用、风控、强平、AI 参与者、仿真时钟和持久化。
 本项目 `vendor/candlescope` 内复制的源码提供 `/simulation.html`，通过 WebSocket 接收状态，通过 HTTP 提交交易，复用图表、绘图、导出、主题、指标编辑器和订单流面板。
 本项目内的 CandleScope Python 分析服务负责内置及 Pyne/Pine 指标计算和脚本目录；MarketForge 提供权威仿真数据。

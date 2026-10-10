@@ -249,6 +249,71 @@ impl SimulationRoom {
         execution
     }
 
+    pub fn position_protections(
+        &self,
+        instrument: &str,
+        account: AccountId,
+    ) -> Vec<crate::PositionProtection> {
+        self.venue_id_for_instrument(instrument)
+            .and_then(|v| self.exchanges.get(&v))
+            .map(|e| e.position_protections(instrument, account))
+            .unwrap_or_default()
+    }
+    pub fn has_active_position_protections(&self) -> bool {
+        self.exchanges
+            .values()
+            .any(|e| e.has_active_position_protections())
+    }
+
+    pub fn complete_flat_position_protections(&mut self) {
+        for exchange in self.exchanges.values_mut() {
+            exchange.complete_flat_position_protections();
+        }
+    }
+
+    pub fn prepare_position_exits(
+        &mut self,
+    ) -> Vec<crate::position_protection::PositionExitRequest> {
+        self.exchanges
+            .values_mut()
+            .flat_map(|e| e.prepare_position_exits())
+            .collect()
+    }
+    pub fn prepare_conditional_orders(
+        &mut self,
+    ) -> Vec<crate::conditional_orders::ConditionalOrder> {
+        self.exchanges
+            .values_mut()
+            .flat_map(|e| e.prepare_conditional_orders())
+            .collect()
+    }
+    pub fn record_conditional_order(
+        &mut self,
+        p: &crate::conditional_orders::ConditionalOrder,
+        id: u64,
+        accepted: bool,
+    ) {
+        if let Some(venue) = self.venue_id_for_instrument(&p.instrument_id) {
+            self.exchanges
+                .get_mut(&venue)
+                .unwrap()
+                .record_conditional_order(p, id, accepted);
+        }
+    }
+    pub fn record_position_exit(
+        &mut self,
+        instrument: &str,
+        account: AccountId,
+        side: crate::PositionSide,
+        order_id: u64,
+    ) {
+        if let Some(venue) = self.venue_id_for_instrument(instrument) {
+            self.exchanges
+                .get_mut(&venue)
+                .unwrap()
+                .record_position_exit(instrument, account, side, order_id);
+        }
+    }
     pub fn apply_to_instrument(
         &mut self,
         instrument_id: &str,

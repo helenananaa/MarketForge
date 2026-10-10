@@ -56,6 +56,8 @@ fn view(time: u64, mid: i64, position: i128) -> ParticipantObservation {
         related_markets: vec![],
         market_events: vec![],
         bot_market_data: None,
+        position_protections: Vec::new(),
+        risk: None,
         perp_price: None,
         own_account: Some(AccountSnapshot::Spot(
             SpotAccount {

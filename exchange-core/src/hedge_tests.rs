@@ -176,17 +176,21 @@ fn hedge_direction_is_required_and_cannot_overclose_or_reduce_on_open() {
         order(8, 4, Side::Buy, PositionSide::Short, 1, ioc),
         RiskRejectReason::ReduceOnlyWouldIncreasePosition,
     );
-    reject(
-        &mut e,
-        order(
+    let result = e
+        .apply(order(
             9,
             1,
             Side::Sell,
             PositionSide::Long,
             1,
             OrderKind::Limit { price_tick: 110 },
-        ),
-        RiskRejectReason::ReduceOnlyUnsupported,
+        ))
+        .unwrap();
+    assert!(
+        result
+            .events
+            .iter()
+            .any(|e| matches!(e.event, Event::OrderRested { order_id: 9, .. }))
     );
 }
 

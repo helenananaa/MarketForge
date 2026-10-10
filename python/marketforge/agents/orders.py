@@ -5,17 +5,17 @@ import urllib.parse
 
 class OrderTools:
     def order_history(self, config, kind, args):
-        from .runtime import integer, identifier
+        from .runtime import integer, identifier, order_identifier
         instrument = args["instrument"]
         self.check_instrument(config, instrument)
         limit = integer(args.get("limit", 100), 1, 500)
         room, market = (urllib.parse.quote(value, safe="") for value in (config["room"], instrument))
         field = "orders" if kind == "orders" else "trades"
         result = self.client(config)._request("GET", f"/rooms/{room}/instruments/{market}/{field}",
-            query={"account_id": config["account_id"], "limit": limit})
+            query={"account_id": config["account_id"], "limit": limit,**({"order_id":str(order_identifier(args["order_id"]))} if kind=="orders" and "order_id" in args else {})})
         records = []
         strategy = identifier(args["strategy"]) if "strategy" in args else None
-        order_id = integer(args["order_id"], 1, 2**53-1) if "order_id" in args else None
+        order_id = order_identifier(args["order_id"]) if "order_id" in args else None
         for record in result[field]:
             if record.get("instrument_id") != instrument:
                 continue
@@ -38,14 +38,14 @@ class OrderTools:
             records.append(visible | {"sources": owners})
         return {field: records, "instrument": instrument, "window_limit": limit,
             "history_may_have_more": len(result[field]) >= limit,
-            "filter_scope": "latest account records; order/strategy filters applied within this window"}
+            "filter_scope": "exact order ID across durable history" if kind=="orders" and order_id is not None else "latest account records; order/strategy filters applied within this window"}
 
     def cancel_batch(self, config, key, args, source, stop):
         from .runtime import identifier
         trader, instrument = config["id"], args["instrument"]
         self.check_instrument(config, instrument)
         strategy = identifier(args["strategy"]) if "strategy" in args else None
-        if source != "direct" and strategy != source:
+        if source not in ("direct","workspace") and strategy != source:
             raise ValueError("strategy batch cancellation requires its own strategy name")
         batch_key = f"{trader}:{key}"
         with self.lock(trader):

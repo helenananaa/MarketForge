@@ -15,6 +15,21 @@ pub type ParticipantId = String;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum OrderAction {
+    SetConditional {
+        key: String,
+        spec: Option<crate::conditional_orders::ConditionalOrderSpec>,
+    },
+    SetPositionProtection {
+        position_side: crate::PositionSide,
+        protection: Option<crate::PositionProtectionSpec>,
+    },
+    PlaceBracket {
+        side: Side,
+        position_side: crate::PositionSide,
+        qty: Qty,
+        price_tick: Option<PriceTick>,
+        protection: crate::PositionProtectionSpec,
+    },
     PlaceUnboundedMarket {
         side: Side,
         #[serde(default, skip_serializing_if = "crate::model::PositionSide::is_both")]
@@ -172,6 +187,39 @@ impl<'a> OrderGateway<'a> {
 
     fn action_to_command(&mut self, account_id: AccountId, action: &OrderAction) -> Command {
         match action {
+            OrderAction::SetConditional { key, spec } => Command::SetConditionalOrder {
+                account_id,
+                key: key.clone(),
+                spec: spec.clone().map(Box::new),
+            },
+            OrderAction::SetPositionProtection {
+                position_side,
+                protection,
+            } => Command::SetPositionProtection {
+                account_id,
+                position_side: *position_side,
+                protection: Box::new(protection.clone()).map(Box::new),
+            },
+            OrderAction::PlaceBracket {
+                side,
+                position_side,
+                qty,
+                price_tick,
+                protection,
+            } => Command::NewOrderWithProtection {
+                order: NewOrder {
+                    order_id: self.take_order_id(),
+                    account_id,
+                    side: *side,
+                    position_side: *position_side,
+                    qty: *qty,
+                    reduce_only: false,
+                    kind: price_tick.map_or(OrderKind::Market, |price_tick| OrderKind::Limit {
+                        price_tick,
+                    }),
+                },
+                protection: Box::new(protection.clone()),
+            },
             OrderAction::PlaceUnboundedMarket {
                 side,
                 position_side,
@@ -457,7 +505,10 @@ fn existing_order_id(action: &OrderAction) -> Option<OrderId> {
         | OrderAction::PlaceFillOrKill { .. }
         | OrderAction::PlaceReduceOnlyMarket { .. }
         | OrderAction::PlaceReduceOnlyImmediateOrCancel { .. }
-        | OrderAction::PlaceReduceOnlyFillOrKill { .. } => None,
+        | OrderAction::PlaceReduceOnlyFillOrKill { .. }
+        | OrderAction::SetPositionProtection { .. }
+        | OrderAction::SetConditional { .. }
+        | OrderAction::PlaceBracket { .. } => None,
     }
 }
 

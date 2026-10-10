@@ -5,7 +5,7 @@ description = "MarketForge HTTP SDK and agent trading tool service"
 requires-python = ">=3.10"
 
 [project.optional-dependencies]
-agents = ["mcp>=1.26,<2"]
+agents = ["mcp>=1.26,<2", "matplotlib>=3.9,<4"]
 
 [build-system]
 requires = ["setuptools>=61"]

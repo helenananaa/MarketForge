@@ -49,6 +49,10 @@ pub struct BotMarketData {
 /// and account. It never includes other accounts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParticipantObservation {
+    #[serde(default)]
+    pub position_protections: Vec<crate::PositionProtection>,
+    #[serde(default)]
+    pub risk: Option<crate::position_protection::PositionRisk>,
     pub version: u16,
     pub room_id: String,
     pub venue_id: VenueId,

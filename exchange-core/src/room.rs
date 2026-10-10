@@ -279,9 +279,135 @@ impl RoomManager {
             // perp on the same venue. The actor has already refreshed those
             // perp snapshots, so scan the whole room rather than only the
             // instrument that produced the user execution.
+            self.advance_position_protections(room_id)?;
             self.advance_pending_liquidations(room_id, usize::MAX)?;
         }
 
+        Ok(())
+    }
+
+    fn advance_position_protections(&mut self, room_id: &str) -> Result<(), RoomManagerError> {
+        if self.status(room_id)? != MarketStatus::Running {
+            return Ok(());
+        }
+        self.simulation_room_mut(room_id)?
+            .complete_flat_position_protections();
+        let entries = self
+            .simulation_room_mut(room_id)?
+            .prepare_conditional_orders();
+        for p in entries {
+            let id = 7_000_000_000_000_000_000u64
+                .checked_add(self.simulation_room(room_id)?.next_command_seq())
+                .ok_or(RoomManagerError::Actor(ActorRejectReason::Clearing(
+                    crate::ClearingError::BalanceOverflow,
+                )))?;
+            let order = crate::NewOrder {
+                order_id: id,
+                account_id: p.account_id,
+                side: p.spec.side,
+                position_side: p.spec.position_side,
+                qty: p.spec.qty,
+                reduce_only: false,
+                kind: p
+                    .spec
+                    .limit_price_tick
+                    .map_or(crate::OrderKind::Market, |price_tick| {
+                        crate::OrderKind::Limit { price_tick }
+                    }),
+            };
+            let command =
+                p.spec
+                    .protection
+                    .clone()
+                    .map_or(Command::NewOrder(order.clone()), |protection| {
+                        Command::NewOrderWithProtection {
+                            order,
+                            protection: Box::new(protection),
+                        }
+                    });
+            let execution = self
+                .simulation_room_mut(room_id)?
+                .apply_to_instrument(&p.instrument_id, command)
+                .map_err(RoomManagerError::Actor)?;
+            let admitted = match &execution.result {
+                ActorExecutionResult::Accepted(crate::MarketExecution::Perp(r)) => {
+                    !r.events.iter().any(|e| {
+                        matches!(
+                            e.event,
+                            crate::Event::RiskRejected { .. } | crate::Event::OrderRejected { .. }
+                        )
+                    })
+                }
+                _ => false,
+            };
+            self.executions
+                .entry(room_id.into())
+                .or_default()
+                .push(execution);
+            self.simulation_room_mut(room_id)?
+                .record_conditional_order(&p, id, admitted);
+        }
+        let exits = self.simulation_room_mut(room_id)?.prepare_position_exits();
+        for (instrument, account, side, qty, cancellations, limit_price) in exits {
+            for order_id in cancellations {
+                let cancel = self
+                    .simulation_room_mut(room_id)?
+                    .apply_to_instrument(
+                        &instrument,
+                        Command::CancelOrder(CancelOrder { order_id }),
+                    )
+                    .map_err(RoomManagerError::Actor)?;
+                self.executions
+                    .entry(room_id.into())
+                    .or_default()
+                    .push(cancel);
+            }
+            let seq = self.simulation_room(room_id)?.next_command_seq();
+            let id =
+                8_000_000_000_000_000_000u64
+                    .checked_add(seq)
+                    .ok_or(RoomManagerError::Actor(ActorRejectReason::Clearing(
+                        crate::ClearingError::BalanceOverflow,
+                    )))?;
+            let snapshot = self.account_snapshot_for(room_id, &instrument, account)?;
+            let Some(AccountSnapshot::Perp(a)) = snapshot else {
+                continue;
+            };
+            let signed = crate::position_protection::position_qty(&a, side).unwrap_or(0);
+            if signed == 0 || qty == 0 {
+                self.simulation_room_mut(room_id)?
+                    .complete_flat_position_protections();
+                continue;
+            }
+            let command = Command::NewOrder(crate::NewOrder {
+                order_id: id,
+                account_id: account,
+                position_side: side,
+                side: if signed > 0 {
+                    crate::Side::Sell
+                } else {
+                    crate::Side::Buy
+                },
+                qty,
+                reduce_only: true,
+                kind: limit_price.map_or(
+                    crate::OrderKind::ImmediateOrCancel { price_tick: None },
+                    |price_tick| crate::OrderKind::Limit { price_tick },
+                ),
+            });
+            let execution = self
+                .simulation_room_mut(room_id)?
+                .apply_to_instrument(&instrument, command)
+                .map_err(RoomManagerError::Actor)?;
+            self.executions
+                .entry(room_id.into())
+                .or_default()
+                .push(execution);
+            self.simulation_room_mut(room_id)?
+                .record_position_exit(&instrument, account, side, id);
+            self.simulation_room_mut(room_id)?
+                .complete_flat_position_protections();
+        }
         Ok(())
     }
 
@@ -344,6 +470,8 @@ impl RoomManager {
                 .or_default()
                 .push(liquidation.clone());
             executions.push(liquidation);
+            self.simulation_room_mut(room_id)?
+                .complete_flat_position_protections();
 
             if self.liquidation_trigger_is_active(room_id, &trigger)? {
                 self.enqueue_liquidation(room_id, trigger);
@@ -703,7 +831,7 @@ impl RoomManager {
         Ok(crate::observation::ParticipantObservation {
             version: PARTICIPANT_OBSERVATION_VERSION,
             room_id: room_id.to_string(),
-            venue_id,
+            venue_id: venue_id.clone(),
             instrument_id: instrument_id.to_string(),
             status: room.status(),
             step: clock.step(),
@@ -715,6 +843,14 @@ impl RoomManager {
             related_markets: vec![],
             market_events: room.visible_market_events(instrument_id),
             bot_market_data: None,
+            position_protections: room
+                .exchange(&venue_id)
+                .map_err(RoomManagerError::Simulation)?
+                .position_protections(instrument_id, account_id),
+            risk: room
+                .exchange(&venue_id)
+                .map_err(RoomManagerError::Simulation)?
+                .position_risk(instrument_id, account_id),
             perp_price: room
                 .perp_price_snapshot(instrument_id)
                 .map_err(RoomManagerError::Actor)?,
@@ -1047,7 +1183,11 @@ impl RoomManager {
         if self.status(room_id)? == crate::actor::MarketStatus::Closed {
             return Err(RoomManagerError::Simulation(SimulationRoomError::Closed));
         }
-        if !self.simulation_room(room_id)?.has_funding() {
+        if !self.simulation_room(room_id)?.has_funding()
+            && !self
+                .simulation_room(room_id)?
+                .has_active_position_protections()
+        {
             let transfers = self
                 .simulation_room_mut(room_id)?
                 .advance_clock(steps)
@@ -1057,6 +1197,7 @@ impl RoomManager {
                 .entry(room_id.to_string())
                 .or_default()
                 .extend(clock_executions);
+            self.advance_position_protections(room_id)?;
             self.advance_pending_liquidations(room_id, usize::MAX)?;
             return Ok(transfers);
         }
@@ -1090,9 +1231,11 @@ impl RoomManager {
                 .entry(room_id.to_string())
                 .or_default()
                 .extend(funding);
+            self.advance_position_protections(room_id)?;
             self.advance_pending_liquidations(room_id, usize::MAX)?;
         }
         if steps == 0 {
+            self.advance_position_protections(room_id)?;
             self.advance_pending_liquidations(room_id, usize::MAX)?;
         }
         Ok(transfers)
@@ -1351,6 +1494,13 @@ impl RoomObservationBatch<'_> {
             view.own_orders =
                 self.rooms
                     .resting_orders_for_account(self.room_id, instrument, account)?;
+            let room = self.rooms.simulation_room(self.room_id)?;
+            let venue = room.venue_id_for_instrument(instrument).unwrap();
+            let exchange = room
+                .exchange(&venue)
+                .map_err(RoomManagerError::Simulation)?;
+            view.position_protections = exchange.position_protections(instrument, account);
+            view.risk = exchange.position_risk(instrument, account);
             return Ok(view);
         }
         let view = self
@@ -1359,6 +1509,8 @@ impl RoomObservationBatch<'_> {
         let mut public = view.clone();
         public.own_account = None;
         public.own_orders.clear();
+        public.position_protections.clear();
+        public.risk = None;
         self.public.insert(instrument.to_string(), public);
         Ok(view)
     }

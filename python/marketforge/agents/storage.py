@@ -12,6 +12,7 @@ def encode(value):
 
 class Store:
     def __init__(self, path):
+        self.path = Path(path)
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self.db = sqlite3.connect(path, check_same_thread=False)

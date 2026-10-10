@@ -1,3 +1,5 @@
+mod account_activity;
+mod account_events;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     convert::Infallible,
@@ -93,6 +95,8 @@ const DEFAULT_CORS_ORIGINS: &[&str] = &[
     "http://127.0.0.1:15173",
     "http://localhost:15173",
 ];
+const SYSTEM_POSITION_EXIT_ORDER_ID_BASE: OrderId = 8_000_000_000_000_000_000;
+const SYSTEM_CONDITIONAL_ORDER_ID_BASE: OrderId = 7_000_000_000_000_000_000;
 const SYSTEM_LIQUIDATION_ORDER_ID_BASE: OrderId = 9_000_000_000_000_000_000;
 
 struct ServerState {
@@ -1701,6 +1705,26 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
             "/rooms/{room_id}/accounts/{account_id}/owners",
             post(assign_account_owner),
         )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/risk-events",
+            get(account_events::read),
+        )
+        .route(
+            "/rooms/{room_id}/accounts/{account_id}/portfolio",
+            get(account_activity::portfolio),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/account-history",
+            get(account_activity::history),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/rules",
+            get(account_activity::rules),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/conditionals",
+            get(account_activity::conditionals),
+        )
         .route("/rooms/{room_id}/observe", get(observe_room))
         .route("/rooms", post(create_room).get(list_rooms))
         .route(
@@ -2989,14 +3013,17 @@ fn execution_summaries_from_recovery(
 
 fn next_order_id_from_recovery(recovery: &JournalRecovery) -> Result<OrderId, JournalError> {
     let mut next_order_id = recovery.next_order_id.unwrap_or(1).max(1);
+    if next_order_id >= SYSTEM_CONDITIONAL_ORDER_ID_BASE {
+        return Err(JournalError::Recovery(
+            "API order cursor uses the reserved system-order range".into(),
+        ));
+    }
     for execution in &recovery.executions {
-        let Command::NewOrder(order) = &execution.command else {
+        let Some(order) = execution.command.new_order() else {
             continue;
         };
-        if order.order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE {
-            if execution.participant_id.is_none()
-                && is_system_liquidation_command(&execution.command)
-            {
+        if order.order_id >= SYSTEM_CONDITIONAL_ORDER_ID_BASE {
+            if execution.participant_id.is_none() && is_system_exit_command(&execution.command) {
                 continue;
             }
             return Err(JournalError::Recovery(format!(
@@ -3021,10 +3048,10 @@ fn next_api_order_id_after_commands(
 ) -> Result<OrderId, (StatusCode, Json<ErrorResponse>)> {
     let mut next_order_id = current;
     for command in commands {
-        let Command::NewOrder(order) = command else {
+        let Some(order) = command.new_order() else {
             continue;
         };
-        if order.order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE {
+        if order.order_id >= SYSTEM_CONDITIONAL_ORDER_ID_BASE {
             return Err(api_error(
                 StatusCode::BAD_REQUEST,
                 format!(
@@ -3042,6 +3069,21 @@ fn next_api_order_id_after_commands(
         next_order_id = next_order_id.max(following_order_id);
     }
     Ok(next_order_id)
+}
+
+fn is_system_exit_command(command: &Command) -> bool {
+    if let Some(order) = command.new_order()
+        && (SYSTEM_CONDITIONAL_ORDER_ID_BASE..SYSTEM_POSITION_EXIT_ORDER_ID_BASE)
+            .contains(&order.order_id)
+        && !order.reduce_only
+        && matches!(order.kind, OrderKind::Market | OrderKind::Limit { .. })
+    {
+        return true;
+    }
+    is_system_liquidation_command(command)
+        || matches!(command, Command::NewOrder(order)
+        if (SYSTEM_POSITION_EXIT_ORDER_ID_BASE..SYSTEM_LIQUIDATION_ORDER_ID_BASE).contains(&order.order_id)
+            && order.reduce_only && matches!(order.kind, OrderKind::ImmediateOrCancel { price_tick: None } | OrderKind::Limit { .. }))
 }
 
 fn is_system_liquidation_command(command: &Command) -> bool {
@@ -4342,6 +4384,7 @@ async fn room_orders_response(
             instrument_id.as_deref(),
             query.account_id,
             query_limit(query.limit),
+            query.order_id,
         )
         .await
         .map_err(api_error_from_journal)?;
@@ -6478,7 +6521,8 @@ async fn submit_order_response(
 
 fn order_action_side(action: &OrderAction) -> Option<exchange_core::Side> {
     match action {
-        OrderAction::PlaceUnboundedMarket { side, .. }
+        OrderAction::PlaceBracket { side, .. }
+        | OrderAction::PlaceUnboundedMarket { side, .. }
         | OrderAction::PlaceProtected { side, .. }
         | OrderAction::PlaceLimit { side, .. }
         | OrderAction::PlaceMarket { side, .. }
@@ -6488,13 +6532,17 @@ fn order_action_side(action: &OrderAction) -> Option<exchange_core::Side> {
         | OrderAction::PlaceReduceOnlyMarket { side, .. }
         | OrderAction::PlaceReduceOnlyImmediateOrCancel { side, .. }
         | OrderAction::PlaceReduceOnlyFillOrKill { side, .. } => Some(*side),
-        OrderAction::Cancel { .. } | OrderAction::Amend { .. } => None,
+        OrderAction::SetConditional { .. }
+        | OrderAction::SetPositionProtection { .. }
+        | OrderAction::Cancel { .. }
+        | OrderAction::Amend { .. } => None,
     }
 }
 
 fn order_action_qty(action: &OrderAction) -> Option<u64> {
     match action {
-        OrderAction::PlaceUnboundedMarket { qty, .. }
+        OrderAction::PlaceBracket { qty, .. }
+        | OrderAction::PlaceUnboundedMarket { qty, .. }
         | OrderAction::PlaceProtected { qty, .. }
         | OrderAction::PlaceLimit { qty, .. }
         | OrderAction::PlaceMarket { qty, .. }
@@ -6504,7 +6552,10 @@ fn order_action_qty(action: &OrderAction) -> Option<u64> {
         | OrderAction::PlaceReduceOnlyMarket { qty, .. }
         | OrderAction::PlaceReduceOnlyImmediateOrCancel { qty, .. }
         | OrderAction::PlaceReduceOnlyFillOrKill { qty, .. } => Some(*qty),
-        OrderAction::Cancel { .. } | OrderAction::Amend { .. } => None,
+        OrderAction::SetConditional { .. }
+        | OrderAction::SetPositionProtection { .. }
+        | OrderAction::Cancel { .. }
+        | OrderAction::Amend { .. } => None,
     }
 }
 
@@ -6514,6 +6565,8 @@ fn order_action_precision_error(action: &OrderAction) -> Option<String> {
         return Some("qty must be a positive integer".to_string());
     }
     let price_tick = match action {
+        OrderAction::PlaceBracket { price_tick, .. } => *price_tick,
+        OrderAction::SetConditional { .. } | OrderAction::SetPositionProtection { .. } => None,
         OrderAction::PlaceProtected { price_tick, .. }
         | OrderAction::PlaceLimit { price_tick, .. }
         | OrderAction::PlacePostOnly { price_tick, .. } => Some(*price_tick),
@@ -6615,20 +6668,16 @@ fn apply_training_execution(
 
 fn new_order_account_id(execution: &ActorExecution) -> Option<AccountId> {
     match &execution.result {
-        ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
-            if let Command::NewOrder(order) = &result.command.command {
-                Some(order.account_id)
-            } else {
-                None
-            }
-        }
-        ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
-            if let Command::NewOrder(order) = &result.command.command {
-                Some(order.account_id)
-            } else {
-                None
-            }
-        }
+        ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => result
+            .command
+            .command
+            .new_order()
+            .map(|order| order.account_id),
+        ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => result
+            .command
+            .command
+            .new_order()
+            .map(|order| order.account_id),
         ActorExecutionResult::Rejected(_) => None,
     }
 }
@@ -6636,18 +6685,10 @@ fn new_order_account_id(execution: &ActorExecution) -> Option<AccountId> {
 fn new_order_side(execution: &ActorExecution) -> Option<exchange_core::Side> {
     match &execution.result {
         ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
-            if let Command::NewOrder(order) = &result.command.command {
-                Some(order.side)
-            } else {
-                None
-            }
+            result.command.command.new_order().map(|order| order.side)
         }
         ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
-            if let Command::NewOrder(order) = &result.command.command {
-                Some(order.side)
-            } else {
-                None
-            }
+            result.command.command.new_order().map(|order| order.side)
         }
         ActorExecutionResult::Rejected(_) => None,
     }
@@ -7326,6 +7367,7 @@ pub struct ProjectionQuery {
     pub instrument_id: Option<InstrumentId>,
     pub account_id: Option<AccountId>,
     pub limit: Option<usize>,
+    order_id: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -7717,6 +7759,7 @@ fn summarize_market_execution(
 
 fn reject_reason_to_string(reason: ActorRejectReason) -> String {
     match reason {
+        ActorRejectReason::InvalidPositionProtection => "invalid position protection: perpetual position/leg, positive tick-aligned TP/SL and available trigger price required".into(),
         ActorRejectReason::InvalidOrderProtection => {
             "invalid order protection: only resting orders accept an expiry".into()
         }
@@ -9272,6 +9315,8 @@ fn observation_from_market_view(
         related_markets: vec![],
         market_events: vec![],
         bot_market_data: None,
+        position_protections: Vec::new(),
+        risk: None,
         perp_price: view.perp_price.clone(),
     }
 }
@@ -9920,7 +9965,11 @@ fn execution_account_id(execution: &exchange_core::ActorExecution) -> Option<Acc
     match &execution.result {
         ActorExecutionResult::Accepted(MarketExecution::Spot(result)) => {
             match &result.command.command {
-                Command::NewOrder(order) => Some(order.account_id),
+                Command::NewOrder(order) | Command::NewOrderWithProtection { order, .. } => {
+                    Some(order.account_id)
+                }
+                Command::SetConditionalOrder { account_id, .. }
+                | Command::SetPositionProtection { account_id, .. } => Some(*account_id),
                 Command::CancelOrder(_)
                 | Command::ExpireOrder { .. }
                 | Command::AmendOrder(_)
@@ -9930,7 +9979,11 @@ fn execution_account_id(execution: &exchange_core::ActorExecution) -> Option<Acc
         }
         ActorExecutionResult::Accepted(MarketExecution::Perp(result)) => {
             match &result.command.command {
-                Command::NewOrder(order) => Some(order.account_id),
+                Command::NewOrder(order) | Command::NewOrderWithProtection { order, .. } => {
+                    Some(order.account_id)
+                }
+                Command::SetConditionalOrder { account_id, .. }
+                | Command::SetPositionProtection { account_id, .. } => Some(*account_id),
                 _ => None,
             }
         }
@@ -10033,6 +10086,7 @@ mod tests {
     }
 
     include!("order_protection_tests.rs");
+    include!("position_protection_tests.rs");
     include!("hedge_tests.rs");
 
     fn spot_scenario(room_id: &str) -> ScenarioConfig {

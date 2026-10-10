@@ -1,3 +1,4 @@
+import { PositionRiskPanel } from "./PositionRiskPanel.js";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import CompetitionPanel from "./CompetitionPanel.js";
 import { roleLabel, type RoomContext, type RoomOverview } from "./roomPortalProtocol.js";
@@ -39,6 +40,7 @@ export default function SimulationApp({ connection, context, overview, onLeave, 
   const [session] = useState(() => new SimulationSession(new SimulationClient(connection)));
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   const [uiError, setUiError] = useState<string | null>(null);
+  const [entryTp, setEntryTp] = useState(""); const [entrySl,setEntrySl] = useState(""); const [entryLeg,setEntryLeg] = useState<"Both" | "Long" | "Short">("Both");
   const [orderKind, setOrderKind] = useState<"market" | "limit">("market");
   const [price, setPrice] = useState("100");
   const [qty, setQty] = useState("1");
@@ -60,6 +62,7 @@ export default function SimulationApp({ connection, context, overview, onLeave, 
     setIntervalMs(ms);
     if (state.selection) await run(() => session.connect({ ...state.selection!, intervalMs: ms }));
   };
+  useEffect(() => { setEntryTp(""); setEntrySl(""); setEntryLeg("Both"); }, [roomId, accountId, instrumentId]);
   const account = observation?.account;
   const accountFields = [
     ["cash_balance", "simulation.cash"], ["available_cash", "simulation.available"], ["position_qty", "simulation.position"],
@@ -121,10 +124,12 @@ export default function SimulationApp({ connection, context, overview, onLeave, 
         <section className="simulation-panel simulation-ticket"><label>账户<select aria-label="选择账户" value={accountId} disabled={disabled} onChange={(event) => { setIntervalMs(1000); setAccountId(event.target.value); }}>{!context.visible_account_ids.length && <option value="0">公共行情</option>}{context.visible_account_ids.map((id) => <option value={id} key={id}>#{id}{context.trade_account_ids.includes(id) ? " · 可交易" : " · 只读"}</option>)}</select></label><h2>{allowedTrade ? t("simulation.ticket") : "账户查看"} <small>{state.selection?.accountId ?? accountId}</small></h2>{allowedTrade ? <><div className="simulation-order-kind"><button aria-pressed={orderKind === "market"} onClick={() => setOrderKind("market")}>{t("simulation.market")}</button><button aria-pressed={orderKind === "limit"} onClick={() => setOrderKind("limit")}>{t("simulation.limit")}</button></div>
           {orderKind === "limit" && <label>{t("simulation.price")}<input aria-label={t("simulation.price")} type="number" min="1" step="1" value={price} disabled={disabled} onChange={(event) => setPrice(event.target.value)} /></label>}
           <label>{t("simulation.quantity")}<input aria-label={t("simulation.quantity")} type="number" min="1" step="1" value={qty} disabled={disabled} onChange={(event) => setQty(event.target.value)} /></label>
-          <div className="simulation-trade-actions"><button className="simulation-buy" disabled={!canTrade} onClick={() => run(() => session.order("Buy", Number(qty), orderKind === "market" ? null : Number(price)))}>{t("simulation.buy")}</button><button className="simulation-sell" disabled={!canTrade} onClick={() => run(() => session.order("Sell", Number(qty), orderKind === "market" ? null : Number(price)))}>{t("simulation.sell")}</button></div>
+          {observation?.marketType === "perp" && <><label>开仓方向<select aria-label="开仓方向" value={entryLeg} onChange={(e) => setEntryLeg(e.target.value as "Both" | "Long" | "Short")}><option value="Both">单向持仓</option><option value="Long">多头仓位</option><option value="Short">空头仓位</option></select></label><label>开仓止盈价<input aria-label="开仓止盈价" type="number" min="1" step="1" value={entryTp} onChange={(e) => setEntryTp(e.target.value)} /></label><label>开仓止损价<input aria-label="开仓止损价" type="number" min="1" step="1" value={entrySl} onChange={(e) => setEntrySl(e.target.value)} /></label></>}
+          <div className="simulation-trade-actions"><button className="simulation-buy" disabled={!canTrade} onClick={() => run(() => session.order("Buy", Number(qty), orderKind === "market" ? null : Number(price), observation?.marketType === "perp" && (entryTp || entrySl) ? { take_profit_tick: entryTp ? Number(entryTp) : null, stop_loss_tick: entrySl ? Number(entrySl) : null, trigger: "Mark" } : undefined, observation?.marketType === "perp" ? entryLeg : "Both"))}>{t("simulation.buy")}</button><button className="simulation-sell" disabled={!canTrade} onClick={() => run(() => session.order("Sell", Number(qty), orderKind === "market" ? null : Number(price), observation?.marketType === "perp" && (entryTp || entrySl) ? { take_profit_tick: entryTp ? Number(entryTp) : null, stop_loss_tick: entrySl ? Number(entrySl) : null, trigger: "Mark" } : undefined, observation?.marketType === "perp" ? entryLeg : "Both"))}>{t("simulation.sell")}</button></div>
           {state.busy && <p role="status">{t("simulation.pending")}</p>}
           {state.receipt && <p role="status" data-testid="simulation-receipt" data-accepted={state.receipt.accepted}>{t(state.receipt.accepted ? "simulation.accepted" : "simulation.rejected", { sequence: String(state.receipt.command_seq), reason: state.receipt.reject_reason ?? "—" })}</p>}
         </> : <p>此账户仅可查看</p>}</section>
+        {observation?.marketType === "perp" && state.selection && <PositionRiskPanel key={`${state.selection.roomId}:${state.selection.instrumentId}:${state.selection.accountId}`} observation={observation} selection={state.selection} client={session.client} canTrade={allowedTrade} busy={!canTrade} onProtect={(side,spec) => { void run(() => session.protect(side,spec)); }} />}
         <section className="simulation-panel simulation-account" data-testid="simulation-account"><h2>{t("simulation.assets")}</h2>{account ? <dl>{accountFields.filter(([field]) => field in account).map(([field, label]) => <div key={field}><dt>{t(label)}</dt><dd data-field={field}>{number(account[field])}</dd></div>)}</dl> : <p>{t("simulation.noAccount")}</p>}</section>
   </div>;
   const ordersPanel = <div className="simulation-rail-content">

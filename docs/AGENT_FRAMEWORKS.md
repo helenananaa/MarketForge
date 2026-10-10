@@ -1,5 +1,7 @@
 # 外部 Agent 框架接入
 
+行情历史、MCP 原生图像、合约止盈止损、风险事件与 Python 策略数据接口见 [统一交易能力](TRADING_CAPABILITIES.md)。
+
 默认服务只提供业务能力：行情、账户、交易、策略隔离执行、警报监控、回执和唤醒事件。模型调用、会话历史、规划、上下文压缩和工具选择由 Codex / OpenCode 等框架管理。
 
 `TradingService` 不包含模型循环；旧循环位于 `legacy.py`，仅在显式 `--enable-legacy-model-loop` 时启用。现有嵌入代码的 `Runtime` 保留兼容。既有 legacy 选手不会自动改成外部选手，避免改变账户执行方式。
@@ -41,7 +43,7 @@ MCP 使用官方 Python SDK，支持任意兼容 stdio 的框架。MCP 进程只
 
 框架配置使用 Python 的绝对路径、`-m marketforge.agents.mcp_server --trader trader-1` 参数，以及 `PYTHONPATH=<仓库>/python`。工具凭据来自 `MARKETFORGE_TOOL_TOKEN` 或 `--token-file <本地凭据文件>`；不要把令牌作为命令行参数。单独配置 MCP 可手动调用工具，自动警报/等待唤醒还需要下面的会话连接器。
 
-除现有 20 个业务工具外，增加三个会话边界工具：
+现有 41 个业务工具加三个会话边界工具，共 44 个。持久 Docker 编程见 [工作区](AGENT_WORKSPACES.md)，完整流水、指标和高级订单见 [交易能力](TRADING_CAPABILITIES.md)：
 
 | 工具 | 用途 |
 |---|---|

@@ -613,6 +613,7 @@ impl JournalCoordinator {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn query_orders(
         &self,
         user_id: &str,
@@ -620,6 +621,7 @@ impl JournalCoordinator {
         instrument_id: Option<&str>,
         account_id: Option<AccountId>,
         limit: usize,
+        order_id: Option<u64>,
     ) -> Result<Vec<OrderProjection>, JournalError> {
         let user_id = user_id.to_string();
         let room_id = room_id.to_string();
@@ -631,6 +633,7 @@ impl JournalCoordinator {
                 instrument_id.as_deref(),
                 account_id,
                 limit,
+                order_id,
             )
         })
         .await

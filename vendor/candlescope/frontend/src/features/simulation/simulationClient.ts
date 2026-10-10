@@ -86,13 +86,18 @@ export class SimulationClient {
     const bars = parseCandles(await this.request(`${room}/candles?interval_ms=${selection.intervalMs}&instrument_id=${encodeURIComponent(resolved.instrumentId)}${windowQuery}`, signal), resolved);
     return { observation, bars, receivedAt: Date.now() };
   }
-  async order(selection: SimulationSelection, side: Side, qty: number, price: number | null, signal: AbortSignal, key: string): Promise<ActionReceipt> {
+  async order(selection: SimulationSelection, side: Side, qty: number, price: number | null, signal: AbortSignal, key: string, protection?: import("./simulationProtocol.js").ProtectionSpec, positionSide: import("./simulationProtocol.js").PositionSide = "Both"): Promise<ActionReceipt> {
     safeInteger(qty, 1);
     if (price !== null) safeInteger(price, 1);
-    const action = price === null ? { PlaceMarket: { side, qty } } : { PlaceLimit: { side, qty, price_tick: price } };
+    if (protection) { for (const value of [protection.take_profit_tick, protection.stop_loss_tick]) if (value !== null) safeInteger(value,1); }
+    const action = protection ? { PlaceBracket: { side,qty,price_tick:price,position_side:positionSide,protection } } : positionSide === "Both" ? (price === null ? { PlaceMarket: { side, qty } } : { PlaceLimit: { side, qty, price_tick: price } }) : price === null ? { PlaceUnboundedMarket:{side,qty,position_side:positionSide} } : { PlaceProtected:{side,qty,position_side:positionSide,price_tick:price,order_type:"Limit"} };
     return parseReceipt(await this.request(`/rooms/${encodeURIComponent(selection.roomId)}/orders`, signal, {
       participant_id: "human-candlescope", account_id: selection.accountId, instrument_id: selection.instrumentId, action,
     }, key));
+  }
+  async protect(selection: SimulationSelection, positionSide: import("./simulationProtocol.js").PositionSide, protection: import("./simulationProtocol.js").ProtectionSpec | null, signal: AbortSignal, key: string): Promise<ActionReceipt> {
+    if (protection) for (const value of [protection.take_profit_tick,protection.stop_loss_tick]) if (value !== null) safeInteger(value,1);
+    return parseReceipt(await this.request(`/rooms/${encodeURIComponent(selection.roomId)}/orders`,signal,{participant_id:"human-candlescope",account_id:selection.accountId,instrument_id:selection.instrumentId,action:{SetPositionProtection:{position_side:positionSide,protection}}},key));
   }
   async cancel(selection: SimulationSelection, orderId: WireInteger, signal: AbortSignal, key: string): Promise<ActionReceipt> {
     // Cancel order IDs can be u64. Send their original integer token rather than a rounded Number.

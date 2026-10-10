@@ -7,7 +7,7 @@ import uuid
 
 
 METRICS = ("best_bid", "best_ask", "spread", "last_price", "bid_qty", "ask_qty",
-           "cash_balance", "available_cash", "position_qty", "equity", "own_order_count", "market_time_ms")
+           "cash_balance", "available_cash", "position_qty", "equity", "own_order_count", "market_time_ms", "mark_price", "maintenance_margin", "margin_buffer", "margin_ratio_ppm", "liquidatable")
 OPS = {"gt": operator.gt, "gte": operator.ge, "lt": operator.lt,
        "lte": operator.le, "eq": operator.eq, "ne": operator.ne}
 CONDITION_SCHEMA = {"type": "object", "additionalProperties": False,
@@ -40,8 +40,11 @@ def metric_value(observation, metric):
         return len(observation.get("own_orders", []))
     if metric == "market_time_ms":
         return observation.get(metric)
+    if metric == "mark_price": return (observation.get("risk") or {}).get("mark_price_tick") or (observation.get("perp_price") or {}).get("mark_price_tick")
+    if metric in ("margin_buffer", "margin_ratio_ppm"): return (observation.get("risk") or {}).get(metric)
     account = observation.get("own_account") or {}
     account = account.get("Spot", account.get("Perp", {}))
+    if metric == "liquidatable": return int(account["margin_status"] == "liquidatable") if "margin_status" in account else None
     if metric == "equity" and "equity" not in account:
         # Spot equity needs a real observed mark; never invent a zero price.
         price = metric_value(observation, "last_price")
@@ -244,6 +247,7 @@ class Alerts:
         while not stop.wait(0.25):
             try:
                 self.poll(trader)
+                self.runtime.poll_risk_events(trader)
                 if failed:
                     self.runtime.store.event(trader, "alert_monitor_recovered", {})
                 failed = False

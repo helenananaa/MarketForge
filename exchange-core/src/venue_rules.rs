@@ -365,7 +365,7 @@ impl VenueRuleEngine {
             venue_accounts,
         } = context;
         let may_increase_risk = match command {
-            Command::NewOrder(_) => true,
+            Command::NewOrder(_) | Command::NewOrderWithProtection { .. } => true,
             // The matching engine only accepts quantity reductions. Price
             // changes can still increase a perp order's notional even when
             // they make the order less aggressive, so keep those blocked
@@ -374,7 +374,9 @@ impl VenueRuleEngine {
             Command::CancelOrder(_)
             | Command::ExpireOrder { .. }
             | Command::SetMarkPrice(_)
-            | Command::SettleFunding(_) => false,
+            | Command::SettleFunding(_)
+            | Command::SetConditionalOrder { .. }
+            | Command::SetPositionProtection { .. } => false,
         };
         if may_increase_risk && self.config.circuit_breaker.halted {
             return Err(VenueRuleRejectReason::CircuitBreakerHalted {
@@ -386,7 +388,7 @@ impl VenueRuleEngine {
         }
 
         match command {
-            Command::NewOrder(order) => {
+            Command::NewOrder(order) | Command::NewOrderWithProtection { order, .. } => {
                 self.check_order_price_limit(instrument_id, order)?;
                 self.check_spot_settlement(
                     market_step,
@@ -401,7 +403,9 @@ impl VenueRuleEngine {
             Command::CancelOrder(_)
             | Command::ExpireOrder { .. }
             | Command::SetMarkPrice(_)
-            | Command::SettleFunding(_) => Ok(()),
+            | Command::SettleFunding(_)
+            | Command::SetConditionalOrder { .. }
+            | Command::SetPositionProtection { .. } => Ok(()),
         }
     }
 
