@@ -313,6 +313,9 @@ pub(crate) fn register_market_bots(registry: &mut BotRegistry) {
 }
 
 impl BotFactory for Factory {
+    fn supports_instance_reuse(&self) -> bool {
+        true
+    }
     fn descriptor(&self) -> &BotDescriptor {
         &self.0
     }

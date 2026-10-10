@@ -232,6 +232,12 @@ pub(crate) fn unrestricted_policy() -> impl BotExecutionPolicy {
 
 pub trait BotFactory: Send + Sync {
     fn descriptor(&self) -> &BotDescriptor;
+    /// Opt in only when snapshot/restore captures every stateful decision input.
+    /// Reusing an instance must be equivalent to restoring it before each call;
+    /// observation metadata must depend only on the template. Plugins default off.
+    fn supports_instance_reuse(&self) -> bool {
+        false
+    }
     /// Metadata only: must not execute plugin code or perform IO.
     fn market_data_request(
         &self,
@@ -251,7 +257,7 @@ pub trait BotFactory: Send + Sync {
 
 #[derive(Clone, Default)]
 pub struct BotRegistry {
-    factories: BTreeMap<String, Arc<dyn BotFactory>>,
+    factories: Arc<BTreeMap<String, Arc<dyn BotFactory>>>,
 }
 impl BotRegistry {
     pub fn with_builtins() -> Self {
@@ -266,8 +272,7 @@ impl BotRegistry {
         if self.factories.contains_key(&descriptor.id) {
             return Err(BotError(format!("duplicate bot id: {}", descriptor.id)));
         }
-        self.factories
-            .insert(descriptor.id.clone(), Arc::new(factory));
+        Arc::make_mut(&mut self.factories).insert(descriptor.id.clone(), Arc::new(factory));
         Ok(())
     }
     pub fn descriptors(&self) -> Vec<BotDescriptor> {
@@ -275,6 +280,19 @@ impl BotRegistry {
             .values()
             .map(|factory| factory.descriptor().clone())
             .collect()
+    }
+    pub fn supports_instance_reuse(&self, template: &AgentTemplate) -> bool {
+        self.factories
+            .get(template.bot_id())
+            .is_some_and(|factory| factory.supports_instance_reuse())
+    }
+
+    /// Identity check only; never calls factory/plugin code in the writer lane.
+    pub fn same_factory(&self, template: &AgentTemplate, previous: &Self) -> bool {
+        self.factories
+            .get(template.bot_id())
+            .zip(previous.factories.get(template.bot_id()))
+            .is_some_and(|(current, old)| Arc::ptr_eq(current, old))
     }
     pub fn create(
         &self,
@@ -380,7 +398,7 @@ pub struct BotDecisionResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{NoiseTraderConfig, ParticipantKind};
+    use crate::{NoiseTraderConfig, ParticipantKind, TradingApi};
     fn participant() -> ParticipantConfig {
         ParticipantConfig {
             participant_id: "bot-1".into(),
@@ -390,6 +408,89 @@ mod tests {
             instrument_id: Some("V-BTC-SPOT".into()),
         }
     }
+    #[test]
+    fn reusable_builtins_match_snapshot_restore_on_every_observation() {
+        let registry = BotRegistry::with_builtins();
+        let spec: crate::population::BackgroundMarket = serde_json::from_str(include_str!(
+            "../../scripts/fixtures/microstructure_market.json"
+        ))
+        .unwrap();
+        let room = spec.scenario.room_id.clone();
+        let mut rooms = crate::RoomManager::new();
+        rooms.create_room(spec.scenario).unwrap();
+        let mut actions_seen = 0;
+        let mut next_order_id = 1_000_000;
+        for descriptor in registry.descriptors() {
+            let instrument = if matches!(
+                descriptor.id.as_str(),
+                "FundingRateTrader" | "LeveragedTrendTrader"
+            ) {
+                "V-BTC-PERP"
+            } else {
+                "V-BTC-SPOT"
+            };
+            let template = AgentTemplate::Plugin(BotConfig {
+                participant: ParticipantConfig {
+                    room_id: room.clone(),
+                    instrument_id: Some(instrument.into()),
+                    ..participant()
+                },
+                plugin_id: descriptor.id.clone(),
+                plugin_version: descriptor.version,
+                state_version: 1,
+                config_version: 1,
+                seed: 7,
+                config: serde_json::json!({}),
+            });
+            assert!(registry.supports_instance_reuse(&template));
+            let mut saved = template.initial_state();
+            let mut hot = registry.create(&template, &saved).unwrap();
+            for _ in 0..32 {
+                rooms.advance_clock(&room, 1).unwrap();
+                let mut observation = rooms
+                    .bot_observation(
+                        &room,
+                        instrument,
+                        20,
+                        registry.market_data_request(&template).unwrap(),
+                    )
+                    .unwrap();
+                rooms
+                    .enrich_bot_observation(
+                        &mut observation,
+                        &registry.related_instruments(&template).unwrap(),
+                        20,
+                    )
+                    .unwrap();
+                let mut restored = registry.create(&template, &saved).unwrap();
+                let actions = hot.decide(&observation).unwrap();
+                assert_eq!(
+                    actions,
+                    restored.decide(&observation).unwrap(),
+                    "{}",
+                    descriptor.id
+                );
+                saved = restored.snapshot();
+                assert_eq!(hot.snapshot(), saved, "{}", descriptor.id);
+                actions_seen += actions.len();
+                let mut gateway = crate::OrderGateway::new(&mut rooms, next_order_id);
+                for action in actions {
+                    gateway
+                        .submit_action(crate::GatewayRequest {
+                            participant_id: template.participant_id().to_string(),
+                            room_id: room.clone(),
+                            instrument_id: Some(instrument.into()),
+                            account_id: 20,
+                            action,
+                        })
+                        .unwrap();
+                }
+                next_order_id = gateway.next_order_id();
+            }
+        }
+        assert!(actions_seen > 0);
+    }
+
     #[test]
     fn all_builtins_accept_unified_config_and_legacy_state_still_serializes() {
         let registry = BotRegistry::with_builtins();

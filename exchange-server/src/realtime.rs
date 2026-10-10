@@ -15,11 +15,87 @@ pub(super) struct Control {
 }
 
 #[derive(Clone)]
-pub(super) struct Decision {
-    pub prior: PersistedAgent,
-    pub next: exchange_core::PersistedAgentKindState,
-    pub actions: Vec<OrderAction>,
+pub(super) struct SharedAgent {
+    version: u16,
+    config_version: u16,
+    pub template: Arc<exchange_core::AgentTemplate>,
+    kind_state: Arc<exchange_core::PersistedAgentKindState>,
+    unfinished_actions: Arc<[OrderAction]>,
 }
+
+impl From<PersistedAgent> for SharedAgent {
+    fn from(agent: PersistedAgent) -> Self {
+        Self {
+            version: agent.version,
+            config_version: agent.config_version,
+            template: Arc::new(agent.template),
+            kind_state: Arc::new(agent.kind_state),
+            unfinished_actions: agent.unfinished_actions.into(),
+        }
+    }
+}
+
+impl SharedAgent {
+    fn matches(&self, agent: &PersistedAgent) -> bool {
+        self.version == agent.version
+            && self.config_version == agent.config_version
+            && *self.template == agent.template
+            && *self.kind_state == agent.kind_state
+            && *self.unfinished_actions == agent.unfinished_actions
+    }
+    fn config(&self) -> &exchange_core::ParticipantConfig {
+        self.template.config()
+    }
+    fn requires_instrument(&self) -> Result<&str, exchange_core::SchedulerError> {
+        self.config().instrument_id.as_deref().ok_or_else(|| {
+            exchange_core::SchedulerError::MissingInstrument {
+                participant_id: self.template.participant_id().to_owned(),
+            }
+        })
+    }
+    fn after(&self, next: Arc<exchange_core::PersistedAgentKindState>) -> Self {
+        Self {
+            kind_state: next,
+            unfinished_actions: Arc::default(),
+            ..self.clone()
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct Decision {
+    pub prior: SharedAgent,
+    pub next: Arc<exchange_core::PersistedAgentKindState>,
+    pub actions: Arc<[OrderAction]>,
+}
+
+struct ObservationRequest {
+    history: Option<exchange_core::bots::BotMarketDataRequest>,
+    related: Vec<String>,
+}
+
+struct CachedBot {
+    epoch: u64,
+    expected: SharedAgent,
+    registry: exchange_core::BotRegistry,
+    request: Arc<ObservationRequest>,
+    bot: Box<dyn exchange_core::ScheduledBot>,
+}
+
+impl CachedBot {
+    fn matches(
+        &self,
+        epoch: u64,
+        agent: &PersistedAgent,
+        registry: &exchange_core::BotRegistry,
+    ) -> bool {
+        self.epoch == epoch
+            && self.expected.matches(agent)
+            && registry.same_factory(&agent.template, &self.registry)
+    }
+}
+
+type ComputedDecision = Result<(Decision, Option<CachedBot>), String>;
 
 // Exact state comparisons remain mandatory; this narrows candidates by id
 // instead of comparing every full template/state for every completed bot.
@@ -38,7 +114,7 @@ impl DecisionIndex {
     fn find_pending(
         &self,
         scheduler: &SchedulerState,
-        prior: &PersistedAgent,
+        prior: &SharedAgent,
         changes: &BTreeMap<usize, AgentDelta>,
     ) -> Option<usize> {
         self.0
@@ -50,7 +126,7 @@ impl DecisionIndex {
 
     #[cfg(test)]
     fn find(&self, scheduler: &SchedulerState, prior: &PersistedAgent) -> Option<usize> {
-        self.find_pending(scheduler, prior, &BTreeMap::new())
+        self.find_pending(scheduler, &prior.clone().into(), &BTreeMap::new())
     }
 }
 
@@ -58,17 +134,17 @@ fn matches_pending(
     scheduler: &SchedulerState,
     changes: &BTreeMap<usize, AgentDelta>,
     index: usize,
-    prior: &PersistedAgent,
+    prior: &SharedAgent,
 ) -> bool {
     let agent = &scheduler.agents[index];
     match changes.get(&index) {
-        None => agent == prior,
+        None => prior.matches(agent),
         Some(change) => {
             agent.version == prior.version
                 && agent.config_version == prior.config_version
-                && agent.template == prior.template
-                && change.kind_state == prior.kind_state
-                && change.unfinished_actions == prior.unfinished_actions
+                && agent.template == *prior.template
+                && change.kind_state == *prior.kind_state
+                && change.unfinished_actions == *prior.unfinished_actions
         }
     }
 }
@@ -107,7 +183,7 @@ impl Work {
                     && scheduler
                         .agents
                         .iter()
-                        .any(|agent| agent == &decision.prior)
+                        .any(|agent| decision.prior.matches(agent))
             }
             Self::Bots {
                 control,
@@ -116,9 +192,12 @@ impl Work {
             } => {
                 scheduler.bots_enabled
                     && control.epoch.load(Ordering::Acquire) == *epoch
-                    && decisions
-                        .iter()
-                        .any(|decision| scheduler.agents.contains(&decision.prior))
+                    && decisions.iter().any(|decision| {
+                        scheduler
+                            .agents
+                            .iter()
+                            .any(|agent| decision.prior.matches(agent))
+                    })
             }
         }
     }
@@ -138,6 +217,32 @@ impl Work {
         }
     }
 
+    pub fn is_state_only(&self) -> bool {
+        match self {
+            Self::Clock(_) => false,
+            Self::Bot { decision, .. } => decision.actions.is_empty(),
+            Self::Bots { decisions, .. } => decisions.iter().all(|d| d.actions.is_empty()),
+        }
+    }
+
+    pub fn apply_state_only(
+        self,
+        scheduler: &SchedulerState,
+        step: u64,
+    ) -> Result<SchedulerDelta, exchange_core::SchedulerError> {
+        assert!(self.is_state_only());
+        let changes = self.apply_agents(scheduler, |decision, index| {
+            // Preserve validation even for a bot that returned no orders.
+            decision.prior.requires_instrument()?;
+            Ok(AgentDelta {
+                index,
+                kind_state: Arc::unwrap_or_clone(decision.next),
+                unfinished_actions: Vec::new(),
+            })
+        })?;
+        Ok(finish_delta(scheduler, changes, step))
+    }
+
     pub fn apply(
         self,
         rooms: &mut RoomManager,
@@ -147,6 +252,47 @@ impl Work {
         submissions: &mut BTreeMap<u64, (String, AccountId)>,
     ) -> Result<SchedulerDelta, exchange_core::SchedulerError> {
         use exchange_core::SchedulerError;
+        let changes = if matches!(self, Self::Clock(_)) {
+            let previous = rooms
+                .execution_history_len(&scheduler.room_id)
+                .map_err(SchedulerError::Room)?;
+            rooms
+                .advance_clock(&scheduler.room_id, 1)
+                .map_err(SchedulerError::Room)?;
+            if let Some(run) = &mut policy.training {
+                for execution in rooms
+                    .execution_history_from(&scheduler.room_id, previous)
+                    .map_err(SchedulerError::Room)?
+                {
+                    apply_training_execution(run, execution, None, execution_account_id(execution));
+                }
+            }
+            BTreeMap::new()
+        } else {
+            self.apply_agents(scheduler, |decision, index| {
+                apply_decision(
+                    rooms,
+                    next_order_id,
+                    &scheduler.room_id,
+                    policy,
+                    submissions,
+                    decision,
+                    index,
+                )
+            })?
+        };
+        let step = rooms
+            .clock(&scheduler.room_id)
+            .map_err(SchedulerError::Room)?
+            .step();
+        Ok(finish_delta(scheduler, changes, step))
+    }
+
+    fn apply_agents(
+        self,
+        scheduler: &SchedulerState,
+        mut apply: impl FnMut(Decision, usize) -> Result<AgentDelta, exchange_core::SchedulerError>,
+    ) -> Result<BTreeMap<usize, AgentDelta>, exchange_core::SchedulerError> {
         let mut changes = BTreeMap::new();
         match self {
             Self::Bots {
@@ -154,10 +300,6 @@ impl Work {
                 epoch,
                 decisions,
             } => {
-                // Index once per batch, preserving queue order and duplicate-id
-                // compatibility. Applying actions never changes the agent roster.
-                // Tiny batches do not amortize building an index. The outer
-                // is_current check also keeps its short-circuit scan.
                 let index = (decisions.len() >= 8).then(|| DecisionIndex::new(&scheduler.agents));
                 for decision in decisions {
                     if !scheduler.bots_enabled
@@ -172,44 +314,13 @@ impl Work {
                             .agents
                             .iter()
                             .enumerate()
-                            .find(|(index, _)| {
-                                matches_pending(scheduler, &changes, *index, &decision.prior)
+                            .find(|(i, _)| {
+                                matches_pending(scheduler, &changes, *i, &decision.prior)
                             })
-                            .map(|(index, _)| index),
+                            .map(|(i, _)| i),
                     };
                     if let Some(position) = position {
-                        let change = apply_decision(
-                            rooms,
-                            next_order_id,
-                            &scheduler.room_id,
-                            policy,
-                            submissions,
-                            decision,
-                            position,
-                        )?;
-                        changes.insert(position, change);
-                    }
-                }
-            }
-            Self::Clock(_) => {
-                let previous = rooms
-                    .execution_history_len(&scheduler.room_id)
-                    .map_err(SchedulerError::Room)?;
-                rooms
-                    .advance_clock(&scheduler.room_id, 1)
-                    .map_err(SchedulerError::Room)?;
-                // Clock-triggered liquidations also belong to the training evidence.
-                if let Some(run) = &mut policy.training {
-                    for execution in rooms
-                        .execution_history_from(&scheduler.room_id, previous)
-                        .map_err(SchedulerError::Room)?
-                    {
-                        apply_training_execution(
-                            run,
-                            execution,
-                            None,
-                            execution_account_id(execution),
-                        );
+                        changes.insert(position, apply(decision, position)?);
                     }
                 }
             }
@@ -217,42 +328,37 @@ impl Work {
                 let index = scheduler
                     .agents
                     .iter()
-                    .position(|agent| *agent == decision.prior)
+                    .position(|a| decision.prior.matches(a))
                     .expect("decision validated under the writer lock");
-                let change = apply_decision(
-                    rooms,
-                    next_order_id,
-                    &scheduler.room_id,
-                    policy,
-                    submissions,
-                    *decision,
-                    index,
-                )?;
-                changes.insert(index, change);
+                changes.insert(index, apply(*decision, index)?);
             }
+            Self::Clock(_) => unreachable!("clock work needs the market transaction"),
         }
-        let mut state = SchedulerDelta::metadata(scheduler);
-        state.phase = SchedulerPhase::StepComplete {
-            step: rooms
-                .clock(&scheduler.room_id)
-                .map_err(SchedulerError::Room)?
-                .step(),
-        };
-        state.lagged = false;
-        Ok(SchedulerDelta {
-            version: 1,
-            base_revision: scheduler.revision,
-            agent_count: scheduler.agents.len(),
-            state,
-            changes: changes
-                .into_values()
-                .filter(|change| {
-                    let prior = &scheduler.agents[change.index];
-                    prior.kind_state != change.kind_state
-                        || prior.unfinished_actions != change.unfinished_actions
-                })
-                .collect(),
-        })
+        Ok(changes)
+    }
+}
+
+fn finish_delta(
+    scheduler: &SchedulerState,
+    changes: BTreeMap<usize, AgentDelta>,
+    step: u64,
+) -> SchedulerDelta {
+    let mut state = SchedulerDelta::metadata(scheduler);
+    state.phase = SchedulerPhase::StepComplete { step };
+    state.lagged = false;
+    SchedulerDelta {
+        version: 1,
+        base_revision: scheduler.revision,
+        agent_count: scheduler.agents.len(),
+        state,
+        changes: changes
+            .into_values()
+            .filter(|change| {
+                let prior = &scheduler.agents[change.index];
+                prior.kind_state != change.kind_state
+                    || prior.unfinished_actions != change.unfinished_actions
+            })
+            .collect(),
     }
 }
 
@@ -273,7 +379,7 @@ fn apply_decision(
     }
     let config = decision.prior.config();
     let instrument = decision.prior.requires_instrument()?.to_string();
-    for action in decision.actions {
+    for action in decision.actions.iter().cloned() {
         if order_action_allocates_id(&action) && *next_order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE
         {
             return Err(SchedulerError::Bot(BotError(
@@ -317,7 +423,7 @@ fn apply_decision(
     }
     Ok(AgentDelta {
         index,
-        kind_state: decision.next,
+        kind_state: Arc::unwrap_or_clone(decision.next),
         unfinished_actions: Vec::new(),
     })
 }
@@ -367,9 +473,11 @@ pub(super) async fn run(
     // No replay storm after a busy writer lane; bot computation never changes cadence.
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut stop_poll = tokio::time::interval(Duration::from_millis(25));
-    let mut decisions = tokio::task::JoinSet::<(String, u64, Result<Decision, String>)>::new();
+    let mut decisions = tokio::task::JoinSet::<(String, u64, ComputedDecision)>::new();
     let mut in_flight = BTreeSet::new();
     let mut failed = BTreeSet::new();
+    let mut instances = BTreeMap::<String, CachedBot>::new();
+    let mut cache_epoch = control.epoch.load(Ordering::Acquire);
     let mut prefer_clock = false;
     loop {
         if control.stop.load(Ordering::Acquire) || !shared.lifecycle.is_accepting_durable_writes() {
@@ -395,7 +503,12 @@ pub(super) async fn run(
                         continue;
                     }
                     match result {
-                        Ok(decision) => wave.push(decision),
+                        Ok((decision, cached)) => {
+                            if let Some(cached) = cached {
+                                instances.insert(id, cached);
+                            }
+                            wave.push(decision);
+                        }
                         Err(error) => {
                             failed.insert(id.clone());
                             shared.lifecycle.record_agent_error();
@@ -472,6 +585,11 @@ pub(super) async fn run(
                 )
                 .await
                 .map_err(|(_, body)| body.0.error)?;
+                let epoch_now = control.epoch.load(Ordering::Acquire);
+                if cache_epoch != epoch_now {
+                    instances.clear(); // Destructors also stay outside the writer lane.
+                    cache_epoch = epoch_now;
+                }
                 let (rooms, registry, agents, epoch) = {
                     let app = shared.app.lock_room(&room_id).await;
                     if control.stop.load(Ordering::Acquire)
@@ -484,6 +602,7 @@ pub(super) async fn run(
                         .schedulers
                         .get(&room_id)
                         .ok_or_else(|| format!("room {room_id} has no scheduler state"))?;
+                    let epoch = control.epoch.load(Ordering::Acquire);
                     let agents: Vec<_> = scheduler
                         .agents
                         .iter()
@@ -492,56 +611,64 @@ pub(super) async fn run(
                                 && !in_flight.contains(agent.template.participant_id())
                                 && !failed.contains(agent.template.participant_id())
                         })
-                        .cloned()
+                        .map(|agent| {
+                            let cached = instances.remove(agent.template.participant_id());
+                            let valid = cached
+                                .as_ref()
+                                .is_some_and(|c| c.matches(epoch, agent, &app.bot_registry));
+                            let prior = if valid {
+                                cached.as_ref().unwrap().expected.clone()
+                            } else {
+                                agent.clone().into()
+                            };
+                            // Return stale instances too: do not drop plugin objects under the lock.
+                            (prior, cached, valid)
+                        })
                         .collect();
-                    (
-                        app.rooms.clone(),
-                        app.bot_registry.clone(),
-                        agents,
-                        control.epoch.load(Ordering::Acquire),
-                    )
+                    (app.rooms.clone(), app.bot_registry.clone(), agents, epoch)
                 };
                 // Observations and plugin data requests use one frozen market
                 // version without retaining the exchange execution lane.
                 let mut observations = rooms.observation_batch(&room_id);
                 let mut inputs = Vec::with_capacity(agents.len());
-                for agent in agents {
-                    let observation = agent
+                for (prior, cached, valid) in agents {
+                    let cached = cached.filter(|_| valid);
+                    let request = match &cached {
+                        Some(cached) => Ok(cached.request.clone()),
+                        None => registry
+                            .market_data_request(&prior.template)
+                            .and_then(|history| {
+                                registry
+                                    .related_instruments(&prior.template)
+                                    .map(|related| {
+                                        Arc::new(ObservationRequest { history, related })
+                                    })
+                            })
+                            .map_err(|e| e.to_string()),
+                    };
+                    let observation = prior
                         .requires_instrument()
                         .map_err(|e| format!("{e:?}"))
                         .and_then(|instrument| {
-                            let request = registry
-                                .market_data_request(&agent.template)
-                                .map_err(|e| e.to_string())?;
-                            let related = registry
-                                .related_instruments(&agent.template)
-                                .map_err(|e| e.to_string())?;
+                            let request = request.as_ref().map_err(Clone::clone)?;
                             observations
-                                .bot_observation(instrument, agent.account_id(), request, &related)
+                                .bot_observation(
+                                    instrument,
+                                    prior.config().account_id,
+                                    request.history,
+                                    &request.related,
+                                )
                                 .map_err(|e| format!("{e:?}"))
                         });
-                    inputs.push((agent, observation, registry.clone(), epoch));
+                    inputs.push((prior, observation, registry.clone(), cached, request));
                 }
-                for (prior, observation, registry, epoch) in inputs {
+                for (prior, observation, registry, cached, request) in inputs {
                     let id = prior.template.participant_id().to_string();
                     in_flight.insert(id.clone());
-                    // Includes factory construction and snapshotting: no plugin code runs
-                    // while holding AppState. One outstanding task per bot bounds backlog.
+                    // Construction, decisions, snapshots, and destructors stay outside AppState.
                     decisions.spawn_blocking(move || {
                         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            let observation = observation?;
-                            let mut bot = registry
-                                .create(&prior.template, &prior.kind_state)
-                                .map_err(|error| error.to_string())?;
-                            let actions = bot.decide(&observation).map_err(|e| e.to_string())?;
-                            if actions.len() > exchange_core::MAX_BOT_ACTIONS {
-                                return Err("bot exceeded action limit".to_string());
-                            }
-                            Ok(Decision {
-                                next: bot.snapshot(),
-                                prior,
-                                actions,
-                            })
+                            compute_decision(prior, observation?, registry, cached, request?, epoch)
                         }))
                         .unwrap_or_else(|_| Err("bot panicked".to_string()));
                         (id, epoch, result)
@@ -552,9 +679,117 @@ pub(super) async fn run(
     }
 }
 
+fn compute_decision(
+    prior: SharedAgent,
+    observation: exchange_core::ParticipantObservation,
+    registry: exchange_core::BotRegistry,
+    cached: Option<CachedBot>,
+    request: Arc<ObservationRequest>,
+    epoch: u64,
+) -> ComputedDecision {
+    let reusable = cached.is_some() || registry.supports_instance_reuse(&prior.template);
+    let mut bot = match cached {
+        Some(cached) => cached.bot,
+        None => registry
+            .create(&prior.template, &prior.kind_state)
+            .map_err(|e| e.to_string())?,
+    };
+    let actions = bot.decide(&observation).map_err(|e| e.to_string())?;
+    if actions.len() > exchange_core::MAX_BOT_ACTIONS {
+        return Err("bot exceeded action limit".to_string());
+    }
+    let next = Arc::new(bot.snapshot());
+    // Speculative state is reusable ONLY after exact equality with committed state.
+    // A failed journal write, rejected action, stale epoch or config change forces restore.
+    let cached = reusable.then(|| CachedBot {
+        expected: prior.after(next.clone()),
+        epoch,
+        registry,
+        request,
+        bot,
+    });
+    Ok((
+        Decision {
+            prior,
+            next,
+            actions: actions.into(),
+        },
+        cached,
+    ))
+}
+
 #[cfg(test)]
 mod index_tests {
     use super::*;
+    #[test]
+    fn cached_runtime_requires_exact_committed_state_epoch_and_factory_identity() {
+        let spec: exchange_core::population::BackgroundMarket = serde_json::from_str(include_str!(
+            "../../scripts/fixtures/microstructure_market.json"
+        ))
+        .unwrap();
+        let mut rooms = RoomManager::new();
+        let room = spec.scenario.room_id.clone();
+        rooms.create_room(spec.scenario).unwrap();
+        let registry = exchange_core::BotRegistry::with_builtins();
+        let prior = PersistedAgent::from_template(spec.agents[0].clone());
+        let request = Arc::new(ObservationRequest {
+            history: registry.market_data_request(&prior.template).unwrap(),
+            related: registry.related_instruments(&prior.template).unwrap(),
+        });
+        let observation = rooms
+            .observation_batch(&room)
+            .bot_observation(
+                prior.requires_instrument().unwrap(),
+                prior.account_id(),
+                request.history,
+                &request.related,
+            )
+            .unwrap();
+        let (decision, cached) = compute_decision(
+            prior.clone().into(),
+            observation,
+            registry.clone(),
+            None,
+            request,
+            7,
+        )
+        .unwrap();
+        let cached = cached.unwrap();
+        let mut committed = prior.clone();
+        committed.kind_state = (*decision.next).clone();
+        committed.unfinished_actions.clear();
+        assert!(cached.matches(7, &committed, &registry));
+        assert!(Arc::ptr_eq(
+            &decision.prior.template,
+            &cached.expected.template
+        ));
+        assert!(Arc::ptr_eq(&decision.next, &cached.expected.kind_state));
+        let copy = decision.clone();
+        assert!(Arc::ptr_eq(&copy.actions, &decision.actions));
+        assert!(!cached.matches(8, &committed, &registry));
+        assert!(!cached.matches(7, &committed, &exchange_core::BotRegistry::with_builtins()));
+        // State and config edits can preserve both schema version numbers.
+        let mut changed = committed.clone();
+        changed.kind_state = exchange_core::PersistedAgentKindState::Noise { rng_state: 999 };
+        assert!(!cached.matches(7, &changed, &registry));
+        changed = committed.clone();
+        if let exchange_core::AgentTemplate::Plugin(config) = &mut changed.template {
+            config.seed += 1;
+        }
+        assert!(!cached.matches(7, &changed, &registry));
+        changed = committed;
+        changed
+            .unfinished_actions
+            .push(OrderAction::Cancel { order_id: 123 });
+        assert!(!cached.matches(7, &changed, &registry));
+        if prior.kind_state != *decision.next {
+            assert!(
+                !cached.matches(7, &prior, &registry),
+                "uncommitted speculative state must be discarded"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn ready_clock_and_ready_results_each_receive_their_turn() {
         for prefer_clock in [true, false] {
@@ -637,10 +872,12 @@ mod index_tests {
         for position in [0, 0, scheduler.agents.len() - 1, 4, 4] {
             let prior = reference.agents[position].clone();
             assert_eq!(
-                index.find_pending(&scheduler, &prior, &changes),
+                index.find_pending(&scheduler, &prior.clone().into(), &changes),
                 reference.agents.iter().position(|a| a == &prior)
             );
-            let found = index.find_pending(&scheduler, &prior, &changes).unwrap();
+            let found = index
+                .find_pending(&scheduler, &prior.clone().into(), &changes)
+                .unwrap();
             let mut changed = prior.kind_state.clone();
             if let exchange_core::PersistedAgentKindState::Plugin { data, .. } = &mut changed {
                 *data = serde_json::json!({"changed": changes.len() + position});
@@ -657,7 +894,7 @@ mod index_tests {
             );
             for prior in scheduler.agents.iter().chain(&reference.agents) {
                 assert_eq!(
-                    index.find_pending(&scheduler, prior, &changes),
+                    index.find_pending(&scheduler, &prior.clone().into(), &changes),
                     reference.agents.iter().position(|a| a == prior)
                 );
             }

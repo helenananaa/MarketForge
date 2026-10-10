@@ -18,7 +18,7 @@ fn expired_live_bot_decision_is_journaled_and_recovered_without_stopping_market(
     let clock = rooms.clock(&scenario.room_id).unwrap();
     let action = OrderAction::PlaceProtected {
             position_side: Default::default(),side:Side::Buy,qty:1,price_tick:100,order_type:exchange_core::model::ProtectedOrderType::ImmediateOrCancel,reduce_only:false,valid_until_market_time_ms:Some(1000),expires_at_market_time_ms:None};
-    let work = realtime::Work::Bot {control:Default::default(),epoch:0,decision:Box::new(realtime::Decision{next:prior.kind_state.clone(),prior,actions:vec![action]})};
+    let work = realtime::Work::Bot {control:Default::default(),epoch:0,decision:Box::new(realtime::Decision{next:Arc::new(prior.kind_state.clone()),prior:prior.into(),actions:vec![action].into()})};
     let before = rooms.simulation_room(&scenario.room_id).unwrap().next_command_seq();
     let mut order_id = 1000;
     let mut submissions = BTreeMap::new();

@@ -168,6 +168,9 @@ macro_rules! builtin_bot {
             }
         }
         impl crate::bots::BotFactory for $factory {
+            fn supports_instance_reuse(&self) -> bool {
+                true
+            }
             fn descriptor(&self) -> &crate::bots::BotDescriptor {
                 &self.0
             }

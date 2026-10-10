@@ -103,6 +103,7 @@ pub(super) struct RoomGuard {
     runtime: Arc<RoomRuntime>,
     _directory: OwnedRwLockReadGuard<Directory>,
     changed: bool,
+    market_changed: bool,
 }
 
 pub(super) struct MetadataGuard(OwnedRwLockReadGuard<Directory>);
@@ -173,6 +174,7 @@ impl StateStore {
                 runtime,
                 _directory: directory,
                 changed: false,
+                market_changed: false,
             });
         }
         // Creation and lazy leased-room acquisition must coordinate the directory.
@@ -401,7 +403,24 @@ impl DerefMut for StateGuard {
             Self::Global(guard) => &mut guard.directory.global,
             Self::Room(guard) => {
                 guard.changed = true;
+                guard.market_changed = true;
                 guard.state.as_mut().unwrap()
+            }
+        }
+    }
+}
+impl StateGuard {
+    /// A scheduler-only commit cannot mutate the market snapshot. Keep summary
+    /// publication, but don't replace a reader's identical immutable room tree.
+    pub(super) fn scheduler_mut(
+        &mut self,
+        room: &str,
+    ) -> Option<&mut exchange_core::SchedulerState> {
+        match self {
+            Self::Global(guard) => guard.directory.global.schedulers.get_mut(room),
+            Self::Room(guard) => {
+                guard.changed = true;
+                guard.state.as_mut().unwrap().schedulers.get_mut(room)
             }
         }
     }
@@ -419,10 +438,13 @@ impl Drop for RoomGuard {
                 app.platform.revision, self._directory.global.platform.revision,
                 "platform updates must use the administrative barrier"
             );
-            let next = Arc::new(app.rooms.clone());
             let summary = RoomSummary::from_app(app);
-            let previous = std::mem::replace(&mut *self.runtime.published.write().unwrap(), next);
-            drop(previous);
+            if self.market_changed {
+                let next = Arc::new(app.rooms.clone());
+                let previous =
+                    std::mem::replace(&mut *self.runtime.published.write().unwrap(), next);
+                drop(previous);
+            }
             *self.runtime.summary.write().unwrap() = summary;
         }
     }

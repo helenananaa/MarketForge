@@ -11,6 +11,8 @@ struct Gate {
     entered: AtomicUsize,
     released: Mutex<bool>,
     wake: Condvar,
+    created: AtomicUsize,
+    reuse: AtomicBool,
 }
 
 impl Gate {
@@ -39,6 +41,9 @@ struct Bot {
 }
 
 impl BotFactory for Factory {
+    fn supports_instance_reuse(&self) -> bool {
+        self.gate.reuse.load(Ordering::Relaxed)
+    }
     fn descriptor(&self) -> &BotDescriptor {
         &self.descriptor
     }
@@ -47,6 +52,7 @@ impl BotFactory for Factory {
         template: &AgentTemplate,
         state: &PersistedAgentKindState,
     ) -> Result<Box<dyn ScheduledBot>, BotError> {
+        self.gate.created.fetch_add(1, Ordering::Relaxed);
         Ok(Box::new(Bot {
             id: template.participant_id().into(),
             gate: self.gate.clone(),
@@ -631,9 +637,9 @@ fn work(
         control: control.clone(),
         epoch,
         decision: Box::new(realtime::Decision {
-            prior: prior.clone(),
-            next,
-            actions,
+            prior: prior.clone().into(),
+            next: Arc::new(next),
+            actions: actions.into(),
         }),
     }
 }
@@ -1215,4 +1221,230 @@ async fn realtime_training_deadline_advances_only_on_clock_and_late_orders_are_r
         RoomMutation::SchedulerProgress { clock_steps: 1, training: Some(run), .. }
         | RoomMutation::SchedulerDelta { clock_steps: 1, training: Some(run), .. }
         if run.steps_elapsed == 2)));
+}
+
+#[tokio::test]
+async fn realtime_reuses_only_opted_in_instances_after_committed_progress() {
+    for reuse in [false, true] {
+        let room = if reuse { "cached" } else { "uncached" };
+        let (shared, gate, _) = setup(room).await;
+        gate.reuse.store(reuse, Ordering::Relaxed);
+        start(&shared, room, &["fast"], 25).await;
+        eventually(&shared, |app| count(app, room, "fast") >= 12).await;
+        let _ = pause_room(State(shared.clone()), HeaderMap::new(), Path(room.into()))
+            .await
+            .unwrap();
+        let observed = count(&*shared.app.lock_room(room).await, room, "fast");
+        let created = gate.created.load(Ordering::Relaxed) as u64;
+        if reuse {
+            assert!(
+                created < observed / 2,
+                "cached: {created} creates for {observed} decisions"
+            );
+        } else {
+            assert!(
+                created >= observed,
+                "plugins must restore before every decision"
+            );
+        }
+        shutdown(&shared).await;
+    }
+}
+
+#[tokio::test]
+async fn realtime_empty_wave_keeps_market_snapshot_and_replays_checkpoint_and_delta() {
+    use journal::JournalStore;
+    let room = "state-only";
+    let (shared, _, mut store) = setup(room).await;
+    let (control, mut priors) = prepare_wave(&shared, room).await;
+    let before = store.load_recovery().unwrap();
+    let frozen = shared.app.read_room(room).await.rooms;
+    let ids_before = shared
+        .app
+        .lock_room(room)
+        .await
+        .order_ids
+        .as_ref()
+        .unwrap()
+        .load(Ordering::Acquire);
+    for _ in 0..102 {
+        let epoch = control.epoch.load(Ordering::Acquire);
+        let decisions = priors
+            .iter()
+            .map(|prior| {
+                let realtime::Work::Bot { decision, .. } = work(&control, prior, epoch, vec![])
+                else {
+                    unreachable!()
+                };
+                *decision
+            })
+            .collect();
+        let next = commit(
+            &shared,
+            room,
+            realtime::Work::Bots {
+                control: control.clone(),
+                epoch,
+                decisions,
+            },
+        )
+        .await
+        .unwrap();
+        priors = next.agents;
+        assert!(Arc::ptr_eq(
+            &frozen,
+            &shared.app.read_room(room).await.rooms
+        ));
+    }
+    let after = store.load_recovery().unwrap();
+    assert_eq!(after.mutations.len(), before.mutations.len() + 102);
+    assert_eq!(after.executions.len(), before.executions.len());
+    assert!(
+        after.mutations[before.mutations.len()..]
+            .iter()
+            .any(|m| matches!(m.mutation, RoomMutation::SchedulerProgress { .. }))
+    );
+    let recovered = recover_rooms(&after).unwrap();
+    let app = shared.app.lock_room(room).await;
+    assert_eq!(
+        app.order_ids.as_ref().unwrap().load(Ordering::Acquire),
+        ids_before
+    );
+    assert_eq!(app.rooms.clock(room).unwrap(), frozen.clock(room).unwrap());
+    assert_eq!(
+        recovered.book_snapshot(room).unwrap(),
+        app.rooms.book_snapshot(room).unwrap()
+    );
+    assert_eq!(
+        scheduler_states_from_recovery(&after).unwrap()[room],
+        app.schedulers[room]
+    );
+    drop(app);
+    shutdown(&shared).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn realtime_empty_commit_failure_rolls_back_and_cancelled_retry_finishes() {
+    use journal::{JournalRecovery, JournalStore};
+    struct ControlledJournal {
+        inner: journal::SharedInMemoryJournalStore,
+        fail: bool,
+        gate: Arc<Gate>,
+    }
+    impl JournalStore for ControlledJournal {
+        fn load_recovery(&mut self) -> Result<JournalRecovery, JournalError> {
+            self.inner.load_recovery()
+        }
+        fn create_room(
+            &mut self,
+            owner: &str,
+            scenario: &ScenarioConfig,
+            bootstrap: &exchange_core::RoomBootstrap,
+            accounts: &[AccountId],
+            records: &[JournalExecution],
+            snapshot: Option<&JournalSnapshot>,
+        ) -> Result<(), JournalError> {
+            self.inner
+                .create_room(owner, scenario, bootstrap, accounts, records, snapshot)
+        }
+        fn append_executions(
+            &mut self,
+            records: &[JournalExecution],
+            snapshot: Option<&JournalSnapshot>,
+        ) -> Result<(), JournalError> {
+            self.inner.append_executions(records, snapshot)
+        }
+        fn update_room_status(
+            &mut self,
+            room: &str,
+            status: MarketStatus,
+        ) -> Result<(), JournalError> {
+            self.inner.update_room_status(room, status)
+        }
+        fn append_room_mutation(
+            &mut self,
+            mutation: &PendingJournalMutation,
+            records: &[JournalExecution],
+            transfers: &[JournalTransfer],
+            snapshot: Option<&JournalSnapshot>,
+        ) -> Result<(), JournalError> {
+            if std::mem::take(&mut self.fail) {
+                return Err(JournalError::Recovery(
+                    "controlled state-only failure".into(),
+                ));
+            }
+            self.gate.started.notify_one();
+            let mut released = self.gate.released.lock().unwrap();
+            while !*released {
+                released = self.gate.wake.wait(released).unwrap();
+            }
+            self.inner
+                .append_room_mutation(mutation, records, transfers, snapshot)
+        }
+    }
+    let room = "empty-durability";
+    let (shared, _, mut store) = setup(room).await;
+    let (control, priors) = prepare_wave(&shared, room).await;
+    let gate = Arc::new(Gate::default());
+    let _release = ReleaseOnDrop(gate.clone());
+    shared.app.lock_room(room).await.journal =
+        JournalCoordinator::new(Box::new(ControlledJournal {
+            inner: store.clone(),
+            fail: true,
+            gate: gate.clone(),
+        }));
+    let before = store.load_recovery().unwrap();
+    let before_state = shared.app.lock_room(room).await.schedulers[room].clone();
+    let frozen = shared.app.read_room(room).await.rooms;
+    let epoch = control.epoch.load(Ordering::Acquire);
+    assert!(
+        commit(&shared, room, work(&control, &priors[0], epoch, vec![]))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        shared.app.lock_room(room).await.schedulers[room],
+        before_state
+    );
+    assert!(Arc::ptr_eq(
+        &frozen,
+        &shared.app.read_room(room).await.rooms
+    ));
+    assert_eq!(
+        store.load_recovery().unwrap().mutations.len(),
+        before.mutations.len()
+    );
+    let pending = work(&control, &priors[0], epoch, vec![]);
+    let task_shared = shared.clone();
+    let caller = tokio::spawn(async move { commit(&task_shared, room, pending).await });
+    tokio::time::timeout(Duration::from_secs(3), gate.started.notified())
+        .await
+        .unwrap();
+    caller.abort();
+    assert!(caller.await.unwrap_err().is_cancelled());
+    gate.release();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if shared.app.lock_room(room).await.schedulers[room].revision
+                == before_state.revision + 1
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let after = store.load_recovery().unwrap();
+    assert_eq!(after.mutations.len(), before.mutations.len() + 1);
+    assert_eq!(after.executions.len(), before.executions.len());
+    assert_eq!(
+        scheduler_states_from_recovery(&after).unwrap()[room],
+        shared.app.lock_room(room).await.schedulers[room]
+    );
+    assert!(Arc::ptr_eq(
+        &frozen,
+        &shared.app.read_room(room).await.rooms
+    ));
+    shutdown(&shared).await;
 }

@@ -9596,6 +9596,23 @@ async fn commit_scheduler_transaction(
         }
         // Live work reads the locked predecessor and prepares a sparse patch.
         // Only deterministic/manual execution needs an owned complete roster.
+        if control.is_none()
+            && realtime.as_ref().is_some_and(realtime::Work::is_state_only)
+            && !state
+                .training_runs
+                .values()
+                .any(|run| run.spec.room_id == room_id)
+        {
+            return commit_bot_state_only(
+                &shared,
+                &mut state,
+                &room_id,
+                realtime.expect("state-only live work"),
+                return_state,
+            )
+            .await
+            .map(Json);
+        }
         let scheduler = if realtime.is_none() {
             Some(
                 state
@@ -9913,6 +9930,72 @@ async fn commit_scheduler_transaction(
     })
     .await
     .map(|json| json.0)
+}
+
+/// Empty decisions still durably advance complete bot state and the scheduler
+/// revision. They need neither a market candidate nor order-ID reservations.
+async fn commit_bot_state_only(
+    shared: &SharedState,
+    state: &mut room_runtime::StateGuard,
+    room_id: &str,
+    work: realtime::Work,
+    return_state: bool,
+) -> Result<Option<exchange_core::SchedulerState>, ApiError> {
+    let started = Instant::now();
+    let current = state
+        .schedulers
+        .get(room_id)
+        .expect("validated predecessor");
+    let step = state
+        .rooms
+        .clock(room_id)
+        .map_err(api_error_from_room)?
+        .step();
+    let mut delta = work
+        .apply_state_only(current, step)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, format!("{error:?}")))?;
+    delta.state.revision = current
+        .revision
+        .checked_add(1)
+        .ok_or_else(|| api_error(StatusCode::CONFLICT, "scheduler revision exhausted"))?;
+    delta
+        .validate_predecessor(current)
+        .map_err(api_error_from_journal)?;
+    shared.lifecycle.record_scheduler_phase(2, started);
+    let progress = if delta.state.revision.is_multiple_of(100) {
+        let mut next = current.clone();
+        delta.apply(&mut next).map_err(api_error_from_journal)?;
+        RoomMutation::SchedulerProgress {
+            clock_steps: 0,
+            state: next,
+            training: None,
+        }
+    } else {
+        RoomMutation::SchedulerDelta {
+            clock_steps: 0,
+            delta: delta.clone(),
+            training: None,
+        }
+    };
+    let cursor = next_persisted_command_cursor(state, room_id).map_err(api_error_from_journal)?;
+    let pending = PendingJournalMutation::new(room_id.to_owned(), cursor, progress);
+    if !competition::market_allowed(state, room_id) {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "competition trading deadline reached",
+        ));
+    }
+    let started = Instant::now();
+    let appended = state.append_room_mutation(&pending, &[], &[], None).await;
+    shared.lifecycle.record_scheduler_phase(4, started);
+    appended.map_err(api_error_from_journal)?;
+    // The outer durable task owns the lane through append + install, even if
+    // its caller is cancelled. Errors above leave both state and readers intact.
+    let current = state.scheduler_mut(room_id).expect("locked predecessor");
+    delta
+        .apply_owned(current)
+        .expect("validated patch after durable append");
+    Ok(return_state.then(|| current.clone()))
 }
 
 fn execution_participant_id(
