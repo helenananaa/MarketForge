@@ -194,6 +194,179 @@ async fn shutdown(shared: &SharedState) {
     .unwrap();
 }
 
+async fn room_order(shared: SharedState, room: String) -> ApiResult<OrderResponse> {
+    submit_order_response(
+        shared,
+        HeaderMap::new(),
+        room,
+        None,
+        SubmitOrderRequest {
+            participant_id: "human".into(),
+            account_id: 20,
+            instrument_id: None,
+            action: OrderAction::PlaceLimit {
+                side: Side::Buy,
+                price_tick: 90,
+                qty: 1,
+            },
+        },
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn room_execution_lane_isolates_human_bot_and_clock_writes_and_keeps_reads_available() {
+    let (shared, _, mut store) = setup("occupied").await;
+    let _ = create_room(
+        State(shared.clone()),
+        HeaderMap::new(),
+        Json(serde_json::to_value(scenario("independent")).unwrap()),
+    )
+    .await
+    .unwrap();
+    let (control, priors) = prepare_wave(&shared, "independent").await;
+    let original = shared
+        .app
+        .read_room("occupied")
+        .await
+        .rooms
+        .book_snapshot("occupied")
+        .unwrap();
+    let occupied = shared.app.lock_room("occupied").await;
+    let waiting_shared = shared.clone();
+    let waiting = tokio::spawn(room_order(waiting_shared, "occupied".into()));
+    tokio::time::timeout(Duration::from_secs(2), async {
+        // Exercise the real authorization and HTTP gateway, not just two mutexes.
+        let book =
+            book_snapshot_response(shared.clone(), HeaderMap::new(), "occupied".into(), None)
+                .await
+                .unwrap();
+        assert_eq!(book.0, original);
+        assert!(readiness(State(shared.clone())).await.unwrap().0.ok);
+        assert_eq!(
+            metrics(State(shared.clone())).await.status(),
+            StatusCode::OK
+        );
+        assert!(
+            room_order(shared.clone(), "independent".into())
+                .await
+                .unwrap()
+                .0
+                .accepted
+        );
+        commit_realtime_work(
+            shared.clone(),
+            "independent".into(),
+            ready_wave(&control, &priors, false),
+        )
+        .await
+        .unwrap();
+        commit_realtime_work(
+            shared.clone(),
+            "independent".into(),
+            realtime::Work::Clock(control.clone()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            shared
+                .app
+                .read_room("independent")
+                .await
+                .rooms
+                .clock("independent")
+                .unwrap()
+                .step(),
+            1
+        );
+    })
+    .await
+    .expect("another room and committed readers must progress while the first lane is occupied");
+    assert!(
+        !waiting.is_finished(),
+        "same-room human writes must remain ordered"
+    );
+    drop(occupied);
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), waiting)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            .0
+            .accepted
+    );
+    shutdown(&shared).await;
+    let recovery = store.load_recovery().unwrap();
+    let recovered = recover_rooms(&recovery).unwrap();
+    let app = shared.app.lock().await;
+    for room in ["occupied", "independent"] {
+        assert_eq!(
+            recovered.book_snapshot(room).unwrap(),
+            app.rooms.book_snapshot(room).unwrap()
+        );
+        assert_eq!(
+            recovered.account_snapshots(room).unwrap(),
+            app.rooms.account_snapshots(room).unwrap()
+        );
+        assert_eq!(
+            recovered.clock(room).unwrap(),
+            app.rooms.clock(room).unwrap()
+        );
+    }
+    assert_eq!(
+        scheduler_states_from_recovery(&recovery).unwrap()["independent"],
+        app.schedulers["independent"]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_room_orders_keep_unique_ids_and_recover_exactly() {
+    let (shared, _, mut store) = setup("ids-a").await;
+    let _ = create_room(
+        State(shared.clone()),
+        HeaderMap::new(),
+        Json(serde_json::to_value(scenario("ids-b")).unwrap()),
+    )
+    .await
+    .unwrap();
+    for _ in 0..24 {
+        let (a, b) = tokio::join!(
+            room_order(shared.clone(), "ids-a".into()),
+            room_order(shared.clone(), "ids-b".into())
+        );
+        assert!(a.unwrap().0.accepted);
+        assert!(b.unwrap().0.accepted);
+    }
+    let recovery = store.load_recovery().unwrap();
+    let orders: Vec<_> = recovery
+        .executions
+        .iter()
+        .filter(|record| record.participant_id.as_deref() == Some("human"))
+        .filter_map(|record| match &record.command {
+            Command::NewOrder(order) => Some(order.order_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(orders.len(), 48);
+    assert_eq!(
+        orders.iter().copied().collect::<BTreeSet<_>>().len(),
+        orders.len()
+    );
+    let recovered = recover_rooms(&recovery).unwrap();
+    let app = shared.app.lock().await;
+    for room in ["ids-a", "ids-b"] {
+        assert_eq!(
+            recovered.book_snapshot(room).unwrap(),
+            app.rooms.book_snapshot(room).unwrap()
+        );
+        assert_eq!(
+            recovered.account_snapshots(room).unwrap(),
+            app.rooms.account_snapshots(room).unwrap()
+        );
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn realtime_large_wave_yields_between_bounded_durable_batches() {
     let (shared, _, mut store) = setup("bounded").await;

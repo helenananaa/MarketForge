@@ -5,7 +5,7 @@ pub(super) async fn identity(
     State(state): State<SharedState>,
     headers: HeaderMap,
 ) -> ApiResult<serde_json::Value> {
-    let app = lock_state(&state).await?;
+    let app = state.app.metadata().await;
     let user = current_user_id(&headers, &app.auth_policy)?;
     let profile = app.platform.users.get(&user);
     Ok(Json(
@@ -64,9 +64,9 @@ async fn resolve(
     let admin = matches!(role.as_str(), "owner" | "admin");
     let all = admin
         || (role == "spectator"
-            && competition::spectator_can_view_accounts(&*lock_state(state).await?, room));
+            && competition::spectator_can_view_accounts(&*state.app.metadata().await, room));
     let (instruments, ids) = {
-        let app = lock_state(state).await?;
+        let app = state.app.read_room(room).await;
         let instruments = app
             .rooms
             .simulation_room(room)
@@ -97,13 +97,17 @@ async fn resolve(
         if all || owned {
             visible.push(id);
         }
-        let app = lock_state(state).await?;
-        if owned && competition::guard_order(&app, room, &auth.user_id, id).is_ok() {
+        if owned
+            && competition::guard_order(&*state.app.metadata().await, room, &auth.user_id, id)
+                .is_ok()
+        {
             trade.push(id);
         }
     }
-    let display_name = lock_state(state)
-        .await?
+    let display_name = state
+        .app
+        .metadata()
+        .await
         .platform
         .users
         .get(&auth.user_id)
@@ -144,7 +148,7 @@ pub(super) async fn members(
         .list_room_members(&room)
         .await
         .map_err(api_error_from_journal)?;
-    let app = lock_state(&state).await?;
+    let app = state.app.metadata().await;
     let profiles = members
         .keys()
         .filter_map(|id| {
@@ -166,7 +170,7 @@ pub(super) async fn overview(
     Path(room): Path<String>,
 ) -> ApiResult<serde_json::Value> {
     let context = resolve(&state, &headers, &room).await?;
-    let app = lock_state(&state).await?;
+    let app = lock_room_state(&state, &room).await?;
     let mut markets = Vec::new();
     for instrument in &context.instruments {
         let mut accounts = app

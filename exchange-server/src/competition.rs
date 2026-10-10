@@ -655,17 +655,36 @@ fn standings(app: &AppState, c: &Competition) -> Result<Vec<Standing>, ApiError>
     Ok(rows.into_iter().map(|(_, r)| r).collect())
 }
 pub(super) async fn tick(state: &SharedState) -> Result<(), ApiError> {
-    {
-        let app = lock_state(state).await?;
-        if !app.platform.competitions.values().any(|c| {
-            matches!(
-                c.phase,
-                Phase::Countdown | Phase::Starting | Phase::Running | Phase::Finishing
-            ) || (c.phase == Phase::Aborted
-                && app.rooms.status(&c.room_id) != Ok(MarketStatus::Closed))
-        }) {
-            return Ok(());
+    let competitions: Vec<_> = state
+        .app
+        .metadata()
+        .await
+        .platform
+        .competitions
+        .values()
+        .cloned()
+        .collect();
+    let now = now_ms();
+    let mut due = competitions.iter().any(|c| {
+        matches!(c.phase, Phase::Starting | Phase::Finishing)
+            || (c.phase == Phase::Countdown && c.starts_at_ms.is_some_and(|at| now >= at))
+            || (matches!(c.phase, Phase::Countdown | Phase::Running)
+                && c.ends_at_ms.is_some_and(|at| now >= at))
+    });
+    for c in competitions.iter().filter(|c| c.phase == Phase::Aborted) {
+        if state
+            .app
+            .read_room(&c.room_id)
+            .await
+            .rooms
+            .status(&c.room_id)
+            != Ok(MarketStatus::Closed)
+        {
+            due = true;
         }
+    }
+    if !due {
+        return Ok(());
     }
 
     let shared = state.clone();
@@ -780,10 +799,7 @@ pub(super) async fn protect(
         && let Ok(Path(params)) = params
         && let Some(room) = params.get("room_id")
     {
-        let result = match lock_state(&state).await {
-            Ok(app) => guard_management(&app, room),
-            Err(error) => Err(error),
-        };
+        let result = guard_management(&*state.app.metadata().await, room);
         if let Err(error) = result {
             return error.into_response();
         }

@@ -37,7 +37,7 @@ pub(super) async fn runtime_info(
     State(state): State<SharedState>,
     headers: HeaderMap,
 ) -> ApiResult<serde_json::Value> {
-    let app = lock_state(&state).await?;
+    let app = state.app.metadata().await;
     if !app.auth_policy.is_accounts() {
         current_user_id(&headers, &app.auth_policy)?;
     }
@@ -191,7 +191,7 @@ async fn snapshot(
     )
     .await?;
     let (observation, cursor, fallback) = {
-        let app = lock_state(state).await?;
+        let app = state.app.read_room(room).await;
         let instrument = selection.instrument_id.clone().unwrap_or_else(|| {
             app.rooms
                 .room(room)
@@ -242,7 +242,7 @@ async fn snapshot(
     {
         // Never hold the matching writer lock across database I/O. A changed cursor or
         // account/book/clock rejects the mixed sample instead of publishing it.
-        let app = lock_state(state).await?;
+        let app = state.app.read_room(room).await;
         let mut now = app
             .rooms
             .participant_observation(room, &observation.instrument_id, selection.account_id)

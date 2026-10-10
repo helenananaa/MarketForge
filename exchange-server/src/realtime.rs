@@ -123,6 +123,21 @@ impl Work {
         }
     }
 
+    pub fn order_id_budget(&self) -> u64 {
+        let count = |decision: &Decision| {
+            decision
+                .actions
+                .iter()
+                .filter(|action| order_action_allocates_id(action))
+                .count() as u64
+        };
+        match self {
+            Self::Clock(_) => 0,
+            Self::Bot { decision, .. } => count(decision),
+            Self::Bots { decisions, .. } => decisions.iter().map(count).sum(),
+        }
+    }
+
     pub fn apply(
         self,
         rooms: &mut RoomManager,
@@ -436,7 +451,7 @@ pub(super) async fn run(
             Wake::Clock => {
                 prefer_clock = false;
                 let status = {
-                    let app = shared.app.lock().await;
+                    let app = shared.app.lock_room(&room_id).await;
                     app.rooms
                         .status(&room_id)
                         .map_err(|error| format!("{error:?}"))?
@@ -457,8 +472,8 @@ pub(super) async fn run(
                 )
                 .await
                 .map_err(|(_, body)| body.0.error)?;
-                let inputs = {
-                    let app = shared.app.lock().await;
+                let (rooms, registry, agents, epoch) = {
+                    let app = shared.app.lock_room(&room_id).await;
                     if control.stop.load(Ordering::Acquire)
                         || app.rooms.status(&room_id).map_err(|e| format!("{e:?}"))?
                             != MarketStatus::Running
@@ -469,45 +484,44 @@ pub(super) async fn run(
                         .schedulers
                         .get(&room_id)
                         .ok_or_else(|| format!("room {room_id} has no scheduler state"))?;
-                    let mut inputs = Vec::new();
-                    let mut observations = app.rooms.observation_batch(&room_id);
-                    if scheduler.bots_enabled {
-                        for agent in &scheduler.agents {
-                            let id = agent.template.participant_id();
-                            if in_flight.contains(id) || failed.contains(id) {
-                                continue;
-                            }
-                            let observation = agent
-                                .requires_instrument()
-                                .map_err(|e| format!("{e:?}"))
-                                .and_then(|instrument| {
-                                    let request = app
-                                        .bot_registry
-                                        .market_data_request(&agent.template)
-                                        .map_err(|e| e.to_string())?;
-                                    let related = app
-                                        .bot_registry
-                                        .related_instruments(&agent.template)
-                                        .map_err(|e| e.to_string())?;
-                                    observations
-                                        .bot_observation(
-                                            instrument,
-                                            agent.account_id(),
-                                            request,
-                                            &related,
-                                        )
-                                        .map_err(|e| format!("{e:?}"))
-                                });
-                            inputs.push((
-                                agent.clone(),
-                                observation,
-                                app.bot_registry.clone(),
-                                control.epoch.load(Ordering::Acquire),
-                            ));
-                        }
-                    }
-                    inputs
+                    let agents: Vec<_> = scheduler
+                        .agents
+                        .iter()
+                        .filter(|agent| {
+                            scheduler.bots_enabled
+                                && !in_flight.contains(agent.template.participant_id())
+                                && !failed.contains(agent.template.participant_id())
+                        })
+                        .cloned()
+                        .collect();
+                    (
+                        app.rooms.clone(),
+                        app.bot_registry.clone(),
+                        agents,
+                        control.epoch.load(Ordering::Acquire),
+                    )
                 };
+                // Observations and plugin data requests use one frozen market
+                // version without retaining the exchange execution lane.
+                let mut observations = rooms.observation_batch(&room_id);
+                let mut inputs = Vec::with_capacity(agents.len());
+                for agent in agents {
+                    let observation = agent
+                        .requires_instrument()
+                        .map_err(|e| format!("{e:?}"))
+                        .and_then(|instrument| {
+                            let request = registry
+                                .market_data_request(&agent.template)
+                                .map_err(|e| e.to_string())?;
+                            let related = registry
+                                .related_instruments(&agent.template)
+                                .map_err(|e| e.to_string())?;
+                            observations
+                                .bot_observation(instrument, agent.account_id(), request, &related)
+                                .map_err(|e| format!("{e:?}"))
+                        });
+                    inputs.push((agent, observation, registry.clone(), epoch));
+                }
                 for (prior, observation, registry, epoch) in inputs {
                     let id = prior.template.participant_id().to_string();
                     in_flight.insert(id.clone());

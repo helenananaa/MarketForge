@@ -52,6 +52,59 @@ impl RoomManager {
         Self::default()
     }
 
+    /// Move one complete room into a separate execution owner without replaying
+    /// its history or changing liquidation, receipt, or last-trade state.
+    pub fn take_room(&mut self, room_id: &str) -> Option<Self> {
+        let room = self.rooms.remove(room_id)?;
+        let mut result = Self::new();
+        result.rooms.insert(room_id.to_owned(), room);
+        if let Some(history) = self.executions.remove(room_id) {
+            result.executions.insert(room_id.to_owned(), history);
+        }
+        if let Some(pending) = self.pending_liquidations.remove(room_id) {
+            result
+                .pending_liquidations
+                .insert(room_id.to_owned(), pending);
+        }
+        if let Some(history) = self.restored_bot_history.remove(room_id) {
+            result
+                .restored_bot_history
+                .insert(room_id.to_owned(), history);
+        }
+        let keys: Vec<_> = self
+            .recovered_last_trades
+            .keys()
+            .filter(|(id, _)| id == room_id)
+            .cloned()
+            .collect();
+        for key in keys {
+            result.recovered_last_trades.insert(
+                key.clone(),
+                self.recovered_last_trades.remove(&key).unwrap(),
+            );
+        }
+        Some(result)
+    }
+
+    /// Join disjoint execution owners for a coordinated administrative operation.
+    /// Reject overlap before moving any state.
+    pub fn join_disjoint(&mut self, mut other: Self) -> Result<(), RoomManagerError> {
+        if let Some(room_id) = other.rooms.keys().find(|id| self.rooms.contains_key(*id)) {
+            return Err(RoomManagerError::RoomAlreadyExists {
+                room_id: room_id.clone(),
+            });
+        }
+        self.rooms.append(&mut other.rooms);
+        self.executions.append(&mut other.executions);
+        self.pending_liquidations
+            .append(&mut other.pending_liquidations);
+        self.recovered_last_trades
+            .append(&mut other.recovered_last_trades);
+        self.restored_bot_history
+            .append(&mut other.restored_bot_history);
+        Ok(())
+    }
+
     pub fn create_room(
         &mut self,
         scenario: ScenarioConfig,
@@ -1420,6 +1473,45 @@ mod tests {
     };
 
     include!("order_protection_tests.rs");
+
+    #[test]
+    fn moving_execution_owners_preserves_all_room_state_and_rejects_overlap() {
+        let mut rooms = RoomManager::new();
+        rooms
+            .create_room(pending_perp_liquidation_scenario("move-perp"))
+            .unwrap();
+        rooms.create_room(spot_scenario("move-spot")).unwrap();
+        rooms.restore_last_trade_price("move-perp", "V-PERP", 77);
+        rooms.restore_last_trade_price("move-spot", "V-SPOT", 88);
+        let before = rooms.clone();
+        let moved = rooms.take_room("move-perp").unwrap();
+        assert!(rooms.status("move-perp").is_err());
+        assert!(rooms.status("move-spot").is_ok());
+        assert_eq!(
+            serde_json::to_value(moved.simulation_room("move-perp").unwrap()).unwrap(),
+            serde_json::to_value(before.simulation_room("move-perp").unwrap()).unwrap()
+        );
+        rooms.join_disjoint(moved).unwrap();
+        assert_eq!(
+            serde_json::to_value(&rooms.rooms).unwrap(),
+            serde_json::to_value(&before.rooms).unwrap()
+        );
+        assert_eq!(rooms.pending_liquidations, before.pending_liquidations);
+        assert_eq!(rooms.recovered_last_trades, before.recovered_last_trades);
+        assert_eq!(rooms.restored_bot_history, before.restored_bot_history);
+        for id in ["move-perp", "move-spot"] {
+            assert_eq!(
+                rooms.execution_history(id).unwrap(),
+                before.execution_history(id).unwrap()
+            );
+        }
+        assert!(rooms.join_disjoint(rooms.clone()).is_err());
+        assert_eq!(
+            serde_json::to_value(&rooms.rooms).unwrap(),
+            serde_json::to_value(&before.rooms).unwrap()
+        );
+        assert!(rooms.take_room("missing").is_none());
+    }
 
     #[test]
     #[ignore = "isolated Release snapshot-versus-raw liquidation scan comparison"]

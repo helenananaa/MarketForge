@@ -24,6 +24,7 @@ mod realtime;
 #[cfg(test)]
 mod realtime_tests;
 mod room_portal;
+mod room_runtime;
 mod scheduler_delta;
 mod simulation_ws;
 pub mod storage_audit;
@@ -96,7 +97,7 @@ const DEFAULT_CORS_ORIGINS: &[&str] = &[
 const SYSTEM_LIQUIDATION_ORDER_ID_BASE: OrderId = 9_000_000_000_000_000_000;
 
 struct ServerState {
-    app: AsyncMutex<AppState>,
+    app: room_runtime::StateStore,
     lifecycle: RuntimeLifecycle,
     started_at: Instant,
 }
@@ -104,7 +105,7 @@ struct ServerState {
 impl ServerState {
     fn new(app: AppState) -> Self {
         Self {
-            app: AsyncMutex::new(app),
+            app: room_runtime::StateStore::new(app),
             lifecycle: RuntimeLifecycle::new(),
             started_at: Instant::now(),
         }
@@ -517,6 +518,7 @@ struct AppState {
     executions: BTreeMap<RoomId, VecDeque<RoomExecutionSummary>>,
     room_event_senders: BTreeMap<RoomId, broadcast::Sender<RoomExecutionSummary>>,
     next_order_id: OrderId,
+    order_ids: Option<Arc<AtomicU64>>,
     base_url: String,
     agent_workers: BTreeMap<RoomId, AgentWorkerHandle>,
     schedulers: BTreeMap<RoomId, exchange_core::SchedulerState>,
@@ -542,7 +544,7 @@ enum RoomLeaseRuntimeMode {
     RoomLeased,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct RoomLeaseRuntimeState {
     config: RoomLeaseRuntimeConfig,
     leases: BTreeMap<RoomId, RoomWriterLease>,
@@ -591,6 +593,7 @@ impl AppState {
             executions: BTreeMap::new(),
             room_event_senders: BTreeMap::new(),
             next_order_id: 1,
+            order_ids: None,
             base_url: base_url.into(),
             agent_workers: BTreeMap::new(),
             schedulers: BTreeMap::new(),
@@ -649,6 +652,7 @@ impl AppState {
             executions,
             room_event_senders: BTreeMap::new(),
             next_order_id,
+            order_ids: None,
             base_url: base_url.into(),
             agent_workers: BTreeMap::new(),
             schedulers,
@@ -1813,8 +1817,8 @@ async fn liveness() -> Json<HealthResponse> {
 async fn readiness(State(state): State<SharedState>) -> ApiResult<HealthResponse> {
     ensure_accepting_durable_writes(&state)?;
     let (journal, lease_error) = {
-        let app = state.app.lock().await;
-        (app.journal.clone(), app.room_lease_readiness_error())
+        let (summary, journal) = state.app.summary().await;
+        (journal, summary.lease_error)
     };
     if let Some(error) = lease_error {
         return Err(api_error(StatusCode::SERVICE_UNAVAILABLE, error));
@@ -1855,36 +1859,19 @@ async fn metrics(State(state): State<SharedState>) -> Response {
         training_failed,
         agent_error_workers,
     ) = {
-        let app = state.app.lock().await;
-        let (owned_room_leases, lost_room_leases, room_lease_renew_failures) =
-            app.room_lease_metrics();
-        let mut training_running = 0usize;
-        let mut training_completed = 0usize;
-        let mut training_failed = 0usize;
-        for run in app.training_runs.values() {
-            match run.status {
-                TrainingStatus::Completed => training_completed += 1,
-                TrainingStatus::Failed | TrainingStatus::Aborted => training_failed += 1,
-                TrainingStatus::Created | TrainingStatus::Running => training_running += 1,
-            }
-        }
-        let agent_error_workers = app
-            .agent_workers
-            .iter()
-            .filter(|(room_id, worker)| worker.status((*room_id).clone()).last_error.is_some())
-            .count();
+        let (summary, coordinator) = state.app.summary().await;
         (
-            app.rooms.room_ids().len(),
-            app.agent_workers.len(),
-            app.executions.values().map(VecDeque::len).sum::<usize>(),
-            app.journal.metrics_snapshot(),
-            owned_room_leases,
-            lost_room_leases,
-            room_lease_renew_failures,
-            training_running,
-            training_completed,
-            training_failed,
-            agent_error_workers,
+            summary.room_count,
+            summary.worker_count,
+            summary.cache_entries,
+            coordinator.metrics_snapshot(),
+            summary.owned_leases,
+            summary.lost_leases,
+            summary.renew_failures,
+            summary.training_running,
+            summary.training_completed,
+            summary.training_failed,
+            summary.agent_errors,
         )
     };
 
@@ -2210,7 +2197,7 @@ async fn background_market_recipe(
     State(state): State<SharedState>,
     headers: HeaderMap,
 ) -> ApiResult<CreateRoomRequest> {
-    let state = lock_state(&state).await?;
+    let state = state.app.metadata().await;
     current_user_id(&headers, &state.auth_policy)?;
     serde_json::from_str(include_str!(
         "../../scripts/fixtures/background_market.json"
@@ -2223,7 +2210,7 @@ async fn list_bots(
     State(state): State<SharedState>,
     headers: HeaderMap,
 ) -> ApiResult<Vec<exchange_core::BotDescriptor>> {
-    let state = lock_state(&state).await?;
+    let state = state.app.metadata().await;
     current_user_id(&headers, &state.auth_policy)?;
     Ok(Json(state.bot_registry.descriptors()))
 }
@@ -3194,16 +3181,12 @@ async fn list_rooms(
     headers: HeaderMap,
 ) -> ApiResult<ListRoomsResponse> {
     let (user_id, room_ids, journal) = {
-        let state = lock_state(&state).await?;
+        let room_ids = state.app.room_ids().await;
+        let app = state.app.metadata().await;
         (
-            current_user_id(&headers, &state.auth_policy)?,
-            state
-                .rooms
-                .room_ids()
-                .into_iter()
-                .map(str::to_string)
-                .collect::<Vec<_>>(),
-            state.journal.clone(),
+            current_user_id(&headers, &app.auth_policy)?,
+            room_ids,
+            app.journal.clone(),
         )
     };
     let mut rooms = Vec::new();
@@ -3590,7 +3573,7 @@ async fn upsert_room_member(
     Json(request): Json<RoomMemberRequest>,
 ) -> ApiResult<RoomMemberResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let app = lock_state(&state).await?;
+    let app = lock_room_state(&state, &room_id).await?;
     competition::guard_management(&app, &room_id)?;
     let journal = { app.journal.clone() };
     journal
@@ -3611,7 +3594,7 @@ async fn remove_room_member(
     Json(_): Json<serde_json::Value>,
 ) -> ApiResult<RoomMemberResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let app = lock_state(&state).await?;
+    let app = lock_room_state(&state, &room_id).await?;
     competition::guard_management(&app, &room_id)?;
     let journal = { app.journal.clone() };
     journal
@@ -3632,7 +3615,7 @@ async fn assign_account_owner(
     Json(request): Json<AssignAccountRequest>,
 ) -> ApiResult<AssignAccountResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let app = lock_state(&state).await?;
+    let app = lock_room_state(&state, &room_id).await?;
     competition::guard_management(&app, &room_id)?;
     let journal = {
         if training_assignment_frozen(&app, &room_id) {
@@ -3667,7 +3650,7 @@ async fn observe_room(
         RoomReadAccess::ViewAccount(query.account_id),
     )
     .await?;
-    let app = lock_state(&state).await?;
+    let app = state.app.read_room(&room_id).await;
     let instrument_id = query.instrument_id.unwrap_or_else(|| {
         app.rooms
             .room(&room_id)
@@ -3693,7 +3676,7 @@ async fn replay_room_isolated(
 ) -> ApiResult<IsolatedReplayResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
     let journal = {
-        let app = lock_state(&state).await?;
+        let app = lock_room_state(&state, &room_id).await?;
         app.journal.clone()
     };
     let mut recovery = journal
@@ -3750,7 +3733,7 @@ async fn cluster_rooms(
     }
     let limit = query_limit(query.limit);
     let (user_id, journal) = {
-        let state = lock_state(&state).await?;
+        let state = state.app.metadata().await;
         (
             current_user_id(&headers, &state.auth_policy)?,
             state.journal.clone(),
@@ -3793,7 +3776,7 @@ async fn start_agents(
         authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
     let _ = authorization;
     run_durable_state_transaction(state.clone(), async move {
-        let mut app = lock_state(&state).await?;
+        let mut app = lock_room_state(&state, &room_id).await?;
         competition::guard_management(&app, &room_id)?;
         start_agent_worker_for_room(&state, &mut app, room_id, request)
             .await
@@ -3808,7 +3791,7 @@ async fn room_bots(
     Path(room_id): Path<String>,
 ) -> ApiResult<Option<exchange_core::SchedulerState>> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let app = lock_state(&state).await?;
+    let app = lock_room_state(&state, &room_id).await?;
     Ok(Json(app.schedulers.get(&room_id).cloned()))
 }
 
@@ -3818,7 +3801,7 @@ async fn agent_status(
     Path(room_id): Path<String>,
 ) -> ApiResult<AgentWorkerStatus> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = lock_room_state(&state, &room_id).await?;
     Ok(Json(agent_status_for_room(&state, &room_id)))
 }
 
@@ -3829,7 +3812,7 @@ async fn stop_agents(
 ) -> ApiResult<AgentWorkerStatus> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
     run_durable_state_transaction(state.clone(), async move {
-        let mut app = lock_state(&state).await?;
+        let mut app = lock_room_state(&state, &room_id).await?;
         competition::guard_management(&app, &room_id)?;
         if let Some(mut scheduler) = app.schedulers.get(&room_id).cloned() {
             scheduler.bots_enabled = false;
@@ -3860,7 +3843,7 @@ async fn room_events(
         authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
     let limit = query.limit.unwrap_or(100).clamp(1, 500);
     let cached_history = {
-        let state = lock_state(&state).await?;
+        let state = lock_room_state(&state, &room_id).await?;
         state.executions.get(&room_id).cloned().unwrap_or_default()
     };
     let cached_latest_command_seq = cached_history.back().map(|execution| execution.command_seq);
@@ -3951,7 +3934,7 @@ async fn room_event_stream(
     }
     let authorization =
         authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let mut state = lock_state(&state).await?;
+    let mut state = lock_room_state(&state, &room_id).await?;
 
     let latest_command_seq = state
         .executions
@@ -4570,18 +4553,25 @@ async fn authorize_room_read(
     room_id: &str,
     access: RoomReadAccess,
 ) -> Result<AuthorizedJournalRead, ApiError> {
+    let state_handle = state;
     let (user_id, journal, room_leased) = {
-        let state = lock_state(state).await?;
+        let state = state.app.metadata().await;
         let user_id = current_user_id(headers, &state.auth_policy)?;
         let room_leased = state
             .room_lease_runtime
             .as_ref()
             .is_some_and(|runtime| runtime.config.mode == RoomLeaseRuntimeMode::RoomLeased);
-        if !room_leased {
-            state.rooms.status(room_id).map_err(api_error_from_room)?;
-        }
         (user_id, state.journal.clone(), room_leased)
     };
+    if !room_leased {
+        state_handle
+            .app
+            .read_room(room_id)
+            .await
+            .rooms
+            .status(room_id)
+            .map_err(api_error_from_room)?;
+    }
 
     let allowed = match access {
         RoomReadAccess::Room => journal.user_can_access_room(&user_id, room_id).await,
@@ -4593,7 +4583,7 @@ async fn authorize_room_read(
                 .await
                 .map_err(api_error_from_journal)?;
             if role.as_deref() == Some("spectator") {
-                let app = lock_state(state).await?;
+                let app = state.app.metadata().await;
                 Ok(competition::spectator_can_view_accounts(&app, room_id))
             } else {
                 journal
@@ -4631,7 +4621,7 @@ async fn room_owner(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomOwnerResponse> {
     let (user_id, journal) = {
-        let app = lock_state(&state).await?;
+        let app = state.app.metadata().await;
         (
             current_user_id(&headers, &app.auth_policy)?,
             app.journal.clone(),
@@ -4672,7 +4662,7 @@ fn room_owner_response(lease: RoomWriterLease) -> RoomOwnerResponse {
 }
 
 async fn ensure_room_owned(state: &SharedState, room_id: &str) -> Result<(), ApiError> {
-    let mut app = lock_state(state).await?;
+    let mut app = lock_room_state(state, room_id).await?;
     let Some(runtime) = app.room_lease_runtime.as_ref() else {
         return app
             .rooms
@@ -4876,7 +4866,7 @@ async fn market_view_response(
     instrument_id: Option<InstrumentId>,
 ) -> ApiResult<MarketView> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     let room = state.rooms.room(&room_id).map_err(api_error_from_room)?;
     let venue_id = room.venue_id().to_string();
     let instrument_id = instrument_id.unwrap_or_else(|| room.primary_instrument_id().to_string());
@@ -4927,7 +4917,7 @@ async fn book_snapshot_response(
     instrument_id: Option<InstrumentId>,
 ) -> ApiResult<BookSnapshot> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Room).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     let instrument_id = match instrument_id {
         Some(instrument_id) => instrument_id,
         None => state
@@ -5007,7 +4997,7 @@ async fn ticker_response(
     instrument_id: Option<InstrumentId>,
 ) -> ApiResult<TickerResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Room).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     let instrument_id = match instrument_id {
         Some(instrument_id) => instrument_id,
         None => state
@@ -5071,7 +5061,7 @@ async fn candles_response(
         ));
     }
     let state_handle = state.clone();
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     let instrument_id = match instrument_id {
         Some(instrument_id) => instrument_id,
         None => state
@@ -5097,7 +5087,7 @@ async fn candles_response(
     let mut candles = match durable {
         Some(candles) => candles,
         None => {
-            let state = lock_state(&state_handle).await?;
+            let state = state_handle.app.read_room(&room_id).await;
             state
                 .rooms
                 .candles(&room_id, &instrument_id, interval_ms)
@@ -5200,7 +5190,7 @@ async fn scoped_room_stream(
     let journal = authorization.journal.clone();
     let lifecycle = state.lifecycle.clone();
     let shutdown = lifecycle.subscribe_shutdown();
-    let mut app = lock_state(&state).await?;
+    let mut app = lock_room_state(&state, &room_id).await?;
     let receiver = app.room_event_receiver(&room_id);
     let cached = app.executions.get(&room_id).cloned().unwrap_or_default();
     let latest_seq = cached
@@ -5687,7 +5677,7 @@ async fn account_snapshots_response(
     instrument_id: Option<InstrumentId>,
 ) -> ApiResult<AccountSnapshots> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     let instrument_id = match instrument_id {
         Some(instrument_id) => instrument_id,
         None => state
@@ -5709,7 +5699,7 @@ async fn venue_account_snapshots(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomVenueAccountsResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     state
         .rooms
         .venue_account_snapshots(&room_id)
@@ -5728,7 +5718,7 @@ async fn venue_account_snapshots_by_venue(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomVenueAccountsByVenueResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     state
         .rooms
         .venue_account_snapshots_by_venue(&room_id)
@@ -5747,7 +5737,7 @@ async fn room_portfolios(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomPortfoliosResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     state
         .rooms
         .portfolio_snapshots(&room_id)
@@ -5766,7 +5756,7 @@ async fn room_asset_ledger(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomAssetLedgerResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     state
         .rooms
         .asset_ledger(&room_id)
@@ -5785,7 +5775,7 @@ async fn room_net_worth(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomNetWorthSnapshot> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     state
         .rooms
         .net_worth_snapshot(&room_id)
@@ -5799,7 +5789,7 @@ async fn room_clock(
     Path(room_id): Path<String>,
 ) -> ApiResult<RoomClockResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Room).await?;
-    let state = lock_state(&state).await?;
+    let state = state.app.read_room(&room_id).await;
     state
         .rooms
         .clock(&room_id)
@@ -5820,7 +5810,7 @@ async fn advance_room_clock(
 ) -> ApiResult<AdvanceClockResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
     let user_id = {
-        let app = lock_state(&state).await?;
+        let app = lock_room_state(&state, &room_id).await?;
         current_user_id(&headers, &app.auth_policy)?
     };
     let idempotency_key = request_idempotency_key(&headers)?;
@@ -5829,7 +5819,7 @@ async fn advance_room_clock(
         serde_json::json!({ "steps": request.steps }),
     );
     run_durable_state_transaction(state.clone(), async move {
-    let mut state = lock_state(&state).await?;
+    let mut state = lock_room_state(&state, &room_id).await?;
     if let Some(key) = idempotency_key.as_deref()
         && let Some(replayed) =
             load_control_replay(&state, &user_id, &room_id, key, &fingerprint).await?
@@ -5968,7 +5958,7 @@ async fn manual_room_step(
 ) -> ApiResult<exchange_core::SchedulerState> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
     let user_id = {
-        let app = lock_state(&state).await?;
+        let app = lock_room_state(&state, &room_id).await?;
         current_user_id(&headers, &app.auth_policy)?
     };
     let idempotency_key = request_idempotency_key(&headers)?;
@@ -6016,7 +6006,7 @@ async fn submit_deposit(
     )
     .await?;
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
+        let mut state = lock_room_state(&state, &room_id).await?;
         reject_trainee_transfer(&state, &room_id, request.account_id)?;
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
@@ -6084,7 +6074,7 @@ async fn submit_withdrawal(
     )
     .await?;
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
+        let mut state = lock_room_state(&state, &room_id).await?;
         reject_trainee_transfer(&state, &room_id, request.account_id)?;
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
@@ -6152,7 +6142,7 @@ async fn submit_venue_to_venue_transfer(
     )
     .await?;
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
+        let mut state = lock_room_state(&state, &room_id).await?;
         reject_trainee_transfer(&state, &room_id, request.account_id)?;
         let command_cursor =
             next_persisted_command_cursor(&state, &room_id).map_err(api_error_from_journal)?;
@@ -6241,7 +6231,7 @@ async fn set_mark_price_for_instrument(
 ) -> ApiResult<RoomExecutionSummary> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
+        let mut state = lock_room_state(&state, &room_id).await?;
         let mut candidate_rooms = state.rooms.clone();
         let previous_history_len = candidate_rooms
             .execution_history_len(&room_id)
@@ -6289,7 +6279,7 @@ async fn submit_order_response(
         return Err(api_error(StatusCode::BAD_REQUEST, reason));
     }
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
+        let mut state = lock_room_state(&state, &room_id).await?;
         let user_id = current_user_id(&headers,&state.auth_policy)?;
         competition::guard_order(&state,&room_id,&user_id,request.account_id)?;
         let is_admin = state
@@ -6349,7 +6339,8 @@ async fn submit_order_response(
             }
             Some(step)
         };
-        let first_order_id = state.next_order_id;
+        let mut order_ids = state.reserve_order_ids(u64::from(order_action_allocates_id(&request.action)))?;
+        let first_order_id = order_ids.start;
         if order_action_allocates_id(&request.action)
             && first_order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE
         {
@@ -6465,6 +6456,7 @@ async fn submit_order_response(
         )
         .await
         .map_err(api_error_from_journal)?;
+        order_ids.commit(next_order_id);
         if let Some((_, run)) = settled_run {
             persist_training_progress(&mut state, &run, &[]).await?;
         }
@@ -6825,13 +6817,13 @@ async fn apply_room_status_control(
 ) -> ApiResult<RoomStatusResponse> {
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
     let user_id = {
-        let app = lock_state(&state).await?;
+        let app = lock_room_state(&state, &room_id).await?;
         current_user_id(&headers, &app.auth_policy)?
     };
     let idempotency_key = request_idempotency_key(&headers)?;
     let fingerprint = control_fingerprint(operation, serde_json::json!({}));
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_state(&state).await?;
+        let mut state = lock_room_state(&state, &room_id).await?;
         competition::guard_management(&state, &room_id)?;
         if let Some(key) = idempotency_key.as_deref()
             && let Some(replayed) =
@@ -6920,10 +6912,15 @@ async fn apply_room_status_control(
     .await
 }
 
-async fn lock_state(
-    state: &SharedState,
-) -> Result<tokio::sync::MutexGuard<'_, AppState>, (StatusCode, Json<ErrorResponse>)> {
+async fn lock_state(state: &SharedState) -> Result<room_runtime::StateGuard, ApiError> {
     Ok(state.app.lock().await)
+}
+
+async fn lock_room_state(
+    state: &SharedState,
+    room: &str,
+) -> Result<room_runtime::StateGuard, ApiError> {
+    Ok(state.app.lock_room(room).await)
 }
 
 /// Runs a durable state transition in a detached Tokio task.
@@ -9548,7 +9545,7 @@ async fn commit_scheduler_transaction(
     use scheduler_delta::Candidate;
     let wait_started = Instant::now();
     run_durable_state_transaction(shared.clone(), async move {
-        let mut state = lock_state(&shared).await?;
+        let mut state = lock_room_state(&shared, &room_id).await?;
         shared.lifecycle.record_scheduler_phase(0, wait_started);
         if !competition::market_allowed(&state, &room_id) {
             return Err(api_error(
@@ -9627,7 +9624,20 @@ async fn commit_scheduler_transaction(
         let clock_before = candidate_rooms
             .clock(&room_id)
             .map_err(api_error_from_room)?;
-        let mut next_order_id = state.next_order_id;
+        let budget = match &realtime {
+            Some(work) => work.order_id_budget(),
+            None => scheduler
+                .as_ref()
+                .unwrap()
+                .agents
+                .iter()
+                .map(|agent| {
+                    (exchange_core::MAX_BOT_ACTIONS + agent.unfinished_actions.len()) as u64
+                })
+                .sum(),
+        };
+        let mut order_ids = state.reserve_order_ids(budget)?;
+        let mut next_order_id = order_ids.start;
         let registry = state.bot_registry.clone();
         let training = state
             .training_runs
@@ -9864,6 +9874,7 @@ async fn commit_scheduler_transaction(
             let replayed = serde_json::from_value(replay_json).map_err(api_error_from_json)?;
             return Ok(Json(return_state.then_some(replayed)));
         }
+        order_ids.commit(next_order_id);
         if let Some((run_id, run)) = updated_training {
             if manual {
                 persist_training_progress(&mut state, &run, &[]).await?;
@@ -16032,14 +16043,15 @@ mod tests {
         let records = Arc::new(Mutex::new(Vec::<JournalExecution>::new()));
         let release_first_append = Arc::new((Mutex::new(false), Condvar::new()));
         let (started_sender, started_receiver) = std::sync::mpsc::channel();
-        let app = new_app_with_journal(
+        let shared = shared_state(AppState::new_with_journal(
             "http://127.0.0.1:57305",
             Box::new(PausingJournal {
                 records: Arc::clone(&records),
                 first_append_started: Some(started_sender),
                 release_first_append: Arc::clone(&release_first_append),
             }),
-        );
+        ));
+        let app = app_with_cors_origins(shared.clone(), default_cors_origins());
         let room_response = app
             .clone()
             .oneshot(
@@ -16056,6 +16068,13 @@ mod tests {
             .unwrap();
         assert_eq!(room_response.status(), StatusCode::OK);
 
+        let before = shared
+            .app
+            .read_room("cancel-safe-room")
+            .await
+            .rooms
+            .book_snapshot("cancel-safe-room")
+            .unwrap();
         let order_body = serde_json::json!({
             "participant_id": "alice",
             "account_id": 20,
@@ -16085,6 +16104,11 @@ mod tests {
         })
         .await
         .unwrap();
+        let during = tokio::time::timeout(
+            Duration::from_secs(2),
+            shared.app.read_room("cancel-safe-room"),
+        )
+        .await;
         first_request.abort();
         let _ = first_request.await;
 
@@ -16094,6 +16118,12 @@ mod tests {
             wake.notify_all();
         }
 
+        let during =
+            during.expect("published market state must remain readable during journal I/O");
+        assert_eq!(
+            during.rooms.book_snapshot("cancel-safe-room").unwrap(),
+            before
+        );
         let second_response = app
             .oneshot(
                 Request::builder()
