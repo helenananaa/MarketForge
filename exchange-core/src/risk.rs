@@ -211,11 +211,8 @@ impl PerpRiskEngine {
                 (PositionSide::Long, Side::Sell) | (PositionSide::Short, Side::Buy)
             );
             if closes {
-                // Like legacy reduce-only, guaranteed closes cannot rest and later
-                // consume a leg that another order has already closed.
-                if order.kind.rests_remainder() {
-                    return Err(RiskRejectReason::ReduceOnlyUnsupported);
-                }
+                // The matching guard rechecks each fill and expires exhausted
+                // resting closes before they can consume a later position.
                 if leg.qty == 0 {
                     return Err(RiskRejectReason::ReduceOnlyWouldIncreasePosition);
                 }
@@ -233,6 +230,9 @@ impl PerpRiskEngine {
 
         if order.reduce_only && account.hedge_positions.is_none() {
             self.check_reduce_only_order(order, account.position_qty)?;
+            if order.kind.rests_remainder() {
+                return Ok(());
+            }
         }
 
         if account.hedge_positions.is_none()
@@ -306,10 +306,6 @@ impl PerpRiskEngine {
         order: &NewOrder,
         position_qty: PositionQty,
     ) -> Result<(), RiskRejectReason> {
-        if order.kind.rests_remainder() {
-            return Err(RiskRejectReason::ReduceOnlyUnsupported);
-        }
-
         let fill_delta = order_position_delta(order);
         if position_qty == 0 || position_qty.signum() == fill_delta.signum() {
             return Err(RiskRejectReason::ReduceOnlyWouldIncreasePosition);
@@ -720,7 +716,7 @@ mod tests {
     }
 
     #[test]
-    fn perp_reduce_only_rejects_resting_order_kinds() {
+    fn perp_reduce_only_admits_resting_orders_with_matching_guard() {
         let mut accounts = PerpAccountStore::new(PerpClearingConfig::default(), 100).unwrap();
         seed_long_position(&mut accounts, 1, 5);
         let risk = PerpRiskEngine::new(PerpRiskConfig::default());
@@ -735,7 +731,7 @@ mod tests {
                     fill_quote: FillQuote::default(),
                 },
             ),
-            Err(RiskRejectReason::ReduceOnlyUnsupported)
+            Ok(())
         );
     }
 

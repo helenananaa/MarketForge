@@ -21,6 +21,9 @@ from .alerts import Alerts, CONDITION_SCHEMA
 from .external import ExternalTools
 from .orders import OrderTools
 from .policies import Policies
+from .market_data import MarketDataTools, indicators, render_chart
+from .workspace import Workspaces
+from .advanced_tools import AdvancedTools
 
 
 class UncertainOutcome(RuntimeError):
@@ -69,14 +72,14 @@ TOOLS = [
            {"instrument": S, "kind": {"type": "string", "enum": ["observe", "ticker", "candles"]}, "interval_ms": I}, ["instrument", "kind"]),
     schema("trade", "Place/cancel/amend an order against your own account. amend uses order_id and price_tick and/or qty (new remaining quantity). The exchange permits quantity reduction and less aggressive repricing only; increasing size or aggression needs explicit cancel plus a new intent. Inspect OrderAmended/AmendRejected events: accepted=true means command admission, not a successful amendment or fill. execution_mode defaults to bounded: price_tick is maximum buy/minimum sell price; market/reduce_only use bounded IOC. Explicit execution_mode=unbounded is allowed only for market/reduce_only and must omit price_tick; it sweeps available liquidity without a price bound. Cash, margin, ownership, quantity/rate limits and enabled optional policies still apply. Optional valid_until_market_time_ms is an absolute decision deadline from observed simulation time, checked by the exchange in either mode. expires_at_market_time_ms expires only limit/post_only resting orders. Never change an old intent's mode or deadline on retry.",
            {"instrument": S, "action": {"type": "string", "enum": ["limit", "market", "ioc", "post_only", "reduce_only", "cancel", "amend"]},
-            "side": {"type": "string", "enum": ["Buy", "Sell"]}, "price_tick": I, "qty": I, "order_id": I,
+            "side": {"type": "string", "enum": ["Buy", "Sell"]}, "price_tick": I, "qty": I, "order_id": {"type":["integer","string"]},
             "position_side": {"type": "string", "enum": ["Both", "Long", "Short"]},
             "valid_until_market_time_ms": I, "expires_at_market_time_ms": I,
             "execution_mode": {"type": "string", "enum": ["bounded", "unbounded"]}}, ["instrument", "action"]),
-    schema("orders", "Read your latest order history with exchange status, remaining quantity and strategy attribution. Optional order_id/strategy filters apply within the latest 1-500 account records, not the complete history.",
-           {"instrument": S, "limit": I, "order_id": I, "strategy": S}, ["instrument"]),
+    schema("orders", "Read your latest order history with exchange status, remaining quantity and strategy attribution. order_id queries an exact old/native order across durable history; strategy filters still apply within the latest 1-500 records.",
+           {"instrument": S, "limit": I, "order_id": {"type":["integer","string"]}, "strategy": S}, ["instrument"]),
     schema("fills", "Read your latest executions with price, quantity, market time, order IDs and strategy sources. Counterpart account IDs are omitted. Optional filters apply within the latest account history window.",
-           {"instrument": S, "limit": I, "order_id": I, "strategy": S}, ["instrument"]),
+           {"instrument": S, "limit": I, "order_id": {"type":["integer","string"]}, "strategy": S}, ["instrument"]),
     schema("order_cancel_all", "Cancel a snapshot of your resting orders in one instrument, optionally only a named strategy's orders. Stable child request IDs settle unknown outcomes. An interrupt holds unsent cancellations; submit a fresh batch after reassessment for held/new orders. This is a sequential batch, not an atomic exchange command.",
            {"instrument": S, "strategy": S}, ["instrument"]),
     schema("policy_status", "Read operator-configured optional account rules, loss baselines, framework token usage and model admission budgets. Only the operator can change these rules.", {}),
@@ -102,6 +105,42 @@ TOOLS = [
     schema("wait", "Finish this decision round and wake after 2-300 seconds, or earlier on your own account/order change when on_account_change=true. Deployed strategies keep running.",
            {"seconds": I, "on_account_change": {"type": "boolean"}}, ["seconds"]),
 ]
+DATA_FIELDS = {"instrument": S, "interval_ms": I, "limit": I, "before_open_time_ms": I, "after_open_time_ms": I}
+TOOLS += [schema("market_history", "Read up to 2000 traded bars with explicit simulation timestamps and exclusive history cursors. Empty periods are omitted.", DATA_FIELDS, ["instrument"]),
+    schema("market_indicators", "Compute window-local SMA, EMA, Wilder RSI/ATR and VWAP from the same source bars. Null means insufficient warmup; includes bars and provenance.", {**DATA_FIELDS, "period": I}, ["instrument"]),
+    schema("chart_export", "Return a PNG candlestick/volume chart with SMA/EMA from public market bars. Headless render, not a screenshot of the human workspace. MCP returns native image content.", {**DATA_FIELDS, "period": I, "width": I, "height": I}, ["instrument"]),
+    schema("risk_events", "Read only your durable margin, liquidation and funding events. Use next_after_command_seq even for empty pages; has_more requests the next page. Last page by default; from_start=true starts history.", {"instrument":S,"after_command_seq":I,"from_start":{"type":"boolean"},"limit":I}, ["instrument"])]
+trade_spec = next(t["function"]["parameters"] for t in TOOLS if t["function"]["name"] == "trade")
+trade_spec["properties"]["action"]["enum"] += ["bracket", "protection"]
+trade_spec["properties"].update(take_profit_tick=I, stop_loss_tick=I, trigger={"type":"string","enum":["Mark","Last"]})
+next(t["function"] for t in TOOLS if t["function"]["name"] == "trade")["description"] += " action=bracket atomically opens a perpetual position with TP/SL: price_tick submits a resting limit entry; omit price only with execution_mode=unbounded for a market entry. action=protection sets/replaces the selected position leg's full TP/SL spec; omit both TP/SL to remove. trigger=Mark (default) or Last. Triggered exits are exchange-owned unbounded reduce-only IOC and retry remainder on market mutations; execution price is not guaranteed."
+next(t["function"]["parameters"]["properties"] for t in TOOLS if t["function"]["name"] == "strategy_save")["market_data"] = {"type":"object","additionalProperties":False,"properties":{"interval_ms":I,"limit":I},"required":["interval_ms","limit"]}
+TOOLS += [
+    schema("workspace_start", "Start/resume your persistent Docker workbench. Full shell, Python, internet and background jobs inside your container; named-volume files survive stops. No host filesystem/socket or operator credentials. Programs use marketforge_program.Client for scoped trading and resumable events.", {}),
+    schema("workspace_exec", "Run arbitrary /bin/sh command in your Docker workspace. Returns durable job_id, bounded merged output and exit status; long jobs continue in background. Install Python packages with python -m pip install --user. Retry the same request_id to avoid duplicate launches.", {"command":S,"cwd":S,"wait_seconds":I},["command"]),
+    schema("workspace_process", "Read a workspace job's output by byte offset; stop=true terminates its process group. Poll fresh request IDs, preserving next_offset.", {"job_id":S,"offset":I,"stop":{"type":"boolean"}},["job_id"]),
+    schema("workspace_write", "Write a UTF-8 file in your persistent /work directory, including arbitrary Python programs.", {"path":S,"text":S},["path","text"]),
+    schema("workspace_read", "Read a UTF-8 file (up to 256 KiB) or list a directory within /work.", {"path":S},["path"]),
+    schema("workspace_stop", "Stop your workspace and all its processes; retain its files. Does not cancel exchange orders.", {}),
+    schema("account_history", "Page your complete durable execution/activity history with own order lifecycle, fills, exact fees, realized PnL, funding and liquidation. Cursor advances across empty filtered pages. include_market also includes public trades and price updates; never other accounts. order_id filters only matching activity within each scanned page.", {"instrument":S,"after_command_seq":I,"from_start":{"type":"boolean"},"limit":I,"order_id":S,"include_market":{"type":"boolean"}},["instrument"]),
+    schema("market_rules", "Read instrument units, tick/lot sizes, fees, margin configuration, supported order actions and venue rules.", {"instrument":S},["instrument"]),
+    schema("portfolio", "Read only your account's portfolio and venue balances.", {}),
+    schema("ledger", "Page your complete settlement activity; same durable account history cursor as account_history.", {"instrument":S,"after_command_seq":I,"from_start":{"type":"boolean"},"limit":I},["instrument"]),
+    schema("indicator_catalog", "Read the same CandleScope builtin indicator and script-runtime catalog used by the human workbench.", {}),
+    schema("indicator_compute", "Run a CandleScope builtin or Pine/Pyne script on authoritative traded bars, returning structured lines/drawings and provenance. Requires the configured CandleScope analysis service. securityMode is safe.", {**DATA_FIELDS,"name":S,"language":{"type":"string","enum":["pine","pyne"]},"script":S,"params":{"type":"object","additionalProperties":True}},["instrument"]),
+]
+trade_spec["properties"]["action"]["enum"] += ["fok","reduce_only_fok","reduce_only_limit","reduce_only_post_only"]
+PROTECTION_EXTRA = {"trailing_distance_tick":I,"exit_price_tick":I,"exit_qty":I,
+    "take_profit_steps":{"type":"array","maxItems":16,"items":{"type":"object","additionalProperties":False,"properties":{"price_tick":I,"qty":I},"required":["price_tick","qty"]}}}
+trade_spec["properties"].update(PROTECTION_EXTRA)
+trade_spec["properties"].update(conditional_key=S,conditional_spec={"type":["object","null"],"additionalProperties":False,
+    "properties":{"side":{"type":"string","enum":["Buy","Sell"]},"position_side":{"type":"string","enum":["Both","Long","Short"]},
+        "qty":I,"trigger_price_tick":I,"above":{"type":"boolean"},"trigger":{"type":"string","enum":["Mark","Last"]},"limit_price_tick":I,
+        "protection":{"type":"object","additionalProperties":False,"properties":{"take_profit_tick":I,"stop_loss_tick":I,"trigger":{"type":"string","enum":["Mark","Last"]},**PROTECTION_EXTRA}}},
+    "required":["side","qty","trigger_price_tick","above"]})
+trade_spec["properties"]["action"]["enum"].append('conditional')
+TOOLS.append(schema('conditional_orders','Read your exchange-owned conditional entries and their submitted/rejected state.',{'instrument':S},['instrument']))
+next(t['function']['parameters']['properties'] for t in TOOLS if t['function']['name']=='chart_export')['indicator']={"type":"object","additionalProperties":False,"properties":{"name":S,"script":S,"language":{"type":"string","enum":["pine","pyne"]},"params":{"type":"object","additionalProperties":True}}}
 TOOL_FIELDS = {t["function"]["name"]: t["function"]["parameters"] for t in TOOLS}
 
 
@@ -123,7 +162,7 @@ def load_plugins(root):
     return plugins
 
 
-class TradingService(OrderTools, Policies, ExternalTools):
+class TradingService(Workspaces, AdvancedTools, MarketDataTools, OrderTools, Policies, ExternalTools):
     def __init__(self, data_dir, plugin_dir, exchange_url, sandbox=None, client_factory=None):
         self.store = Store(Path(data_dir) / "agents.sqlite3")
         self.plugins = load_plugins(plugin_dir) if plugin_dir else {}
@@ -139,6 +178,8 @@ class TradingService(OrderTools, Policies, ExternalTools):
         self.guard = threading.RLock()
         self.alerts = Alerts(self)
         self.requests = {}
+        self.workspace_instances = {}
+        self.workspace_relays = {}
         for trader in self.store.all("trader"):
             self.wake_events[trader["id"]] = threading.Event()
             trader.update(status="paused", error="Service restarted; explicitly resume the trader." if trader.get("backend") == "external" else "Service restarted; reconnect model and explicitly resume.")
@@ -249,25 +290,58 @@ class TradingService(OrderTools, Policies, ExternalTools):
             raise ValueError("strategy action must be an object")
         self.check_instrument(config, args.get("instrument"))
         action = args.get("action")
-        allowed = {"instrument", "action", "order_id"} if action == "cancel" else {"instrument", "action", "order_id", "price_tick", "qty"} if action == "amend" else {
-            "instrument", "action", "qty", "side", "position_side", "price_tick", "valid_until_market_time_ms", "expires_at_market_time_ms", "execution_mode"}
+        if action=='conditional':
+            if set(args)-{'instrument','action','conditional_key','conditional_spec'}: raise ValueError('unexpected conditional fields')
+            key=identifier(args['conditional_key']); spec=args.get('conditional_spec')
+            if spec is not None:
+                if not isinstance(spec,dict) or set(spec)-{'side','position_side','qty','trigger_price_tick','above','trigger','limit_price_tick','protection'}: raise ValueError('invalid conditional specification')
+                if spec.get('side') not in ('Buy','Sell') or type(spec.get('above')) is not bool: raise ValueError('invalid conditional side or direction')
+                spec=dict(spec);spec['qty']=integer(spec.get('qty'),1,config['max_order_qty']);spec['trigger_price_tick']=integer(spec.get('trigger_price_tick'),1,2**53-1)
+                if self.policy(config['id'])['account']: raise ValueError('native conditional entries require account policies to be disabled; use a workspace program for policy-checked entries')
+            return {'SetConditional':{'key':key,'spec':spec}}
+        allowed = {"instrument", "action", "order_id"} if action == "cancel" else {"instrument", "action", "position_side", "take_profit_tick", "stop_loss_tick", "trigger"} if action == "protection" else {"instrument", "action", "order_id", "price_tick", "qty"} if action == "amend" else {
+            "instrument", "action", "qty", "side", "position_side", "price_tick", "valid_until_market_time_ms", "expires_at_market_time_ms", "execution_mode", "take_profit_tick", "stop_loss_tick", "trigger"}
+        if action in ('protection','bracket'): allowed |= set(PROTECTION_EXTRA)
         if set(args) - allowed:
             raise ValueError("unexpected trade fields")
         if action == "cancel":
-            order = integer(args.get("order_id"), 1, 2**53-1)
-            if source != "direct" and self.store.get("order_owner", f"{config['id']}:{args['instrument']}:{order}") != source:
+            order = order_identifier(args.get("order_id"))
+            if source not in ("direct", "workspace") and self.store.get("order_owner", f"{config['id']}:{args['instrument']}:{order}") != source:
                 raise ValueError("strategy can only cancel its own orders")
             return {"Cancel": {"order_id": order}}
         if action == "amend":
-            order = integer(args.get("order_id"), 1, 2**53-1)
+            order = order_identifier(args.get("order_id"))
             if "price_tick" not in args and "qty" not in args:
                 raise ValueError("amend requires price_tick and/or new remaining qty")
-            if source != "direct" and self.store.get("order_owner", f"{config['id']}:{args['instrument']}:{order}") != source:
+            if source not in ("direct", "workspace") and self.store.get("order_owner", f"{config['id']}:{args['instrument']}:{order}") != source:
                 raise ValueError("strategy can only amend its own orders")
             return {"Amend": {"order_id": order,
                 "price_tick": integer(args["price_tick"], 1, 2**53-1) if "price_tick" in args else None,
                 "qty": integer(args["qty"], 1, config["max_order_qty"]) if "qty" in args else None}}
-        variants = {"limit": "PlaceLimit", "market": "PlaceImmediateOrCancel", "ioc": "PlaceImmediateOrCancel",
+        if action in ("bracket", "protection"):
+            leg = args.get("position_side", "Both")
+            if leg not in ("Both", "Long", "Short"): raise ValueError("invalid position_side")
+            trigger = args.get("trigger", "Mark")
+            if trigger not in ("Mark", "Last"): raise ValueError("trigger must be Mark or Last")
+            spec = {field: integer(args[field],1,2**53-1) if field in args else None for field in ("take_profit_tick","stop_loss_tick")}
+            spec["trigger"] = trigger
+            for field in ('trailing_distance_tick','exit_price_tick','exit_qty'):
+                if field in args: spec[field]=integer(args[field],1,config['max_order_qty'] if field=='exit_qty' else 2**53-1)
+            if 'take_profit_steps' in args:
+                steps=args['take_profit_steps']
+                if not isinstance(steps,list) or not 1<=len(steps)<=16: raise ValueError('take_profit_steps requires 1-16 levels')
+                spec['take_profit_steps']=[{'price_tick':integer(s['price_tick'],1,2**53-1),'qty':integer(s['qty'],1,config['max_order_qty'])} for s in steps]
+            active = spec["take_profit_tick"] is not None or spec["stop_loss_tick"] is not None or spec.get('trailing_distance_tick') is not None or bool(spec.get('take_profit_steps'))
+            if action == "protection": return {"SetPositionProtection": {"position_side":leg,"protection":spec if active else None}}
+            if not active: raise ValueError("bracket requires TP and/or SL")
+            if args.get("side") not in ("Buy","Sell"): raise ValueError("invalid bracket side")
+            if "valid_until_market_time_ms" in args or "expires_at_market_time_ms" in args: raise ValueError("bracket entry deadlines are not supported; use ordinary protected orders")
+            price = integer(args["price_tick"],1,2**53-1) if "price_tick" in args else None
+            if price is None and args.get("execution_mode") != "unbounded": raise ValueError("market bracket requires explicit execution_mode=unbounded")
+            if price is not None and args.get("execution_mode", "bounded") != "bounded": raise ValueError("limit bracket requires bounded mode")
+            return {"PlaceBracket":{"side":args["side"],"position_side":leg,"qty":integer(args.get("qty"),1,config["max_order_qty"]),"price_tick":price,"protection":spec}}
+        if any(field in args for field in ("take_profit_tick","stop_loss_tick","trigger",*PROTECTION_EXTRA)): raise ValueError("TP/SL fields require bracket or protection action")
+        variants = {"fok":"PlaceFillOrKill", "reduce_only_fok":"PlaceReduceOnlyFillOrKill", "reduce_only_limit":"PlaceLimit", "reduce_only_post_only":"PlacePostOnly", "limit": "PlaceLimit", "market": "PlaceImmediateOrCancel", "ioc": "PlaceImmediateOrCancel",
                     "post_only": "PlacePostOnly", "reduce_only": "PlaceReduceOnlyImmediateOrCancel"}
         if action not in variants or args.get("side") not in ("Buy", "Sell"):
             raise ValueError("invalid order action or side")
@@ -281,7 +355,7 @@ class TradingService(OrderTools, Policies, ExternalTools):
             raise ValueError("execution_mode must be bounded or unbounded")
         deadlines = {field: integer(args[field], 1, 2**53-1)
                      for field in ("valid_until_market_time_ms", "expires_at_market_time_ms") if field in args}
-        if "expires_at_market_time_ms" in deadlines and action not in ("limit", "post_only"):
+        if "expires_at_market_time_ms" in deadlines and action not in ("limit", "post_only", "reduce_only_limit", "reduce_only_post_only"):
             raise ValueError("only limit/post_only resting orders accept expires_at_market_time_ms")
         if mode == "unbounded":
             if action not in ("market", "reduce_only"):
@@ -294,9 +368,9 @@ class TradingService(OrderTools, Policies, ExternalTools):
         if "price_tick" not in args:
             raise ValueError("price_tick is required in bounded mode: set a maximum buy/minimum sell price, or explicitly choose execution_mode=unbounded for market/reduce_only")
         value["price_tick"] = integer(args["price_tick"], 1, 2**53-1)
-        if deadlines or "position_side" in args:
-            return {"PlaceProtected": {**value, **deadlines, "reduce_only": action == "reduce_only",
-                "order_type": {"limit": "Limit", "post_only": "PostOnly"}.get(action, "ImmediateOrCancel")}}
+        if deadlines or "position_side" in args or action in ("reduce_only_limit","reduce_only_post_only"):
+            return {"PlaceProtected": {**value, **deadlines, "reduce_only": action.startswith("reduce_only"),
+                "order_type": {"limit": "Limit", "post_only": "PostOnly", "reduce_only_limit":"Limit", "reduce_only_post_only":"PostOnly", "fok":"FillOrKill", "reduce_only_fok":"FillOrKill"}.get(action, "ImmediateOrCancel")}}
         return {variants[action]: value}
 
     def call(self, trader, key, name, args, source="direct", stop=None):
@@ -316,7 +390,7 @@ class TradingService(OrderTools, Policies, ExternalTools):
                     and "price_tick" not in args and args.get("execution_mode") != "unbounded"):
                 raise UncertainOutcome("legacy unbounded order outcome is unresolved; inspect exchange receipts before resuming; do not replace or reprice the pending request")
             self.store.event(trader, "tool_request", {"call_id": key, "name": name, "args": args, "source": source})
-            if name in ("web_read", "web_search", "strategy_test", "strategy_analyze", "order_cancel_all"):
+            if name.startswith('workspace_') or name in ("indicator_compute", "indicator_catalog", "account_history", "ledger", "web_read", "web_search", "strategy_test", "strategy_analyze", "chart_export", "market_history", "market_indicators", "order_cancel_all"):
                 slow = True
             else:
                 return self.finish_call(config, key, name, args, source)
@@ -348,9 +422,21 @@ class TradingService(OrderTools, Policies, ExternalTools):
         return result
 
     def execute(self, config, key, name, args, source, stop=None):
+        if name.startswith('workspace_'):
+            return self.workspace_execute(config,key,name,args,stop)
+        if name in ('conditional_orders','account_history','ledger','portfolio','market_rules','indicator_catalog','indicator_compute'):
+            return self.advanced_execute(config,name,args)
         trader = config["id"]
         client = self.client(config)
         room = urllib.parse.quote(config["room"], safe="")
+        if name in ("market_history", "market_indicators", "chart_export"):
+            data = self.candle_data(config, args)
+            if name == "market_history": return data
+            study = indicators(data["candles"], integer(args.get("period",14),2,200))
+            if name == "market_indicators": return {**data,"indicators":study}
+            overlay=self.compute_indicator(data,{**args['indicator'],'instrument':args['instrument']})['indicator'] if 'indicator' in args else None
+            return render_chart(data,study,args.get("width",1000),args.get("height",600),overlay=overlay)
+        if name == "risk_events": return self.read_risk_events(config,args)
         if name == "market_read":
             instrument = args["instrument"]
             self.check_instrument(config, instrument)
@@ -433,7 +519,7 @@ class TradingService(OrderTools, Policies, ExternalTools):
                     if field in args:
                         project[field] = args[field]
                 return self.execute(config, key, "strategy_save", {"name": strategy_name,
-                    "interval_seconds": current["interval_seconds"], **project}, source)
+                    "interval_seconds": current["interval_seconds"], **({"market_data": current["market_data"]} if "market_data" in current else {}), **project}, source)
             if name == "strategy_save":
                 project = normalize_project(args)
                 if current and current["running"]:
@@ -457,6 +543,10 @@ class TradingService(OrderTools, Policies, ExternalTools):
                     if environment:
                         self.store.put("environment", f"{skey}:{version}", environment)
                         record.update(environment=current["environment"], install_job=current.get("install_job"))
+                if "market_data" in args:
+                    settings=args["market_data"]
+                    if not isinstance(settings,dict) or set(settings)!={"interval_ms","limit"}: raise ValueError("market_data needs interval_ms and limit")
+                    record["market_data"]={"interval_ms":integer(settings["interval_ms"],1,2678400000),"limit":integer(settings["limit"],1,2000)}
                 self.store.put("strategy", skey, record)
                 return record
             if current is None:
@@ -474,9 +564,9 @@ class TradingService(OrderTools, Policies, ExternalTools):
                     raise ValueError("stop strategy before installing dependencies")
                 return self.install(config, current, force=args.get("force", False))
             if name == "strategy_analyze":
-                return self.run_strategy(config, current, self.observations(config), analysis=text_value(args["script"], 32768))
+                return self.run_strategy(config, current, self.strategy_observations(config,current), analysis=text_value(args["script"], 32768))
             if name == "strategy_test":
-                observed = self.observations(config)
+                observed = self.strategy_observations(config,current)
                 result = self.run_strategy(config, current, observed)
                 for action in result.get("actions", []):
                     self.validate_trade(config, action, strategy_name)
@@ -694,7 +784,7 @@ class TradingService(OrderTools, Policies, ExternalTools):
         if self.alerts.state(trader)["pending"]:
             return
         if not strategy.get("pending"):
-            observed = self.observations(config)
+            observed = self.strategy_observations(config,strategy)
             if any(o["status"] != "Running" for o in observed.values()):
                 return
             try:
@@ -744,3 +834,11 @@ from .legacy import LegacyHarness
 
 class Runtime(LegacyHarness, TradingService):
     pass
+
+
+def order_identifier(value):
+    """Native orders use the full u64 range; accept decimal strings losslessly."""
+    if isinstance(value,str):
+        if not value.isascii() or not value.isdecimal(): raise ValueError("order_id must be a decimal integer")
+        value=int(value)
+    return integer(value,1,2**64-1)

@@ -231,3 +231,81 @@ class Client:
             f"/rooms/{room_id}/accounts/{account_id}/owners",
             {"user_id": user_id},
         )
+
+    def candles(self, room_id, instrument_id, interval_ms=1000, limit=500, before_open_time_ms=None, after_open_time_ms=None):
+        """Bounded source bars; cursors are exclusive and time is simulated."""
+        room, market = (urllib.parse.quote(v, safe="") for v in (room_id, instrument_id))
+        return self._request("GET", f"/rooms/{room}/instruments/{market}/candles", query={"interval_ms":interval_ms,"limit":limit,"before_open_time_ms":before_open_time_ms,"after_open_time_ms":after_open_time_ms})
+
+    def risk_events(self, room_id, instrument_id, account_id, after_command_seq=None, from_start=False, limit=100):
+        room, market = (urllib.parse.quote(v, safe="") for v in (room_id, instrument_id))
+        return self._request("GET", f"/rooms/{room}/instruments/{market}/risk-events", query={"account_id":account_id,"after_command_seq":after_command_seq,"from_start":from_start,"limit":limit})
+
+    def protect_position(self, room_id, instrument_id, account_id, take_profit_tick=None, stop_loss_tick=None, position_side="Both", trigger="Mark", idempotency_key=None, **protection_fields):
+        """Replace the full perpetual position protection; omit TP/SL to remove."""
+        spec = {"take_profit_tick":take_profit_tick,"stop_loss_tick":stop_loss_tick,"trigger":trigger,**protection_fields} if take_profit_tick is not None or stop_loss_tick is not None or protection_fields else None
+        room, market = (urllib.parse.quote(v, safe="") for v in (room_id, instrument_id))
+        return self._request("POST", f"/rooms/{room}/instruments/{market}/orders", {"participant_id":"python-sdk","account_id":account_id,"action":{"SetPositionProtection":{"position_side":position_side,"protection":spec}}}, idempotency_key=idempotency_key)
+
+    def place_bracket(self, room_id, instrument_id, account_id, side, qty, take_profit_tick=None, stop_loss_tick=None, price_tick=None, position_side="Both", trigger="Mark", idempotency_key=None, **protection_fields):
+        """Atomic perpetual limit entry (price) or unbounded market entry (no price) with exits."""
+        room, market = (urllib.parse.quote(v, safe="") for v in (room_id, instrument_id))
+        action={"PlaceBracket":{"side":side,"qty":qty,"price_tick":price_tick,"position_side":position_side,"protection":{"take_profit_tick":take_profit_tick,"stop_loss_tick":stop_loss_tick,"trigger":trigger,**protection_fields}}}
+        return self._request("POST", f"/rooms/{room}/instruments/{market}/orders", {"participant_id":"python-sdk","account_id":account_id,"action":action}, idempotency_key=idempotency_key)
+
+    def market_indicators(self, room_id, instrument_id, interval_ms=1000, limit=500, period=14, **cursors):
+        from .agents.market_data import indicators
+        data = self.candles(room_id, instrument_id, interval_ms, limit, **cursors)
+        return {**data, "indicators": indicators(data["candles"], period)}
+
+    def chart_export(self, room_id, instrument_id, interval_ms=1000, limit=500, period=14, width=1000, height=600, indicator=None, analysis_url="http://127.0.0.1:18086/api/v1", **cursors):
+        """PNG/base64 metadata; install marketforge[agents] for rendering."""
+        from .agents.market_data import indicators, render_chart
+        data = self.candles(room_id, instrument_id, interval_ms, limit, **cursors)
+        from .agents.advanced_tools import AdvancedTools
+        overlay=AdvancedTools().compute_indicator(data,{"instrument":instrument_id,**indicator},analysis_url.rstrip("/"))["indicator"] if indicator else None
+        return render_chart(data, indicators(data["candles"], period), width, height, overlay=overlay)
+
+    def submit_action(self, room_id, instrument_id, account_id, action, idempotency_key):
+        """Submit any native OrderAction with a stable exchange intent key."""
+        room, market = (urllib.parse.quote(v, safe="") for v in (room_id, instrument_id))
+        return self._request("POST", f"/rooms/{room}/instruments/{market}/orders", {"participant_id":"python-sdk","account_id":account_id,"action":action}, idempotency_key=idempotency_key)
+
+    def account_history(self, room_id, instrument_id, account_id, **query):
+        room, market = (urllib.parse.quote(v, safe="") for v in (room_id, instrument_id))
+        return self._request("GET", f"/rooms/{room}/instruments/{market}/account-history",query={"account_id":account_id,**query})
+
+    def iter_account_history(self, room_id, instrument_id, account_id, **query):
+        """Yield complete journal pages, including empty pages that advance the cursor."""
+        query={"from_start":True, "limit":500, **query}
+        while True:
+            page=self.account_history(room_id,instrument_id,account_id,**query)
+            yield page
+            if not page["has_more"]: break
+            query.pop("from_start",None)
+            query["after_command_seq"]=page["next_after_command_seq"]
+
+    def order_activity(self, room_id, instrument_id, account_id, order_id):
+        """Exact old/native order lookup by decimal ID across complete durable history."""
+        return [activity for page in self.iter_account_history(room_id,instrument_id,account_id,order_id=str(order_id)) for activity in page["activities"]]
+
+    def market_rules(self, room_id, instrument_id):
+        room, market = (urllib.parse.quote(v,safe="") for v in (room_id,instrument_id))
+        return self._request("GET",f"/rooms/{room}/instruments/{market}/rules")
+
+    def portfolio(self, room_id, account_id):
+        room=urllib.parse.quote(room_id,safe="")
+        return self._request("GET",f"/rooms/{room}/accounts/{account_id}/portfolio")
+
+    def conditional_orders(self, room_id, instrument_id, account_id):
+        room, market = (urllib.parse.quote(v,safe="") for v in (room_id,instrument_id))
+        return self._request("GET",f"/rooms/{room}/instruments/{market}/conditionals",query={"account_id":account_id})
+
+    def set_conditional(self, room_id, instrument_id, account_id, key, spec, idempotency_key):
+        return self.submit_action(room_id,instrument_id,account_id,{"SetConditional":{"key":key,"spec":spec}},idempotency_key)
+
+    def indicator_compute(self, room_id, instrument_id, analysis_url="http://127.0.0.1:18086/api/v1", interval_ms=1000, limit=500, **indicator):
+        """Use the same provided-bar engine as the human CandleScope workbench."""
+        from .agents.advanced_tools import AdvancedTools
+        data=self.candles(room_id,instrument_id,interval_ms,limit)
+        return AdvancedTools().compute_indicator(data,{"instrument":instrument_id,**indicator},analysis_url.rstrip("/"))

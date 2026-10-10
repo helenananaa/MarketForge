@@ -112,6 +112,14 @@ impl SpotTradingEngine {
     }
 
     fn apply_inner(&mut self, command: Command) -> Result<SpotTradingExecution, ClearingError> {
+        if matches!(
+            command,
+            Command::SetConditionalOrder { .. }
+                | Command::SetPositionProtection { .. }
+                | Command::NewOrderWithProtection { .. }
+        ) {
+            return Err(ClearingError::WrongMarketKind); // Requires the exchange actor transaction.
+        }
         if matches!(command, Command::SetMarkPrice(_)) {
             return Err(ClearingError::WrongMarketKind);
         }
@@ -355,6 +363,14 @@ impl PerpTradingEngine {
     }
 
     fn apply_inner(&mut self, command: Command) -> Result<PerpTradingExecution, ClearingError> {
+        if matches!(
+            command,
+            Command::SetConditionalOrder { .. }
+                | Command::SetPositionProtection { .. }
+                | Command::NewOrderWithProtection { .. }
+        ) {
+            return Err(ClearingError::WrongMarketKind); // Requires the exchange actor transaction.
+        }
         if let Command::SettleFunding(mut settlement) = command {
             let clearing_events = self.accounts.settle_funding(&mut settlement)?;
             self.clearing_events.extend(clearing_events.iter().cloned());
@@ -411,7 +427,11 @@ impl PerpTradingEngine {
             });
         }
 
-        let events = self.book.apply(command.clone());
+        let mut guard = ReduceOnlyMatching {
+            accounts: &self.accounts,
+            positions: BTreeMap::new(),
+        };
+        let events = self.book.apply_guarded(command.clone(), &mut guard);
         let recorded = self.log.record(command, events);
         let clearing_events =
             self.settle_recorded_events(&recorded.command.command, &recorded.events)?;
@@ -736,6 +756,37 @@ impl PerpTradingEngine {
         self.book.snapshot()
     }
 
+    pub fn mark_price_tick(&self) -> i64 {
+        self.accounts.mark_price_tick()
+    }
+
+    pub(crate) fn position_exit_qty(
+        &self,
+        side: Side,
+        qty: u64,
+        lot: u64,
+        cap: Option<Money>,
+    ) -> u64 {
+        let Some(cap) = cap else {
+            return qty;
+        };
+        let mut low = 0;
+        let mut high = qty / lot;
+        while low < high {
+            let mid = low + (high - low) / 2 + 1;
+            let allowed = self
+                .book
+                .fill_quote(side, None, mid * lot)
+                .is_ok_and(|q| q.notional <= cap);
+            if allowed {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+        low * lot
+    }
+
     pub fn account_snapshot(&self, account_id: AccountId) -> Option<PerpAccountSnapshot> {
         self.accounts.account_snapshot(account_id)
     }
@@ -800,6 +851,7 @@ impl PerpTradingEngine {
                 } => {
                     if let Command::NewOrder(order) = command
                         && order.order_id == *order_id
+                        && !self.book.is_reduce_order(*order_id)
                     {
                         self.accounts.reserve_resting_order(
                             *order_id,
@@ -819,8 +871,13 @@ impl PerpTradingEngine {
                     new_qty,
                     ..
                 } => {
-                    self.accounts
-                        .amend_order_reservation(*order_id, *new_price_tick, *new_qty)?;
+                    if !self.book.is_reduce_order(*order_id) {
+                        self.accounts.amend_order_reservation(
+                            *order_id,
+                            *new_price_tick,
+                            *new_qty,
+                        )?;
+                    }
                 }
                 Event::OrderAccepted { .. }
                 | Event::OrderRejected { .. }
@@ -833,6 +890,70 @@ impl PerpTradingEngine {
         }
 
         Ok(clearing_events)
+    }
+}
+
+#[derive(Clone)]
+struct ReduceOnlyMatching<'a> {
+    accounts: &'a PerpAccountStore,
+    positions: BTreeMap<AccountId, PerpAccountSnapshot>,
+}
+impl ReduceOnlyMatching<'_> {
+    fn position(&mut self, id: AccountId) -> Option<&mut PerpAccountSnapshot> {
+        if !self.positions.contains_key(&id) {
+            self.positions
+                .insert(id, self.accounts.account_snapshot(id)?);
+        }
+        self.positions.get_mut(&id)
+    }
+}
+impl crate::engine::MatchingGuard for ReduceOnlyMatching<'_> {
+    fn cap(
+        &mut self,
+        id: AccountId,
+        side: Side,
+        leg: crate::PositionSide,
+        reduce: bool,
+        qty: u64,
+    ) -> u64 {
+        if !reduce {
+            return qty;
+        }
+        let Some(a) = self.position(id) else {
+            return 0;
+        };
+        let Some(position) = crate::position_protection::position_qty(a, leg) else {
+            return 0;
+        };
+        if position == 0 || (position > 0) != (side == Side::Sell) {
+            return 0;
+        }
+        u128::from(qty).min(position.unsigned_abs()) as u64
+    }
+    fn settle(&mut self, t: &crate::Trade) {
+        for (id, side, leg) in [
+            (
+                t.maker_account_id,
+                t.taker_side.opposite(),
+                t.maker_position_side,
+            ),
+            (t.taker_account_id, t.taker_side, t.taker_position_side),
+        ] {
+            if let Some(a) = self.position(id) {
+                let q = i128::from(t.qty);
+                if let Some(p) = a.hedge_positions.as_mut() {
+                    match (leg, side) {
+                        (crate::PositionSide::Long, Side::Buy) => p.long.qty += q,
+                        (crate::PositionSide::Long, Side::Sell) => p.long.qty -= q,
+                        (crate::PositionSide::Short, Side::Sell) => p.short.qty += q,
+                        (crate::PositionSide::Short, Side::Buy) => p.short.qty -= q,
+                        _ => {}
+                    }
+                } else {
+                    a.position_qty += if side == Side::Buy { q } else { -q };
+                }
+            }
+        }
     }
 }
 
@@ -866,7 +987,10 @@ fn risk_context(book: &OrderBook, command: &Command) -> Result<RiskContext, Clea
         | Command::ExpireOrder { .. }
         | Command::AmendOrder(_)
         | Command::SetMarkPrice(_)
-        | Command::SettleFunding(_) => Default::default(),
+        | Command::SettleFunding(_)
+        | Command::SetConditionalOrder { .. }
+        | Command::SetPositionProtection { .. }
+        | Command::NewOrderWithProtection { .. } => Default::default(),
     };
     Ok(RiskContext {
         best_bid: book.best_bid(),

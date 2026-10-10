@@ -471,6 +471,7 @@ pub trait JournalStore: Send {
         Ok(true)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn query_orders(
         &mut self,
         _user_id: &str,
@@ -478,6 +479,7 @@ pub trait JournalStore: Send {
         _instrument_id: Option<&str>,
         _account_id: Option<AccountId>,
         _limit: usize,
+        _order_id: Option<u64>,
     ) -> Result<Vec<OrderProjection>, JournalError> {
         Ok(Vec::new())
     }
@@ -2151,6 +2153,7 @@ impl JournalStore for InMemoryJournalStore {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn query_orders(
         &mut self,
         user_id: &str,
@@ -2158,6 +2161,7 @@ impl JournalStore for InMemoryJournalStore {
         instrument_id: Option<&str>,
         account_id: Option<AccountId>,
         limit: usize,
+        order_id: Option<u64>,
     ) -> Result<Vec<OrderProjection>, JournalError> {
         let projections = MemoryProjections::from_executions(&self.executions)?;
         let mut orders = projections
@@ -2165,6 +2169,7 @@ impl JournalStore for InMemoryJournalStore {
             .into_values()
             .filter(|order| {
                 order.room_id == room_id
+                    && order_id.is_none_or(|id| u64::try_from(order.order_id) == Ok(id))
                     && instrument_id.is_none_or(|id| order.instrument_id == id)
                     && account_id.is_none_or(|id| u64::try_from(order.account_id) == Ok(id))
                     && u64::try_from(order.account_id)
@@ -2608,6 +2613,7 @@ impl JournalStore for SharedInMemoryJournalStore {
             .user_can_access_account(user_id, room_id, account_id)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn query_orders(
         &mut self,
         user_id: &str,
@@ -2615,9 +2621,10 @@ impl JournalStore for SharedInMemoryJournalStore {
         instrument_id: Option<&str>,
         account_id: Option<AccountId>,
         limit: usize,
+        order_id: Option<u64>,
     ) -> Result<Vec<OrderProjection>, JournalError> {
         self.lock()?
-            .query_orders(user_id, room_id, instrument_id, account_id, limit)
+            .query_orders(user_id, room_id, instrument_id, account_id, limit, order_id)
     }
 
     fn query_trades(
@@ -2902,10 +2909,9 @@ impl PostgresJournalStore {
         )
         .map_err(JournalError::Postgres)?;
 
-        if let Command::NewOrder(order) = &record.command
-            && order.order_id >= crate::SYSTEM_LIQUIDATION_ORDER_ID_BASE
-            && (record.participant_id.is_some()
-                || !crate::is_system_liquidation_command(&record.command))
+        if let Some(order) = record.command.new_order()
+            && order.order_id >= crate::SYSTEM_CONDITIONAL_ORDER_ID_BASE
+            && (record.participant_id.is_some() || !crate::is_system_exit_command(&record.command))
         {
             return Err(JournalError::Recovery(
                 "order uses the reserved system-order range".to_string(),
@@ -2968,7 +2974,7 @@ impl PostgresJournalStore {
             .unwrap_or("legacy-primary");
         let mut ignored_rejected_duplicate_order_id = None;
 
-        if let Command::NewOrder(order) = &record.command {
+        if let Some(order) = record.command.new_order() {
             let order_id = i64_from_u64(order.order_id, "order_id")?;
             let account_id = i64_from_u64(order.account_id, "account_id")?;
             let original_qty = i64_from_u64(order.qty, "qty")?;
@@ -3482,7 +3488,7 @@ impl PostgresJournalStore {
         let updated = tx.execute(
             "INSERT INTO marketforge_recovery_heads(room_id,checkpoint_mutation_seq,checkpoint_command_cursor,snapshot_command_seq,next_order_id) \
              SELECT $1,(SELECT COALESCE(MAX(mutation_seq),0) FROM marketforge_room_mutations WHERE room_id=$1),$2,$3, \
-                    COALESCE((SELECT MAX(order_id)+1 FROM marketforge_orders WHERE room_id=$1 AND order_id<9000000000000000000),1) \
+                    COALESCE((SELECT MAX(order_id)+1 FROM marketforge_orders WHERE room_id=$1 AND order_id<7000000000000000000),1) \
              WHERE $2=(SELECT COALESCE(MAX(command_seq)+1,0) FROM marketforge_executions WHERE room_id=$1) \
              ON CONFLICT(room_id) DO UPDATE SET checkpoint_mutation_seq=EXCLUDED.checkpoint_mutation_seq,checkpoint_command_cursor=EXCLUDED.checkpoint_command_cursor,snapshot_command_seq=EXCLUDED.snapshot_command_seq,next_order_id=GREATEST(marketforge_recovery_heads.next_order_id,EXCLUDED.next_order_id)",
             &[&snapshot.room_id, &i64_from_u64(cursor,"command_cursor")?, &command_seq],
@@ -5130,6 +5136,7 @@ impl JournalStore for PostgresJournalStore {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn query_orders(
         &mut self,
         user_id: &str,
@@ -5137,12 +5144,14 @@ impl JournalStore for PostgresJournalStore {
         instrument_id: Option<&str>,
         account_id: Option<AccountId>,
         limit: usize,
+        order_id: Option<u64>,
     ) -> Result<Vec<OrderProjection>, JournalError> {
         let user_id = user_id.to_string();
         let room_id = room_id.to_string();
         let instrument_id = instrument_id.map(str::to_string);
         let account_id = optional_i64_account_id(account_id)?;
         let limit = bounded_query_limit(limit)?;
+        let order_id = optional_i64_account_id(order_id)?;
         run_postgres(&mut self.client, move |client| {
             client
                 .query(
@@ -5155,6 +5164,7 @@ impl JournalStore for PostgresJournalStore {
                     WHERE room_id = $1
                       AND ($2::TEXT IS NULL OR instrument_id = $2)
                       AND ($3::BIGINT IS NULL OR account_id = $3)
+                      AND ($6::BIGINT IS NULL OR order_id = $6)
                       AND (
                           EXISTS (
                               SELECT 1
@@ -5183,7 +5193,7 @@ impl JournalStore for PostgresJournalStore {
                     ORDER BY updated_command_seq DESC, order_id DESC
                     LIMIT $4
                     "#,
-                    &[&room_id, &instrument_id, &account_id, &limit, &user_id],
+                    &[&room_id, &instrument_id, &account_id, &limit, &user_id, &order_id],
                 )
                 .map_err(JournalError::Postgres)?
                 .into_iter()
@@ -5645,7 +5655,9 @@ impl MemoryProjections {
                 }
             }
             let new_order = match &record.command {
-                Command::NewOrder(order) => Some(order.order_id),
+                Command::NewOrder(order) | Command::NewOrderWithProtection { order, .. } => {
+                    Some(order.order_id)
+                }
                 _ => None,
             };
             for id in new_order.into_iter().chain(
@@ -5779,7 +5791,7 @@ impl MemoryProjections {
             .unwrap_or_else(|| "legacy-primary".to_string());
         let mut ignored_rejected_duplicate_order_id = None;
 
-        if let Command::NewOrder(order) = &record.command {
+        if let Some(order) = record.command.new_order() {
             let order_id = i64_from_u64(order.order_id, "order_id")?;
             let account_id = i64_from_u64(order.account_id, "account_id")?;
             let original_qty = i64_from_u64(order.qty, "qty")?;
@@ -7477,7 +7489,11 @@ fn new_order_did_not_create_order(record: &JournalExecution, order_id: u64) -> b
 
 fn command_account_id(command: &Command) -> Option<AccountId> {
     match command {
-        Command::NewOrder(order) => Some(order.account_id),
+        Command::NewOrder(order) | Command::NewOrderWithProtection { order, .. } => {
+            Some(order.account_id)
+        }
+        Command::SetConditionalOrder { account_id, .. }
+        | Command::SetPositionProtection { account_id, .. } => Some(*account_id),
         Command::CancelOrder(_)
         | Command::ExpireOrder { .. }
         | Command::AmendOrder(_)
@@ -8345,20 +8361,33 @@ mod tests {
         assert!(store.user_can_administer_room("admin", "room-1").unwrap());
         assert_eq!(
             store
-                .query_orders("admin", "room-1", None, None, 100)
+                .query_orders("admin", "room-1", None, None, 100, None)
                 .unwrap()
                 .len(),
             2
         );
+        assert_eq!(
+            store
+                .query_orders("admin", "room-1", None, None, 1, Some(100))
+                .unwrap()[0]
+                .order_id,
+            100
+        );
+        assert!(
+            store
+                .query_orders("trader", "room-1", None, None, 1, Some(100))
+                .unwrap()
+                .is_empty()
+        );
         let trader_orders = store
-            .query_orders("trader", "room-1", None, None, 100)
+            .query_orders("trader", "room-1", None, None, 100, None)
             .unwrap();
         assert_eq!(trader_orders.len(), 1);
         assert_eq!(trader_orders[0].order_id, 200);
         assert_eq!(trader_orders[0].created_market_time_ms, Some(2_000));
         assert!(
             store
-                .query_orders("viewer", "room-1", None, None, 100)
+                .query_orders("viewer", "room-1", None, None, 100, None)
                 .unwrap()
                 .is_empty()
         );
@@ -8443,7 +8472,7 @@ mod tests {
         store.append_execution(&record, None).unwrap();
 
         let orders = store
-            .query_orders("admin", "room-1", Some("V-BTC-PERP"), None, 100)
+            .query_orders("admin", "room-1", Some("V-BTC-PERP"), None, 100, None)
             .unwrap();
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].participant_id, None);
@@ -8476,7 +8505,7 @@ mod tests {
         assert_eq!(store.load_recovery().unwrap().executions.len(), 1);
         assert_eq!(
             store
-                .query_orders("admin", "room-1", None, None, 100)
+                .query_orders("admin", "room-1", None, None, 100, None)
                 .unwrap()
                 .len(),
             1
@@ -8590,7 +8619,7 @@ mod tests {
 
         assert_eq!(store.load_recovery().unwrap().executions.len(), 2);
         let orders = store
-            .query_orders("admin", "room-1", None, None, 100)
+            .query_orders("admin", "room-1", None, None, 100, None)
             .unwrap();
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].account_id, 10);

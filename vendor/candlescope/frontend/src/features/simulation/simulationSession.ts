@@ -143,8 +143,11 @@ export class SimulationSession {
       if (generation === this.generation) this.publish({ busy: false });
     }
   }
-  order(side: Side, qty: number, price: number | null): Promise<void> {
-    return this.mutate((selection, signal, key) => this.client.order(selection, side, qty, price, signal, key));
+  order(side: Side, qty: number, price: number | null, protection?: import("./simulationProtocol.js").ProtectionSpec, positionSide: import("./simulationProtocol.js").PositionSide = "Both"): Promise<void> {
+    return this.mutate((selection, signal, key) => this.client.order(selection, side, qty, price, signal, key, protection, positionSide));
+  }
+  protect(positionSide: import("./simulationProtocol.js").PositionSide, protection: import("./simulationProtocol.js").ProtectionSpec | null): Promise<void> {
+    return this.mutate((selection,signal,key) => this.client.protect(selection,positionSide,protection,signal,key));
   }
   cancel(orderId: WireInteger): Promise<void> {
     return this.mutate((selection, signal, key) => this.client.cancel(selection, orderId, signal, key));

@@ -16,3 +16,5 @@ __pycache__/
 /.local/candlescope-runtime/
 /output/playwright/
 /output/candlescope-workbench/
+/output/trading-capabilities/
+/.local/capability-qa/

@@ -16,6 +16,8 @@ pub(super) async fn identity(
 pub(super) fn public_observation(observation: &mut ParticipantObservation, account_id: AccountId) {
     if account_id == 0 {
         observation.own_account = None;
+        observation.position_protections.clear();
+        observation.risk = None;
         observation.own_orders.clear();
         observation.bot_market_data = None;
         for related in &mut observation.related_markets {

@@ -27,6 +27,11 @@ class Policies:
         if "max_estimated_cost_microusd" in model and "microusd_per_million_tokens" not in model:
             raise ValueError("estimated cost limit requires an operator-supplied flat token rate")
         with self.lock(trader):
+            for instrument, rules in args["account"].items():
+                if rules:
+                    pending=self.advanced_execute(config,"conditional_orders",{"instrument":instrument})
+                    if any(p["status"]=="armed" for p in pending.get("conditionals",[])):
+                        raise ValueError("cancel armed native conditional entries before enabling account policies")
             old = self.policy(trader)
             references = self.store.get("policy_reference", trader, {})
             # Loss baseline survives changes/restarts; disabling the rule clears it.
@@ -58,7 +63,7 @@ class Policies:
 
     def check_account_policy(self, config, args):
         rules = self.policy(config["id"])["account"].get(args["instrument"], {})
-        if not rules or args["action"] in {"cancel", "reduce_only"}:
+        if not rules or args["action"] in {"cancel", "reduce_only", "reduce_only_fok", "reduce_only_limit", "reduce_only_post_only", "protection"} or args["action"]=="conditional" and args.get("conditional_spec") is None:
             return
         observation = self.observation(config, args["instrument"])
         if observation.get("status") != "Running":

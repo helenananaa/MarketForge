@@ -81,7 +81,12 @@ def build_server(client):
             result = {"error": str(exc)[:2000]}
         except (OSError, urllib.error.URLError) as exc:
             result = {"error": f"{type(exc).__name__}: transport failed; query receipt and retry the original request_id/arguments"}
-        return types.CallToolResult(content=[types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False))],
+        content = [types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False))]
+        if name == "chart_export" and "image_base64" in result:
+            encoded = result["image_base64"]
+            result = {k:v for k,v in result.items() if k != "image_base64"}
+            content = [types.ImageContent(type="image",data=encoded,mimeType="image/png"),types.TextContent(type="text",text=json.dumps(result,ensure_ascii=False))]
+        return types.CallToolResult(content=content,
             structuredContent=result, isError="error" in result)
     return server
 

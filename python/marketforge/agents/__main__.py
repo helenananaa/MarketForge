@@ -180,6 +180,7 @@ def main():
     finally:
         for trader in runtime.store.all("trader"):
             runtime.stop(trader["id"])
+        runtime.close_workspaces()
         for _, worker in runtime.installers.values():
             worker.join(timeout=30)
         server.server_close()

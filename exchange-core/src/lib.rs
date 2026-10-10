@@ -145,3 +145,7 @@ pub use bots::{
     BotDescriptor, BotError, BotExecutionPolicy, BotFactory, BotParameter, BotRegistry,
     MAX_BOT_ACTIONS, ParameterType, ScheduledBot,
 };
+
+pub mod conditional_orders;
+pub mod position_protection;
+pub use position_protection::{PositionProtection, PositionProtectionSpec, ProtectionTrigger};

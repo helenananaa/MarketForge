@@ -1142,6 +1142,8 @@ mod tests {
             related_markets: vec![],
             market_events: vec![],
             bot_market_data: None,
+            position_protections: Vec::new(),
+            risk: None,
             perp_price: None,
         };
 

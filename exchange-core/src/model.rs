@@ -180,6 +180,20 @@ pub struct SetMarkPrice {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum Command {
+    SetConditionalOrder {
+        account_id: AccountId,
+        key: String,
+        spec: Option<Box<crate::conditional_orders::ConditionalOrderSpec>>,
+    },
+    SetPositionProtection {
+        account_id: AccountId,
+        position_side: PositionSide,
+        protection: Option<Box<crate::PositionProtectionSpec>>,
+    },
+    NewOrderWithProtection {
+        order: NewOrder,
+        protection: Box<crate::PositionProtectionSpec>,
+    },
     NewOrder(NewOrder),
     CancelOrder(CancelOrder),
     /// Generated at the expiry boundary; carries time for deterministic replay.
@@ -194,9 +208,16 @@ pub enum Command {
 }
 
 impl Command {
+    pub fn new_order(&self) -> Option<&NewOrder> {
+        match self {
+            Self::NewOrder(order) | Self::NewOrderWithProtection { order, .. } => Some(order),
+            _ => None,
+        }
+    }
     pub fn order_id(&self) -> OrderId {
         match self {
-            Self::NewOrder(order) => order.order_id,
+            Self::NewOrder(order) | Self::NewOrderWithProtection { order, .. } => order.order_id,
+            Self::SetPositionProtection { .. } | Self::SetConditionalOrder { .. } => 0,
             Self::CancelOrder(cancel) => cancel.order_id,
             Self::ExpireOrder { order_id, .. } => *order_id,
             Self::AmendOrder(amend) => amend.order_id,

@@ -2,6 +2,8 @@ import type { KlineBarInput } from "../market-data/marketDataTypes.js";
 import { parseIntervalParts, parseIntervalSeconds } from "../../utils/intervals.js";
 
 export type WireInteger = number | string;
+export type PositionSide = "Both" | "Long" | "Short";
+export interface ProtectionSpec { take_profit_tick: number | null; stop_loss_tick: number | null; trigger: "Mark" | "Last" }
 export type Side = "Buy" | "Sell";
 export interface SimulationConnection { baseUrl: string; token: string; userId: string }
 export interface SimulationSelection { roomId: string; accountId: number; instrumentId: string; intervalMs: number }
@@ -9,6 +11,7 @@ export interface BookLevel { price_tick: number; qty: number }
 export interface RestingOrder { order_id: WireInteger; side: Side; price_tick: number; remaining_qty: number }
 export interface PublicTrade { trade_id: WireInteger; price_tick: number; qty: number; taker_side: Side }
 export interface Observation {
+  hedge_positions?: Record<string, unknown>; risk?: Record<string, unknown>; margin_status?: string; position_protections?: Record<string, unknown>[];
   room_id: string; instrument_id: string; status: "Running" | "Paused" | "Closed";
   step: number; market_time_ms: number;
   book: { bids: BookLevel[]; asks: BookLevel[] };
@@ -96,14 +99,16 @@ export function parseObservation(payload: unknown, selection: SimulationSelectio
     return { price_tick: safeInteger(level.price_tick, 1), qty: safeInteger(level.qty) };
   });
   let account: Record<string, WireInteger> | null = null;
+  let hedgePositions: Record<string, unknown> | undefined;
   let marketType: "spot" | "perp" = "spot";
   if (o.own_account != null) {
     const wrapper = wireObject(o.own_account);
     marketType = "Perp" in wrapper ? "perp" : "spot";
     const source = wireObject(wrapper[marketType === "perp" ? "Perp" : "Spot"]);
     if (String(wireInteger(source.account_id)) !== String(selection.accountId)) throw new Error("MarketForge account identity mismatch");
+    if (marketType === "perp" && source.hedge_positions != null) hedgePositions = wireObject(source.hedge_positions);
     account = {};
-    for (const field of ["account_id", "cash_balance", "position_qty", "available_cash", "available_position", "reserved_cash", "reserved_position", "fees_paid", "equity", "unrealized_pnl", "realized_pnl", "initial_margin", "maintenance_margin", "available_margin", "margin_ratio_ppm"]) {
+    for (const field of ["account_id", "cash_balance", "position_qty", "available_cash", "available_position", "reserved_cash", "reserved_position", "fees_paid", "equity", "unrealized_pnl", "realized_pnl", "initial_margin", "maintenance_margin", "available_margin", "margin_ratio_ppm", "avg_entry_price_tick", "portfolio_initial_margin", "portfolio_maintenance_margin", "reserved_margin", "funding_pnl"]) {
       if (source[field] != null) account[field] = wireInteger(source[field]);
     }
   }
@@ -111,6 +116,10 @@ export function parseObservation(payload: unknown, selection: SimulationSelectio
     room_id: selection.roomId, instrument_id: wireText(o.instrument_id), status: o.status,
     step: safeInteger(o.step), market_time_ms: safeInteger(o.market_time_ms),
     book: { bids: levels(book.bids), asks: levels(book.asks) }, account, marketType,
+    ...(hedgePositions ? { hedge_positions: hedgePositions } : {}),
+    ...(o.risk != null ? { risk: wireObject(o.risk) } : {}),
+    ...(o.own_account != null && marketType === "perp" ? { margin_status: String(wireObject(wireObject(o.own_account).Perp).margin_status ?? "") } : {}),
+    position_protections: rows(o.position_protections ?? []).map((entry) => { const p = wireObject(entry); if (String(wireInteger(p.account_id)) !== String(selection.accountId) || p.instrument_id !== o.instrument_id) throw new Error("Position protection ownership mismatch"); return p; }),
     own_orders: rows(o.own_orders).map((entry) => {
       const order = wireObject(entry);
       if (String(wireInteger(order.account_id)) !== String(selection.accountId)) throw new Error("MarketForge order ownership mismatch");
