@@ -4,6 +4,10 @@ use super::*;
 use crate::scheduler_delta::{AgentDelta, SchedulerDelta};
 use exchange_core::{BotError, BotExecutionPolicy, PersistedAgent, SchedulerPhase, SchedulerState};
 
+#[cfg(feature = "risk-benchmark")]
+#[path = "risk_benchmark_realtime.rs"]
+pub(super) mod risk_benchmark;
+
 // Bound writer-lane occupancy without dropping decisions or splitting a bot's
 // atomic action set. Ready results beyond this batch stay in the JoinSet.
 const MAX_READY_DECISIONS: usize = 64;

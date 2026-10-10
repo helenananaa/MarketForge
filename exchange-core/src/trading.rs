@@ -277,6 +277,27 @@ pub struct PendingLiquidation {
 }
 
 impl PerpTradingEngine {
+    pub(crate) fn margin_changes(&self) -> Option<&im::OrdSet<AccountId>> {
+        self.accounts.risk.margin_changes.accounts()
+    }
+    pub(crate) fn margin_reconciled(
+        &mut self,
+        scope: Option<&std::collections::BTreeSet<AccountId>>,
+    ) {
+        self.accounts.risk.margin_changes.reconciled(scope);
+    }
+    pub(crate) fn reservation_revision(&self) -> u64 {
+        self.accounts.risk.reservation_revision
+    }
+    pub(crate) fn invalidate_margin_changes(&mut self) {
+        self.accounts.risk.margin_changes.invalidate();
+    }
+    pub(crate) fn account_count(&self) -> usize {
+        self.accounts.account_count()
+    }
+    pub(crate) fn is_liquidatable(&self, id: AccountId) -> bool {
+        self.accounts.is_liquidatable(id)
+    }
     pub(crate) fn liquidatable_account_ids(&self) -> Vec<AccountId> {
         self.accounts.liquidatable_account_ids()
     }

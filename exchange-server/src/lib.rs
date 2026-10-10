@@ -25,6 +25,9 @@ pub mod platform;
 mod realtime;
 #[cfg(test)]
 mod realtime_tests;
+#[cfg(feature = "risk-benchmark")]
+#[doc(hidden)]
+pub mod risk_benchmark;
 mod room_portal;
 mod room_runtime;
 mod scheduler_delta;
@@ -4933,7 +4936,11 @@ async fn market_view_response(
     room_id: String,
     instrument_id: Option<InstrumentId>,
 ) -> ApiResult<MarketView> {
+    #[cfg(feature = "risk-benchmark")]
+    let benchmark_started = Instant::now();
     authorize_room_read(&state, &headers, &room_id, RoomReadAccess::Admin).await?;
+    #[cfg(feature = "risk-benchmark")]
+    let benchmark_authorized = Instant::now();
     let state = state.app.read_room(&room_id).await;
     let room = state.rooms.room(&room_id).map_err(api_error_from_room)?;
     let venue_id = room.venue_id().to_string();
@@ -4942,7 +4949,7 @@ async fn market_view_response(
         .rooms
         .simulation_room(&room_id)
         .map_err(api_error_from_room)?;
-    Ok(Json(MarketView {
+    let view = MarketView {
         room_id: room_id.clone(),
         venue_id,
         instrument_id: instrument_id.clone(),
@@ -4959,7 +4966,13 @@ async fn market_view_response(
         perp_price: simulation
             .perp_price_snapshot(&instrument_id)
             .map_err(|error| api_error_from_room(RoomManagerError::Actor(error)))?,
-    }))
+    };
+    #[cfg(feature = "risk-benchmark")]
+    risk_benchmark::record_view(
+        benchmark_authorized.duration_since(benchmark_started),
+        benchmark_authorized.elapsed(),
+    );
+    Ok(Json(view))
 }
 
 async fn book_snapshot(

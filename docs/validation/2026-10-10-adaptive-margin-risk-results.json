@@ -1,0 +1,4098 @@
+{
+  "schema": "marketforge.adaptive_margin_risk.comparison.v1",
+  "baseline_ref": "f3ab562b899ae4d1f687608efa2e17076e973819",
+  "baseline_source_manifest_sha256": "ec7954a01bb129451d83b39e8be9975fc3ba7483475ef7bfd7e6b9216b0d1d67",
+  "checks": {
+    "workspace_passed": 546,
+    "workspace_failed": 0,
+    "workspace_ignored": 12,
+    "new_differential_tests": 6,
+    "core_equivalent_runs": 96,
+    "core_cases": 12,
+    "workspace_clippy_strict": "passed",
+    "fmt": "passed"
+  },
+  "core": {
+    "binaries": {
+      "before": {
+        "sha256": "e3512ed28fe66b822807fef1eecc5d831b39a2c58e3ad4862663957e69fc6100",
+        "file": "benchmark_margin_risk.exe"
+      },
+      "after": {
+        "sha256": "b6263598be9de893c42a8e39ef4f634a58abae36d88cc0d563c0a1f88606c137",
+        "file": "benchmark_margin_risk.exe"
+      }
+    },
+    "definition": "bounded fixed public-API work; restored position fixtures; warmup and serialization excluded; no service-capacity claim",
+    "cases": {
+      "dense-1k": {
+        "fixture": [
+          1000,
+          1000,
+          2,
+          false,
+          "price",
+          200
+        ],
+        "equivalent_sha256": {
+          "state.json": "1982254a5c2b59c5db9ac688d9748c2ecea104defcb26130fdc6b37cb591ce87",
+          "executions.txt": "d5c3a207b05c2311a7344d40fb96ae5ae5b167b6aff2a4c3d079fd2f21a1683e"
+        },
+        "samples": {
+          "before": [
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 1037.002,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 2448,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 613052,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 162974,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 36027,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 31.4548,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 652.3409,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 1042,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 394786,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 102669,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 21417,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 20.130100000000002,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 681.3743,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 1274,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 406242,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 110546,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 23573,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 21.546,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 792.5419,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 1578,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 473583,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 125657,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 26372,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 24.1142,
+              "steps": 200,
+              "trades": 0
+            }
+          ],
+          "after": [
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 717.3016,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 1939,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 388574,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 130485,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 26946,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 20.0061,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 625.1264,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 1490,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 340608,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 117245,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 23064,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 18.9109,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 589.6872,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 1077,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 328078,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 104954,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 21321,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 16.7634,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 822.0875,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 2424,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 439973,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 152382,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 31578,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 17.5458,
+              "steps": 200,
+              "trades": 0
+            }
+          ]
+        },
+        "before_median_ms": 736.9581000000001,
+        "after_median_ms": 671.2139999999999,
+        "time_reduction_percent": 8.92100921341391,
+        "speedup": 1.0979480463756717
+      },
+      "dense-8markets": {
+        "fixture": [
+          1000,
+          1000,
+          8,
+          false,
+          "price",
+          120
+        ],
+        "equivalent_sha256": {
+          "state.json": "0dc5b7de9933d541cdaeba76beabe36e485df20843ece8be88995cf289213dd3",
+          "executions.txt": "4f4f80fde5f05f1b0139372028f934cca44c55c5fa71996ea1b9e036552e8e22"
+        },
+        "samples": {
+          "before": [
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 2512.0000999999997,
+              "hedge": false,
+              "history_len": 120,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 120,
+                  "micros": 3315,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 240,
+                  "micros": 1873761,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 240,
+                  "micros": 200218,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 120,
+                  "micros": 124207,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 122.4966,
+              "steps": 120,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 2010.4991,
+              "hedge": false,
+              "history_len": 120,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 120,
+                  "micros": 3088,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 240,
+                  "micros": 1492902,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 240,
+                  "micros": 163016,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 120,
+                  "micros": 103867,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 175.1724,
+              "steps": 120,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 1976.7286,
+              "hedge": false,
+              "history_len": 120,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 120,
+                  "micros": 2888,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 240,
+                  "micros": 1463583,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 240,
+                  "micros": 161276,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 120,
+                  "micros": 103718,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 151.34619999999998,
+              "steps": 120,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 2264.6355,
+              "hedge": false,
+              "history_len": 120,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 120,
+                  "micros": 3385,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 240,
+                  "micros": 1681274,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 240,
+                  "micros": 181370,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 120,
+                  "micros": 117703,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 137.6309,
+              "steps": 120,
+              "trades": 0
+            }
+          ],
+          "after": [
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 1780.1947,
+              "hedge": false,
+              "history_len": 120,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 120,
+                  "micros": 3699,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 119,
+                  "micros": 1221822,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 240,
+                  "micros": 181967,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 120,
+                  "micros": 108658,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 98.08649999999999,
+              "steps": 120,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 1747.4147,
+              "hedge": false,
+              "history_len": 120,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 120,
+                  "micros": 3602,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 119,
+                  "micros": 1189292,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 240,
+                  "micros": 175311,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 120,
+                  "micros": 111740,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 82.4631,
+              "steps": 120,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 1981.4471999999998,
+              "hedge": false,
+              "history_len": 120,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 120,
+                  "micros": 4016,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 119,
+                  "micros": 1354014,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 240,
+                  "micros": 198761,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 120,
+                  "micros": 124118,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 93.7637,
+              "steps": 120,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 1000,
+              "elapsed_ms": 1729.505,
+              "hedge": false,
+              "history_len": 120,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 120,
+                  "micros": 3612,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 119,
+                  "micros": 1178048,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 240,
+                  "micros": 172000,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 120,
+                  "micros": 109681,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 82.70429999999999,
+              "steps": 120,
+              "trades": 0
+            }
+          ]
+        },
+        "before_median_ms": 2137.5672999999997,
+        "after_median_ms": 1763.8047000000001,
+        "time_reduction_percent": 17.48541905557779,
+        "speedup": 1.2119070212251954
+      },
+      "sparse-1k": {
+        "fixture": [
+          1000,
+          20,
+          2,
+          false,
+          "price",
+          400
+        ],
+        "equivalent_sha256": {
+          "state.json": "879fd209bd061e8560a4251b62edb896ba7e0a0b8210de565f92176927f35dc2",
+          "executions.txt": "0a514b4cf74ec386d2f21ac334c9238f7b60149001cc023079f995dd4809fd53"
+        },
+        "samples": {
+          "before": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 583.8376,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 1207,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 800,
+                  "micros": 405645,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 12464,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 9714,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 16.5078,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 594.5846,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 1213,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 800,
+                  "micros": 414260,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 12364,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 9775,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.9895,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 558.1942,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 1087,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 800,
+                  "micros": 387160,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 11783,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 8854,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 12.7185,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 565.3454,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 1000,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 800,
+                  "micros": 391826,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 12131,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 8802,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 16.0675,
+              "steps": 400,
+              "trades": 0
+            }
+          ],
+          "after": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 30.162000000000003,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 673,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 13676,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 1601,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1594,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 12.9753,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 33.5296,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 839,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 14440,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 1807,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1764,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.4016,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 32.617399999999996,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 826,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 14617,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 1747,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1665,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 12.660400000000001,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 36.1714,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 996,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 15218,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 2132,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1754,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 12.99,
+              "steps": 400,
+              "trades": 0
+            }
+          ]
+        },
+        "before_median_ms": 574.5915,
+        "after_median_ms": 33.073499999999996,
+        "time_reduction_percent": 94.24399769227355,
+        "speedup": 17.373168851195068
+      },
+      "sparse-10k": {
+        "fixture": [
+          10000,
+          20,
+          2,
+          false,
+          "price",
+          200
+        ],
+        "equivalent_sha256": {
+          "state.json": "6dd1644c1a31f108c1260b23a1e7d1d4ac918400f2e1b2840cb7488df335cd07",
+          "executions.txt": "d5c3a207b05c2311a7344d40fb96ae5ae5b167b6aff2a4c3d079fd2f21a1683e"
+        },
+        "samples": {
+          "before": [
+            {
+              "accounts": 10000,
+              "active": 20,
+              "elapsed_ms": 7815.039900000001,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 2533,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 5940627,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 123095,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 164757,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 192.95989999999998,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 10000,
+              "active": 20,
+              "elapsed_ms": 7822.2499,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 2844,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 5943767,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 127414,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 162259,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 256.9043,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 10000,
+              "active": 20,
+              "elapsed_ms": 7796.9748,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 2781,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 5902529,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 125260,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 163060,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 257.26520000000005,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 10000,
+              "active": 20,
+              "elapsed_ms": 7503.3851,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 3052,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 5687487,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 120655,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 161002,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 218.7847,
+              "steps": 200,
+              "trades": 0
+            }
+          ],
+          "after": [
+            {
+              "accounts": 10000,
+              "active": 20,
+              "elapsed_ms": 48.7249,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 490,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 11185,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1082,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 1188,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 171.1689,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 10000,
+              "active": 20,
+              "elapsed_ms": 43.5066,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 371,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 10316,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 994,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 1078,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 150.9772,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 10000,
+              "active": 20,
+              "elapsed_ms": 63.101699999999994,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 531,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 13243,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1355,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 1290,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 179.1403,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 10000,
+              "active": 20,
+              "elapsed_ms": 43.8856,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 425,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 10620,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 989,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 1053,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 158.944,
+              "steps": 200,
+              "trades": 0
+            }
+          ]
+        },
+        "before_median_ms": 7806.00735,
+        "after_median_ms": 46.30525,
+        "time_reduction_percent": 99.40679981552925,
+        "speedup": 168.57715593804159
+      },
+      "sparse-8markets": {
+        "fixture": [
+          1000,
+          20,
+          8,
+          false,
+          "price",
+          200
+        ],
+        "equivalent_sha256": {
+          "state.json": "6ff008358a40af9662e94543d98d0ab453a18a7e90719fc76e2cddeffaefebae",
+          "executions.txt": "5d651334a9a7cdfe3d1bafa150e2c7e4fdd575dafbe3b93cd9365afbedbd1edc"
+        },
+        "samples": {
+          "before": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 970.3066,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 2471,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 811186,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 28727,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 28466,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 91.8793,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 1058.5323,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 2668,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 892276,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 29852,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 30651,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 96.3948,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 784.8208,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 1850,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 655298,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 21908,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 20358,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 90.7832,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 868.5441999999999,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 2247,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 727489,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 24212,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 24236,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 101.8697,
+              "steps": 200,
+              "trades": 0
+            }
+          ],
+          "after": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 46.852900000000005,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 1122,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 199,
+                  "micros": 30492,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 2049,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 3307,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 53.2935,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 48.2171,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 1183,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 199,
+                  "micros": 30324,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 2223,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 3609,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 54.4471,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 47.4365,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 1274,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 199,
+                  "micros": 29457,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 2118,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 3457,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 52.295899999999996,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 49.3299,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 8,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 1226,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 199,
+                  "micros": 30773,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 2293,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 3445,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 58.0704,
+              "steps": 200,
+              "trades": 0
+            }
+          ]
+        },
+        "before_median_ms": 919.4254,
+        "after_median_ms": 47.826800000000006,
+        "time_reduction_percent": 94.79818591046103,
+        "speedup": 19.22406265942944
+      },
+      "hedge-sparse": {
+        "fixture": [
+          1000,
+          20,
+          2,
+          true,
+          "price",
+          200
+        ],
+        "equivalent_sha256": {
+          "state.json": "1ea7f328bf67cde84ace919438cd7dde05f9da8163cd3326fe2c1b0c8aefb411",
+          "executions.txt": "d5c3a207b05c2311a7344d40fb96ae5ae5b167b6aff2a4c3d079fd2f21a1683e"
+        },
+        "samples": {
+          "before": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 353.95480000000003,
+              "hedge": true,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 603,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 239236,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 10375,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 5428,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 22.2204,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 366.4694,
+              "hedge": true,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 552,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 247354,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 11067,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 5742,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 21.993100000000002,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 397.1694,
+              "hedge": true,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 729,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 269468,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 12291,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 6341,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 22.356399999999997,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 391.9904,
+              "hedge": true,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 742,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 266703,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 11891,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 6482,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 23.9685,
+              "steps": 200,
+              "trades": 0
+            }
+          ],
+          "after": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 15.6647,
+              "hedge": true,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 285,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 6329,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1175,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 854,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 19.7014,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 15.7209,
+              "hedge": true,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 350,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 6534,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1156,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 856,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 19.6112,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 15.5989,
+              "hedge": true,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 320,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 6178,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1178,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 852,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 21.0759,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 14.8803,
+              "hedge": true,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 284,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 6108,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1100,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 825,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 22.0397,
+              "steps": 200,
+              "trades": 0
+            }
+          ]
+        },
+        "before_median_ms": 379.22990000000004,
+        "after_median_ms": 15.6318,
+        "time_reduction_percent": 95.87801489281304,
+        "speedup": 24.26015558029146
+      },
+      "same-price": {
+        "fixture": [
+          1000,
+          20,
+          2,
+          false,
+          "same-price",
+          400
+        ],
+        "equivalent_sha256": {
+          "state.json": "eb90ed67f60e9aa148cce30d5d49c3ca123ccc1f6edb4d19775903109b253a52",
+          "executions.txt": "cb05a4184af6804c9ddda4272c57f87c9dd1c31fe84695f4c98557ccde91bd84"
+        },
+        "samples": {
+          "before": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 294.98449999999997,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "same-price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 626,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 800,
+                  "micros": 143000,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 10276,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 7197,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.611600000000001,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 308.2806,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "same-price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 809,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 800,
+                  "micros": 151335,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 11061,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 7493,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.8376,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 309.6778,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "same-price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 743,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 800,
+                  "micros": 152826,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 11126,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 8149,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.2495,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 321.0266,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "same-price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 852,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 800,
+                  "micros": 159022,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 12159,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 8597,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 15.1491,
+              "steps": 400,
+              "trades": 0
+            }
+          ],
+          "after": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 10.021,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "same-price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 581,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 0,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1837,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 13.0065,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 8.0372,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "same-price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 428,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 0,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1596,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 12.945699999999999,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 8.0569,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "same-price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 427,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 0,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1532,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.1391,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 8.0858,
+              "hedge": false,
+              "history_len": 400,
+              "markets": 2,
+              "mode": "same-price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 400,
+                  "micros": 408,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 0,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1613,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 15.069799999999999,
+              "steps": 400,
+              "trades": 0
+            }
+          ]
+        },
+        "before_median_ms": 308.9792,
+        "after_median_ms": 8.07135,
+        "time_reduction_percent": 97.38773677969262,
+        "speedup": 38.28098149628005
+      },
+      "orders": {
+        "fixture": [
+          1000,
+          20,
+          2,
+          false,
+          "orders",
+          600
+        ],
+        "equivalent_sha256": {
+          "state.json": "9ce9205797ecb6bc7809ded57caf86bda21af2978a713b5d58f2dac1be9caedf",
+          "executions.txt": "d704cb6e15a191f25090b2409425766e51ed879d236dbae6fd68d9078a3802ea"
+        },
+        "samples": {
+          "before": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 163.9864,
+              "hedge": false,
+              "history_len": 600,
+              "markets": 2,
+              "mode": "orders",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 600,
+                  "micros": 1002,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 1200,
+                  "micros": 119448,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 1200,
+                  "micros": 2496,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 600,
+                  "micros": 11054,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.0517,
+              "steps": 600,
+              "trades": 600
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 171.401,
+              "hedge": false,
+              "history_len": 600,
+              "markets": 2,
+              "mode": "orders",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 600,
+                  "micros": 986,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 1200,
+                  "micros": 126967,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 1200,
+                  "micros": 2555,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 600,
+                  "micros": 11157,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 15.4542,
+              "steps": 600,
+              "trades": 600
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 165.7329,
+              "hedge": false,
+              "history_len": 600,
+              "markets": 2,
+              "mode": "orders",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 600,
+                  "micros": 1039,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 1200,
+                  "micros": 122881,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 1200,
+                  "micros": 2775,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 600,
+                  "micros": 10856,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 15.3942,
+              "steps": 600,
+              "trades": 600
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 154.97369999999998,
+              "hedge": false,
+              "history_len": 600,
+              "markets": 2,
+              "mode": "orders",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 600,
+                  "micros": 851,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 1200,
+                  "micros": 114632,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 1200,
+                  "micros": 2259,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 600,
+                  "micros": 10553,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 15.7855,
+              "steps": 600,
+              "trades": 600
+            }
+          ],
+          "after": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 34.2344,
+              "hedge": false,
+              "history_len": 600,
+              "markets": 2,
+              "mode": "orders",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 600,
+                  "micros": 880,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 600,
+                  "micros": 4104,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 1200,
+                  "micros": 1734,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 600,
+                  "micros": 2586,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.2014,
+              "steps": 600,
+              "trades": 600
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 34.3004,
+              "hedge": false,
+              "history_len": 600,
+              "markets": 2,
+              "mode": "orders",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 600,
+                  "micros": 1181,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 600,
+                  "micros": 4233,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 1200,
+                  "micros": 1951,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 600,
+                  "micros": 2501,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 13.459,
+              "steps": 600,
+              "trades": 600
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 35.5784,
+              "hedge": false,
+              "history_len": 600,
+              "markets": 2,
+              "mode": "orders",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 600,
+                  "micros": 1083,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 600,
+                  "micros": 4360,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 1200,
+                  "micros": 1949,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 600,
+                  "micros": 2579,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 15.9883,
+              "steps": 600,
+              "trades": 600
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 32.7728,
+              "hedge": false,
+              "history_len": 600,
+              "markets": 2,
+              "mode": "orders",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 600,
+                  "micros": 772,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 600,
+                  "micros": 4078,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 1200,
+                  "micros": 1680,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 600,
+                  "micros": 2487,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 13.9921,
+              "steps": 600,
+              "trades": 600
+            }
+          ]
+        },
+        "before_median_ms": 164.85965,
+        "after_median_ms": 34.2674,
+        "time_reduction_percent": 79.2141982589433,
+        "speedup": 4.81097632151841
+      },
+      "clock": {
+        "fixture": [
+          1000,
+          20,
+          2,
+          false,
+          "clock",
+          400
+        ],
+        "equivalent_sha256": {
+          "state.json": "dc104f1bbf5a1e5bf31490bd607a7c6164e38ff187e9d2959a8a209ccca85f45",
+          "executions.txt": "b515f92f3a0e2ef918132e701f2b746df5494acca2c5965fbd25e8708254dc61"
+        },
+        "samples": {
+          "before": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 84.6208,
+              "hedge": false,
+              "history_len": 0,
+              "markets": 2,
+              "mode": "clock",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 73013,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 0,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 7282,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 13.9145,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 86.1085,
+              "hedge": false,
+              "history_len": 0,
+              "markets": 2,
+              "mode": "clock",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 74241,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 7,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 7387,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.030000000000001,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 83.4313,
+              "hedge": false,
+              "history_len": 0,
+              "markets": 2,
+              "mode": "clock",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 72360,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 0,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 6973,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.484399999999999,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 83.81710000000001,
+              "hedge": false,
+              "history_len": 0,
+              "markets": 2,
+              "mode": "clock",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 72484,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 0,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 7076,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.776900000000001,
+              "steps": 400,
+              "trades": 0
+            }
+          ],
+          "after": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 4.3447,
+              "hedge": false,
+              "history_len": 0,
+              "markets": 2,
+              "mode": "clock",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 0,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1227,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 13.1704,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 4.5954999999999995,
+              "hedge": false,
+              "history_len": 0,
+              "markets": 2,
+              "mode": "clock",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 0,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1314,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 13.179599999999999,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 4.6596,
+              "hedge": false,
+              "history_len": 0,
+              "markets": 2,
+              "mode": "clock",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 0,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1416,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.6887,
+              "steps": 400,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 4.6714,
+              "hedge": false,
+              "history_len": 0,
+              "markets": 2,
+              "mode": "clock",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 0,
+                  "micros": 0,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 800,
+                  "micros": 0,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 400,
+                  "micros": 1596,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 13.4878,
+              "steps": 400,
+              "trades": 0
+            }
+          ]
+        },
+        "before_median_ms": 84.21895,
+        "after_median_ms": 4.627549999999999,
+        "time_reduction_percent": 94.50533401330699,
+        "speedup": 18.199468401205827
+      },
+      "liquidation": {
+        "fixture": [
+          1000,
+          20,
+          2,
+          false,
+          "liquidation",
+          20
+        ],
+        "equivalent_sha256": {
+          "state.json": "bdbd0d3a7ca4c12bd733849f358cdcbfcacc332459fed65d385a110deeb1a64c",
+          "executions.txt": "8b00186431df5638b54315bcded0d7154d1ecf4bed4f1003f52d1d637accfe40"
+        },
+        "samples": {
+          "before": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 209.1659,
+              "hedge": false,
+              "history_len": 401,
+              "markets": 2,
+              "mode": "liquidation",
+              "pending": 20,
+              "phase_deltas": [
+                {
+                  "calls": 1,
+                  "micros": 1,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 821,
+                  "micros": 170008,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 840,
+                  "micros": 10695,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 20,
+                  "micros": 537,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 16.0474,
+              "steps": 20,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 208.9902,
+              "hedge": false,
+              "history_len": 401,
+              "markets": 2,
+              "mode": "liquidation",
+              "pending": 20,
+              "phase_deltas": [
+                {
+                  "calls": 1,
+                  "micros": 1,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 821,
+                  "micros": 169573,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 840,
+                  "micros": 10434,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 20,
+                  "micros": 544,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 16.395799999999998,
+              "steps": 20,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 263.7168,
+              "hedge": false,
+              "history_len": 401,
+              "markets": 2,
+              "mode": "liquidation",
+              "pending": 20,
+              "phase_deltas": [
+                {
+                  "calls": 1,
+                  "micros": 3,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 821,
+                  "micros": 210902,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 840,
+                  "micros": 14492,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 20,
+                  "micros": 535,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 16.392500000000002,
+              "steps": 20,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 210.2636,
+              "hedge": false,
+              "history_len": 401,
+              "markets": 2,
+              "mode": "liquidation",
+              "pending": 20,
+              "phase_deltas": [
+                {
+                  "calls": 1,
+                  "micros": 1,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 821,
+                  "micros": 171357,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 840,
+                  "micros": 10597,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 20,
+                  "micros": 521,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 16.8137,
+              "steps": 20,
+              "trades": 0
+            }
+          ],
+          "after": [
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 109.8137,
+              "hedge": false,
+              "history_len": 401,
+              "markets": 2,
+              "mode": "liquidation",
+              "pending": 20,
+              "phase_deltas": [
+                {
+                  "calls": 1,
+                  "micros": 2,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 401,
+                  "micros": 82494,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 840,
+                  "micros": 10183,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 20,
+                  "micros": 294,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 13.5222,
+              "steps": 20,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 110.2592,
+              "hedge": false,
+              "history_len": 401,
+              "markets": 2,
+              "mode": "liquidation",
+              "pending": 20,
+              "phase_deltas": [
+                {
+                  "calls": 1,
+                  "micros": 2,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 401,
+                  "micros": 82728,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 840,
+                  "micros": 10230,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 20,
+                  "micros": 315,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.415600000000001,
+              "steps": 20,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 151.0466,
+              "hedge": false,
+              "history_len": 401,
+              "markets": 2,
+              "mode": "liquidation",
+              "pending": 20,
+              "phase_deltas": [
+                {
+                  "calls": 1,
+                  "micros": 2,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 401,
+                  "micros": 111561,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 840,
+                  "micros": 14180,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 20,
+                  "micros": 387,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 20.4691,
+              "steps": 20,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 20,
+              "elapsed_ms": 109.66090000000001,
+              "hedge": false,
+              "history_len": 401,
+              "markets": 2,
+              "mode": "liquidation",
+              "pending": 20,
+              "phase_deltas": [
+                {
+                  "calls": 1,
+                  "micros": 2,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 401,
+                  "micros": 83427,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 840,
+                  "micros": 10091,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 20,
+                  "micros": 300,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 15.8604,
+              "steps": 20,
+              "trades": 0
+            }
+          ]
+        },
+        "before_median_ms": 209.71474999999998,
+        "after_median_ms": 110.03645,
+        "time_reduction_percent": 47.530419295733836,
+        "speedup": 1.905866192520751
+      },
+      "threshold-sparse": {
+        "fixture": [
+          1000,
+          248,
+          2,
+          false,
+          "price",
+          200
+        ],
+        "equivalent_sha256": {
+          "state.json": "3679f507f3276d51cac833ca63a8db7352c08be7bb462785a7d502673be9e584",
+          "executions.txt": "d5c3a207b05c2311a7344d40fb96ae5ae5b167b6aff2a4c3d079fd2f21a1683e"
+        },
+        "samples": {
+          "before": [
+            {
+              "accounts": 1000,
+              "active": 248,
+              "elapsed_ms": 366.041,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 630,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 242160,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 27305,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 8827,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 18.7615,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 248,
+              "elapsed_ms": 370.6309,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 565,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 247359,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 26733,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 8157,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 19.9504,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 248,
+              "elapsed_ms": 364.4716,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 573,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 241780,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 26941,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 8232,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 16.8538,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 248,
+              "elapsed_ms": 341.16990000000004,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 635,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 226115,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 24731,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 8100,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 16.7423,
+              "steps": 200,
+              "trades": 0
+            }
+          ],
+          "after": [
+            {
+              "accounts": 1000,
+              "active": 248,
+              "elapsed_ms": 151.7587,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 594,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 81839,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 14297,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 8327,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 15.7999,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 248,
+              "elapsed_ms": 146.845,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 544,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 79584,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 13385,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 8213,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.6865,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 248,
+              "elapsed_ms": 146.9711,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 600,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 80314,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 12608,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 8464,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 16.6298,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 248,
+              "elapsed_ms": 145.6306,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 548,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 79643,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 12473,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 8188,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 15.3991,
+              "steps": 200,
+              "trades": 0
+            }
+          ]
+        },
+        "before_median_ms": 365.2563,
+        "after_median_ms": 146.90805,
+        "time_reduction_percent": 59.77946170949002,
+        "speedup": 2.486291935669965
+      },
+      "threshold-dense": {
+        "fixture": [
+          1000,
+          250,
+          2,
+          false,
+          "price",
+          200
+        ],
+        "equivalent_sha256": {
+          "state.json": "b186abc5db79602cc821d4182c35de8503766c5ebe2fe0e704bcee5fc345fb26",
+          "executions.txt": "d5c3a207b05c2311a7344d40fb96ae5ae5b167b6aff2a4c3d079fd2f21a1683e"
+        },
+        "samples": {
+          "before": [
+            {
+              "accounts": 1000,
+              "active": 250,
+              "elapsed_ms": 327.61289999999997,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 416,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 218391,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 23852,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 7366,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 15.102,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 250,
+              "elapsed_ms": 320.9386,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 382,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 216144,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 22271,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 6917,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 15.724100000000002,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 250,
+              "elapsed_ms": 319.43129999999996,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 353,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 212605,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 22625,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 6957,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 17.6291,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 250,
+              "elapsed_ms": 325.87850000000003,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 481,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 400,
+                  "micros": 216163,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 24469,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 7465,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 13.3742,
+              "steps": 200,
+              "trades": 0
+            }
+          ],
+          "after": [
+            {
+              "accounts": 1000,
+              "active": 250,
+              "elapsed_ms": 207.308,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 527,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 101021,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 24359,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 6974,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 12.4685,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 250,
+              "elapsed_ms": 216.68009999999998,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 574,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 105287,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 25759,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 7573,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.3864,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 250,
+              "elapsed_ms": 204.19039999999998,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 484,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 99070,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 23606,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 7070,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.295499999999999,
+              "steps": 200,
+              "trades": 0
+            },
+            {
+              "accounts": 1000,
+              "active": 250,
+              "elapsed_ms": 216.4357,
+              "hedge": false,
+              "history_len": 200,
+              "markets": 2,
+              "mode": "price",
+              "pending": 0,
+              "phase_deltas": [
+                {
+                  "calls": 200,
+                  "micros": 565,
+                  "name": "actor_clone"
+                },
+                {
+                  "calls": 200,
+                  "micros": 104679,
+                  "name": "margin_sync"
+                },
+                {
+                  "calls": 400,
+                  "micros": 25744,
+                  "name": "reservation_reconcile"
+                },
+                {
+                  "calls": 200,
+                  "micros": 7583,
+                  "name": "liquidation_scan"
+                }
+              ],
+              "risk_rejections": 0,
+              "setup_ms": 14.2529,
+              "steps": 200,
+              "trades": 0
+            }
+          ]
+        },
+        "before_median_ms": 323.40855,
+        "after_median_ms": 211.87185,
+        "time_reduction_percent": 34.48786372530967,
+        "speedup": 1.5264347292950904
+      }
+    }
+  },
+  "service": {
+    "definition": "serial local HTTP service; ABBA twice; 1000 synthetic bots; 3s warmup + 20s measurement; 25ms configured interval; memory journal; wall-driven runs are not deterministic state comparisons",
+    "binaries": {
+      "before": {
+        "sha256": "d0b4e59ec7652b2dd141cabf6d95c31f79cc648cfb507e81d4c0e2408d1e54a0",
+        "file": "exchange-server.exe"
+      },
+      "after": {
+        "sha256": "0181c3336bd0d9284bbcda11584764c1e4aaf1e4c647ce10e51b3079a6a688f0",
+        "file": "exchange-server.exe"
+      }
+    },
+    "template_sha256": "b731b2849b8fa8bdfe28177810a7436d8b2d9bd567f1ee02fd43c60b96edf4d6",
+    "runs": [
+      {
+        "index": 0,
+        "variant": "before",
+        "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37",
+        "steps_per_second": 30.145623070025678,
+        "average_logical_cores": 1.1960124686549207,
+        "peak_memory_mib": 392.12890625,
+        "latency": {
+          "view": {
+            "count": 39,
+            "p50_ms": 5.8913000029861,
+            "p95_ms": 19.60250000411179,
+            "max_ms": 20.113500002480578
+          },
+          "place": {
+            "count": 36,
+            "p50_ms": 19.310700001369696,
+            "p95_ms": 41.055100002267864,
+            "max_ms": 54.12849999993341
+          },
+          "cancel": {
+            "count": 36,
+            "p50_ms": 20.83909999782918,
+            "p95_ms": 49.039199999242555,
+            "max_ms": 54.72549999831244
+          }
+        },
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false
+        },
+        "errors": [],
+        "final_step": 703,
+        "observed_bots": 1000
+      },
+      {
+        "index": 1,
+        "variant": "after",
+        "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37",
+        "steps_per_second": 32.14149595593115,
+        "average_logical_cores": 1.2377216815447771,
+        "peak_memory_mib": 446.04296875,
+        "latency": {
+          "view": {
+            "count": 39,
+            "p50_ms": 18.54069999535568,
+            "p95_ms": 21.30870000110008,
+            "max_ms": 21.877400002267677
+          },
+          "place": {
+            "count": 36,
+            "p50_ms": 19.346799999766517,
+            "p95_ms": 39.75889999856008,
+            "max_ms": 53.04289999912726
+          },
+          "cancel": {
+            "count": 36,
+            "p50_ms": 22.73020000575343,
+            "p95_ms": 73.91939999797614,
+            "max_ms": 114.52030000509694
+          }
+        },
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false
+        },
+        "errors": [],
+        "final_step": 713,
+        "observed_bots": 1000
+      },
+      {
+        "index": 2,
+        "variant": "after",
+        "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37",
+        "steps_per_second": 24.355435811507657,
+        "average_logical_cores": 0.9551294021460416,
+        "peak_memory_mib": 324.76953125,
+        "latency": {
+          "view": {
+            "count": 39,
+            "p50_ms": 8.387699999730103,
+            "p95_ms": 67.94890000310261,
+            "max_ms": 69.20610000088345
+          },
+          "place": {
+            "count": 36,
+            "p50_ms": 15.310700000554789,
+            "p95_ms": 125.72730000101728,
+            "max_ms": 222.88850000040838
+          },
+          "cancel": {
+            "count": 36,
+            "p50_ms": 10.277000001224224,
+            "p95_ms": 66.3665999963996,
+            "max_ms": 76.10019999992801
+          }
+        },
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false
+        },
+        "errors": [],
+        "final_step": 591,
+        "observed_bots": 1000
+      },
+      {
+        "index": 3,
+        "variant": "before",
+        "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37",
+        "steps_per_second": 5.953304500731226,
+        "average_logical_cores": 0.7487206669136934,
+        "peak_memory_mib": 152.30859375,
+        "latency": {
+          "view": {
+            "count": 37,
+            "p50_ms": 9.89040000422392,
+            "p95_ms": 39.97240000171587,
+            "max_ms": 200.5185999951209
+          },
+          "place": {
+            "count": 27,
+            "p50_ms": 94.39999999449356,
+            "p95_ms": 494.4286000027205,
+            "max_ms": 1325.260999998136
+          },
+          "cancel": {
+            "count": 27,
+            "p50_ms": 13.901700003771111,
+            "p95_ms": 114.68249999597901,
+            "max_ms": 368.9433999970788
+          }
+        },
+        "qualified": {
+          "order_p95_under_250ms": false,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false
+        },
+        "errors": [],
+        "final_step": 151,
+        "observed_bots": 1000
+      },
+      {
+        "index": 4,
+        "variant": "before",
+        "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37",
+        "steps_per_second": 14.440776155136463,
+        "average_logical_cores": 1.2401089861803738,
+        "peak_memory_mib": 249.75,
+        "latency": {
+          "view": {
+            "count": 39,
+            "p50_ms": 7.79770000372082,
+            "p95_ms": 21.682699996745214,
+            "max_ms": 24.214600001869258
+          },
+          "place": {
+            "count": 35,
+            "p50_ms": 35.25169999920763,
+            "p95_ms": 90.95579999848269,
+            "max_ms": 135.68859999941196
+          },
+          "cancel": {
+            "count": 35,
+            "p50_ms": 7.0294000033754855,
+            "p95_ms": 95.02409999549855,
+            "max_ms": 98.9592999976594
+          }
+        },
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false
+        },
+        "errors": [],
+        "final_step": 361,
+        "observed_bots": 1000
+      },
+      {
+        "index": 5,
+        "variant": "after",
+        "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37",
+        "steps_per_second": 31.165104909160444,
+        "average_logical_cores": 1.241961305445412,
+        "peak_memory_mib": 459.38671875,
+        "latency": {
+          "view": {
+            "count": 39,
+            "p50_ms": 18.40269999956945,
+            "p95_ms": 23.714099996141158,
+            "max_ms": 29.00729999964824
+          },
+          "place": {
+            "count": 36,
+            "p50_ms": 19.448999999440275,
+            "p95_ms": 45.57290000229841,
+            "max_ms": 52.53129999618977
+          },
+          "cancel": {
+            "count": 36,
+            "p50_ms": 20.274700000300072,
+            "p95_ms": 44.4366000010632,
+            "max_ms": 49.346300002071075
+          }
+        },
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false
+        },
+        "errors": [],
+        "final_step": 710,
+        "observed_bots": 1000
+      },
+      {
+        "index": 6,
+        "variant": "after",
+        "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37",
+        "steps_per_second": 31.09099333672936,
+        "average_logical_cores": 1.2274211061824591,
+        "peak_memory_mib": 498.546875,
+        "latency": {
+          "view": {
+            "count": 39,
+            "p50_ms": 7.331699998758268,
+            "p95_ms": 32.54269999888493,
+            "max_ms": 38.241000002017245
+          },
+          "place": {
+            "count": 37,
+            "p50_ms": 13.606300002720673,
+            "p95_ms": 37.07310000027064,
+            "max_ms": 43.612499997834675
+          },
+          "cancel": {
+            "count": 37,
+            "p50_ms": 9.143600000243168,
+            "p95_ms": 47.29159999988042,
+            "max_ms": 94.5584000000963
+          }
+        },
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false
+        },
+        "errors": [],
+        "final_step": 740,
+        "observed_bots": 1000
+      },
+      {
+        "index": 7,
+        "variant": "before",
+        "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37",
+        "steps_per_second": 18.10889586093111,
+        "average_logical_cores": 1.1152298198795416,
+        "peak_memory_mib": 266.3671875,
+        "latency": {
+          "view": {
+            "count": 39,
+            "p50_ms": 7.205500005511567,
+            "p95_ms": 21.49500000086846,
+            "max_ms": 22.472300006484147
+          },
+          "place": {
+            "count": 36,
+            "p50_ms": 36.22190000169212,
+            "p95_ms": 79.05469999968773,
+            "max_ms": 87.72139999928186
+          },
+          "cancel": {
+            "count": 36,
+            "p50_ms": 6.269400000746828,
+            "p95_ms": 45.53259999374859,
+            "max_ms": 58.70919999870239
+          }
+        },
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false
+        },
+        "errors": [],
+        "final_step": 424,
+        "observed_bots": 1000
+      }
+    ],
+    "medians": {
+      "before": {
+        "steps_per_second": 16.274836008033787,
+        "average_logical_cores": 1.155621144267231,
+        "peak_memory_mib": 258.05859375,
+        "place_p95_ms": 85.00524999908521,
+        "cancel_p95_ms": 72.03164999737055,
+        "view_p95_ms": 21.588849998806836,
+        "total_errors": 0
+      },
+      "after": {
+        "steps_per_second": 31.1280491229449,
+        "average_logical_cores": 1.2325713938636182,
+        "peak_memory_mib": 452.71484375,
+        "place_p95_ms": 42.66590000042925,
+        "cancel_p95_ms": 56.82909999814001,
+        "view_p95_ms": 28.128399997513043,
+        "total_errors": 0
+      }
+    }
+  }
+}

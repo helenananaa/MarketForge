@@ -34,6 +34,7 @@ pub mod price_link;
 mod price_link_tests;
 pub mod replay;
 pub mod risk;
+mod risk_scope;
 pub mod room;
 pub mod scenario;
 pub mod scheduler;

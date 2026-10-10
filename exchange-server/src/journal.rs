@@ -165,6 +165,10 @@ pub struct RoomRoutingRecord {
 }
 
 pub trait JournalStore: Send {
+    #[cfg(feature = "risk-benchmark")]
+    fn benchmark_storage(&self) -> serde_json::Value {
+        serde_json::Value::Null
+    }
     fn load_platform(&mut self) -> Result<PlatformData, JournalError> {
         Ok(PlatformData::default())
     }
@@ -1527,6 +1531,13 @@ impl InMemoryJournalStore {
 }
 
 impl JournalStore for InMemoryJournalStore {
+    #[cfg(feature = "risk-benchmark")]
+    fn benchmark_storage(&self) -> serde_json::Value {
+        serde_json::json!({"mutation_count":self.mutations.len(),
+            "mutation_wire_bytes":self.mutations.iter().map(Vec::len).sum::<usize>(),
+            "mutation_capacity_bytes":self.mutations.iter().map(Vec::capacity).sum::<usize>(),
+            "execution_count":self.executions.len(),"snapshot_count":self.snapshots.len()})
+    }
     fn load_platform(&mut self) -> Result<PlatformData, JournalError> {
         Ok(self.platform.clone())
     }

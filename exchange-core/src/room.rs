@@ -715,6 +715,12 @@ impl RoomManager {
         room_id: &str,
         trigger: &PendingRoomLiquidation,
     ) -> Result<bool, RoomManagerError> {
+        if !crate::risk_scope::full_scan_reference() {
+            return self
+                .simulation_room(room_id)?
+                .liquidation_candidate_is_active_for(&trigger.instrument_id, trigger.account_id)
+                .map_err(RoomManagerError::Actor);
+        }
         Ok(self
             .liquidation_candidates_for_instrument(room_id, &trigger.instrument_id, true)?
             .contains(trigger))
@@ -1822,6 +1828,7 @@ mod tests {
     };
 
     include!("order_protection_tests.rs");
+    include!("room_incremental_risk_tests.rs");
 
     #[test]
     fn moving_execution_owners_preserves_all_room_state_and_rejects_overlap() {

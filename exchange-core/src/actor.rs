@@ -68,6 +68,8 @@ pub struct MarketActor {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ExchangeActor {
+    #[serde(skip)]
+    margin_liquidation_baselines: BTreeMap<String, BTreeSet<AccountId>>,
     #[serde(default)]
     conditional_orders:
         crate::shared_map::SharedMap<String, crate::conditional_orders::ConditionalOrder>,
@@ -116,6 +118,7 @@ impl ExchangeActor {
         }
 
         Ok(Self {
+            margin_liquidation_baselines: BTreeMap::new(),
             room_id,
             venue_rules: VenueRuleEngine::new(config.venue_rules.clone())
                 .map_err(MarketConfigError::VenueRule)?,
@@ -173,6 +176,7 @@ impl ExchangeActor {
         markets.insert(actor.config().instrument_id().to_string(), actor);
 
         Ok(Self {
+            margin_liquidation_baselines: BTreeMap::new(),
             room_id,
             venue_rules: VenueRuleEngine::new(config.venue_rules.clone())
                 .map_err(MarketConfigError::VenueRule)?,
@@ -888,6 +892,7 @@ impl ExchangeActor {
     }
 
     pub fn primary_market_mut(&mut self) -> &mut MarketActor {
+        self.venue_accounts.invalidate_margin_changes();
         self.venue_accounts.reservation_changes.invalidate();
         let instrument_id = self.primary_instrument_id().to_string();
         self.markets
@@ -907,6 +912,7 @@ impl ExchangeActor {
         &mut self,
         instrument_id: &str,
     ) -> Result<&mut MarketActor, ActorRejectReason> {
+        self.venue_accounts.invalidate_margin_changes();
         self.venue_accounts.reservation_changes.invalidate();
         self.markets
             .get_mut(instrument_id)
@@ -1485,6 +1491,20 @@ impl ExchangeActor {
         })
     }
 
+    pub(crate) fn liquidation_candidate_is_active_for(
+        &self,
+        instrument_id: &str,
+        account_id: AccountId,
+    ) -> Result<bool, ActorRejectReason> {
+        Ok(match &self.market(instrument_id)?.engine {
+            MarketEngine::Spot(_) => false,
+            MarketEngine::Perp(engine) => {
+                engine.pending_liquidation(account_id).is_some()
+                    || engine.is_liquidatable(account_id)
+            }
+        })
+    }
+
     fn perp_quote_assets_affected_by_instrument(
         &self,
         instrument_id: &str,
@@ -1791,6 +1811,85 @@ impl ExchangeActor {
     }
 
     fn sync_perp_cross_margin_group_for(
+        &mut self,
+        quote_asset: &str,
+        affected: Option<&BTreeSet<AccountId>>,
+    ) -> Result<(), ClearingError> {
+        #[cfg(test)]
+        if tests::SCALAR_MARGIN_REFERENCE.get() || tests::INDEXED_MARGIN_REFERENCE.get() {
+            return self.sync_perp_cross_margin_group_selected(quote_asset, affected);
+        }
+        if crate::risk_scope::full_scan_reference() {
+            return self.sync_perp_cross_margin_group_selected(quote_asset, affected);
+        }
+        let mut ids = affected.cloned().unwrap_or_default();
+        let mut known = true;
+        let mut population = 0;
+        let mut pending = BTreeSet::new();
+        let mut revisions = Vec::new();
+        for (instrument, market) in &self.markets {
+            if market.config().instrument().quote_asset != quote_asset {
+                continue;
+            }
+            if let MarketEngine::Perp(engine) = &market.engine {
+                population = population.max(engine.account_count());
+                revisions.push((instrument.clone(), engine.reservation_revision()));
+                pending.extend(engine.pending_liquidation_accounts());
+                if let Some(changes) = engine.margin_changes() {
+                    ids.extend(changes.iter().copied());
+                } else {
+                    known = false;
+                }
+            }
+        }
+        if let Some(changes) = self.venue_accounts.margin_changes(quote_asset) {
+            ids.extend(changes.iter().copied());
+        } else {
+            known = false;
+        }
+        if let Some(previous) = self.margin_liquidation_baselines.get(quote_asset) {
+            ids.extend(previous.symmetric_difference(&pending).copied());
+        } else {
+            known = false;
+        }
+        let scope = (known && crate::risk_scope::sparse(ids.len(), population)).then_some(ids);
+        if scope.is_none() {
+            // The batch already visits every account. Avoid constructing dirty
+            // trees for context/collateral writes that this same pass reconciles.
+            self.venue_accounts
+                .invalidate_asset_margin_changes(quote_asset);
+            for (instrument, _) in &revisions {
+                if let MarketEngine::Perp(engine) =
+                    &mut self.markets.get_mut(instrument).unwrap().engine
+                {
+                    engine.invalidate_margin_changes();
+                }
+            }
+        }
+        if !scope.as_ref().is_some_and(BTreeSet::is_empty) {
+            self.sync_perp_cross_margin_group_selected(quote_asset, scope.as_ref())?;
+        }
+        // Clear only after the whole group succeeds. Legacy/cold synchronization
+        // can repair a local reservation after peer inputs were projected; retain
+        // unknown scope for the next pass so it sees those repaired inputs.
+        for (instrument, revision) in revisions {
+            if let MarketEngine::Perp(engine) =
+                &mut self.markets.get_mut(&instrument).unwrap().engine
+            {
+                engine.margin_reconciled(scope.as_ref());
+                if revision != engine.reservation_revision() {
+                    engine.invalidate_margin_changes();
+                }
+            }
+        }
+        self.venue_accounts
+            .margin_reconciled(quote_asset, scope.as_ref());
+        self.margin_liquidation_baselines
+            .insert(quote_asset.into(), pending);
+        Ok(())
+    }
+
+    fn sync_perp_cross_margin_group_selected(
         &mut self,
         quote_asset: &str,
         affected: Option<&BTreeSet<AccountId>>,
@@ -2345,6 +2444,28 @@ impl ExchangeActor {
                     self.venue_accounts
                         .reserve(*account_id, asset_id.clone(), next_amount - previous)
                         .map_err(clearing_error_from_venue_account_error)?;
+                }
+            }
+        }
+        // A changed funding shortfall is also a margin input, even when the
+        // actual frozen cash did not change.
+        let previous_shortfalls = self
+            .funding_collateral_shortfalls
+            .iter()
+            .filter(|(id, _)| affected.is_none_or(|ids| ids.contains(id)))
+            .map(|(id, assets)| (*id, assets.clone()))
+            .collect::<Vec<_>>();
+        for (id, assets) in &previous_shortfalls {
+            for (asset, value) in assets.iter() {
+                if projected_reservation_amount(&shortfalls, *id, asset) != *value {
+                    self.venue_accounts.mark_margin_change(*id, asset);
+                }
+            }
+        }
+        for (id, assets) in &shortfalls {
+            for (asset, value) in assets.iter() {
+                if reservation_amount(&self.funding_collateral_shortfalls, *id, asset) != *value {
+                    self.venue_accounts.mark_margin_change(*id, asset);
                 }
             }
         }
@@ -3208,6 +3329,7 @@ include!("conditional_orders_actor.rs");
 
 #[cfg(test)]
 mod tests {
+    include!("incremental_risk_tests.rs");
     thread_local! {
         pub(super) static FULL_POST_RESERVATION_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
         pub(super) static FULL_RESERVATION_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };

@@ -66,6 +66,11 @@ pub(crate) struct JournalCoordinatorMetricsSnapshot {
 }
 
 impl JournalCoordinator {
+    #[cfg(feature = "risk-benchmark")]
+    pub(crate) async fn benchmark_storage(&self) -> Result<serde_json::Value, JournalError> {
+        self.execute_read(|store| Ok(store.benchmark_storage()))
+            .await
+    }
     pub(crate) async fn commit_platform(
         &self,
         expected: u64,

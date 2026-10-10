@@ -1,0 +1,734 @@
+{
+  "equal_progress": {
+    "definition": "real realtime Work Clock/Bots commits and observations/cache; round-robin 64 bots per step, fixed completion order; counted-System diagnostic allocator; fresh-connection/keepalive quiescent and concurrent view/memory; not asynchronous live-worker capacity",
+    "parameters": {
+      "bots": 1000,
+      "decisions_per_step": 64,
+      "steps": [
+        100,
+        300,
+        700
+      ],
+      "view_samples": 40,
+      "blocks": 2,
+      "busy_probes_per_interval": 20,
+      "busy_probe_delay_ms": 3
+    },
+    "binaries": {
+      "before": {
+        "path": "E:\\CodexData\\worktrees\\incremental-margin-risk\\risk-evidence\\before-source\\target\\release\\examples\\benchmark_margin_progress.exe",
+        "sha256": "96c84775a5c2098327490fb153f7257ceffcf860ab99f8d86ccf5b69fda80d08"
+      },
+      "after": {
+        "path": "E:\\CodexData\\worktrees\\incremental-margin-risk\\MarketForge\\target\\release\\examples\\benchmark_margin_progress.exe",
+        "sha256": "34f6f768efe8559441135d320acb3e894ae70fd38999af66ea8d689978aecb4f"
+      }
+    },
+    "checkpoints": [
+      {
+        "step": 0,
+        "variants": {
+          "before": {
+            "live_heap_mib": 7.359679698944092,
+            "interval_peak_heap_mib": 7.368566513061523,
+            "working_set_mib": 20.2890625,
+            "peak_working_set_mib": 25.91015625,
+            "private_mib": 12.91796875,
+            "cumulative_requested_growth_gib": 0.032446361146867275,
+            "cumulative_allocation_calls": 283906.0,
+            "total_step_ms": 0.0,
+            "storage": {
+              "execution_count": 2,
+              "mutation_capacity_bytes": 2097408,
+              "mutation_count": 3,
+              "mutation_wire_bytes": 1313759,
+              "snapshot_count": 1
+            },
+            "views": {
+              "primary": {
+                "total_ms": 30.54099999644677,
+                "raw_ms": 27.34174999932293,
+                "connect_ms": 23.889750002126675,
+                "headers_ms": 2.9845999997633044,
+                "body_ms": 7.767749997583451,
+                "parse_ms": 3.597749997425126,
+                "auth_ms": 0.1275,
+                "build_ms": 0.229
+              },
+              "V-BTC-PERP": {
+                "total_ms": 32.499799996003276,
+                "raw_ms": 27.618250001978595,
+                "connect_ms": 14.150500002870103,
+                "headers_ms": 4.202899999654619,
+                "body_ms": 17.719750001560897,
+                "parse_ms": 6.199949995789211,
+                "auth_ms": 0.1465,
+                "build_ms": 0.6080000000000001
+              },
+              "primary-keepalive": {
+                "total_ms": 7.603200003359234,
+                "raw_ms": 3.9401500034728087,
+                "connect_ms": 0.004499994247453287,
+                "headers_ms": 3.007199997227872,
+                "body_ms": 0.35230000139563344,
+                "parse_ms": 3.7436000020534266,
+                "auth_ms": 0.1725,
+                "build_ms": 0.251
+              },
+              "V-BTC-PERP-keepalive": {
+                "total_ms": 25.855700001557125,
+                "raw_ms": 19.717850002052728,
+                "connect_ms": 0.0034999975468963385,
+                "headers_ms": 3.975750001700362,
+                "body_ms": 15.833550001843832,
+                "parse_ms": 6.538149998959852,
+                "auth_ms": 0.185,
+                "build_ms": 0.5940000000000001
+              }
+            },
+            "busy_view_p95_ms": {}
+          },
+          "after": {
+            "live_heap_mib": 7.370021820068359,
+            "interval_peak_heap_mib": 7.378915786743164,
+            "working_set_mib": 20.419921875,
+            "peak_working_set_mib": 25.869140625,
+            "private_mib": 12.91015625,
+            "cumulative_requested_growth_gib": 0.032683453522622585,
+            "cumulative_allocation_calls": 286010.0,
+            "total_step_ms": 0.0,
+            "storage": {
+              "execution_count": 2,
+              "mutation_capacity_bytes": 2097408,
+              "mutation_count": 3,
+              "mutation_wire_bytes": 1313759,
+              "snapshot_count": 1
+            },
+            "views": {
+              "primary": {
+                "total_ms": 28.906150000693742,
+                "raw_ms": 26.37364999827696,
+                "connect_ms": 12.728050001896918,
+                "headers_ms": 3.2017000012274366,
+                "body_ms": 12.675150002905866,
+                "parse_ms": 4.345199995441362,
+                "auth_ms": 0.144,
+                "build_ms": 0.2505
+              },
+              "V-BTC-PERP": {
+                "total_ms": 35.89460000148392,
+                "raw_ms": 29.840200000762707,
+                "connect_ms": 4.317949998949189,
+                "headers_ms": 5.0097499988623895,
+                "body_ms": 22.15174999946612,
+                "parse_ms": 8.474099999148166,
+                "auth_ms": 0.131,
+                "build_ms": 0.692
+              },
+              "primary-keepalive": {
+                "total_ms": 6.987799999478739,
+                "raw_ms": 2.8833999967901036,
+                "connect_ms": 0.003650005965027958,
+                "headers_ms": 2.68464999680873,
+                "body_ms": 0.24839999605319463,
+                "parse_ms": 4.183550001471303,
+                "auth_ms": 0.1545,
+                "build_ms": 0.183
+              },
+              "V-BTC-PERP-keepalive": {
+                "total_ms": 27.032699996198062,
+                "raw_ms": 21.7643500000122,
+                "connect_ms": 0.00419999923906289,
+                "headers_ms": 4.013399997347733,
+                "body_ms": 18.902599997090874,
+                "parse_ms": 6.554750001669163,
+                "auth_ms": 0.145,
+                "build_ms": 0.5625
+              }
+            },
+            "busy_view_p95_ms": {}
+          }
+        }
+      },
+      {
+        "step": 100,
+        "variants": {
+          "before": {
+            "live_heap_mib": 56.34526968002319,
+            "interval_peak_heap_mib": 70.28579998016357,
+            "working_set_mib": 84.814453125,
+            "peak_working_set_mib": 126.921875,
+            "private_mib": 81.91015625,
+            "cumulative_requested_growth_gib": 2.021313702687621,
+            "cumulative_allocation_calls": 6105396.5,
+            "total_step_ms": 7725.309249995917,
+            "storage": {
+              "execution_count": 2421,
+              "mutation_capacity_bytes": 17351936,
+              "mutation_count": 203,
+              "mutation_wire_bytes": 14235648,
+              "snapshot_count": 1
+            },
+            "views": {
+              "primary": {
+                "total_ms": 30.455950003670296,
+                "raw_ms": 26.469400003406918,
+                "connect_ms": 13.927600000897655,
+                "headers_ms": 3.294450001703808,
+                "body_ms": 15.167850004218053,
+                "parse_ms": 3.830300000117859,
+                "auth_ms": 0.14500000000000002,
+                "build_ms": 0.29000000000000004
+              },
+              "V-BTC-PERP": {
+                "total_ms": 32.58875000028638,
+                "raw_ms": 26.858800003537908,
+                "connect_ms": 20.45969999744557,
+                "headers_ms": 4.446299997653114,
+                "body_ms": 16.673799997079186,
+                "parse_ms": 7.116849996236851,
+                "auth_ms": 0.1385,
+                "build_ms": 0.6405000000000001
+              },
+              "primary-keepalive": {
+                "total_ms": 7.355799996730639,
+                "raw_ms": 3.099149998888606,
+                "connect_ms": 0.003750003088498488,
+                "headers_ms": 2.907899997808272,
+                "body_ms": 0.30530000003636815,
+                "parse_ms": 4.208049998851493,
+                "auth_ms": 0.23750000000000002,
+                "build_ms": 0.2555
+              },
+              "V-BTC-PERP-keepalive": {
+                "total_ms": 30.18375000101514,
+                "raw_ms": 23.49359999789158,
+                "connect_ms": 0.004250003257766366,
+                "headers_ms": 4.134300001169322,
+                "body_ms": 19.882849996065488,
+                "parse_ms": 6.665800003247568,
+                "auth_ms": 0.16599999999999998,
+                "build_ms": 0.5765
+              }
+            },
+            "busy_view_p95_ms": {
+              "total_ms": 29.32390000205487,
+              "raw_ms": 26.216600002953783,
+              "connect_ms": 22.786450001149205,
+              "headers_ms": 2.735049998591421,
+              "body_ms": 15.770999998494517,
+              "parse_ms": 3.9323499950114638,
+              "auth_ms": 0.1645,
+              "build_ms": 0.1835
+            }
+          },
+          "after": {
+            "live_heap_mib": 56.37669086456299,
+            "interval_peak_heap_mib": 70.12877893447876,
+            "working_set_mib": 84.892578125,
+            "peak_working_set_mib": 127.291015625,
+            "private_mib": 81.79296875,
+            "cumulative_requested_growth_gib": 1.4134417781606317,
+            "cumulative_allocation_calls": 5123705.0,
+            "total_step_ms": 4444.264999990992,
+            "storage": {
+              "execution_count": 2421,
+              "mutation_capacity_bytes": 17351936,
+              "mutation_count": 203,
+              "mutation_wire_bytes": 14235648,
+              "snapshot_count": 1
+            },
+            "views": {
+              "primary": {
+                "total_ms": 26.75335000094492,
+                "raw_ms": 23.548949997348245,
+                "connect_ms": 19.418150001001777,
+                "headers_ms": 3.629350001574494,
+                "body_ms": 5.82254999972065,
+                "parse_ms": 4.138249998504762,
+                "auth_ms": 0.1595,
+                "build_ms": 0.2865
+              },
+              "V-BTC-PERP": {
+                "total_ms": 35.675050003192155,
+                "raw_ms": 28.808350001781946,
+                "connect_ms": 18.48950000203331,
+                "headers_ms": 4.483449996769195,
+                "body_ms": 20.3463500001817,
+                "parse_ms": 7.969949998368975,
+                "auth_ms": 0.138,
+                "build_ms": 0.5914999999999999
+              },
+              "primary-keepalive": {
+                "total_ms": 6.17075000263867,
+                "raw_ms": 2.921049999713432,
+                "connect_ms": 0.003150002157781273,
+                "headers_ms": 2.777900004730327,
+                "body_ms": 0.20809999841731042,
+                "parse_ms": 3.45769999694312,
+                "auth_ms": 0.17099999999999999,
+                "build_ms": 0.2675
+              },
+              "V-BTC-PERP-keepalive": {
+                "total_ms": 28.341350000118837,
+                "raw_ms": 23.63849999892409,
+                "connect_ms": 0.003349996404722333,
+                "headers_ms": 3.659550002339529,
+                "body_ms": 20.104899998841574,
+                "parse_ms": 6.396749999112217,
+                "auth_ms": 0.146,
+                "build_ms": 0.51
+              }
+            },
+            "busy_view_p95_ms": {
+              "total_ms": 27.09974999743281,
+              "raw_ms": 22.91499999773805,
+              "connect_ms": 12.117900001612725,
+              "headers_ms": 3.3112500022980385,
+              "body_ms": 6.958549998671515,
+              "parse_ms": 4.230800001096213,
+              "auth_ms": 0.137,
+              "build_ms": 0.21000000000000002
+            }
+          }
+        }
+      },
+      {
+        "step": 300,
+        "variants": {
+          "before": {
+            "live_heap_mib": 121.06994676589966,
+            "interval_peak_heap_mib": 136.32640027999878,
+            "working_set_mib": 153.474609375,
+            "peak_working_set_mib": 239.818359375,
+            "private_mib": 160.84375,
+            "cumulative_requested_growth_gib": 6.072891214396805,
+            "cumulative_allocation_calls": 19493042.5,
+            "total_step_ms": 19725.071199936792,
+            "storage": {
+              "execution_count": 6324,
+              "mutation_capacity_bytes": 59919616,
+              "mutation_count": 603,
+              "mutation_wire_bytes": 40412830,
+              "snapshot_count": 1
+            },
+            "views": {
+              "primary": {
+                "total_ms": 29.549350001616403,
+                "raw_ms": 26.743499998701736,
+                "connect_ms": 23.955849999765633,
+                "headers_ms": 2.9818000002705958,
+                "body_ms": 0.32794999788166024,
+                "parse_ms": 3.2765500036475714,
+                "auth_ms": 0.1505,
+                "build_ms": 0.27649999999999997
+              },
+              "V-BTC-PERP": {
+                "total_ms": 35.815949999232544,
+                "raw_ms": 28.06485000110115,
+                "connect_ms": 22.505850000015926,
+                "headers_ms": 3.9298000010603573,
+                "body_ms": 9.083849996386562,
+                "parse_ms": 5.576949999522185,
+                "auth_ms": 0.136,
+                "build_ms": 0.5335000000000001
+              },
+              "primary-keepalive": {
+                "total_ms": 5.1378999996813945,
+                "raw_ms": 2.6477500032342505,
+                "connect_ms": 0.002749999111983925,
+                "headers_ms": 2.5022500049090013,
+                "body_ms": 0.17984999794862233,
+                "parse_ms": 2.798649999022018,
+                "auth_ms": 0.146,
+                "build_ms": 0.251
+              },
+              "V-BTC-PERP-keepalive": {
+                "total_ms": 23.107650002202718,
+                "raw_ms": 19.49734999652719,
+                "connect_ms": 0.00335000004270114,
+                "headers_ms": 3.372749997652136,
+                "body_ms": 16.87379999566474,
+                "parse_ms": 4.918350005027605,
+                "auth_ms": 0.16799999999999998,
+                "build_ms": 0.478
+              }
+            },
+            "busy_view_p95_ms": {
+              "total_ms": 29.43384999889531,
+              "raw_ms": 26.326849998440593,
+              "connect_ms": 20.75949999925797,
+              "headers_ms": 2.998800002387725,
+              "body_ms": 0.3153500038024504,
+              "parse_ms": 3.5740499988605734,
+              "auth_ms": 0.1645,
+              "build_ms": 0.218
+            }
+          },
+          "after": {
+            "live_heap_mib": 121.10088872909546,
+            "interval_peak_heap_mib": 136.2008819580078,
+            "working_set_mib": 159.921875,
+            "peak_working_set_mib": 242.357421875,
+            "private_mib": 166.736328125,
+            "cumulative_requested_growth_gib": 4.328008360229433,
+            "cumulative_allocation_calls": 16077751.5,
+            "total_step_ms": 16194.685349957581,
+            "storage": {
+              "execution_count": 6324,
+              "mutation_capacity_bytes": 59919616,
+              "mutation_count": 603,
+              "mutation_wire_bytes": 40412830,
+              "snapshot_count": 1
+            },
+            "views": {
+              "primary": {
+                "total_ms": 29.635749997396488,
+                "raw_ms": 25.616700000682613,
+                "connect_ms": 4.777199999807635,
+                "headers_ms": 3.8587999988521915,
+                "body_ms": 15.574799996102229,
+                "parse_ms": 6.095200002164347,
+                "auth_ms": 0.135,
+                "build_ms": 0.2775
+              },
+              "V-BTC-PERP": {
+                "total_ms": 37.94144999847049,
+                "raw_ms": 31.304399999498855,
+                "connect_ms": 13.789900000119815,
+                "headers_ms": 4.6960500003478955,
+                "body_ms": 23.226450000947807,
+                "parse_ms": 10.452250000525964,
+                "auth_ms": 0.17149999999999999,
+                "build_ms": 0.6515
+              },
+              "primary-keepalive": {
+                "total_ms": 7.787549999193288,
+                "raw_ms": 3.7247000000206754,
+                "connect_ms": 0.005050002073403448,
+                "headers_ms": 3.478700000414392,
+                "body_ms": 0.283199995465111,
+                "parse_ms": 4.31649999882211,
+                "auth_ms": 0.173,
+                "build_ms": 0.332
+              },
+              "V-BTC-PERP-keepalive": {
+                "total_ms": 32.11959999680403,
+                "raw_ms": 25.03889999934472,
+                "connect_ms": 0.004150002496317029,
+                "headers_ms": 4.459949999727542,
+                "body_ms": 21.063199998025084,
+                "parse_ms": 8.915549999073846,
+                "auth_ms": 0.179,
+                "build_ms": 0.6385000000000001
+              }
+            },
+            "busy_view_p95_ms": {
+              "total_ms": 30.165950003720354,
+              "raw_ms": 27.38044999932754,
+              "connect_ms": 22.787300000345567,
+              "headers_ms": 2.89859999975306,
+              "body_ms": 0.2573000019765459,
+              "parse_ms": 3.56475000444334,
+              "auth_ms": 0.1385,
+              "build_ms": 0.236
+            }
+          }
+        }
+      },
+      {
+        "step": 700,
+        "variants": {
+          "before": {
+            "live_heap_mib": 223.06572484970093,
+            "interval_peak_heap_mib": 236.2000856399536,
+            "working_set_mib": 263.361328125,
+            "peak_working_set_mib": 396.658203125,
+            "private_mib": 280.900390625,
+            "cumulative_requested_growth_gib": 12.848413386382163,
+            "cumulative_allocation_calls": 44793386.5,
+            "total_step_ms": 40177.54289993172,
+            "storage": {
+              "execution_count": 11387,
+              "mutation_capacity_bytes": 139156736,
+              "mutation_count": 1403,
+              "mutation_wire_bytes": 88203066,
+              "snapshot_count": 1
+            },
+            "views": {
+              "primary": {
+                "total_ms": 29.825400000845548,
+                "raw_ms": 27.344250000169268,
+                "connect_ms": 22.77949999916018,
+                "headers_ms": 3.004550002515316,
+                "body_ms": 7.1177999961946625,
+                "parse_ms": 3.37510000099428,
+                "auth_ms": 0.1305,
+                "build_ms": 0.2415
+              },
+              "V-BTC-PERP": {
+                "total_ms": 30.604700001276797,
+                "raw_ms": 26.902749999862863,
+                "connect_ms": 22.879999996803235,
+                "headers_ms": 3.7587000006169546,
+                "body_ms": 8.128299999953015,
+                "parse_ms": 4.865350001637125,
+                "auth_ms": 0.1255,
+                "build_ms": 0.5155000000000001
+              },
+              "primary-keepalive": {
+                "total_ms": 5.926750000071479,
+                "raw_ms": 2.983699996548239,
+                "connect_ms": 0.0030999981390777975,
+                "headers_ms": 2.7953999997407664,
+                "body_ms": 0.20375000167405233,
+                "parse_ms": 3.023650002432987,
+                "auth_ms": 0.1515,
+                "build_ms": 0.29900000000000004
+              },
+              "V-BTC-PERP-keepalive": {
+                "total_ms": 25.92315000219969,
+                "raw_ms": 19.652849998237798,
+                "connect_ms": 0.003749999450519681,
+                "headers_ms": 3.7858499999856576,
+                "body_ms": 16.63284999813186,
+                "parse_ms": 5.673250001564156,
+                "auth_ms": 0.1745,
+                "build_ms": 0.6105
+              }
+            },
+            "busy_view_p95_ms": {
+              "total_ms": 27.36324999568751,
+              "raw_ms": 25.29155000229366,
+              "connect_ms": 21.128950000274926,
+              "headers_ms": 2.7372500007913914,
+              "body_ms": 0.40654999975231476,
+              "parse_ms": 3.3594499982427806,
+              "auth_ms": 0.1505,
+              "build_ms": 0.228
+            }
+          },
+          "after": {
+            "live_heap_mib": 222.85049629211426,
+            "interval_peak_heap_mib": 236.08765745162964,
+            "working_set_mib": 262.625,
+            "peak_working_set_mib": 397.73828125,
+            "private_mib": 280.580078125,
+            "cumulative_requested_growth_gib": 9.418560768011957,
+            "cumulative_allocation_calls": 37286644.5,
+            "total_step_ms": 47326.88820000476,
+            "storage": {
+              "execution_count": 11387,
+              "mutation_capacity_bytes": 139156736,
+              "mutation_count": 1403,
+              "mutation_wire_bytes": 88203066,
+              "snapshot_count": 1
+            },
+            "views": {
+              "primary": {
+                "total_ms": 30.28114999688114,
+                "raw_ms": 26.053649999084882,
+                "connect_ms": 11.86664999477216,
+                "headers_ms": 3.702450001583202,
+                "body_ms": 15.15925000057905,
+                "parse_ms": 4.794899996340973,
+                "auth_ms": 0.1485,
+                "build_ms": 0.33
+              },
+              "V-BTC-PERP": {
+                "total_ms": 36.37580000577145,
+                "raw_ms": 27.05844999945839,
+                "connect_ms": 8.594799997808877,
+                "headers_ms": 5.149450000317302,
+                "body_ms": 19.683049995364854,
+                "parse_ms": 9.812849999434547,
+                "auth_ms": 0.1575,
+                "build_ms": 0.6755
+              },
+              "primary-keepalive": {
+                "total_ms": 7.339499999943655,
+                "raw_ms": 3.529299996444024,
+                "connect_ms": 0.0039000042306724936,
+                "headers_ms": 3.3220999976038,
+                "body_ms": 0.27630000113276765,
+                "parse_ms": 3.9604499979759566,
+                "auth_ms": 0.185,
+                "build_ms": 0.3955
+              },
+              "V-BTC-PERP-keepalive": {
+                "total_ms": 28.318900000158465,
+                "raw_ms": 20.95049999843468,
+                "connect_ms": 0.003999997716164216,
+                "headers_ms": 4.6629500029666815,
+                "body_ms": 17.13604999895324,
+                "parse_ms": 7.689750003919471,
+                "auth_ms": 0.165,
+                "build_ms": 0.6825
+              }
+            },
+            "busy_view_p95_ms": {
+              "total_ms": 28.48499999890919,
+              "raw_ms": 24.791849999019178,
+              "connect_ms": 17.113200003223028,
+              "headers_ms": 5.192249998799525,
+              "body_ms": 7.663299998966977,
+              "parse_ms": 5.748749998019775,
+              "auth_ms": 0.156,
+              "build_ms": 0.236
+            }
+          }
+        }
+      }
+    ]
+  },
+  "verified_runs": 8,
+  "business_state_and_execution_order_equal": true,
+  "fixed_view_cpu": {
+    "definition": "Paired fixed-state view construction/JSON serialization, without network.",
+    "state_sha256": "879fd209bd061e8560a4251b62edb896ba7e0a0b8210de565f92176927f35dc2",
+    "instrument": "m0",
+    "iterations": 5000,
+    "runs": [
+      {
+        "index": 0,
+        "variant": "before",
+        "view_sha256": "30c2457ade1a94043207df0c1ea29bd7ea5e47c6b85ba1c0c7aeb99254f01d45",
+        "construct_ms": 522.0936,
+        "iterations": 5000,
+        "response_bytes": 339153,
+        "serialize_ms": 1888.5667
+      },
+      {
+        "index": 1,
+        "variant": "after",
+        "view_sha256": "30c2457ade1a94043207df0c1ea29bd7ea5e47c6b85ba1c0c7aeb99254f01d45",
+        "construct_ms": 495.208,
+        "iterations": 5000,
+        "response_bytes": 339153,
+        "serialize_ms": 1817.1213
+      },
+      {
+        "index": 2,
+        "variant": "after",
+        "view_sha256": "30c2457ade1a94043207df0c1ea29bd7ea5e47c6b85ba1c0c7aeb99254f01d45",
+        "construct_ms": 534.2052,
+        "iterations": 5000,
+        "response_bytes": 339153,
+        "serialize_ms": 1964.6661
+      },
+      {
+        "index": 3,
+        "variant": "before",
+        "view_sha256": "30c2457ade1a94043207df0c1ea29bd7ea5e47c6b85ba1c0c7aeb99254f01d45",
+        "construct_ms": 464.0703,
+        "iterations": 5000,
+        "response_bytes": 339153,
+        "serialize_ms": 1747.5177
+      },
+      {
+        "index": 4,
+        "variant": "before",
+        "view_sha256": "30c2457ade1a94043207df0c1ea29bd7ea5e47c6b85ba1c0c7aeb99254f01d45",
+        "construct_ms": 574.1674,
+        "iterations": 5000,
+        "response_bytes": 339153,
+        "serialize_ms": 2019.6277
+      },
+      {
+        "index": 5,
+        "variant": "after",
+        "view_sha256": "30c2457ade1a94043207df0c1ea29bd7ea5e47c6b85ba1c0c7aeb99254f01d45",
+        "construct_ms": 456.3723,
+        "iterations": 5000,
+        "response_bytes": 339153,
+        "serialize_ms": 1733.3493
+      },
+      {
+        "index": 6,
+        "variant": "after",
+        "view_sha256": "30c2457ade1a94043207df0c1ea29bd7ea5e47c6b85ba1c0c7aeb99254f01d45",
+        "construct_ms": 615.835,
+        "iterations": 5000,
+        "response_bytes": 339153,
+        "serialize_ms": 2108.2543
+      },
+      {
+        "index": 7,
+        "variant": "before",
+        "view_sha256": "30c2457ade1a94043207df0c1ea29bd7ea5e47c6b85ba1c0c7aeb99254f01d45",
+        "construct_ms": 571.9223,
+        "iterations": 5000,
+        "response_bytes": 339153,
+        "serialize_ms": 2079.167
+      },
+      {
+        "index": 8,
+        "variant": "before",
+        "view_sha256": "30c2457ade1a94043207df0c1ea29bd7ea5e47c6b85ba1c0c7aeb99254f01d45",
+        "construct_ms": 492.2171,
+        "iterations": 5000,
+        "response_bytes": 339153,
+        "serialize_ms": 1859.2806
+      },
+      {
+        "index": 9,
+        "variant": "after",
+        "view_sha256": "30c2457ade1a94043207df0c1ea29bd7ea5e47c6b85ba1c0c7aeb99254f01d45",
+        "construct_ms": 430.2135,
+        "iterations": 5000,
+        "response_bytes": 339153,
+        "serialize_ms": 1626.6102
+      },
+      {
+        "index": 10,
+        "variant": "after",
+        "view_sha256": "30c2457ade1a94043207df0c1ea29bd7ea5e47c6b85ba1c0c7aeb99254f01d45",
+        "construct_ms": 443.0571,
+        "iterations": 5000,
+        "response_bytes": 339153,
+        "serialize_ms": 1711.1065
+      },
+      {
+        "index": 11,
+        "variant": "before",
+        "view_sha256": "30c2457ade1a94043207df0c1ea29bd7ea5e47c6b85ba1c0c7aeb99254f01d45",
+        "construct_ms": 605.291,
+        "iterations": 5000,
+        "response_bytes": 339153,
+        "serialize_ms": 2268.7393
+      }
+    ],
+    "binaries": {
+      "before": {
+        "path": "E:\\CodexData\\worktrees\\incremental-margin-risk\\risk-evidence\\before-source\\target\\release\\examples\\benchmark_margin_view.exe",
+        "sha256": "dcf08874b3c05dd6b412c4d3ce7624f3087f6de3e423201dd28638afde2450b7"
+      },
+      "after": {
+        "path": "E:\\CodexData\\worktrees\\incremental-margin-risk\\MarketForge\\target\\release\\examples\\benchmark_margin_view.exe",
+        "sha256": "09c9d0cc3e0a04c50b5aa026663e4f296b71ca97fdfdc45b66541f336f5c5872"
+      }
+    },
+    "medians": {
+      "before": {
+        "construct_ms": 547.0079499999999,
+        "serialize_ms": 1954.0972000000002
+      },
+      "after": {
+        "construct_ms": 475.79015000000004,
+        "serialize_ms": 1775.2353
+      }
+    }
+  },
+  "evidence_root": "E:\\CodexData\\worktrees\\incremental-margin-risk\\risk-evidence",
+  "validation": {
+    "workspace_passed": 546,
+    "failed": 0,
+    "existing_ignored": 12,
+    "feature_clippy": "passed -D warnings",
+    "fmt": "passed",
+    "python_syntax": "passed",
+    "default_clippy": "passed -D warnings",
+    "prior_risk_source_unchanged": true,
+    "frozen_baseline_core_verified": true
+  }
+}

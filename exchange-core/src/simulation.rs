@@ -490,6 +490,22 @@ impl SimulationRoom {
             .liquidatable_account_ids_for(instrument_id)
     }
 
+    pub(crate) fn liquidation_candidate_is_active_for(
+        &self,
+        instrument_id: &str,
+        account_id: AccountId,
+    ) -> Result<bool, ActorRejectReason> {
+        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
+            ActorRejectReason::InstrumentNotFound {
+                instrument_id: instrument_id.into(),
+            }
+        })?;
+        self.exchanges
+            .get(&venue_id)
+            .expect("resolved venue")
+            .liquidation_candidate_is_active_for(instrument_id, account_id)
+    }
+
     pub fn cross_margin_collateral_orders_for_liquidation(
         &self,
         instrument_id: &str,

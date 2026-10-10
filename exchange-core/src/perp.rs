@@ -177,6 +177,18 @@ impl PerpAccount {
             .as_ref()
             .map_or(self.position_qty != 0, |p| p.gross_qty() != 0)
     }
+
+    // Restore may expose legacy/malformed signed legs. Price independence
+    // requires both legs to be zero, even if their gross sum happens to be zero.
+    fn has_mark_dependency(&self) -> bool {
+        self.avg_entry_price_tick < 0
+            || self
+                .hedge_positions
+                .as_ref()
+                .map_or(self.position_qty != 0, |p| {
+                    p.long.qty != 0 || p.short.qty != 0
+                })
+    }
     fn initial_margin(&self, config: PerpClearingConfig) -> Money {
         self.hedge_positions.as_ref().map_or_else(
             || initial_margin(self.position_qty, self.avg_entry_price_tick, config),
@@ -350,12 +362,26 @@ pub enum PerpClearingEvent {
     },
 }
 
+// Keep derived risk indexes behind one allocation, so adding them does not
+// inflate every MarketEngine enum/transaction clone. None of this is persisted.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PerpRiskTracking {
+    pub(crate) margin_changes: crate::risk_scope::RiskChanges,
+    pub(crate) reservation_revision: u64,
+    mark_changes: crate::risk_scope::RiskChanges,
+    mark_dependencies: OnceLock<im::OrdSet<AccountId>>,
+    position_accounts: OnceLock<im::OrdSet<AccountId>>,
+    dependency_updates: im::OrdSet<AccountId>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PerpAccountStore {
     #[serde(skip)]
+    pub(crate) risk: Box<PerpRiskTracking>,
+    #[serde(skip)]
     pub(crate) reservation_changes: crate::account::ReservationChanges,
-    // Exact successful inputs, not a relaxed risk policy. Every account is
-    // still checked; only identical account/order/mark/context inputs reuse work.
+    // Exact successful inputs. Unchanged inputs (including proven price
+    // independence) reuse work without changing the account's risk policy.
     #[serde(skip)]
     sync_checks: SharedMap<AccountId, Arc<MarginSyncCheck>>,
     #[serde(skip)]
@@ -494,6 +520,7 @@ impl PerpAccountStore {
         }
 
         Ok(Self {
+            risk: Box::default(),
             reservation_changes: crate::account::ReservationChanges::default(),
             accounts: SharedMap::default(),
             order_reservations: SharedMap::default(),
@@ -512,6 +539,8 @@ impl PerpAccountStore {
         account_id: AccountId,
         cash_balance: Money,
     ) -> PerpAccountSnapshot {
+        self.risk.margin_changes.mark(account_id);
+        self.risk.mark_changes.mark(account_id);
         self.reservation_changes.mark(account_id);
         let account = self.accounts.entry(account_id).or_insert(PerpAccount {
             hedge_positions: (self.config.position_mode == PositionMode::Hedge)
@@ -531,6 +560,7 @@ impl PerpAccountStore {
             .expect("newly created perp account should exist");
         self.margin_statuses
             .insert(account_id, snapshot.margin_status);
+        self.update_dependency_indexes(account_id);
         snapshot
     }
 
@@ -546,6 +576,8 @@ impl PerpAccountStore {
             return Err(ClearingError::InvalidPrice);
         }
         self.reservation_changes.invalidate();
+        self.risk.margin_changes.invalidate();
+        self.risk.mark_changes.invalidate();
         let leg_allocations =
             crate::funding::funding_leg_allocations(&self.snapshots(), settlement)?;
         let mut allocations = BTreeMap::<AccountId, Money>::new();
@@ -675,7 +707,7 @@ impl PerpAccountStore {
                         && account == Some(&check.account)
                         && check.context == context
                         && check.config == self.config
-                        && check.mark == self.mark_price_tick
+                        && (check.mark == self.mark_price_tick || Self::price_independent(check))
                         && current_context == Some(&context)
                         && current_status == Some(&check.snapshot.margin_status)
                         && self
@@ -709,7 +741,7 @@ impl PerpAccountStore {
             && self.accounts.get(&account_id) == Some(&check.account)
             && check.context == context
             && check.config == self.config
-            && check.mark == self.mark_price_tick
+            && (check.mark == self.mark_price_tick || Self::price_independent(check))
             && self.reservations_for(account_id).eq(check
                 .orders
                 .iter()
@@ -719,11 +751,13 @@ impl PerpAccountStore {
             // A previously successful check can survive other context/status
             // writes. Restore them when needed, but avoid rewriting equal data.
             if self.cross_margin_contexts.get(&account_id) != Some(&context) {
+                self.risk.margin_changes.mark(account_id);
                 self.cross_margin_contexts.insert(account_id, context);
             }
             if self.margin_statuses.get(&account_id) != Some(&status) {
                 self.margin_statuses.insert(account_id, status);
             }
+            self.risk.mark_changes.clear(account_id);
             return Ok(&self.sync_checks[&account_id].snapshot);
         }
         // Synchronization only changes this account and its context. Preserve
@@ -732,6 +766,7 @@ impl PerpAccountStore {
         let previous_account = self.accounts.get(&account_id).cloned();
         let previous_context = self.cross_margin_contexts.get(&account_id).copied();
         if previous_context != Some(context) {
+            self.risk.margin_changes.mark(account_id);
             self.cross_margin_contexts.insert(account_id, context);
         }
         if self
@@ -739,7 +774,16 @@ impl PerpAccountStore {
             .get(&account_id)
             .is_none_or(|account| account.cash_balance != cash_balance)
         {
-            self.account_mut(account_id).cash_balance = cash_balance;
+            if self.accounts.contains_key(&account_id) {
+                // This internal cash write cannot alter position/order index
+                // membership. The successful snapshot below establishes the
+                // new mark baseline; failure restores the original account.
+                self.risk.margin_changes.mark(account_id);
+                self.reservation_changes.mark(account_id);
+                self.accounts.get_mut(&account_id).unwrap().cash_balance = cash_balance;
+            } else {
+                self.account_mut(account_id).cash_balance = cash_balance;
+            }
         }
         let result = (|| {
             self.refresh_reserved_margin_for(account_id)?;
@@ -766,6 +810,7 @@ impl PerpAccountStore {
                     snapshot,
                 };
                 self.sync_checks.insert(account_id, Arc::new(check));
+                self.risk.mark_changes.clear(account_id);
                 Ok(&self.sync_checks[&account_id].snapshot)
             }
             Err(error) => {
@@ -795,10 +840,105 @@ impl PerpAccountStore {
         if mark_price_tick <= 0 {
             return Err(ClearingError::InvalidPrice);
         }
-        self.reservation_changes.invalidate();
+        let scope = self.mark_scope(mark_price_tick);
+        if scope.is_none() {
+            self.reservation_changes.invalidate();
+            self.risk.margin_changes.invalidate();
+            self.risk.mark_changes.invalidate();
+        }
         self.mark_price_tick = mark_price_tick;
-        self.refresh_all_reserved_margins()?;
-        Ok(self.refresh_all_margin_statuses())
+        let ids: Vec<_> = scope.as_ref().map_or_else(
+            || self.accounts.keys().copied().collect(),
+            |ids| ids.iter().copied().collect(),
+        );
+        // Keep the reference's two phases and ascending account/error/event order.
+        // A failed prefix must not establish a clean derived baseline.
+        for &id in &ids {
+            if scope.is_some() {
+                self.risk.margin_changes.mark(id);
+            }
+            if let Err(error) = self.refresh_reserved_margin_for(id) {
+                self.risk.mark_changes.invalidate();
+                self.risk.margin_changes.invalidate();
+                self.reservation_changes.invalidate();
+                return Err(error);
+            }
+        }
+        let mut events = Vec::new();
+        for &id in &ids {
+            events.extend(self.refresh_margin_status_for(id, true));
+        }
+        self.risk.mark_changes.reconciled(scope.as_ref());
+        Ok(events)
+    }
+
+    fn price_independent(check: &MarginSyncCheck) -> bool {
+        !crate::risk_scope::full_scan_reference()
+            && !check.account.has_mark_dependency()
+            && check.account.reserved_margin == 0
+            && check.orders.is_empty()
+    }
+
+    fn mark_scope(&self, mark: PriceTick) -> Option<std::collections::BTreeSet<AccountId>> {
+        if crate::risk_scope::full_scan_reference() {
+            return None;
+        }
+        let dirty = self.risk.mark_changes.accounts()?;
+        if !crate::risk_scope::sparse(dirty.len(), self.accounts.len()) {
+            return None;
+        }
+        let mut ids: std::collections::BTreeSet<_> = dirty.iter().copied().collect();
+        if mark != self.mark_price_tick {
+            let dependencies = self.risk.mark_dependencies.get_or_init(|| {
+                self.accounts
+                    .values()
+                    .filter(|a| {
+                        a.has_mark_dependency()
+                            || a.reserved_margin != 0
+                            || self.reservations_for(a.account_id).next().is_some()
+                    })
+                    .map(|a| a.account_id)
+                    .collect()
+            });
+            if !crate::risk_scope::sparse(dependencies.len(), self.accounts.len()) {
+                return None;
+            }
+            ids.extend(dependencies.iter().copied());
+        }
+        crate::risk_scope::sparse(ids.len(), self.accounts.len()).then_some(ids)
+    }
+
+    fn update_dependency_indexes(&mut self, id: AccountId) {
+        self.risk.dependency_updates.remove(&id);
+        if self.risk.position_accounts.get().is_none()
+            && self.risk.mark_dependencies.get().is_none()
+        {
+            return;
+        }
+        let open = self.has_open_position(id);
+        let exposed = self
+            .accounts
+            .get(&id)
+            .is_some_and(|a| a.has_mark_dependency() || a.reserved_margin != 0)
+            || self.reservations_for(id).next().is_some();
+        if let Some(index) = self.risk.position_accounts.get_mut() {
+            if open && !index.contains(&id) {
+                index.insert(id);
+            } else if !open && index.contains(&id) {
+                index.remove(&id);
+            }
+        }
+        if let Some(index) = self.risk.mark_dependencies.get_mut() {
+            if exposed && !index.contains(&id) {
+                index.insert(id);
+            } else if !exposed && index.contains(&id) {
+                index.remove(&id);
+            }
+        }
+    }
+
+    pub(crate) fn account_count(&self) -> usize {
+        self.accounts.len()
     }
 
     pub fn account(&self, account_id: AccountId) -> Option<&PerpAccount> {
@@ -899,27 +1039,58 @@ impl PerpAccountStore {
     /// snapshots for every healthy/flat account. Liquidatable status is decided
     /// before the initial-margin branch; only equity and maintenance are needed.
     pub(crate) fn liquidatable_account_ids(&self) -> Vec<AccountId> {
+        if crate::risk_scope::full_scan_reference() {
+            return self
+                .accounts
+                .values()
+                .filter(|account| self.account_is_liquidatable(account))
+                .map(|account| account.account_id)
+                .collect();
+        }
+        let ids = self.risk.position_accounts.get_or_init(|| {
+            self.accounts
+                .values()
+                .filter(|account| account.has_open_position())
+                .map(|a| a.account_id)
+                .collect()
+        });
+        if crate::risk_scope::sparse(ids.len(), self.accounts.len()) {
+            ids.iter()
+                .copied()
+                .filter(|&id| self.is_liquidatable(id))
+                .collect()
+        } else {
+            self.accounts
+                .values()
+                .filter(|account| self.account_is_liquidatable(account))
+                .map(|account| account.account_id)
+                .collect()
+        }
+    }
+
+    pub(crate) fn is_liquidatable(&self, id: AccountId) -> bool {
         self.accounts
-            .values()
-            .filter_map(|account| {
-                if !account.has_open_position() {
-                    return None;
-                }
-                let gross_qty = account
-                    .hedge_positions
-                    .as_ref()
-                    .map_or(account.position_qty, |positions| positions.gross_qty());
-                let context = self.cross_margin_context(account.account_id);
-                let local_equity = account.cash_balance
-                    + account
-                        .unrealized_pnl_at_mark(self.mark_price_tick)
-                        .unwrap_or(0);
-                let equity = local_equity.saturating_add(context.other_unrealized_pnl);
-                let maintenance = maintenance_margin(gross_qty, self.mark_price_tick, self.config)
-                    .saturating_add(context.other_maintenance_margin);
-                (equity <= maintenance).then_some(account.account_id)
-            })
-            .collect()
+            .get(&id)
+            .is_some_and(|account| self.account_is_liquidatable(account))
+    }
+
+    fn account_is_liquidatable(&self, account: &PerpAccount) -> bool {
+        if !account.has_open_position() {
+            return false;
+        }
+        let gross_qty = account
+            .hedge_positions
+            .as_ref()
+            .map_or(account.position_qty, |positions| positions.gross_qty());
+        let context = self.cross_margin_context(account.account_id);
+        let local_equity = account.cash_balance
+            + account
+                .unrealized_pnl_at_mark(self.mark_price_tick)
+                .unwrap_or(0);
+        let equity = local_equity.saturating_add(context.other_unrealized_pnl);
+        let maintenance = maintenance_margin(gross_qty, self.mark_price_tick, self.config)
+            .saturating_add(context.other_maintenance_margin);
+        equity <= maintenance
     }
 
     pub fn cross_margin_context(&self, account_id: AccountId) -> PerpCrossMarginContext {
@@ -1636,6 +1807,8 @@ impl PerpAccountStore {
     // read, then keep its persistent account sets current at every write.
     fn remove_reservation(&mut self, id: OrderId) -> Option<PerpOrderReservation> {
         let reservation = self.order_reservations.remove(&id)?;
+        self.risk.margin_changes.mark(reservation.account_id);
+        self.risk.mark_changes.mark(reservation.account_id);
         if let Some(index) = self.reservation_index.get_mut()
             && let Some(ids) = index.get_mut(&reservation.account_id)
         {
@@ -1644,15 +1817,20 @@ impl PerpAccountStore {
                 index.remove(&reservation.account_id);
             }
         }
+        self.update_dependency_indexes(reservation.account_id);
         Some(reservation)
     }
 
     fn insert_reservation(&mut self, id: OrderId, reservation: PerpOrderReservation) {
         self.remove_reservation(id);
+        let account_id = reservation.account_id;
+        self.risk.margin_changes.mark(account_id);
+        self.risk.mark_changes.mark(account_id);
         if let Some(index) = self.reservation_index.get_mut() {
             index.entry(reservation.account_id).or_default().insert(id);
         }
         self.order_reservations.insert(id, reservation);
+        self.update_dependency_indexes(account_id);
     }
 
     fn reservations_for(
@@ -1855,12 +2033,19 @@ impl PerpAccountStore {
             .checked_sub(snapshot_initial_margin)
             .ok_or(ClearingError::BalanceOverflow)?
             .max(0);
-        if account.reserved_margin != reserved_margin {
+        let changed = account.reserved_margin != reserved_margin;
+        if changed {
+            self.risk.reservation_revision = self.risk.reservation_revision.wrapping_add(1);
+            self.risk.margin_changes.mark(account_id);
+            self.risk.mark_changes.mark(account_id);
             self.reservation_changes.mark(account_id);
             self.accounts
                 .get_mut(&account_id)
                 .ok_or(ClearingError::AccountNotFound)?
                 .reserved_margin = reserved_margin;
+        }
+        if changed || self.risk.dependency_updates.contains(&account_id) {
+            self.update_dependency_indexes(account_id);
         }
         Ok(())
     }
@@ -1874,6 +2059,21 @@ impl PerpAccountStore {
     }
 
     fn account_mut(&mut self, account_id: AccountId) -> &mut PerpAccount {
+        self.risk.dependency_updates.insert(account_id);
+        self.risk.margin_changes.mark(account_id);
+        self.risk.mark_changes.mark(account_id);
+        // Insert before handing out mutable state. Failed/partial writes keep a
+        // conservative superset; refresh_reserved_margin_for prunes it later.
+        if let Some(index) = self.risk.position_accounts.get_mut()
+            && !index.contains(&account_id)
+        {
+            index.insert(account_id);
+        }
+        if let Some(index) = self.risk.mark_dependencies.get_mut()
+            && !index.contains(&account_id)
+        {
+            index.insert(account_id);
+        }
         self.reservation_changes.mark(account_id);
         self.accounts.entry(account_id).or_insert(PerpAccount {
             hedge_positions: (self.config.position_mode == PositionMode::Hedge)
@@ -2230,6 +2430,7 @@ fn margin_status_for_portfolio(
 
 #[cfg(test)]
 mod tests {
+    include!("perp_incremental_tests.rs");
     #[test]
     fn cached_margin_sync_matches_cold_checks_after_every_risk_input_change() {
         let mut store = PerpAccountStore::new(PerpClearingConfig::default(), 100).unwrap();

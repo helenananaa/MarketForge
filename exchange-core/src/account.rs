@@ -66,6 +66,8 @@ impl ReservationChanges {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct VenueAccountStore {
     #[serde(skip)]
+    margin_changes: BTreeMap<AssetId, crate::risk_scope::RiskChanges>,
+    #[serde(skip)]
     pub(crate) reservation_changes: ReservationChanges,
     // Candidate transactions share untouched accounts; mutations detach only
     // the selected account. Serde retains the existing plain map wire format.
@@ -73,6 +75,33 @@ pub struct VenueAccountStore {
 }
 
 impl VenueAccountStore {
+    pub(crate) fn margin_changes(&self, asset: &str) -> Option<&im::OrdSet<AccountId>> {
+        self.margin_changes.get(asset)?.accounts()
+    }
+
+    pub(crate) fn invalidate_margin_changes(&mut self) {
+        self.margin_changes.clear();
+    }
+
+    pub(crate) fn invalidate_asset_margin_changes(&mut self, asset: &str) {
+        if let Some(changes) = self.margin_changes.get_mut(asset) {
+            changes.invalidate();
+        }
+    }
+
+    pub(crate) fn mark_margin_change(&mut self, id: AccountId, asset: &str) {
+        self.margin_changes
+            .entry(asset.into())
+            .or_default()
+            .mark(id);
+    }
+
+    pub(crate) fn margin_reconciled(&mut self, asset: &str, scope: Option<&BTreeSet<AccountId>>) {
+        self.margin_changes
+            .entry(asset.into())
+            .or_default()
+            .reconciled(scope);
+    }
     pub(crate) fn account_count(&self) -> usize {
         self.balances.len()
     }
@@ -258,6 +287,7 @@ impl VenueAccountStore {
     }
 
     fn balance_mut(&mut self, account_id: AccountId, asset_id: AssetId) -> &mut VenueAssetBalance {
+        self.mark_margin_change(account_id, &asset_id);
         self.reservation_changes.mark(account_id);
         Arc::make_mut(self.balances.entry(account_id).or_default())
             .entry(asset_id)
