@@ -874,6 +874,54 @@ impl PerpAccountStore {
             .map(|account| account.account_id)
     }
 
+    pub(crate) fn reservation_balance(
+        &self,
+        id: AccountId,
+    ) -> Result<Option<Money>, ClearingError> {
+        self.accounts
+            .get(&id)
+            .map(|account| {
+                account
+                    .initial_margin(self.config)
+                    .checked_add(account.reserved_margin)
+                    .ok_or(ClearingError::BalanceOverflow)
+            })
+            .transpose()
+    }
+
+    pub(crate) fn has_open_position(&self, account_id: AccountId) -> bool {
+        self.accounts
+            .get(&account_id)
+            .is_some_and(PerpAccount::has_open_position)
+    }
+
+    /// Fresh liquidation eligibility, without building or cloning public
+    /// snapshots for every healthy/flat account. Liquidatable status is decided
+    /// before the initial-margin branch; only equity and maintenance are needed.
+    pub(crate) fn liquidatable_account_ids(&self) -> Vec<AccountId> {
+        self.accounts
+            .values()
+            .filter_map(|account| {
+                if !account.has_open_position() {
+                    return None;
+                }
+                let gross_qty = account
+                    .hedge_positions
+                    .as_ref()
+                    .map_or(account.position_qty, |positions| positions.gross_qty());
+                let context = self.cross_margin_context(account.account_id);
+                let local_equity = account.cash_balance
+                    + account
+                        .unrealized_pnl_at_mark(self.mark_price_tick)
+                        .unwrap_or(0);
+                let equity = local_equity.saturating_add(context.other_unrealized_pnl);
+                let maintenance = maintenance_margin(gross_qty, self.mark_price_tick, self.config)
+                    .saturating_add(context.other_maintenance_margin);
+                (equity <= maintenance).then_some(account.account_id)
+            })
+            .collect()
+    }
+
     pub fn cross_margin_context(&self, account_id: AccountId) -> PerpCrossMarginContext {
         self.cross_margin_contexts
             .get(&account_id)
@@ -2348,7 +2396,12 @@ mod tests {
                             input.collateral_reservation().unwrap(),
                             snapshot.initial_margin + snapshot.reserved_margin
                         );
+                        assert_eq!(
+                            source.reservation_balance(input.account_id).unwrap(),
+                            Some(input.collateral_reservation().unwrap())
+                        );
                     }
+                    assert_eq!(source.reservation_balance(99).unwrap(), None);
                     assert!(all[1].position_open); // Includes zero-net hedge exposure.
                     let ids = std::collections::BTreeSet::from([2, 99]);
                     assert_eq!(source.margin_inputs(Some(&ids)), vec![all[1]]);
@@ -2359,6 +2412,119 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn raw_liquidation_ids_match_snapshots_with_hedge_cross_margin_boundaries_and_restore() {
+        for mode in [PositionMode::OneWay, PositionMode::Hedge] {
+            let mut store = PerpAccountStore::new(
+                PerpClearingConfig {
+                    position_mode: mode,
+                    leverage: 10,
+                    maintenance_margin_ppm: 50_000,
+                    ..PerpClearingConfig::default()
+                },
+                100,
+            )
+            .unwrap();
+            for id in [1, 3, 8, 64, 1000] {
+                store.create_account(id, 1000);
+            }
+            for id in [3, 8, 64, 1000] {
+                let account = store.accounts.get_mut(&id).unwrap();
+                if let Some(legs) = &mut account.hedge_positions {
+                    legs.long.qty = 2;
+                    legs.long.avg_entry_price_tick = 100;
+                    legs.short.qty = 2;
+                    legs.short.avg_entry_price_tick = 100;
+                } else {
+                    account.position_qty = 2;
+                    account.avg_entry_price_tick = 100;
+                }
+            }
+            for mark in [50, 100, 150] {
+                store.mark_price_tick = mark;
+                for cash in [-100, 0, 10, 20, 100, 1000] {
+                    for pnl in [-2000, 0, 2000] {
+                        for id in [1, 3, 8, 64, 1000] {
+                            store.accounts.get_mut(&id).unwrap().cash_balance = cash;
+                            store.cross_margin_contexts.insert(
+                                id,
+                                PerpCrossMarginContext {
+                                    other_unrealized_pnl: pnl,
+                                    other_initial_margin: 500,
+                                    other_maintenance_margin: 20,
+                                    other_position_open: true,
+                                    ..PerpCrossMarginContext::default()
+                                },
+                            );
+                            // Eligibility must not trust stale persisted status caches.
+                            store.margin_statuses.insert(id, PerpMarginStatus::Healthy);
+                        }
+                        let expected: Vec<_> = store
+                            .snapshots()
+                            .into_iter()
+                            .filter(|account| {
+                                account.has_open_position()
+                                    && account.margin_status == PerpMarginStatus::Liquidatable
+                            })
+                            .map(|account| account.account_id)
+                            .collect();
+                        assert_eq!(store.liquidatable_account_ids(), expected);
+                        let restored: PerpAccountStore =
+                            serde_json::from_value(serde_json::to_value(&store).unwrap()).unwrap();
+                        assert_eq!(restored.liquidatable_account_ids(), expected);
+                    }
+                }
+            }
+            store.accounts.get_mut(&3).unwrap().cash_balance = 0;
+            store.mark_price_tick = 100;
+            for pnl in [Money::MIN, Money::MAX] {
+                store.cross_margin_contexts.insert(
+                    3,
+                    PerpCrossMarginContext {
+                        other_unrealized_pnl: pnl,
+                        other_maintenance_margin: Money::MAX,
+                        ..PerpCrossMarginContext::default()
+                    },
+                );
+                let snapshot = store.account_snapshot(3).unwrap();
+                assert_eq!(
+                    store.liquidatable_account_ids().contains(&3),
+                    snapshot.has_open_position()
+                        && snapshot.margin_status == PerpMarginStatus::Liquidatable
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn compact_reservation_keeps_checked_collateral_overflow() {
+        for mode in [PositionMode::OneWay, PositionMode::Hedge] {
+            let mut store = PerpAccountStore::new(
+                PerpClearingConfig {
+                    position_mode: mode,
+                    leverage: 10,
+                    ..PerpClearingConfig::default()
+                },
+                100,
+            )
+            .unwrap();
+            store.create_account(1, 10_000);
+            let account = store.accounts.get_mut(&1).unwrap();
+            account.reserved_margin = Money::MAX;
+            if let Some(legs) = &mut account.hedge_positions {
+                legs.long.qty = 1;
+                legs.long.avg_entry_price_tick = 100;
+            } else {
+                account.position_qty = 1;
+                account.avg_entry_price_tick = 100;
+            }
+            assert_eq!(
+                store.reservation_balance(1),
+                Err(ClearingError::BalanceOverflow)
+            );
         }
     }
 

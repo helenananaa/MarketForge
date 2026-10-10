@@ -12,6 +12,12 @@ use serde::{Deserialize, Serialize};
 #[serde(transparent)]
 pub(crate) struct SharedMap<K: Ord, V>(Arc<BTreeMap<K, V>>);
 
+impl<K: Ord, V> From<BTreeMap<K, V>> for SharedMap<K, V> {
+    fn from(entries: BTreeMap<K, V>) -> Self {
+        Self(Arc::new(entries))
+    }
+}
+
 impl<K: Ord, V> Default for SharedMap<K, V> {
     fn default() -> Self {
         Self(Arc::new(BTreeMap::new()))

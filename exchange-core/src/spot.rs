@@ -219,6 +219,12 @@ impl SpotAccountStore {
         })
     }
 
+    pub(crate) fn reservation_balance(&self, id: AccountId) -> Option<(Money, PositionQty)> {
+        self.accounts
+            .get(&id)
+            .map(|account| (account.reserved_cash, account.reserved_position))
+    }
+
     pub fn reserve_resting_order(
         &mut self,
         order_id: OrderId,

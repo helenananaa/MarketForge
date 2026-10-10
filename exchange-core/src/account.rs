@@ -69,7 +69,7 @@ pub struct VenueAccountStore {
     pub(crate) reservation_changes: ReservationChanges,
     // Candidate transactions share untouched accounts; mutations detach only
     // the selected account. Serde retains the existing plain map wire format.
-    balances: BTreeMap<AccountId, Arc<BTreeMap<AssetId, VenueAssetBalance>>>,
+    balances: crate::shared_map::SharedMap<AccountId, Arc<BTreeMap<AssetId, VenueAssetBalance>>>,
 }
 
 impl VenueAccountStore {
@@ -348,21 +348,16 @@ mod tests {
         }
         let before = serde_json::to_value(&store).unwrap();
         let mut candidate = store.clone();
+        assert!(store.balances.shares_storage(&candidate.balances));
+        candidate.available_balance(1, "USD");
+        assert!(store.balances.shares_storage(&candidate.balances));
         candidate.reserve(1, "USD", 100).unwrap();
         candidate.apply_delta(2, "BTC", 2).unwrap();
         assert_eq!(serde_json::to_value(&store).unwrap(), before);
-        assert!(!std::sync::Arc::ptr_eq(
-            &store.balances[&1],
-            &candidate.balances[&1]
-        ));
-        assert!(!std::sync::Arc::ptr_eq(
-            &store.balances[&2],
-            &candidate.balances[&2]
-        ));
-        assert!(std::sync::Arc::ptr_eq(
-            &store.balances[&3],
-            &candidate.balances[&3]
-        ));
+        assert!(!store.balances.shares_storage(&candidate.balances));
+        assert!(!Arc::ptr_eq(&store.balances[&1], &candidate.balances[&1]));
+        assert!(!Arc::ptr_eq(&store.balances[&2], &candidate.balances[&2]));
+        assert!(Arc::ptr_eq(&store.balances[&3], &candidate.balances[&3]));
         assert!(candidate.reserve(3, "USD", 2000).is_err());
         assert_eq!(serde_json::to_value(&store).unwrap(), before);
         let restored: super::VenueAccountStore = serde_json::from_value(before.clone()).unwrap();

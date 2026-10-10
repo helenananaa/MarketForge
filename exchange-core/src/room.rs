@@ -411,20 +411,10 @@ impl RoomManager {
             .into_iter()
             .collect::<BTreeSet<_>>();
         if include_liquidatable_accounts {
-            let accounts = room
-                .account_snapshots_for(instrument_id)
-                .map_err(RoomManagerError::Actor)?;
-            if let AccountSnapshots::Perp(accounts) = accounts {
-                account_ids.extend(
-                    accounts
-                        .into_iter()
-                        .filter(|account| {
-                            account.has_open_position()
-                                && account.margin_status == crate::PerpMarginStatus::Liquidatable
-                        })
-                        .map(|account| account.account_id),
-                );
-            }
+            account_ids.extend(
+                room.liquidatable_account_ids_for(instrument_id)
+                    .map_err(RoomManagerError::Actor)?,
+            );
         }
 
         Ok(account_ids
@@ -1430,6 +1420,74 @@ mod tests {
     };
 
     include!("order_protection_tests.rs");
+
+    #[test]
+    #[ignore = "isolated Release snapshot-versus-raw liquidation scan comparison"]
+    fn liquidation_scan_fixed_work_benchmark() {
+        for case in 0..3 {
+            let mut scenario = if case == 0 {
+                spot_scenario("scan-bench")
+            } else {
+                pending_perp_liquidation_scenario("scan-bench")
+            };
+            if case == 2
+                && let MarketConfig::Perp(config) = &mut scenario.market
+            {
+                config.clearing.position_mode = crate::PositionMode::Hedge;
+            }
+            scenario.accounts = (1..=1000)
+                .map(|account_id| ScenarioAccount::Basic {
+                    account_id,
+                    cash_balance: 1_000_000,
+                })
+                .collect();
+            scenario.seed_orders.clear();
+            if case > 0 {
+                for n in 0..1000 {
+                    let side = if n % 2 == 0 { Side::Sell } else { Side::Buy };
+                    let mut command = limit(n + 1, n + 1, side, 100, 2);
+                    if case == 2
+                        && let Command::NewOrder(order) = &mut command
+                    {
+                        order.position_side = if side == Side::Buy {
+                            crate::PositionSide::Long
+                        } else {
+                            crate::PositionSide::Short
+                        };
+                    }
+                    scenario.seed_orders.push(command);
+                }
+            }
+            let instrument = scenario.market.instrument_id().to_string();
+            let mut manager = RoomManager::new();
+            manager.create_room(scenario).unwrap();
+            let before =
+                serde_json::to_value(manager.simulation_room("scan-bench").unwrap()).unwrap();
+            let expected = manager
+                .liquidation_candidates_for_instrument("scan-bench", &instrument, true)
+                .unwrap();
+            assert!(expected.is_empty());
+            for snapshot in [true, false, false, true, true, false, false, true] {
+                crate::simulation::SNAPSHOT_LIQUIDATION_REFERENCE.set(snapshot);
+                let start = std::time::Instant::now();
+                for _ in 0..500 {
+                    let actual = std::hint::black_box(&manager)
+                        .liquidation_candidates_for_instrument("scan-bench", &instrument, true)
+                        .unwrap();
+                    assert_eq!(actual, expected);
+                }
+                println!(
+                    "scan_case={case} snapshot={snapshot} seconds={:.6}",
+                    start.elapsed().as_secs_f64()
+                );
+                crate::simulation::SNAPSHOT_LIQUIDATION_REFERENCE.set(false);
+                assert_eq!(
+                    serde_json::to_value(manager.simulation_room("scan-bench").unwrap()).unwrap(),
+                    before
+                );
+            }
+        }
+    }
 
     fn spot_scenario(room_id: &str) -> ScenarioConfig {
         ScenarioConfig {

@@ -901,6 +901,49 @@ pub struct JournalMutation {
     pub mutation: RoomMutation,
 }
 
+// A borrowed envelope has the same wire shape as JournalMutation, without
+// cloning a checkpoint or a batch of bot states just to encode it.
+#[derive(Serialize)]
+struct JournalMutationRef<'a> {
+    room_id: &'a str,
+    mutation_seq: u64,
+    command_cursor: u64,
+    schema_version: u16,
+    mutation: &'a RoomMutation,
+}
+
+// Only the validator may construct this proof. The immutable borrow keeps its
+// contents unchanged through projection checks and the eventual store write.
+struct ValidatedPendingMutation<'a>(&'a PendingJournalMutation);
+
+fn encode_validated_mutation(
+    validated: &ValidatedPendingMutation<'_>,
+    mutation_seq: u64,
+) -> Result<Vec<u8>, JournalError> {
+    let mutation = validated.0;
+    #[cfg(test)]
+    if tests::REVALIDATE_AND_CLONE_MUTATION.get() {
+        // Frozen pre-optimization write path, including its second validation.
+        validate_pending_mutation(mutation)?;
+        return serde_json::to_vec(&JournalMutation {
+            room_id: mutation.room_id.clone(),
+            mutation_seq,
+            command_cursor: mutation.command_cursor,
+            schema_version: ROOM_MUTATION_SCHEMA_VERSION,
+            mutation: mutation.mutation.clone(),
+        })
+        .map_err(JournalError::Serialize);
+    }
+    serde_json::to_vec(&JournalMutationRef {
+        room_id: &mutation.room_id,
+        mutation_seq,
+        command_cursor: mutation.command_cursor,
+        schema_version: ROOM_MUTATION_SCHEMA_VERSION,
+        mutation: &mutation.mutation,
+    })
+    .map_err(JournalError::Serialize)
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RoomMutation {
@@ -1401,8 +1444,11 @@ impl InMemoryJournalStore {
         is_account_holder_role(role) && self.user_owns_account(user_id, room_id, account_id)
     }
 
-    fn store_mutation(&mut self, mutation: &PendingJournalMutation) -> Result<(), JournalError> {
-        validate_pending_mutation(mutation)?;
+    fn store_mutation(
+        &mut self,
+        validated: ValidatedPendingMutation<'_>,
+    ) -> Result<(), JournalError> {
+        let mutation = validated.0;
         if let Some(record) = &mutation.control_idempotency {
             let key = control_idempotency_map_key(record);
             if self.control_idempotency.contains_key(&key) {
@@ -1413,14 +1459,7 @@ impl InMemoryJournalStore {
             .next_mutation_seq
             .checked_add(1)
             .ok_or(JournalError::SequenceOutOfRange(u64::MAX))?;
-        let record = JournalMutation {
-            room_id: mutation.room_id.clone(),
-            mutation_seq,
-            command_cursor: mutation.command_cursor,
-            schema_version: ROOM_MUTATION_SCHEMA_VERSION,
-            mutation: mutation.mutation.clone(),
-        };
-        let encoded = serde_json::to_vec(&record).map_err(JournalError::Serialize)?;
+        let encoded = encode_validated_mutation(&validated, mutation_seq)?;
         self.next_mutation_seq = mutation_seq;
         self.mutations.push(encoded);
         if let Some(record) = &mutation.control_idempotency {
@@ -1797,14 +1836,14 @@ impl JournalStore for InMemoryJournalStore {
         }
         if let Some(snapshot) = initial_snapshot {
             self.retain_latest_snapshot(snapshot);
-            self.store_mutation(&PendingJournalMutation::new(
+            self.store_mutation(validate_pending_mutation(&PendingJournalMutation::new(
                 snapshot.room_id.clone(),
                 checkpoint_cursor,
                 RoomMutation::StateCheckpoint {
                     actor: Box::new(snapshot.actor.clone()),
                     complete_history: true,
                 },
-            ))?;
+            ))?)?;
         }
         self.room_members.insert(
             (bootstrap.room_id.clone(), owner_user_id.to_string()),
@@ -1935,7 +1974,7 @@ impl JournalStore for InMemoryJournalStore {
         transfer_records: &[JournalTransfer],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
-        validate_pending_mutation(mutation)?;
+        let validated = validate_pending_mutation(mutation)?;
         validate_mutation_execution_records(mutation, execution_records)?;
         // Already committed executions were validated at append time. Clock and
         // state-only mutations add no projection rows, so need no history replay.
@@ -1968,7 +2007,7 @@ impl JournalStore for InMemoryJournalStore {
         }
 
         self.ensure_execution_quotas(execution_records)?;
-        self.store_mutation(mutation)?;
+        self.store_mutation(validated)?;
         self.executions.extend(execution_records.iter().cloned());
         if let Some(projections) = projections {
             self.projections.merge_patch(projections);
@@ -3458,9 +3497,9 @@ impl PostgresJournalStore {
 
     fn insert_room_mutation(
         tx: &mut postgres::Transaction<'_>,
-        mutation: &PendingJournalMutation,
+        validated: ValidatedPendingMutation<'_>,
     ) -> Result<u64, JournalError> {
-        validate_pending_mutation(mutation)?;
+        let mutation = validated.0;
         let command_cursor = i64_from_u64(mutation.command_cursor, "command_cursor")?;
         let schema_version = i32::from(ROOM_MUTATION_SCHEMA_VERSION);
         let mutation_kind = mutation.mutation.kind_name();
@@ -3725,14 +3764,14 @@ impl PostgresJournalStore {
                 Self::insert_snapshot(&mut tx, snapshot)?;
                 let mutation_seq = Self::insert_room_mutation(
                     &mut tx,
-                    &PendingJournalMutation::new(
+                    validate_pending_mutation(&PendingJournalMutation::new(
                         snapshot.room_id.clone(),
                         snapshot.actor.next_command_seq(),
                         RoomMutation::StateCheckpoint {
                             actor: Box::new(snapshot.actor.clone()),
                             complete_history: true,
                         },
-                    ),
+                    ))?,
                 )?;
                 tx.execute(
                     "UPDATE marketforge_recovery_heads SET checkpoint_mutation_seq=$2 WHERE room_id=$1",
@@ -4712,7 +4751,7 @@ impl JournalStore for PostgresJournalStore {
         transfer_records: &[JournalTransfer],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
-        validate_pending_mutation(mutation)?;
+        let validated = validate_pending_mutation(mutation)?;
         validate_mutation_execution_records(mutation, execution_records)?;
         for record in transfer_records {
             validate_transfer(record)?;
@@ -4741,20 +4780,18 @@ impl JournalStore for PostgresJournalStore {
             }
         }
 
-        let mutation = mutation.clone();
-        let execution_records = execution_records.to_vec();
-        let transfer_records = transfer_records.to_vec();
-        let snapshot = snapshot.cloned();
+        // run_postgres executes inline on the dedicated journal worker, so its
+        // transaction can borrow the coordinator-owned inputs throughout.
         run_postgres(&mut self.client, move |client| {
             let mut tx = client.transaction().map_err(JournalError::Postgres)?;
-            Self::insert_room_mutation(&mut tx, &mutation)?;
-            for record in &execution_records {
+            Self::insert_room_mutation(&mut tx, validated)?;
+            for record in execution_records {
                 Self::insert_execution(&mut tx, record)?;
             }
-            for record in &transfer_records {
+            for record in transfer_records {
                 Self::insert_transfer(&mut tx, record)?;
             }
-            if let Some(snapshot) = &snapshot {
+            if let Some(snapshot) = snapshot {
                 Self::insert_snapshot(&mut tx, snapshot)?;
             }
             if let RoomMutation::StatusChanged { status } = &mutation.mutation {
@@ -4784,7 +4821,7 @@ impl JournalStore for PostgresJournalStore {
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
         validate_fenced_room_mutation(claim, mutation)?;
-        validate_pending_mutation(mutation)?;
+        let validated = validate_pending_mutation(mutation)?;
         validate_mutation_execution_records(mutation, execution_records)?;
         for record in transfer_records {
             validate_transfer(record)?;
@@ -4813,22 +4850,17 @@ impl JournalStore for PostgresJournalStore {
             }
         }
 
-        let claim = claim.clone();
-        let mutation = mutation.clone();
-        let execution_records = execution_records.to_vec();
-        let transfer_records = transfer_records.to_vec();
-        let snapshot = snapshot.cloned();
         run_postgres(&mut self.client, move |client| {
             let mut tx = client.transaction().map_err(JournalError::Postgres)?;
-            Self::assert_room_write_fence(&mut tx, &claim)?;
-            Self::insert_room_mutation(&mut tx, &mutation)?;
-            for record in &execution_records {
+            Self::assert_room_write_fence(&mut tx, claim)?;
+            Self::insert_room_mutation(&mut tx, validated)?;
+            for record in execution_records {
                 Self::insert_execution(&mut tx, record)?;
             }
-            for record in &transfer_records {
+            for record in transfer_records {
                 Self::insert_transfer(&mut tx, record)?;
             }
-            if let Some(snapshot) = &snapshot {
+            if let Some(snapshot) = snapshot {
                 Self::insert_snapshot(&mut tx, snapshot)?;
             }
             if let RoomMutation::StatusChanged { status } = &mutation.mutation {
@@ -6491,7 +6523,9 @@ fn command_cursor_after_records(records: &[JournalExecution]) -> Result<u64, Jou
     })
 }
 
-fn validate_pending_mutation(mutation: &PendingJournalMutation) -> Result<(), JournalError> {
+fn validate_pending_mutation(
+    mutation: &PendingJournalMutation,
+) -> Result<ValidatedPendingMutation<'_>, JournalError> {
     i64_from_u64(mutation.command_cursor, "command_cursor")?;
     validate_recovery_json(&mutation.mutation)?;
     match &mutation.mutation {
@@ -6582,7 +6616,7 @@ fn validate_pending_mutation(mutation: &PendingJournalMutation) -> Result<(), Jo
             }
         }
     }
-    Ok(())
+    Ok(ValidatedPendingMutation(mutation))
 }
 
 fn validate_mutation_execution_records(
@@ -7483,6 +7517,196 @@ mod tests {
         InstrumentConfig, MarketConfig, NewOrder, SpotClearingConfig, SpotMarketConfig,
         SpotRiskConfig, VenueAssetPolicyConfig, VenueRuleConfig, scenario::ScenarioAccount,
     };
+
+    thread_local! {
+        pub(super) static REVALIDATE_AND_CLONE_MUTATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
+    fn journal_benchmark_mutations() -> Vec<PendingJournalMutation> {
+        let spec: exchange_core::population::BackgroundMarket = serde_json::from_str(include_str!(
+            "../../scripts/fixtures/microstructure_market.json"
+        ))
+        .unwrap();
+        let mut templates = Vec::with_capacity(1000);
+        for template in spec.agents.iter().cycle().take(1000) {
+            templates.push(template.clone());
+        }
+        let state = exchange_core::SchedulerState::new(
+            "journal-test",
+            templates,
+            exchange_core::SchedulerMode::Auto { interval_ms: 25 },
+        );
+        let delta = crate::scheduler_delta::SchedulerDelta {
+            version: 1,
+            base_revision: 0,
+            agent_count: state.agents.len(),
+            state: exchange_core::SchedulerState {
+                revision: 1,
+                ..crate::scheduler_delta::SchedulerDelta::metadata(&state)
+            },
+            changes: state
+                .agents
+                .iter()
+                .take(64)
+                .enumerate()
+                .map(|(index, agent)| crate::scheduler_delta::AgentDelta {
+                    index,
+                    kind_state: agent.kind_state.clone(),
+                    unfinished_actions: vec![exchange_core::OrderAction::Cancel {
+                        order_id: index as u64 + 1,
+                    }],
+                })
+                .collect(),
+        };
+        vec![
+            PendingJournalMutation::new(
+                "journal-test",
+                0,
+                RoomMutation::SchedulerDelta {
+                    clock_steps: 0,
+                    delta,
+                    training: None,
+                },
+            ),
+            PendingJournalMutation::new(
+                "journal-test",
+                0,
+                RoomMutation::SchedulerProgress {
+                    clock_steps: 0,
+                    state,
+                    training: None,
+                },
+            ),
+            PendingJournalMutation::new(
+                "journal-test",
+                0,
+                RoomMutation::ClockAdvanced {
+                    steps: 1,
+                    completed_transfers: Vec::new(),
+                },
+            ),
+            PendingJournalMutation::new(
+                "journal-test",
+                0,
+                RoomMutation::StateCheckpoint {
+                    actor: Box::new(empty_room("journal-test")),
+                    complete_history: true,
+                },
+            ),
+            PendingJournalMutation::new(
+                "journal-test",
+                0,
+                RoomMutation::StatusChanged {
+                    status: MarketStatus::Paused,
+                },
+            ),
+        ]
+    }
+
+    #[test]
+    fn validated_borrowed_journal_preserves_exact_bytes_errors_and_rollback() {
+        let mutations = journal_benchmark_mutations();
+        for mutation in &mutations {
+            let validated = validate_pending_mutation(mutation).unwrap();
+            REVALIDATE_AND_CLONE_MUTATION.set(true);
+            let reference = encode_validated_mutation(&validated, 7).unwrap();
+            REVALIDATE_AND_CLONE_MUTATION.set(false);
+            let borrowed = encode_validated_mutation(&validated, 7).unwrap();
+            assert_eq!(borrowed, reference);
+            let decoded: JournalMutation = serde_json::from_slice(&borrowed).unwrap();
+            assert_eq!(decoded.mutation_seq, 7);
+        }
+        let mut reference = InMemoryJournalStore::new();
+        let mut optimized = InMemoryJournalStore::new();
+        let mut cases = mutations;
+        let mut overflow = cases[3].clone();
+        overflow.command_cursor = u64::MAX;
+        overflow.room_id = "wrong-room".into();
+        cases.push(overflow); // cursor error must precede room mismatch
+        let mut invalid_number = cases[3].clone();
+        invalid_number.mutation = RoomMutation::StateCheckpoint {
+            actor: Box::new({
+                let mut scenario = spot_scenario("journal-test");
+                if let exchange_core::ScenarioAccount::Spot { cash_balance, .. } =
+                    &mut scenario.accounts[0]
+                {
+                    *cash_balance = i128::MAX;
+                }
+                SimulationRoom::from_scenario(scenario).unwrap().room
+            }),
+            complete_history: true,
+        };
+        invalid_number.room_id = "wrong-room".into();
+        cases.push(invalid_number); // JSON error must precede room mismatch
+        let mut corrupt_delta = cases[0].clone();
+        if let RoomMutation::SchedulerDelta { delta, .. } = &mut corrupt_delta.mutation {
+            delta.changes.push(delta.changes[0].clone());
+        }
+        cases.push(corrupt_delta);
+        let wrong_snapshot = JournalSnapshot {
+            room_id: "wrong-room".into(),
+            command_seq: 0,
+            actor: empty_room("wrong-room"),
+        };
+        for (index, mutation) in cases.iter().enumerate() {
+            let snapshot = (index == 2).then_some(&wrong_snapshot);
+            let prior_bytes = optimized.mutations.clone();
+            REVALIDATE_AND_CLONE_MUTATION.set(true);
+            let old = reference.append_room_mutation(mutation, &[], &[], snapshot);
+            REVALIDATE_AND_CLONE_MUTATION.set(false);
+            let new = optimized.append_room_mutation(mutation, &[], &[], snapshot);
+            assert_eq!(format!("{old:?}"), format!("{new:?}"));
+            if new.is_err() {
+                assert_eq!(optimized.mutations, prior_bytes);
+                assert!(optimized.snapshots.is_empty());
+                assert!(optimized.executions.is_empty());
+                assert!(optimized.transfers.is_empty());
+            }
+            assert_eq!(reference.mutations, optimized.mutations);
+            assert_eq!(reference.next_mutation_seq, optimized.next_mutation_seq);
+        }
+        assert!(matches!(
+            validate_pending_mutation(&cases[5]),
+            Err(JournalError::ValueOutOfRange {
+                field: "command_cursor",
+                ..
+            })
+        ));
+        assert!(matches!(
+            validate_pending_mutation(&cases[6]),
+            Err(JournalError::Serialize(_))
+        ));
+    }
+
+    #[test]
+    #[ignore = "fixed-work Release journal benchmark"]
+    fn validated_journal_fixed_work_benchmark() {
+        let mutations = journal_benchmark_mutations();
+        for (case, mutation) in mutations.iter().enumerate().take(4) {
+            let mut expected = None;
+            for optimized in [false, true, true, false, false, true, true, false] {
+                let mut store = InMemoryJournalStore::new();
+                REVALIDATE_AND_CLONE_MUTATION.set(!optimized);
+                let start = std::time::Instant::now();
+                for _ in 0..200 {
+                    store
+                        .append_room_mutation(mutation, &[], &[], None)
+                        .unwrap();
+                }
+                let seconds = start.elapsed().as_secs_f64();
+                REVALIDATE_AND_CLONE_MUTATION.set(false);
+                eprintln!(
+                    "journal_case={case} optimized={optimized} seconds={seconds:.6} bytes={}",
+                    store.mutations.iter().map(Vec::len).sum::<usize>()
+                );
+                if let Some(reference) = &expected {
+                    assert_eq!(&store.mutations, reference);
+                } else {
+                    expected = Some(store.mutations);
+                }
+            }
+        }
+    }
 
     fn new_order_record(
         command_seq: u64,

@@ -24,6 +24,11 @@ use crate::{
 
 pub type UserId = String;
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static SNAPSHOT_LIQUIDATION_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SimulationRoom {
     room_id: RoomId,
@@ -389,6 +394,35 @@ impl SimulationRoom {
             .get(&venue_id)
             .expect("venue id was resolved from exchanges")
             .pending_liquidation_accounts_for(instrument_id)
+    }
+
+    pub(crate) fn liquidatable_account_ids_for(
+        &self,
+        instrument_id: &str,
+    ) -> Result<Vec<AccountId>, ActorRejectReason> {
+        #[cfg(test)]
+        if SNAPSHOT_LIQUIDATION_REFERENCE.get() {
+            return Ok(match self.account_snapshots_for(instrument_id)? {
+                AccountSnapshots::Spot(_) => Vec::new(),
+                AccountSnapshots::Perp(accounts) => accounts
+                    .into_iter()
+                    .filter(|account| {
+                        account.has_open_position()
+                            && account.margin_status == crate::PerpMarginStatus::Liquidatable
+                    })
+                    .map(|account| account.account_id)
+                    .collect(),
+            });
+        }
+        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
+            ActorRejectReason::InstrumentNotFound {
+                instrument_id: instrument_id.to_string(),
+            }
+        })?;
+        self.exchanges
+            .get(&venue_id)
+            .expect("venue id was resolved from exchanges")
+            .liquidatable_account_ids_for(instrument_id)
     }
 
     pub fn cross_margin_collateral_orders_for_liquidation(

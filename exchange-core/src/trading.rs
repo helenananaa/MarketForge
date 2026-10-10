@@ -29,6 +29,9 @@ pub struct SpotTradingEngine {
 }
 
 impl SpotTradingEngine {
+    pub(crate) fn reservation_balance(&self, id: AccountId) -> Option<(Money, PositionQty)> {
+        self.accounts.reservation_balance(id)
+    }
     pub(crate) fn expiring_order_ids(&self, market_time_ms: u64) -> Vec<OrderId> {
         self.book.expiring_order_ids(market_time_ms)
     }
@@ -266,6 +269,15 @@ pub struct PendingLiquidation {
 }
 
 impl PerpTradingEngine {
+    pub(crate) fn liquidatable_account_ids(&self) -> Vec<AccountId> {
+        self.accounts.liquidatable_account_ids()
+    }
+    pub(crate) fn reservation_balance(
+        &self,
+        id: AccountId,
+    ) -> Result<Option<Money>, ClearingError> {
+        self.accounts.reservation_balance(id)
+    }
     pub(crate) fn expiring_order_ids(&self, market_time_ms: u64) -> Vec<OrderId> {
         self.book.expiring_order_ids(market_time_ms)
     }
@@ -748,6 +760,10 @@ impl PerpTradingEngine {
 
     pub(crate) fn open_position_accounts(&self) -> impl Iterator<Item = AccountId> + '_ {
         self.accounts.open_position_accounts()
+    }
+
+    pub(crate) fn has_open_position(&self, account_id: AccountId) -> bool {
+        self.accounts.has_open_position(account_id)
     }
 
     pub fn command_log(&self) -> &[CommandRecord] {
