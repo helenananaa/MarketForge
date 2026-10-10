@@ -323,9 +323,16 @@ mod tests {
             audit_recovery(&full).unwrap()["state"]
         );
         let mut client = postgres::Client::connect(&dsn, postgres::NoTls).unwrap();
-        client.execute("UPDATE marketforge_recovery_heads SET checkpoint_command_cursor=checkpoint_command_cursor+1 WHERE room_id=$1",&[&room_id]).unwrap();
-        assert!(store.load_room_recovery(&room_id).is_err());
-        client.execute("UPDATE marketforge_recovery_heads SET checkpoint_command_cursor=checkpoint_command_cursor-1 WHERE room_id=$1",&[&room_id]).unwrap();
+        // Other parallel tests recover all rooms from this database. Keep the
+        // deliberately corrupt head private while exercising the same loader.
+        let mut corrupt = client.transaction().unwrap();
+        corrupt.execute("UPDATE marketforge_recovery_heads SET checkpoint_command_cursor=checkpoint_command_cursor+1 WHERE room_id=$1",&[&room_id]).unwrap();
+        assert!(
+            crate::journal::load_postgres_recovery_snapshot(&mut corrupt, Some(&room_id), true)
+                .is_err()
+        );
+        corrupt.rollback().unwrap();
+        assert!(store.load_room_recovery(&room_id).is_ok());
         client
             .execute(
                 "DELETE FROM marketforge_room_snapshots WHERE room_id=$1",

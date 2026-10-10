@@ -3837,7 +3837,7 @@ pub(crate) fn load_postgres_recovery(
     Ok(result)
 }
 
-fn load_postgres_recovery_snapshot(
+pub(super) fn load_postgres_recovery_snapshot(
     client: &mut impl postgres::GenericClient,
     room_id: Option<&str>,
     optimized: bool,
