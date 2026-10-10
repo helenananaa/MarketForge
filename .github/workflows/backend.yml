@@ -63,11 +63,11 @@ jobs:
         run: python3 -m compileall -q python scripts/batch_runner.py python/examples/buy_remaining.py
       - name: Training HTTP/CLI smoke
         run: ./scripts/backend_training_smoke.sh
-      - name: Install qualified Pine runtime
-        run: python3 -m pip install -r bot-plugins/pine-strategy/requirements.txt
-      - name: Pine orders, mixed background and PostgreSQL restart
+      - name: Install agent dependencies and qualified Pine runtime
+        run: python3 -m pip install -e './python[agents]' -r bot-plugins/pine-strategy/requirements.txt
+      - name: Python SDK, agents, Pine and PostgreSQL recovery
         run: |
           cargo build -p exchange-server
-          PYTHONPATH=python python3 -m unittest python.tests.test_pine_bot python.tests.test_pine_http -v
+          PYTHONPATH=python python3 -m unittest discover -s python/tests -v
         env:
           MARKETFORGE_REQUIRE_PINE_TESTS: "1"

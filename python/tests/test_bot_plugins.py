@@ -132,8 +132,12 @@ class PluginLiveTests(unittest.TestCase):
     def test_catalog_and_invalid_configuration(self):
         client = self.client()
         bots = client.list_bots()
-        self.assertEqual(len(bots), 12)
-        self.assertIn("example.buy-remaining", {bot["id"] for bot in bots})
+        self.assertCountEqual([bot["id"] for bot in bots], [
+            "NoiseTrader", "DcaTrader", "GridTrader", "ContinuousMarketMaker", "CancelAtStep",
+            "AdaptiveNoiseTrader", "DynamicMarketMaker", "ValueTrader", "TrendTrader",
+            "ExecutionTrader", "PovExecutionTrader", "MarketEventTrader", "BasisArbitrageTrader",
+            "FundingRateTrader", "LeveragedTrendTrader", "example.buy-remaining", "pine.strategy",
+        ])
         with self.assertRaises(MarketForgeError) as error:
             Client(self.base).list_bots()
         self.assertEqual(error.exception.status, 401)
