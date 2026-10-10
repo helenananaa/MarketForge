@@ -42,3 +42,71 @@ test("actual snapshot source takes precedence over advertised delivery capabilit
   assert.equal(snapshotDeliveryLabel("partial", "polling_snapshot"), t("orderBook.delivery.pollingSnapshot"));
   assert.equal(snapshotDeliveryLabel("full", "live_snapshot", "websocket"), t("orderBook.delivery.strictContinuous"));
 });
+
+const noopCancel = () => undefined;
+
+test("price grouping menu only offers buckets up to a tenth of the price", () => {
+  const frame: { flush?: () => void } = {};
+  const store = createOrderBookStore({ request: (callback) => { frame.flush = callback; return 1; }, cancel: noopCancel });
+  const noop = () => undefined;
+  const runtime: OrderBookRuntime = {
+    view: {
+      identity: { exchange: "marketforge", marketType: "spot", symbol: "V-BTC-SPOT" },
+      supported: true, supportMessage: null, fullModeSupported: false,
+      snapshotMode: "live_snapshot", preferences: DEFAULT_ORDER_BOOK_PREFERENCES,
+      updateIntervalMs: 250, updateIntervalsMs: [250], store,
+    },
+    actions: { retry: noop, setHeight: noop, setCollapsed: noop, setMode: noop,
+      setPartialDepth: noop, setUpdateIntervalMs: noop, setFullOutputLimit: noop, setPriceGrouping: noop },
+    status: { enabled: true },
+  };
+  store.publishBook({
+    mode: "partial", identity: runtime.view.identity, topic: "book", eventTimeMs: 1, receivedAtMs: 1,
+    source: "websocket", sequence: 1, revision: 1, bids: [[100, 1]], asks: [[101, 1]],
+    topBid: 100, topAsk: 101, midPrice: 100.5, spread: 1, spreadBps: 99.5, notionalImbalance: 0,
+    updateIntervalMs: 250, depthLevels: 20, outputLimit: null, bookBidLevels: 1, bookAskLevels: 1,
+    priceTickSize: 0.1, priceStep: 0.1, priceGrouping: "raw", aggregationApplied: false,
+    bucketBidLevels: null, bucketAskLevels: null,
+  });
+  frame.flush?.();
+  const html = renderToStaticMarkup(<OrderBookDock runtime={runtime} height={300} />);
+  // Tick 0.1 at price 100 allows steps up to 10, i.e. grouping 100.
+  assert.match(html, /<option value="100"/);
+  assert.doesNotMatch(html, /<option value="200"/);
+  assert.doesNotMatch(html, /<option value="1000000000"/);
+  assert.match(html, /<option value="auto"/);
+  store.destroy();
+});
+
+test("full-book grouping uses raw best prices even when a saved grouping creates a zero bid bucket", () => {
+  const frame: { flush?: () => void } = {};
+  const store = createOrderBookStore({ request: (callback) => { frame.flush = callback; return 1; }, cancel: noopCancel });
+  const noop = () => undefined;
+  const runtime: OrderBookRuntime = {
+    view: {
+      identity: { exchange: "okx", marketType: "futures", symbol: "TEST" },
+      supported: true, supportMessage: null, fullModeSupported: true,
+      snapshotMode: "live_snapshot",
+      preferences: { ...DEFAULT_ORDER_BOOK_PREFERENCES, mode: "full", fullPriceGrouping: "2000" },
+      updateIntervalMs: 250, updateIntervalsMs: [250], store,
+    },
+    actions: { retry: noop, setHeight: noop, setCollapsed: noop, setMode: noop,
+      setPartialDepth: noop, setUpdateIntervalMs: noop, setFullOutputLimit: noop, setPriceGrouping: noop },
+    status: { enabled: true },
+  };
+  store.publishBook({
+    mode: "full", identity: runtime.view.identity, topic: "book", eventTimeMs: 1, receivedAtMs: 1,
+    source: "websocket", sequence: 1, revision: 1, bids: [[0, 1]], asks: [[200, 1]],
+    topBid: 100, topAsk: 101, midPrice: 100.5, spread: 1, spreadBps: 99.5, notionalImbalance: 0,
+    updateIntervalMs: 250, depthLevels: null, outputLimit: 20, bookBidLevels: 1, bookAskLevels: 1,
+    priceTickSize: 0.1, priceStep: 200, priceGrouping: "2000", aggregationApplied: true,
+    bucketBidLevels: 1, bucketAskLevels: 1,
+  });
+  frame.flush?.();
+  const html = renderToStaticMarkup(<OrderBookDock runtime={runtime} height={300} />);
+  assert.match(html, /<option value="100"/);
+  assert.match(html, /<option value="2000"/); // Preserve the active value so it can be changed.
+  assert.doesNotMatch(html, /<option value="200"/);
+  assert.doesNotMatch(html, /<option value="1000000000"/);
+  store.destroy();
+});

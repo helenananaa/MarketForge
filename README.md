@@ -27,12 +27,29 @@ account cashflows, collateral risk, deterministic recovery and public/private re
 - `marketforge-cli`: JSON CLI for rooms, orders, clock, agents, training, replay, and members.
 - `python/marketforge`: HTTP SDK (`strategy.v1`) for observe/place/cancel/training.
 - `marketforge-candlescope-plugin`: embedded and remote CandleScope integration.
-- `marketforge-web`: React/TypeScript interface.
-- `vendor/candlescope`: project-owned frontend and analysis source copy; see [simulation workbench](docs/CANDLESCOPE_WORKBENCH.md). Integration changes stay in MarketForge.
+- `vendor/candlescope`: project-owned frontend and analysis source copy that provides the
+  trading interface, the [simulation workbench](docs/CANDLESCOPE_WORKBENCH.md). Integration changes stay in MarketForge.
+- `marketforge-web`: backend debug page that shows raw room data from the HTTP API.
 
 ## Local development
 
 Install Rust with edition 2024 support and a Node.js version supported by Vite 7.
+
+### Trading interface
+
+The trading interface is the CandleScope simulation workbench at
+`http://127.0.0.1:15173/simulation.html`. On Windows, set it up once and start it
+together with its own backend:
+
+```powershell
+.\scripts\setup-candlescope-workbench.ps1 -PythonExecutable <Python-3.12-executable>
+.\scripts\start-candlescope-workbench.ps1
+```
+
+See [CandleScope workbench](docs/CANDLESCOPE_WORKBENCH.md) for ports, storage, and
+manual startup.
+
+### Backend and debug page
 
 Start the backend:
 
@@ -43,13 +60,18 @@ cargo run -p exchange-server
 The default API address is `http://127.0.0.1:57305`. Without a configured
 PostgreSQL database, room state is held in memory and is lost on restart.
 
-In a separate terminal, start the web interface:
+`marketforge-web` is a debug page for that backend. It shows the raw room view,
+trades, events, and accounts, and can place orders and run bots, but has no
+chart. In a separate terminal:
 
 ```sh
 cd marketforge-web
 npm ci
 npm run dev
 ```
+
+Open `http://127.0.0.1:57304`. The dev server listens on 127.0.0.1 only, so
+`localhost` may not resolve to it.
 
 For PostgreSQL configuration and deployment behavior, see
 [Backend storage](docs/BACKEND_STORAGE.md). Example settings are in
