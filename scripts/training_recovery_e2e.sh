@@ -139,6 +139,8 @@ EOF
 
 start_training_payload() {
   local run="$1" room="$2" horizon="$3"
+  # Every path advances the clock explicitly. Keep the short horizon from
+  # expiring on the realtime worker before HTTP orders and restart assertions.
   python3 - <<PY
 import json
 scenario = json.loads('''$(scenario_json "${room}")''')
@@ -163,6 +165,7 @@ print(json.dumps({
   "trainee_account_id": 20,
   "target_qty": 2,
   "horizon_steps": ${horizon},
+  "manual_agents": True,
 }))
 PY
 }
