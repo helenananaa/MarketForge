@@ -344,12 +344,19 @@ impl AppState {
             .as_ref()
             .expect("shared execution owner has an allocator")
             .clone();
-        let start = counter
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |next| {
-                next.checked_add(count)
-                    .filter(|end| *end <= SYSTEM_LIQUIDATION_ORDER_ID_BASE)
-            })
-            .map_err(|_| api_error(StatusCode::CONFLICT, "API order-id range is exhausted"))?;
+        let mut start = counter.load(Ordering::Acquire);
+        loop {
+            let end = start
+                .checked_add(count)
+                .filter(|end| *end <= SYSTEM_LIQUIDATION_ORDER_ID_BASE)
+                .ok_or_else(|| {
+                    api_error(StatusCode::CONFLICT, "API order-id range is exhausted")
+                })?;
+            match counter.compare_exchange_weak(start, end, Ordering::AcqRel, Ordering::Acquire) {
+                Ok(_) => break,
+                Err(current) => start = current,
+            }
+        }
         Ok(OrderIdReservation {
             counter,
             start,
