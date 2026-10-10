@@ -137,6 +137,17 @@ type Trade = {
   qty: number;
   taker_side?: Side;
 };
+type RoomTradesResponse = {
+  room_id: string;
+  trades: {
+    instrument_id: string;
+    trade_id: number;
+    command_seq: number;
+    price_tick: number;
+    qty: number;
+    taker_side: "buy" | "sell";
+  }[];
+};
 type LogEntry = {
   id: string;
   level: "ok" | "warn" | "info";
@@ -163,6 +174,7 @@ function App() {
   const refreshRequest = useRef(0);
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [roomEvents, setRoomEvents] = useState<RoomExecutionSummary[]>([]);
+  const [trades, setTrades] = useState<Trade[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -190,7 +202,6 @@ function App() {
   const funding = view?.perp_price?.funding;
   const bestBid = view?.book.bids[0]?.price_tick;
   const bestAsk = view?.book.asks[0]?.price_tick;
-  const trades = useMemo(() => instrumentTrades(roomEvents, view), [roomEvents, view]);
   const lastPrice = trades[0]?.price_tick;
   const priceTone = trades.length > 1 ? priceDirection(trades[0].price_tick, trades[1].price_tick) : undefined;
   const spread = bestAsk !== undefined && bestBid !== undefined ? bestAsk - bestBid : undefined;
@@ -279,16 +290,28 @@ function App() {
         return;
       }
       const request = ++refreshRequest.current;
-      const [nextView, nextAgents, nextEvents] = await Promise.all([
-        api<MarketView>(instrument ? `/rooms/${room}/instruments/${encodeURIComponent(instrument)}/view` : `/rooms/${room}/view`),
+      const viewRequest = api<MarketView>(instrument ? `/rooms/${room}/instruments/${encodeURIComponent(instrument)}/view` : `/rooms/${room}/view`);
+      const [nextView, nextAgents, nextEvents, nextTrades] = await Promise.all([
+        viewRequest,
         api<AgentStatus>(`/rooms/${room}/agents`),
         api<RoomEventsResponse>(`/rooms/${room}/events?limit=80`),
+        // Query the selected instrument's latest trades independently of the room command window.
+        viewRequest.then((nextView) => api<RoomTradesResponse>(
+          `/rooms/${room}/instruments/${encodeURIComponent(nextView.instrument_id)}/trades?limit=80`,
+        )),
       ]);
       if (request !== refreshRequest.current) return;
       setView(nextView);
       setActiveInstrument(nextView.instrument_id);
       setAgentStatus(nextAgents);
       setRoomEvents(nextEvents.executions);
+      setTrades(nextTrades.trades.map((trade) => ({
+        key: `${trade.instrument_id}-${trade.trade_id}`,
+        command_seq: trade.command_seq,
+        price_tick: trade.price_tick,
+        qty: trade.qty,
+        taker_side: trade.taker_side === "buy" ? "Buy" : "Sell",
+      })));
     },
     [activeRoom, activeInstrument, api],
   );
@@ -550,7 +573,7 @@ function App() {
         <section className="trades-pane" aria-labelledby="trades-title">
           <div className="pane-header">
             <h2 id="trades-title">最近成交</h2>
-            <span className="pane-note">来自最近 80 条房间命令 · K 线请在仿真工作台查看</span>
+            <span className="pane-note">当前品种最近 80 笔成交 · K 线请在仿真工作台查看</span>
           </div>
           <TradeTape trades={trades} />
         </section>
@@ -921,33 +944,6 @@ function eventLabel(event: ApiEvent | undefined) {
     return "拒绝";
   }
   return EVENT_LABELS[event.type] ?? event.type;
-}
-
-function instrumentTrades(executions: RoomExecutionSummary[], view: MarketView | null): Trade[] {
-  if (!view) {
-    return [];
-  }
-  // Legacy journal rows carry no instrument; they can only be attributed in single-instrument rooms.
-  const singleInstrument = (view.instruments?.length ?? 1) <= 1;
-  const trades: Trade[] = [];
-  for (const execution of executions) {
-    const matches = execution.instrument_id ? execution.instrument_id === view.instrument_id : singleInstrument;
-    if (!matches) {
-      continue;
-    }
-    for (const event of execution.events) {
-      if (event.type === "TradePrinted" && event.price_tick !== undefined && event.qty !== undefined) {
-        trades.push({
-          key: `${execution.command_seq}-${event.seq}`,
-          command_seq: execution.command_seq,
-          price_tick: event.price_tick,
-          qty: event.qty,
-          taker_side: event.taker_side,
-        });
-      }
-    }
-  }
-  return trades.reverse();
 }
 
 function priceDirection(current: number, previous: number): "up" | "down" | undefined {

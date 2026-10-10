@@ -12,6 +12,7 @@
     "frontend/src/app/WorkspaceNavigation.tsx",
     "frontend/src/editor/simulationEditorSetup.ts",
     "frontend/src/features/order-book/OrderBookDock.tsx",
+    "frontend/src/features/order-book/__tests__/OrderBookDock.test.tsx",
     "frontend/src/features/simulation/README.md",
     "frontend/src/features/simulation/SimulationApp.tsx",
     "frontend/src/features/simulation/SimulationChart.tsx",

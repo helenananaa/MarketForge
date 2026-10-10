@@ -317,7 +317,8 @@ function OrderBookDock({ runtime, height, onRequestClose, onSelectPrice }: Order
   const groupingOptions = useMemo(() => {
     const all = view.preferences.mode === "partial" ? PARTIAL_PRICE_GROUPINGS : FULL_PRICE_GROUPINGS;
     const tick = snapshot.book?.priceTickSize;
-    const reference = snapshot.book?.bids[0]?.[0] ?? snapshot.book?.asks[0]?.[0];
+    // Full-book levels may be bucket boundaries (including zero); use the raw best prices.
+    const reference = snapshot.book?.topBid ?? snapshot.book?.topAsk;
     if (!tick || !reference) return all;
     // A bucket wider than a tenth of the price collapses the whole book into one or two rows.
     const maxStep = reference * 0.1;
