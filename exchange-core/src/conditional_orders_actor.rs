@@ -3,6 +3,7 @@ impl ExchangeActor {
         &mut self,
         instrument: &str,
         command: Command,
+        origin: CommandOrigin,
     ) -> Result<ActorExecution, ActorRejectReason> {
         let Command::SetConditionalOrder {
             account_id,
@@ -15,6 +16,9 @@ impl ExchangeActor {
         let account = *account_id;
         let mapkey = format!("{instrument}:{account}:{key}");
         let validation = (|| {
+            if self.status() == MarketStatus::Closed {
+                return Err(ActorRejectReason::MarketClosed);
+            }
             if key.is_empty()
                 || key.len() > 64
                 || !key
@@ -29,7 +33,7 @@ impl ExchangeActor {
                 return Err(ActorRejectReason::WrongMarketKind);
             };
             if let Some(s) = spec {
-                if self.status() != MarketStatus::Running {
+                if self.status() == MarketStatus::Paused && origin == CommandOrigin::External {
                     return Err(ActorRejectReason::MarketPaused);
                 }
                 let config = self.market(instrument)?.config();

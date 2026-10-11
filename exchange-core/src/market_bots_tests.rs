@@ -34,6 +34,7 @@ fn template(id: &str, params: serde_json::Value) -> AgentTemplate {
 
 fn view(time: u64, mid: i64, position: i128) -> ParticipantObservation {
     ParticipantObservation {
+        instrument: None,
         version: 1,
         room_id: "test".into(),
         venue_id: "default-venue".into(),

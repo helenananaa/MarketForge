@@ -2949,6 +2949,31 @@ fn event_summary_matches(stored: &EventSummary, replayed: &EventSummary) -> bool
     if stored == replayed {
         return true;
     }
+    // Legacy summaries predate explicit hedge legs. Preserve replay validation
+    // for their existing IDs/prices/quantity while new bot input recovery
+    // separately refuses to infer missing account-side information.
+    if matches!(
+        stored,
+        EventSummary::TradePrinted {
+            maker_position_side: exchange_core::PositionSide::Both,
+            taker_position_side: exchange_core::PositionSide::Both,
+            ..
+        }
+    ) {
+        let mut legacy = replayed.clone();
+        if let EventSummary::TradePrinted {
+            maker_position_side,
+            taker_position_side,
+            ..
+        } = &mut legacy
+        {
+            *maker_position_side = Default::default();
+            *taker_position_side = Default::default();
+            if stored == &legacy {
+                return true;
+            }
+        }
+    }
 
     match (stored, replayed) {
         (
@@ -6513,6 +6538,7 @@ async fn submit_order_response(
 
 fn order_action_side(action: &OrderAction) -> Option<exchange_core::Side> {
     match action {
+        OrderAction::BotOrder { action, .. } => order_action_side(action),
         OrderAction::PlaceBracket { side, .. }
         | OrderAction::PlaceUnboundedMarket { side, .. }
         | OrderAction::PlaceProtected { side, .. }
@@ -6533,6 +6559,7 @@ fn order_action_side(action: &OrderAction) -> Option<exchange_core::Side> {
 
 fn order_action_qty(action: &OrderAction) -> Option<u64> {
     match action {
+        OrderAction::BotOrder { action, .. } => order_action_qty(action),
         OrderAction::PlaceBracket { qty, .. }
         | OrderAction::PlaceUnboundedMarket { qty, .. }
         | OrderAction::PlaceProtected { qty, .. }
@@ -6557,6 +6584,9 @@ fn order_action_precision_error(action: &OrderAction) -> Option<String> {
         return Some("qty must be a positive integer".to_string());
     }
     let price_tick = match action {
+        OrderAction::BotOrder { .. } => {
+            return Some("bot envelopes are not accepted by the HTTP order API".into());
+        }
         OrderAction::PlaceBracket { price_tick, .. } => *price_tick,
         OrderAction::SetConditional { .. } | OrderAction::SetPositionProtection { .. } => None,
         OrderAction::PlaceProtected { price_tick, .. }
@@ -6808,6 +6838,9 @@ async fn persist_training_progress(
 }
 
 fn order_action_allocates_id(action: &OrderAction) -> bool {
+    if let OrderAction::BotOrder { action, .. } = action {
+        return order_action_allocates_id(action);
+    }
     !matches!(
         action,
         OrderAction::Cancel { .. } | OrderAction::Amend { .. }
@@ -7280,6 +7313,9 @@ impl IntoRoomError for exchange_core::GatewayError {
     fn into_room_error(self) -> RoomManagerError {
         match self {
             Self::Room(error) => error,
+            Self::UnresolvedBotOrder => {
+                RoomManagerError::Actor(exchange_core::ActorRejectReason::InvalidOrderProtection)
+            }
             Self::MissingInstrument => {
                 RoomManagerError::Actor(exchange_core::ActorRejectReason::InstrumentNotFound {
                     instrument_id: String::new(),
@@ -7807,6 +7843,10 @@ pub enum EventSummary {
     TradePrinted {
         seq: u64,
         trade_id: u64,
+        #[serde(default, skip_serializing_if = "exchange_core::PositionSide::is_both")]
+        maker_position_side: exchange_core::PositionSide,
+        #[serde(default, skip_serializing_if = "exchange_core::PositionSide::is_both")]
+        taker_position_side: exchange_core::PositionSide,
         #[serde(default)]
         maker_order_id: OrderId,
         #[serde(default)]
@@ -8204,6 +8244,8 @@ impl EventSummary {
             Event::TradePrinted(trade) => Self::TradePrinted {
                 seq,
                 trade_id: trade.trade_id,
+                maker_position_side: trade.maker_position_side,
+                taker_position_side: trade.taker_position_side,
                 maker_order_id: trade.maker_order_id,
                 maker_account_id: trade.maker_account_id,
                 taker_order_id: trade.taker_order_id,
@@ -9298,6 +9340,7 @@ fn observation_from_market_view(
             .map(exchange_core::AccountSnapshot::Perp),
     };
     exchange_core::ParticipantObservation {
+        instrument: None,
         version: exchange_core::PARTICIPANT_OBSERVATION_VERSION,
         room_id: view.room_id.clone(),
         venue_id: view.venue_id.clone(),

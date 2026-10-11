@@ -1,3 +1,56 @@
+#[test]
+fn conditional_entry_respects_external_pause_and_scheduler_origin() {
+    let mut rooms = RoomManager::new();
+    rooms
+        .create_room(pending_perp_liquidation_scenario("conditional-origin"))
+        .unwrap();
+    rooms.pause_room("conditional-origin").unwrap();
+    let command = Command::SetConditionalOrder {
+        account_id: 20,
+        key: "pine-entry".into(),
+        spec: Some(Box::new(crate::conditional_orders::ConditionalOrderSpec {
+            side: Side::Buy,
+            position_side: crate::PositionSide::Both,
+            qty: 1,
+            trigger_price_tick: 110,
+            above: true,
+            trigger: crate::ProtectionTrigger::Last,
+            limit_price_tick: Some(111),
+            protection: None,
+        })),
+    };
+    let external = rooms.apply("conditional-origin", command.clone()).unwrap();
+    assert!(matches!(
+        external.result,
+        ActorExecutionResult::Rejected(ActorRejectReason::MarketPaused)
+    ));
+    let scheduled = rooms
+        .apply_to_instrument_from(
+            "conditional-origin",
+            "V-BTC-PERP",
+            command.clone(),
+            crate::CommandOrigin::Scheduler,
+        )
+        .unwrap();
+    assert!(matches!(
+        scheduled.result,
+        ActorExecutionResult::Accepted(_)
+    ));
+    rooms.close_room("conditional-origin").unwrap();
+    let closed = rooms
+        .apply_to_instrument_from(
+            "conditional-origin",
+            "V-BTC-PERP",
+            command,
+            crate::CommandOrigin::Scheduler,
+        )
+        .unwrap();
+    assert!(matches!(
+        closed.result,
+        ActorExecutionResult::Rejected(ActorRejectReason::MarketClosed)
+    ));
+}
+
 fn protected_order(
     id: u64,
     side: Side,

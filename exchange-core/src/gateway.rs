@@ -15,6 +15,13 @@ pub type ParticipantId = String;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum OrderAction {
+    /// Bot-only routing and durable client reference. The scheduler unwraps
+    /// this before authorization/policy checks; HTTP gateways reject it.
+    BotOrder {
+        instrument_id: String,
+        key: String,
+        action: Box<OrderAction>,
+    },
     SetConditional {
         key: String,
         spec: Option<crate::conditional_orders::ConditionalOrderSpec>,
@@ -138,6 +145,7 @@ pub struct MarketView {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GatewayError {
+    UnresolvedBotOrder,
     Room(RoomManagerError),
     MissingInstrument,
 }
@@ -187,6 +195,7 @@ impl<'a> OrderGateway<'a> {
 
     fn action_to_command(&mut self, account_id: AccountId, action: &OrderAction) -> Command {
         match action {
+            OrderAction::BotOrder { .. } => unreachable!("bot envelope must be resolved"),
             OrderAction::SetConditional { key, spec } => Command::SetConditionalOrder {
                 account_id,
                 key: key.clone(),
@@ -395,6 +404,9 @@ impl<'a> OrderGateway<'a> {
 
 impl TradingApi for OrderGateway<'_> {
     fn submit_action(&mut self, request: GatewayRequest) -> Result<GatewayExecution, GatewayError> {
+        if matches!(request.action, OrderAction::BotOrder { .. }) {
+            return Err(GatewayError::UnresolvedBotOrder);
+        }
         let instrument_id = match request.instrument_id {
             Some(instrument_id) => instrument_id,
             None => self
@@ -495,6 +507,7 @@ impl TradingApi for OrderGateway<'_> {
 
 fn existing_order_id(action: &OrderAction) -> Option<OrderId> {
     match action {
+        OrderAction::BotOrder { .. } => None,
         OrderAction::Cancel { order_id } | OrderAction::Amend { order_id, .. } => Some(*order_id),
         OrderAction::PlaceUnboundedMarket { .. }
         | OrderAction::PlaceProtected { .. }

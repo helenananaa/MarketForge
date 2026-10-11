@@ -3071,6 +3071,7 @@ impl PostgresJournalStore {
                 price_tick,
                 qty,
                 taker_side,
+                ..
             } = event
             {
                 let event_seq = i64_from_u64(*seq, "event_seq")?;
@@ -8317,6 +8318,8 @@ mod tests {
                 EventSummary::TradePrinted {
                     seq: 3,
                     trade_id: 1,
+                    maker_position_side: Default::default(),
+                    taker_position_side: Default::default(),
                     maker_order_id: 100,
                     maker_account_id: 10,
                     taker_order_id: 200,

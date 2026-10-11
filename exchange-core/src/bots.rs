@@ -197,6 +197,106 @@ pub trait ScheduledBot: Send {
         observation: &ParticipantObservation,
     ) -> Result<Vec<OrderAction>, BotError>;
     fn snapshot(&self) -> PersistedAgentKindState;
+    fn execution_feedback(&mut self, _action: &OrderAction, _execution: &crate::GatewayExecution) {}
+}
+
+/// Resolve metadata without permitting a plugin to change room or account.
+pub fn resolve_bot_order<'a>(
+    primary: &'a str,
+    action: &'a OrderAction,
+) -> Result<(&'a str, &'a OrderAction), BotError> {
+    match action {
+        OrderAction::BotOrder {
+            instrument_id,
+            key,
+            action,
+        } => {
+            if instrument_id.is_empty()
+                || instrument_id.len() > 256
+                || key.is_empty()
+                || key.len() > 256
+                || matches!(**action, OrderAction::BotOrder { .. })
+            {
+                return Err(BotError("invalid or nested bot order envelope".into()));
+            }
+            Ok((instrument_id, action))
+        }
+        _ => Ok((primary, action)),
+    }
+}
+
+/// Validate the entire decision before any action is applied.
+pub fn validate_bot_orders(
+    primary: &str,
+    related: &[String],
+    actions: &[OrderAction],
+    state: &PersistedAgentKindState,
+) -> Result<(), BotError> {
+    for action in actions {
+        let (instrument, _) = resolve_bot_order(primary, action)?;
+        if instrument != primary && !related.iter().any(|i| i == instrument) {
+            return Err(BotError(
+                "bot order targets an undeclared instrument".into(),
+            ));
+        }
+        if matches!(action, OrderAction::BotOrder { .. })
+            && !matches!(state, PersistedAgentKindState::Plugin { data, .. } if data.is_object())
+        {
+            return Err(BotError("tracked bot orders require object state".into()));
+        }
+    }
+    Ok(())
+}
+
+/// Receipts live in the same journal transaction as actions and plugin state.
+/// Plugins consume _host_receipts on their next decision. No guessed order IDs.
+pub fn record_bot_execution(
+    state: &mut PersistedAgentKindState,
+    action: &OrderAction,
+    execution: &crate::GatewayExecution,
+) {
+    let OrderAction::BotOrder { key, .. } = action else {
+        return;
+    };
+    let PersistedAgentKindState::Plugin { data, .. } = state else {
+        return;
+    };
+    use crate::{ActorExecutionResult, Command, Event, MarketExecution};
+    let order_id = match &execution.command {
+        Command::NewOrder(order) => Some(order.order_id),
+        Command::NewOrderWithProtection { order, .. } => Some(order.order_id),
+        Command::CancelOrder(order) => Some(order.order_id),
+        Command::AmendOrder(order) => Some(order.order_id),
+        _ => None,
+    };
+    let (events, mut error) = match &execution.execution.result {
+        ActorExecutionResult::Accepted(MarketExecution::Spot(r)) => (r.events.as_slice(), None),
+        ActorExecutionResult::Accepted(MarketExecution::Perp(r)) => (r.events.as_slice(), None),
+        ActorExecutionResult::Rejected(reason) => (&[][..], Some(format!("{reason:?}"))),
+    };
+    for event in events {
+        match &event.event {
+            Event::OrderRejected { .. }
+            | Event::RiskRejected { .. }
+            | Event::CancelRejected { .. }
+            | Event::AmendRejected { .. } => error = Some(format!("{:?}", event.event)),
+            _ => {}
+        }
+    }
+    let receipt = serde_json::json!({"key": key, "instrument_id": execution.instrument_id,
+        "command_seq": execution.execution.command_seq, "market_time_ms": execution.execution.market_time_ms,
+        "order_id": order_id, "action": execution.action, "accepted": error.is_none(), "error": error});
+    if let Some(object) = data.as_object_mut() {
+        let receipts = object
+            .entry("_host_receipts")
+            .or_insert_with(|| serde_json::json!([]));
+        if let Some(receipts) = receipts.as_array_mut() {
+            receipts.push(receipt);
+            if receipts.len() > MAX_BOT_ACTIONS {
+                receipts.drain(..receipts.len() - MAX_BOT_ACTIONS);
+            }
+        }
+    }
 }
 
 /// The host can apply domain policies before submission and update projections
@@ -232,6 +332,9 @@ pub(crate) fn unrestricted_policy() -> impl BotExecutionPolicy {
 
 pub trait BotFactory: Send + Sync {
     fn descriptor(&self) -> &BotDescriptor;
+    fn supports_plugin_version(&self, version: &str) -> bool {
+        self.descriptor().version == version
+    }
     /// Opt in only when snapshot/restore captures every stateful decision input.
     /// Reusing an instance must be equivalent to restoring it before each call;
     /// observation metadata must depend only on the template. Plugins default off.
@@ -248,6 +351,12 @@ pub trait BotFactory: Send + Sync {
     fn related_instruments(&self, _template: &AgentTemplate) -> Result<Vec<String>, BotError> {
         Ok(vec![])
     }
+    fn additional_intervals(&self, _template: &AgentTemplate) -> Result<Vec<u64>, BotError> {
+        Ok(vec![])
+    }
+    fn account_events(&self) -> bool {
+        false
+    }
     fn create(
         &self,
         template: &AgentTemplate,
@@ -260,6 +369,29 @@ pub struct BotRegistry {
     factories: Arc<BTreeMap<String, Arc<dyn BotFactory>>>,
 }
 impl BotRegistry {
+    pub fn account_events(&self, template: &AgentTemplate) -> bool {
+        self.factories
+            .get(template.bot_id())
+            .is_some_and(|f| f.account_events())
+    }
+    pub fn additional_intervals(&self, template: &AgentTemplate) -> Result<Vec<u64>, BotError> {
+        let factory = self
+            .factories
+            .get(template.bot_id())
+            .ok_or_else(|| BotError("unknown bot".into()))?;
+        let intervals = factory.additional_intervals(template)?;
+        if intervals.len() > 8
+            || intervals.contains(&0)
+            || intervals
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != intervals.len()
+        {
+            return Err(BotError("invalid additional intervals".into()));
+        }
+        Ok(intervals)
+    }
     pub fn with_builtins() -> Self {
         let mut registry = Self::default();
         crate::agents::register_builtin_bots(&mut registry);
@@ -305,7 +437,7 @@ impl BotRegistry {
             .ok_or_else(|| BotError(format!("unknown bot: {}", template.bot_id())))?;
         if let AgentTemplate::Plugin(config) = template {
             let descriptor = factory.descriptor();
-            if config.plugin_version != descriptor.version
+            if !factory.supports_plugin_version(&config.plugin_version)
                 || config.state_version != descriptor.state_version
                 || config.config_version != BOT_CONFIG_VERSION
             {
@@ -343,13 +475,25 @@ impl BotRegistry {
             .get(template.bot_id())
             .ok_or_else(|| BotError("unknown bot".into()))?;
         let instruments = factory.related_instruments(template)?;
-        if instruments.len() > 8 || instruments.iter().any(|i| i.is_empty() || i.len() > 256) {
+        if instruments.len() > 8
+            || instruments.iter().any(|i| i.is_empty() || i.len() > 256)
+            || instruments
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != instruments.len()
+        {
             return Err(BotError("invalid related instruments".into()));
         }
         Ok(instruments)
     }
 
     pub fn validate_template(&self, template: &AgentTemplate) -> Result<(), BotError> {
+        let intervals = self.additional_intervals(template)?;
+        let related = self.related_instruments(template)?;
+        if (intervals.len() + 1) * (related.len() + 1) > 16 {
+            return Err(BotError("too many bot data streams".into()));
+        }
         self.related_instruments(template)?;
         self.market_data_request(template)?;
         self.create(template, &template.initial_state()).map(|_| ())
@@ -399,6 +543,42 @@ pub struct BotDecisionResponse {
 mod tests {
     use super::*;
     use crate::{NoiseTraderConfig, ParticipantKind, TradingApi};
+    #[test]
+    fn bot_envelopes_reject_nested_and_undeclared_targets_before_submission() {
+        let action = OrderAction::BotOrder {
+            instrument_id: "peer".into(),
+            key: "leg".into(),
+            action: Box::new(OrderAction::PlaceLimit {
+                side: crate::Side::Buy,
+                price_tick: 100,
+                qty: 1,
+            }),
+        };
+        let state = PersistedAgentKindState::Plugin {
+            plugin_id: "test".into(),
+            plugin_version: "1".into(),
+            state_version: 1,
+            data: serde_json::json!({}),
+        };
+        assert!(
+            validate_bot_orders("primary", &[], std::slice::from_ref(&action), &state).is_err()
+        );
+        assert!(
+            validate_bot_orders(
+                "primary",
+                &["peer".into()],
+                std::slice::from_ref(&action),
+                &state
+            )
+            .is_ok()
+        );
+        let nested = OrderAction::BotOrder {
+            instrument_id: "peer".into(),
+            key: "outer".into(),
+            action: Box::new(action),
+        };
+        assert!(resolve_bot_order("primary", &nested).is_err());
+    }
     fn participant() -> ParticipantConfig {
         ParticipantConfig {
             participant_id: "bot-1".into(),

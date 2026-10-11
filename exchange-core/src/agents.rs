@@ -1125,6 +1125,7 @@ mod tests {
         let mut first = NoiseTrader::new(config.clone());
         let mut second = NoiseTrader::new(config);
         let empty_view = ParticipantObservation {
+            instrument: None,
             version: PARTICIPANT_OBSERVATION_VERSION,
             room_id: "room-1".to_string(),
             venue_id: "default-venue".to_string(),

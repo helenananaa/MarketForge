@@ -355,28 +355,42 @@ pub fn run_scheduler_step_with_policy(
                     crash_point: crash_at,
                 });
             }
-            let mut observation = rooms
-                .bot_observation(
-                    &room_id,
-                    &instrument_id,
-                    account_id,
-                    registry
-                        .market_data_request(&state.agents[participant_index].template)
-                        .map_err(SchedulerError::Bot)?,
-                )
+            let template = &state.agents[participant_index].template;
+            let history = registry
+                .market_data_request(template)
+                .map_err(SchedulerError::Bot)?;
+            let related = registry
+                .related_instruments(template)
+                .map_err(SchedulerError::Bot)?;
+            let intervals = registry
+                .additional_intervals(template)
+                .map_err(SchedulerError::Bot)?;
+            let mut batch = rooms.observation_batch(&room_id);
+            let mut observation = batch
+                .bot_observation(&instrument_id, account_id, history, &related)
                 .map_err(SchedulerError::Room)?;
-            rooms
-                .enrich_bot_observation(
+            batch
+                .enrich_data(
                     &mut observation,
-                    &registry
-                        .related_instruments(&state.agents[participant_index].template)
-                        .map_err(SchedulerError::Bot)?,
+                    history,
+                    &related,
+                    &intervals,
+                    registry.account_events(template),
                     account_id,
                 )
                 .map_err(SchedulerError::Room)?;
             let actions = agents[participant_index]
                 .decide(&observation)
                 .map_err(SchedulerError::Bot)?;
+            crate::bots::validate_bot_orders(
+                &instrument_id,
+                &registry
+                    .related_instruments(&state.agents[participant_index].template)
+                    .map_err(SchedulerError::Bot)?,
+                &actions,
+                &agents[participant_index].snapshot(),
+            )
+            .map_err(SchedulerError::Bot)?;
             if actions.len() > MAX_BOT_ACTIONS {
                 return Err(SchedulerError::Bot(BotError(
                     "bot exceeded action limit".into(),
@@ -413,6 +427,15 @@ pub fn run_scheduler_step_with_policy(
             _ => 0,
         };
         let actions = state.agents[participant_index].unfinished_actions.clone();
+        crate::bots::validate_bot_orders(
+            &instrument_id,
+            &registry
+                .related_instruments(&state.agents[participant_index].template)
+                .map_err(SchedulerError::Bot)?,
+            &actions,
+            &state.agents[participant_index].kind_state,
+        )
+        .map_err(SchedulerError::Bot)?;
         for (action_index, action) in actions.iter().enumerate().skip(start_action) {
             if matches_crash(
                 crash_at,
@@ -429,15 +452,17 @@ pub fn run_scheduler_step_with_policy(
                     crash_point: crash_at,
                 });
             }
+            let (target, resolved) = crate::bots::resolve_bot_order(&instrument_id, action)
+                .map_err(SchedulerError::Bot)?;
             let request = GatewayRequest {
                 participant_id: participant_id.clone(),
                 room_id: room_id.clone(),
-                instrument_id: Some(instrument_id.clone()),
+                instrument_id: Some(target.to_string()),
                 account_id,
-                action: action.clone(),
+                action: resolved.clone(),
             };
             let observation = rooms
-                .participant_observation(&room_id, &instrument_id, account_id)
+                .participant_observation(&room_id, target, account_id)
                 .map_err(SchedulerError::Room)?;
             policy
                 .before_action(&request, &observation)
@@ -447,6 +472,7 @@ pub fn run_scheduler_step_with_policy(
                 .submit_action(request)
                 .map_err(SchedulerError::Gateway)?;
             policy.after_action(&execution, &observation.book);
+            agents[participant_index].execution_feedback(action, &execution);
             *next_order_id = gateway.next_order_id();
             state.phase = SchedulerPhase::Submitting {
                 step,

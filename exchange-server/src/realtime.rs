@@ -72,6 +72,8 @@ pub(super) struct Decision {
 struct ObservationRequest {
     history: Option<exchange_core::bots::BotMarketDataRequest>,
     related: Vec<String>,
+    intervals: Vec<u64>,
+    account_events: bool,
 }
 
 struct CachedBot {
@@ -379,9 +381,11 @@ fn apply_decision(
     }
     let config = decision.prior.config();
     let instrument = decision.prior.requires_instrument()?.to_string();
-    for action in decision.actions.iter().cloned() {
-        if order_action_allocates_id(&action) && *next_order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE
-        {
+    let mut next = Arc::unwrap_or_clone(decision.next);
+    for action in decision.actions.iter() {
+        let (target, resolved) = exchange_core::bots::resolve_bot_order(&instrument, action)
+            .map_err(SchedulerError::Bot)?;
+        if order_action_allocates_id(action) && *next_order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE {
             return Err(SchedulerError::Bot(BotError(
                 "API order-id range is exhausted".into(),
             )));
@@ -389,15 +393,15 @@ fn apply_decision(
         let request = GatewayRequest {
             participant_id: config.participant_id.clone(),
             room_id: room_id.to_string(),
-            instrument_id: Some(instrument.clone()),
+            instrument_id: Some(target.to_string()),
             account_id: config.account_id,
-            action,
+            action: resolved.clone(),
         };
         // The gateway still performs all live market/account checks.
         // Only training policy needs a second full public snapshot.
         let observation = if policy.training.is_some() {
             let observation = rooms
-                .participant_observation(room_id, &instrument, config.account_id)
+                .participant_observation(room_id, target, config.account_id)
                 .map_err(SchedulerError::Room)?;
             policy
                 .before_action(&request, &observation)
@@ -413,6 +417,7 @@ fn apply_decision(
             .submit_action(request)
             .map_err(SchedulerError::Gateway)?;
         *next_order_id = gateway.next_order_id();
+        exchange_core::bots::record_bot_execution(&mut next, action, &execution);
         submissions.insert(
             execution.execution.command_seq,
             (execution.participant_id.clone(), execution.account_id),
@@ -423,7 +428,7 @@ fn apply_decision(
     }
     Ok(AgentDelta {
         index,
-        kind_state: Arc::unwrap_or_clone(decision.next),
+        kind_state: next,
         unfinished_actions: Vec::new(),
     })
 }
@@ -641,8 +646,19 @@ pub(super) async fn run(
                                 registry
                                     .related_instruments(&prior.template)
                                     .map(|related| {
-                                        Arc::new(ObservationRequest { history, related })
+                                        registry.additional_intervals(&prior.template).map(
+                                            |intervals| {
+                                                Arc::new(ObservationRequest {
+                                                    history,
+                                                    related,
+                                                    intervals,
+                                                    account_events: registry
+                                                        .account_events(&prior.template),
+                                                })
+                                            },
+                                        )
                                     })
+                                    .and_then(|v| v)
                             })
                             .map_err(|e| e.to_string()),
                     };
@@ -651,14 +667,25 @@ pub(super) async fn run(
                         .map_err(|e| format!("{e:?}"))
                         .and_then(|instrument| {
                             let request = request.as_ref().map_err(Clone::clone)?;
-                            observations
+                            let mut view = observations
                                 .bot_observation(
                                     instrument,
                                     prior.config().account_id,
                                     request.history,
                                     &request.related,
                                 )
-                                .map_err(|e| format!("{e:?}"))
+                                .map_err(|e| format!("{e:?}"))?;
+                            observations
+                                .enrich_data(
+                                    &mut view,
+                                    request.history,
+                                    &request.related,
+                                    &request.intervals,
+                                    request.account_events,
+                                    prior.config().account_id,
+                                )
+                                .map_err(|e| format!("{e:?}"))?;
+                            Ok(view)
                         });
                     inputs.push((prior, observation, registry.clone(), cached, request));
                 }
@@ -699,6 +726,13 @@ fn compute_decision(
         return Err("bot exceeded action limit".to_string());
     }
     let next = Arc::new(bot.snapshot());
+    exchange_core::bots::validate_bot_orders(
+        prior.requires_instrument().map_err(|e| format!("{e:?}"))?,
+        &request.related,
+        &actions,
+        &next,
+    )
+    .map_err(|e| e.to_string())?;
     // Speculative state is reusable ONLY after exact equality with committed state.
     // A failed journal write, rejected action, stale epoch or config change forces restore.
     let cached = reusable.then(|| CachedBot {
@@ -733,6 +767,8 @@ mod index_tests {
         let registry = exchange_core::BotRegistry::with_builtins();
         let prior = PersistedAgent::from_template(spec.agents[0].clone());
         let request = Arc::new(ObservationRequest {
+            intervals: vec![],
+            account_events: false,
             history: registry.market_data_request(&prior.template).unwrap(),
             related: registry.related_instruments(&prior.template).unwrap(),
         });

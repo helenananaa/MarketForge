@@ -1015,7 +1015,7 @@ impl ExchangeActor {
         origin: CommandOrigin,
     ) -> Result<ActorExecution, ActorRejectReason> {
         if matches!(command, Command::SetConditionalOrder { .. }) {
-            return self.apply_conditional_command(instrument_id, command);
+            return self.apply_conditional_command(instrument_id, command, origin);
         }
         if matches!(
             command,

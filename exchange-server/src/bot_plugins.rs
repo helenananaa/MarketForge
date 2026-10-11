@@ -32,6 +32,14 @@ pub struct ProcessBotManifest {
     pub timeout_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub market_data: Option<ProcessMarketData>,
+    #[serde(default)]
+    pub related_instruments_parameter: Option<String>,
+    #[serde(default)]
+    pub additional_intervals_parameter: Option<String>,
+    #[serde(default)]
+    pub account_events: bool,
+    #[serde(default)]
+    pub compatible_versions: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -95,6 +103,31 @@ pub fn load_bot_plugins(root: &Path) -> Result<BotRegistry, BotError> {
                 return Err(BotError("invalid process market data declaration".into()));
             }
         }
+        for name in [
+            &manifest.related_instruments_parameter,
+            &manifest.additional_intervals_parameter,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if manifest
+                .bot
+                .parameters
+                .get(name)
+                .is_none_or(|p| !matches!(p.kind, exchange_core::bots::ParameterType::Array))
+            {
+                return Err(BotError(
+                    "process data parameter must name a declared array".into(),
+                ));
+            }
+        }
+        if (manifest.account_events || manifest.additional_intervals_parameter.is_some())
+            && manifest.market_data.is_none()
+        {
+            return Err(BotError(
+                "account events and intervals require market_data".into(),
+            ));
+        }
         registry.register(ProcessBotFactory {
             manifest,
             directory,
@@ -111,8 +144,59 @@ pub fn bot_registry_from_env() -> Result<BotRegistry, BotError> {
 }
 
 impl BotFactory for ProcessBotFactory {
+    fn supports_plugin_version(&self, version: &str) -> bool {
+        self.manifest.bot.version == version
+            || self
+                .manifest
+                .compatible_versions
+                .iter()
+                .any(|v| v == version)
+    }
+    fn account_events(&self) -> bool {
+        self.manifest.account_events
+    }
+    fn additional_intervals(&self, template: &AgentTemplate) -> Result<Vec<u64>, BotError> {
+        let Some(name) = &self.manifest.additional_intervals_parameter else {
+            return Ok(vec![]);
+        };
+        let AgentTemplate::Plugin(config) = template else {
+            return Err(BotError("process bot requires Plugin config".into()));
+        };
+        let config = self.manifest.bot.validate_config(&config.config)?;
+        let values = config[name]
+            .as_array()
+            .ok_or_else(|| BotError("additional intervals must be an array".into()))?;
+        values
+            .iter()
+            .map(|v| {
+                v.as_u64()
+                    .filter(|n| *n > 0)
+                    .ok_or_else(|| BotError("interval must be a positive integer".into()))
+            })
+            .collect()
+    }
     fn descriptor(&self) -> &BotDescriptor {
         &self.manifest.bot
+    }
+    fn related_instruments(&self, template: &AgentTemplate) -> Result<Vec<String>, BotError> {
+        let Some(name) = &self.manifest.related_instruments_parameter else {
+            return Ok(vec![]);
+        };
+        let AgentTemplate::Plugin(config) = template else {
+            return Err(BotError("process bot requires Plugin config".into()));
+        };
+        let config = self.manifest.bot.validate_config(&config.config)?;
+        let values = config[name]
+            .as_array()
+            .ok_or_else(|| BotError("related instruments must be an array".into()))?;
+        values
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .map(String::from)
+                    .ok_or_else(|| BotError("related instrument must be a string".into()))
+            })
+            .collect()
     }
     fn market_data_request(
         &self,
@@ -198,6 +282,17 @@ impl ScheduledBot for ProcessBot {
             plugin_version: self.config.plugin_version.clone(),
             state_version: self.config.state_version,
             data: self.state.clone(),
+        }
+    }
+    fn execution_feedback(
+        &mut self,
+        action: &OrderAction,
+        execution: &exchange_core::GatewayExecution,
+    ) {
+        let mut state = self.snapshot();
+        exchange_core::bots::record_bot_execution(&mut state, action, execution);
+        if let PersistedAgentKindState::Plugin { data, .. } = state {
+            self.state = data;
         }
     }
 }
@@ -510,6 +605,89 @@ mod tests {
             };
             assert_eq!(account.position_qty, 2);
             assert_eq!(rooms.execution_history("f6-batch").unwrap().len(), 4);
+        }
+    }
+
+    #[test]
+    fn routed_orders_and_real_receipts_survive_partial_action_recovery() {
+        let package = Package::new(
+            r#"import json,sys
+r=json.loads(sys.stdin.readline())
+actions=[{'BotOrder':{'instrument_id':instrument,'key':key,'action':{'PlaceLimit':{'side':side,'price_tick':price,'qty':1}}}} for instrument,key,side,price in [('V-BTC-SPOT','spot','Buy',80),('V-BTC-PERP','perp','Sell',120)]]
+print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin_id'],plugin_version=r['plugin_version'],state_version=r['state_version'],actions=actions,state={'decisions':1})))
+"#,
+            1000,
+        );
+        let manifest_path = package.0.join("test/bot.json");
+        let mut manifest: Value =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        manifest["related_instruments_parameter"] = serde_json::json!("markets");
+        manifest["bot"]["parameters"]["markets"] =
+            serde_json::json!({"type":"array","default":["V-BTC-PERP"]});
+        fs::write(manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        for crash in [
+            CrashPoint::AfterDecisionPersist {
+                step: 1,
+                participant_index: 0,
+            },
+            CrashPoint::AfterActionSubmit {
+                step: 1,
+                participant_index: 0,
+                action_index: 0,
+            },
+            CrashPoint::AfterActionSubmit {
+                step: 1,
+                participant_index: 0,
+                action_index: 1,
+            },
+        ] {
+            let mut spec = scenario();
+            let fixture: Value = serde_json::from_str(include_str!(
+                "../../scripts/fixtures/microstructure_market.json"
+            ))
+            .unwrap();
+            let mut peer = fixture["scenario"]["extra_markets"][0].clone();
+            peer["Perp"]["price_link"] = Value::Null;
+            peer["Perp"]["funding"] = Value::Null;
+            spec.extra_markets
+                .push(serde_json::from_value(peer).unwrap());
+            let mut rooms = RoomManager::new();
+            rooms.create_room(spec).unwrap();
+            let mut id = 100;
+            let outcome = run_scheduler_step_with_registry(
+                &mut rooms,
+                &mut id,
+                SchedulerState::new("f6-batch", vec![template()], SchedulerMode::Manual),
+                crash,
+                &package.registry(),
+            )
+            .unwrap();
+            assert!(outcome.crashed);
+            let saved =
+                serde_json::from_slice(&serde_json::to_vec(&outcome.state).unwrap()).unwrap();
+            let resumed = run_scheduler_step_with_registry(
+                &mut rooms,
+                &mut id,
+                saved,
+                CrashPoint::None,
+                &package.registry(),
+            )
+            .unwrap();
+            for instrument in ["V-BTC-SPOT", "V-BTC-PERP"] {
+                let view = rooms
+                    .participant_observation("f6-batch", instrument, 20)
+                    .unwrap();
+                assert_eq!(view.own_orders.len(), 1);
+            }
+            let PersistedAgentKindState::Plugin { data, .. } = &resumed.state.agents[0].kind_state
+            else {
+                panic!()
+            };
+            assert_eq!(data["decisions"], 1);
+            assert_eq!(data["_host_receipts"].as_array().unwrap().len(), 2);
+            assert_eq!(data["_host_receipts"][0]["order_id"], 100);
+            assert_eq!(data["_host_receipts"][1]["order_id"], 101);
+            assert_eq!(id, 102);
         }
     }
 

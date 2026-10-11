@@ -13,6 +13,7 @@ const MAX_HISTORY_COMMANDS: usize = 100_000;
 const MAX_HISTORY_TRADES: usize = 100_000;
 
 struct History {
+    accounts: Vec<exchange_core::observation::BotAccountEvent>,
     cursor: Option<u64>,
     receipts: Vec<BotTradeReceipt>,
     complete: bool,
@@ -21,6 +22,7 @@ struct History {
 impl History {
     fn new() -> Self {
         Self {
+            accounts: Vec::new(),
             cursor: None,
             receipts: Vec::new(),
             complete: true,
@@ -38,10 +40,17 @@ impl History {
             let (mut trades, valid) = from_summary(execution);
             self.receipts.append(&mut trades);
             self.complete &= valid;
+            let (mut accounts, valid) = accounts_from_summary(execution);
+            self.accounts.append(&mut accounts);
+            self.complete &= valid;
         }
-        if self.commands > MAX_HISTORY_COMMANDS || self.receipts.len() > MAX_HISTORY_TRADES {
+        if self.commands > MAX_HISTORY_COMMANDS
+            || self.receipts.len() > MAX_HISTORY_TRADES
+            || self.accounts.len() > 2 * MAX_HISTORY_TRADES
+        {
             self.complete = false;
             self.receipts.truncate(MAX_HISTORY_TRADES);
+            self.accounts.truncate(2 * MAX_HISTORY_TRADES);
             return false;
         }
         if page.has_more && page.executions.is_empty() {
@@ -84,6 +93,7 @@ pub(crate) fn restore(
             }
         }
         rooms.restore_bot_history(room, history.receipts, history.complete);
+        rooms.restore_bot_accounts(room, history.accounts);
     }
     Ok(())
 }
@@ -114,7 +124,102 @@ pub(crate) async fn restore_async(
         }
     }
     rooms.restore_bot_history(room, history.receipts, history.complete);
+    rooms.restore_bot_accounts(room, history.accounts);
     Ok(())
+}
+
+fn accounts_from_summary(
+    execution: &RoomExecutionSummary,
+) -> (Vec<exchange_core::observation::BotAccountEvent>, bool) {
+    use exchange_core::{PerpAccountSnapshot, PerpMarginStatus, observation::BotAccountFrame};
+    let perp = |a: &crate::PerpAccountStateSummary| -> Option<BotAccountFrame> {
+        let margin_status = match a.margin_status.as_str() {
+            "flat" => PerpMarginStatus::Flat,
+            "healthy" => PerpMarginStatus::Healthy,
+            "margin_call" => PerpMarginStatus::MarginCall,
+            "liquidatable" => PerpMarginStatus::Liquidatable,
+            _ => return None,
+        };
+        Some(BotAccountFrame::Perp(Box::new(PerpAccountSnapshot {
+            hedge_positions: a.hedge_positions.clone(),
+            account_id: a.account_id,
+            cash_balance: a.cash_balance,
+            position_qty: a.position_qty,
+            avg_entry_price_tick: a.avg_entry_price_tick,
+            realized_pnl: a.realized_pnl,
+            unrealized_pnl: a.unrealized_pnl,
+            equity: a.equity,
+            initial_margin: a.initial_margin,
+            maintenance_margin: a.maintenance_margin,
+            portfolio_initial_margin: a.portfolio_initial_margin.unwrap_or(a.initial_margin),
+            portfolio_maintenance_margin: a
+                .portfolio_maintenance_margin
+                .unwrap_or(a.maintenance_margin),
+            margin_status,
+            reserved_margin: a.reserved_margin,
+            available_cash: a.available_cash,
+            fees_paid: a.fees_paid,
+            funding_pnl: a.funding_pnl,
+        })))
+    };
+    let mut snapshots = Vec::new();
+    for event in &execution.clearing_events {
+        match event {
+            ClearingEventSummary::SpotTradeSettled { buyer, seller, .. } => {
+                for a in [buyer, seller] {
+                    snapshots.push(Some(BotAccountFrame::Spot {
+                        account_id: a.account_id,
+                        cash_balance: a.cash_balance,
+                        position_qty: a.position_qty,
+                        fees_paid: a.fees_paid,
+                    }));
+                }
+            }
+            ClearingEventSummary::PerpTradeSettled { buyer, seller, .. } => {
+                snapshots.push(perp(buyer));
+                snapshots.push(perp(seller));
+            }
+            ClearingEventSummary::PerpFundingSettled { account, .. }
+            | ClearingEventSummary::PerpMarginStatusChanged { account, .. } => {
+                snapshots.push(perp(account))
+            }
+            ClearingEventSummary::PerpLiquidationSettled {
+                account,
+                auto_deleveraging_allocations,
+                socialized_loss_allocations,
+                ..
+            } => {
+                snapshots.push(perp(account));
+                snapshots.extend(
+                    auto_deleveraging_allocations
+                        .iter()
+                        .map(|a| perp(&a.account)),
+                );
+                snapshots.extend(socialized_loss_allocations.iter().map(|a| perp(&a.account)));
+            }
+        }
+    }
+    if snapshots.is_empty() {
+        return (vec![], true);
+    }
+    let (Some(time), Some(instrument)) = (execution.market_time_ms, &execution.instrument_id)
+    else {
+        return (vec![], false);
+    };
+    let complete = snapshots.iter().all(Option::is_some);
+    (
+        snapshots
+            .into_iter()
+            .flatten()
+            .map(|account| exchange_core::observation::BotAccountEvent {
+                instrument_id: instrument.clone(),
+                command_seq: execution.command_seq,
+                market_time_ms: time,
+                account,
+            })
+            .collect(),
+        complete,
+    )
 }
 
 fn from_summary(execution: &RoomExecutionSummary) -> (Vec<BotTradeReceipt>, bool) {
@@ -123,6 +228,8 @@ fn from_summary(execution: &RoomExecutionSummary) -> (Vec<BotTradeReceipt>, bool
     for event in &execution.events {
         if let EventSummary::TradePrinted {
             trade_id,
+            maker_position_side,
+            taker_position_side,
             maker_order_id,
             maker_account_id,
             taker_order_id,
@@ -158,12 +265,34 @@ fn from_summary(execution: &RoomExecutionSummary) -> (Vec<BotTradeReceipt>, bool
                     _ => None,
                 });
             complete &= fees.is_some();
+            // Older hedge-mode journals did not preserve the trade's leg.
+            // Such a receipt cannot be silently relabeled as a one-way fill.
+            for clearing in &execution.clearing_events {
+                if let ClearingEventSummary::PerpTradeSettled {
+                    trade_id: id,
+                    buyer,
+                    seller,
+                    ..
+                } = clearing
+                    && id == trade_id
+                {
+                    let (buy_leg, sell_leg) = if *taker_side == exchange_core::Side::Buy {
+                        (*taker_position_side, *maker_position_side)
+                    } else {
+                        (*maker_position_side, *taker_position_side)
+                    };
+                    complete &= !(buyer.hedge_positions.is_some()
+                        && buy_leg == exchange_core::PositionSide::Both
+                        || seller.hedge_positions.is_some()
+                            && sell_leg == exchange_core::PositionSide::Both);
+                }
+            }
             receipts.push(BotTradeReceipt {
                 instrument_id: instrument.clone(),
                 market_time_ms: time,
                 trade: Trade {
-                    maker_position_side: Default::default(),
-                    taker_position_side: Default::default(),
+                    maker_position_side: *maker_position_side,
+                    taker_position_side: *taker_position_side,
                     trade_id: *trade_id,
                     maker_order_id: *maker_order_id,
                     maker_account_id: *maker_account_id,
@@ -226,6 +355,112 @@ mod tests {
         summary.market_time_ms = Some(0);
         summary.clearing_events.clear();
         assert!(!from_summary(&summary).1);
+    }
+
+    #[test]
+    fn hedge_trade_legs_and_account_frames_restore_without_executing_orders() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../scripts/fixtures/microstructure_market.json"
+        ))
+        .unwrap();
+        let mut scenario: ScenarioConfig =
+            serde_json::from_value(fixture["scenario"].clone()).unwrap();
+        scenario.seed_orders.clear();
+        scenario.routed_seed_orders.clear();
+        let exchange_core::MarketConfig::Perp(config) = &mut scenario.extra_markets[0] else {
+            panic!()
+        };
+        config.clearing.position_mode = exchange_core::PositionMode::Hedge;
+        config.price_link = None;
+        config.funding = None;
+        let room = scenario.room_id.clone();
+        let mut rooms = RoomManager::new();
+        rooms.create_room(scenario.clone()).unwrap();
+        for (id, account, side, leg) in [
+            (1, 10, Side::Sell, exchange_core::PositionSide::Short),
+            (2, 20, Side::Buy, exchange_core::PositionSide::Long),
+        ] {
+            let execution = rooms
+                .apply_to_instrument(
+                    &room,
+                    "V-BTC-PERP",
+                    Command::NewOrder(NewOrder {
+                        position_side: leg,
+                        order_id: id,
+                        account_id: account,
+                        side,
+                        kind: OrderKind::Limit { price_tick: 100 },
+                        qty: 1,
+                        reduce_only: false,
+                    }),
+                )
+                .unwrap();
+            if id == 2 {
+                let mut summary = RoomExecutionSummary::from_execution(execution);
+                let (receipts, complete) = from_summary(&summary);
+                assert!(complete);
+                assert_eq!(
+                    receipts[0].trade.maker_position_side,
+                    exchange_core::PositionSide::Short
+                );
+                assert_eq!(
+                    receipts[0].trade.taker_position_side,
+                    exchange_core::PositionSide::Long
+                );
+                let (accounts, complete) = accounts_from_summary(&summary);
+                assert!(complete);
+                let mut recovered = RoomManager::new();
+                recovered.create_room(scenario.clone()).unwrap();
+                recovered.restore_bot_history(&room, receipts, true);
+                recovered.restore_bot_accounts(&room, accounts);
+                let own = recovered
+                    .bot_account_events(&room, "V-BTC-PERP", 20)
+                    .unwrap();
+                assert!(!own.is_empty());
+                assert!(own.iter().all(|e| matches!(&e.account, exchange_core::observation::BotAccountFrame::Perp(a) if a.account_id == 20)));
+                let exchange_core::observation::BotAccountFrame::Perp(last) =
+                    &own.last().unwrap().account
+                else {
+                    panic!()
+                };
+                assert_eq!(last.hedge_positions.as_ref().unwrap().long.qty, 1);
+                assert!(
+                    recovered
+                        .book_snapshot_for(&room, "V-BTC-PERP")
+                        .unwrap()
+                        .bids
+                        .is_empty()
+                );
+                let mut owner = recovered.take_room(&room).unwrap();
+                assert_eq!(
+                    owner.bot_account_events(&room, "V-BTC-PERP", 20).unwrap(),
+                    own
+                );
+                recovered.join_disjoint(std::mem::take(&mut owner)).unwrap();
+                assert_eq!(
+                    recovered
+                        .bot_account_events(&room, "V-BTC-PERP", 20)
+                        .unwrap(),
+                    own
+                );
+                let current_events = summary.events.clone();
+                for event in &mut summary.events {
+                    if let EventSummary::TradePrinted {
+                        maker_position_side,
+                        taker_position_side,
+                        ..
+                    } = event
+                    {
+                        *maker_position_side = Default::default();
+                        *taker_position_side = Default::default();
+                    }
+                }
+                for (legacy, current) in summary.events.iter().zip(&current_events) {
+                    assert!(crate::event_summary_matches(legacy, current));
+                }
+                assert!(!from_summary(&summary).1);
+            }
+        }
     }
 
     #[test]

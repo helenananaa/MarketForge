@@ -42,6 +42,65 @@ pub struct BotMarketData {
     pub fill_details: Vec<BotFillDetail>,
     /// A consumer requiring complete history must refuse truncated input.
     pub truncated: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub streams: Vec<BotDataStream>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub account_events: Vec<BotAccountEvent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conditional_orders: Vec<crate::conditional_orders::ConditionalOrder>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BotAccountEvent {
+    #[serde(default)]
+    pub instrument_id: String,
+    pub command_seq: u64,
+    pub market_time_ms: u64,
+    pub account: BotAccountFrame,
+}
+
+/// Historical spot receipts do not retain resting-order reservations. Expose
+/// only ledger fields that can be restored exactly, never invented budgets.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum BotAccountFrame {
+    Spot {
+        account_id: u64,
+        cash_balance: i128,
+        position_qty: i128,
+        fees_paid: i128,
+    },
+    Perp(Box<crate::PerpAccountSnapshot>),
+}
+
+impl BotAccountFrame {
+    pub fn account_id(&self) -> u64 {
+        match self {
+            Self::Spot { account_id, .. } => *account_id,
+            Self::Perp(a) => a.account_id,
+        }
+    }
+}
+
+impl From<AccountSnapshot> for BotAccountFrame {
+    fn from(account: AccountSnapshot) -> Self {
+        match account {
+            AccountSnapshot::Spot(a) => Self::Spot {
+                account_id: a.account_id,
+                cash_balance: a.cash_balance,
+                position_qty: a.position_qty,
+                fees_paid: a.fees_paid,
+            },
+            AccountSnapshot::Perp(a) => Self::Perp(Box::new(a)),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BotDataStream {
+    pub instrument_id: String,
+    pub interval_ms: u64,
+    pub candles: Vec<crate::Candle>,
+    pub truncated: bool,
 }
 
 /// Restricted view a participant may use to decide. Version 1 exposes public
@@ -57,6 +116,8 @@ pub struct ParticipantObservation {
     pub room_id: String,
     pub venue_id: VenueId,
     pub instrument_id: InstrumentId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instrument: Option<crate::InstrumentConfig>,
     pub status: MarketStatus,
     pub step: u64,
     pub market_time_ms: u64,

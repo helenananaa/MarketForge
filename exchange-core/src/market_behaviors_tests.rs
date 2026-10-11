@@ -33,6 +33,9 @@ pub(super) fn perp_view(time: u64, mid: i64, position: i128) -> ParticipantObser
 
 fn volume(v: &mut ParticipantObservation, amount: u128, truncated: bool) {
     v.bot_market_data = Some(crate::BotMarketData {
+        streams: vec![],
+        account_events: vec![],
+        conditional_orders: vec![],
         interval_ms: 1000,
         external_volume_qty: amount.to_string(),
         candles: vec![],
