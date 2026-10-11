@@ -12,6 +12,7 @@ from .monitoring import Monitoring
 READ_TOOLS = {"market_history", "market_indicators", "chart_export", "risk_events", "market_read", "web_search", "web_read", "strategy_read", "strategy_status", "strategy_analyze", "strategies", "alerts", "orders", "fills", "policy_status"}
 READ_TOOLS |= {'workspace_read','account_history','market_rules','portfolio','ledger','indicator_catalog','indicator_compute'}
 READ_TOOLS.add('conditional_orders')
+READ_TOOLS.update(('market_events', 'window_stats', 'order_flow'))
 WAKE_EVENTS = {"started", "alert_triggered", "alert_notification", "wait_expired", "account_wakeup", "dependencies_installed", "dependency_error", "business_wakeup", "decision_expired"}
 
 
@@ -207,7 +208,7 @@ class ExternalTools(Monitoring):
                     raise ValueError("decision lease is stale or paused; read context and begin a new decision")
             fence = Fence(self, trader, decision, generation) if name not in READ_TOOLS else None
             # call() releases its own lane for slow work; leave our outer lane too.
-            slow = name.startswith('workspace_') or name in ("indicator_compute", "indicator_catalog", "account_history", "ledger", "web_read", "web_search", "strategy_test", "strategy_analyze", "chart_export", "market_history", "market_indicators", "order_cancel_all")
+            slow = name.startswith('workspace_') or name in ("window_stats", "order_flow", "market_events", "event_alert_set", "indicator_compute", "indicator_catalog", "account_history", "ledger", "web_read", "web_search", "strategy_test", "strategy_analyze", "chart_export", "market_history", "market_indicators", "order_cancel_all")
             if not slow:
                 result = self.call(trader, key, name, args, stop=fence)
                 if name == "wait" and "seconds" in result:

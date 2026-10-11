@@ -469,6 +469,21 @@ impl JournalCoordinator {
         .await
     }
 
+    pub(crate) async fn query_execution_window(
+        &self,
+        room_id: &str,
+        start_ms: u64,
+        end_ms: u64,
+        through_command_seq: u64,
+        limit: usize,
+    ) -> Result<crate::journal::ExecutionWindow, JournalError> {
+        let room = room_id.to_string();
+        self.execute_read(move |store| {
+            store.query_execution_window(&room, start_ms, end_ms, through_command_seq, limit)
+        })
+        .await
+    }
+
     pub(crate) async fn append_executions(
         &self,
         records: &[JournalExecution],

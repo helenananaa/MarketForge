@@ -106,6 +106,14 @@ def render_chart(data, studies, width=1000, height=600, overlay=None):
 
 
 class MarketDataTools:
+    def read_market_events(self, config, args):
+        from .event_data import read_events
+        return read_events(self, config, args)
+
+    def read_window_stats(self, config, args, detailed=False):
+        from .window_data import read_window
+        return read_window(self, config, args, detailed)
+
     def candle_data(self, config, args):
         from .runtime import integer
         instrument = args["instrument"]; self.check_instrument(config, instrument)

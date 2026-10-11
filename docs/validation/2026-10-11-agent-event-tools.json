@@ -1,0 +1,52 @@
+{
+  "provider_inference": false,
+  "checks": [
+    {
+      "event_type": "liquidation",
+      "event": {
+        "command_seq": 4,
+        "event": {
+          "instrument_id": "V-BTC-PERP",
+          "liquidation_attempt_seq": 4,
+          "market_time_ms": 0,
+          "notional": "280",
+          "position_side": "Both",
+          "price_tick": 70,
+          "qty": 4,
+          "side": "Sell",
+          "trade_id": 1,
+          "type": "LiquidationTrade"
+        },
+        "event_id": "4:0",
+        "market_time_ms": 0
+      },
+      "trigger_count": 1,
+      "generation": 1,
+      "stale_decision_rejected": true,
+      "tool_count": 49
+    },
+    {
+      "event_type": "funding",
+      "event": {
+        "command_seq": 6,
+        "event": {
+          "covered_ms": 2000,
+          "funding_time_ms": 2000,
+          "instrument_id": "V-BTC-PERP",
+          "interval_ms": 2000,
+          "mark_price_tick": 10000,
+          "rate_ppm": -10000,
+          "status": "settled",
+          "total_transfer": "100",
+          "type": "FundingSettlement"
+        },
+        "event_id": "6:0",
+        "market_time_ms": 2000
+      },
+      "trigger_count": 1,
+      "generation": 1,
+      "stale_decision_rejected": true,
+      "tool_count": 49
+    }
+  ]
+}

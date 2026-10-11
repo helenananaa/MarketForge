@@ -1,5 +1,7 @@
 mod account_activity;
 mod account_events;
+mod market_events;
+mod market_analysis;
 mod stream_output;
 mod wallet_output;
 use std::{
@@ -1725,6 +1727,18 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
         .route(
             "/rooms/{room_id}/instruments/{instrument_id}/risk-events",
             get(account_events::read),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/market-events",
+            get(market_events::read),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/window-stats",
+            get(market_analysis::window),
+        )
+        .route(
+            "/rooms/{room_id}/instruments/{instrument_id}/order-flow",
+            get(market_analysis::order_flow),
         )
         .route(
             "/rooms/{room_id}/accounts/{account_id}/portfolio",
@@ -10318,6 +10332,7 @@ impl std::error::Error for AgentWorkerError {}
 #[cfg(test)]
 mod tests {
     include!("event_output_tests.rs");
+    include!("market_events_tests.rs");
     include!("market_behavior_server_tests.rs");
     include!("price_link_tests.rs");
     include!("funding_tests.rs");

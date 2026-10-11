@@ -43,7 +43,7 @@ MCP 使用官方 Python SDK，支持任意兼容 stdio 的框架。MCP 进程只
 
 框架配置使用 Python 的绝对路径、`-m marketforge.agents.mcp_server --trader trader-1` 参数，以及 `PYTHONPATH=<仓库>/python`。工具凭据来自 `MARKETFORGE_TOOL_TOKEN` 或 `--token-file <本地凭据文件>`；不要把令牌作为命令行参数。单独配置 MCP 可手动调用工具，自动警报/等待唤醒还需要下面的会话连接器。
 
-现有 41 个业务工具加三个会话边界工具，共 44 个。持久 Docker 编程见 [工作区](AGENT_WORKSPACES.md)，完整流水、指标和高级订单见 [交易能力](TRADING_CAPABILITIES.md)：
+现有 46 个业务工具加三个会话边界工具，共 49 个。窗口统计、组合提醒和订单流见 [窗口分析接口](MARKET_WINDOW_TOOLS.md)。公共资金费/爆仓历史与提醒见 [市场事件接口](MARKET_EVENT_TOOLS.md)。持久 Docker 编程见 [工作区](AGENT_WORKSPACES.md)，完整流水、指标和高级订单见 [交易能力](TRADING_CAPABILITIES.md)：
 
 | 工具 | 用途 |
 |---|---|

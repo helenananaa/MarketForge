@@ -1,0 +1,235 @@
+{
+  "provider_inference": false,
+  "checks": [
+    {
+      "case": "cumulative-not-per-fill-compound-alert",
+      "first_partial_notional": "280",
+      "second_partial_notional": "420",
+      "trigger": {
+        "conditions": [
+          {
+            "left": {
+              "complete": true,
+              "instrument": "V-BTC-PERP",
+              "market_time_ms": 0,
+              "metric": "long_liquidation_notional",
+              "source": "window",
+              "through_command_seq": 6,
+              "value": "700",
+              "window_ms": 30000
+            },
+            "op": "gte",
+            "right": "600"
+          },
+          {
+            "left": {
+              "instrument": "V-BTC-PERP",
+              "market_time_ms": 0,
+              "metric": "mark_price",
+              "source": "state",
+              "value": 70
+            },
+            "op": "lt",
+            "right": 80
+          }
+        ],
+        "id": "112a711cd849476e8c9aebe0825cf92d",
+        "kind": "combined",
+        "match": "all",
+        "name": "cumulative-liquidation",
+        "pause_strategies": false,
+        "priority": "urgent",
+        "reason": "30s long liquidation total >=600 and mark<80",
+        "wall_time": 1791719443.0364003
+      },
+      "flow": {
+        "book": {
+          "ask_notional": "0",
+          "ask_qty": "0",
+          "best_ask_tick": null,
+          "best_bid_tick": null,
+          "bid_notional": "0",
+          "bid_qty": "0",
+          "levels": 10,
+          "market_time_ms": 0,
+          "through_command_seq": 6
+        },
+        "bucket_ms": 1000,
+        "buckets": [
+          {
+            "buy_quote_volume": "1000",
+            "buy_volume_qty": "10",
+            "cvd_qty": "0",
+            "delta_qty": "0",
+            "delta_quote": "300",
+            "open_market_time_ms": 0,
+            "quote_volume": "1700",
+            "sell_quote_volume": "700",
+            "sell_volume_qty": "10",
+            "trade_count": 3,
+            "volume_qty": "20",
+            "vwap_tick": {
+              "denominator": "20",
+              "numerator": "1700"
+            }
+          }
+        ],
+        "complete": true,
+        "end_market_time_ms": 0,
+        "instrument_id": "V-BTC-PERP",
+        "large_trade_min_notional": "600",
+        "market_time_ms": 0,
+        "metrics": {
+          "book_ask_qty": "0",
+          "book_bid_qty": "0",
+          "book_imbalance_ppm": null,
+          "buy_quote_volume": "1000",
+          "buy_volume_qty": "10",
+          "delta_qty": "0",
+          "delta_quote": "300",
+          "first_price_tick": 100,
+          "funding_receipt_count": 0,
+          "funding_settled_count": 0,
+          "funding_skipped_count": 0,
+          "funding_total_transfer": "0",
+          "large_trade_count": 1,
+          "large_trade_notional": "1000",
+          "last_funding_rate_ppm": null,
+          "last_price_tick": 70,
+          "liquidation_count": 2,
+          "liquidation_notional": "700",
+          "liquidation_volume_qty": "10",
+          "long_liquidation_notional": "700",
+          "price_change_ppm": -300000,
+          "quote_volume": "1700",
+          "sell_quote_volume": "700",
+          "sell_volume_qty": "10",
+          "short_liquidation_notional": "0",
+          "trade_count": 3,
+          "volume_qty": "20",
+          "vwap_tick": {
+            "denominator": "20",
+            "numerator": "1700"
+          }
+        },
+        "missing_timestamps": false,
+        "price_group_tick": 1,
+        "profile_truncated": false,
+        "room_id": "event-liquidation",
+        "scan_limit": 20000,
+        "scanned_commands": 7,
+        "start_market_time_ms": 0,
+        "status": "Running",
+        "through_command_seq": 6,
+        "truncated": false,
+        "units": "quantities in native lots; amounts in native quote units; wide integers as decimal strings; VWAP is an exact rational",
+        "volume_profile": [
+          {
+            "buy_quote_volume": "0",
+            "buy_volume_qty": "0",
+            "delta_qty": "-10",
+            "delta_quote": "-700",
+            "price_from_tick": 70,
+            "quote_volume": "700",
+            "sell_quote_volume": "700",
+            "sell_volume_qty": "10",
+            "trade_count": 2,
+            "volume_qty": "10",
+            "vwap_tick": {
+              "denominator": "10",
+              "numerator": "700"
+            }
+          },
+          {
+            "buy_quote_volume": "1000",
+            "buy_volume_qty": "10",
+            "delta_qty": "10",
+            "delta_quote": "1000",
+            "price_from_tick": 100,
+            "quote_volume": "1000",
+            "sell_quote_volume": "0",
+            "sell_volume_qty": "0",
+            "trade_count": 1,
+            "volume_qty": "10",
+            "vwap_tick": {
+              "denominator": "10",
+              "numerator": "1000"
+            }
+          }
+        ],
+        "window_bounds": "inclusive simulation time; CVD starts at zero at the window boundary",
+        "window_ms": 30000
+      },
+      "stale_decision_rejected": true,
+      "tool_count": 49
+    },
+    {
+      "case": "window-eviction-and-historical-flow",
+      "expired": "0",
+      "historical": "700",
+      "historical_book_unavailable": true
+    },
+    {
+      "case": "native-sdk-funding-window",
+      "stats": {
+        "book": {
+          "ask_notional": "100010",
+          "ask_qty": "10",
+          "best_ask_tick": 10001,
+          "best_bid_tick": 9999,
+          "bid_notional": "99990",
+          "bid_qty": "10",
+          "levels": 10,
+          "market_time_ms": 2000,
+          "through_command_seq": 6
+        },
+        "complete": true,
+        "end_market_time_ms": 2000,
+        "instrument_id": "V-BTC-PERP",
+        "large_trade_min_notional": "1000000",
+        "market_time_ms": 2000,
+        "metrics": {
+          "book_ask_qty": "10",
+          "book_bid_qty": "10",
+          "book_imbalance_ppm": 0,
+          "buy_quote_volume": "0",
+          "buy_volume_qty": "0",
+          "delta_qty": "0",
+          "delta_quote": "0",
+          "first_price_tick": null,
+          "funding_receipt_count": 1,
+          "funding_settled_count": 1,
+          "funding_skipped_count": 0,
+          "funding_total_transfer": "100",
+          "large_trade_count": 0,
+          "large_trade_notional": "0",
+          "last_funding_rate_ppm": -10000,
+          "last_price_tick": null,
+          "liquidation_count": 0,
+          "liquidation_notional": "0",
+          "liquidation_volume_qty": "0",
+          "long_liquidation_notional": "0",
+          "price_change_ppm": null,
+          "quote_volume": "0",
+          "sell_quote_volume": "0",
+          "sell_volume_qty": "0",
+          "short_liquidation_notional": "0",
+          "trade_count": 0,
+          "volume_qty": "0",
+          "vwap_tick": null
+        },
+        "missing_timestamps": false,
+        "room_id": "event-funding",
+        "scan_limit": 20000,
+        "scanned_commands": 1,
+        "start_market_time_ms": 1999,
+        "status": "Running",
+        "through_command_seq": 6,
+        "truncated": false,
+        "units": "quantities in native lots; amounts in native quote units; wide integers as decimal strings; VWAP is an exact rational",
+        "window_bounds": "inclusive simulation time; CVD starts at zero at the window boundary",
+        "window_ms": 1
+      }
+    }
+  ]
+}

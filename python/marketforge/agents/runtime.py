@@ -18,6 +18,9 @@ from .sandbox import DockerSandbox
 from .projects import normalize_project, project_version
 from .research import Research
 from .alerts import Alerts, CONDITION_SCHEMA
+from .event_data import EVENT_QUERY_FIELDS, EVENT_FILTERS
+from .window_data import WINDOW_FIELDS
+from .combined_alerts import RULE_SCHEMA
 from .external import ExternalTools
 from .orders import OrderTools
 from .policies import Policies
@@ -106,6 +109,9 @@ TOOLS = [
            {"seconds": I, "on_account_change": {"type": "boolean"}}, ["seconds"]),
 ]
 DATA_FIELDS = {"instrument": S, "interval_ms": I, "limit": I, "before_open_time_ms": I, "after_open_time_ms": I}
+TOOLS += [schema("market_events", "Read durable public liquidation fills, funding settlement receipts (including skipped periods), price updates and trades. Default tail; from_start=true starts history. Filter simulation-time range, liquidation side/per-fill min_notional, or signed funding rate ppm. Prices are native quote units; notional is exact price_tick * qty, returned as a decimal string. limit bounds scanned room commands, not matching events. Always advance next_after_command_seq, even for empty pages; follow has_more. Never exposes private account IDs or transfers.", EVENT_QUERY_FIELDS, ["instrument"]),
+    schema("event_alert_set", "Set/replace a named alert for NEW public market events after registration. Event types: liquidation, funding, price_update, trade. For large liquidations use min_notional (inclusive native quote units per actual fill); side is forced order side (Sell closes a long). Funding filters use signed min/max_rate_ppm and include skipped settlement receipts. Durable cursor prevents missing brief events between polls. One-shot by default; repeat monitors subsequent pages after wall-clock cooldown, without requiring a false sample. Each notification groups matching events from one scanned page; evidence includes at most 20 rows plus event_count. priority=urgent fences old decisions and wakes; normal queues for the next decision. Cancel/list through alert_cancel/alerts. Starts from current journal head, no historical backfill; use market_events for history.",
+        {"name":S,"instrument":S,**EVENT_FILTERS,"repeat":{"type":"boolean"},"priority":{"type":"string","enum":["normal","urgent"]},"pause_strategies":{"type":"boolean"},"cooldown_seconds":I,"reason":S}, ["name","instrument","event_type"])]
 TOOLS += [schema("market_history", "Read up to 2000 traded bars with explicit simulation timestamps and exclusive history cursors. Empty periods are omitted.", DATA_FIELDS, ["instrument"]),
     schema("market_indicators", "Compute window-local SMA, EMA, Wilder RSI/ATR and VWAP from the same source bars. Null means insufficient warmup; includes bars and provenance.", {**DATA_FIELDS, "period": I}, ["instrument"]),
     schema("chart_export", "Return a PNG candlestick/volume chart with SMA/EMA from public market bars. Headless render, not a screenshot of the human workspace. MCP returns native image content.", {**DATA_FIELDS, "period": I, "width": I, "height": I}, ["instrument"]),
@@ -141,6 +147,14 @@ trade_spec["properties"].update(conditional_key=S,conditional_spec={"type":["obj
 trade_spec["properties"]["action"]["enum"].append('conditional')
 TOOLS.append(schema('conditional_orders','Read your exchange-owned conditional entries and their submitted/rejected state.',{'instrument':S},['instrument']))
 next(t['function']['parameters']['properties'] for t in TOOLS if t['function']['name']=='chart_export')['indicator']={"type":"object","additionalProperties":False,"properties":{"name":S,"script":S,"language":{"type":"string","enum":["pine","pyne"]},"params":{"type":"object","additionalProperties":True}}}
+TOOLS += [schema("window_stats", "Exact public rolling/historical statistics over inclusive simulation-time bounds, pinned to a committed journal head. Includes actual liquidation fills, funding settlement receipts and current top-N book metrics. Wide amounts are decimal strings; VWAP is a rational. complete=false means a scan cap or missing timestamps; never treat partial totals as complete. Historical book is unavailable.", WINDOW_FIELDS, ["instrument"]),
+    schema("order_flow", "Public order flow: aggressive buy/sell volume, signed Delta, time buckets with CVD starting at zero at this window boundary, grouped price-volume profile, large fills and current book imbalance. Same completeness/units as window_stats. Sparse buckets omit no-trade periods; profile_truncated applies only to the profile. Does not identify hidden orders or traders.", WINDOW_FIELDS, ["instrument"]),
+    schema("combined_alert_set", "Set/replace sampled compound rules: left source (window/state/indicator), op, right number/exact decimal string or source. match=all/any, 1-8 rules. Window metrics aggregate actual trades/liquidations/funding; indicator metrics sma/ema/rsi/atr/vwap use returned candle window and may need warmup. Missing/incomplete data breaks sustain and cannot trigger or rearm. All source clocks must agree by default; max_skew_market_time_ms explicitly permits bounded skew. Poll every evaluation_interval_seconds (1-300 wall seconds). Default one-shot; repeat requires a false sample, hysteresis and cooldown. Urgent fences the old decision; normal queues. Manage through alerts/alert_cancel.",
+        {"name":S, "rules":{"type":"array","minItems":1,"maxItems":8,"items":RULE_SCHEMA},
+         "match":{"type":"string","enum":["all","any"]},"repeat":{"type":"boolean"},
+         "priority":{"type":"string","enum":["normal","urgent"]},"pause_strategies":{"type":"boolean"},
+         "cooldown_seconds":I,"sustain_seconds":I,"hysteresis":I,"interrupt_min_interval_seconds":I,
+         "evaluation_interval_seconds":I,"max_skew_market_time_ms":I,"reason":S}, ["name","rules"])]
 TOOL_FIELDS = {t["function"]["name"]: t["function"]["parameters"] for t in TOOLS}
 
 
@@ -390,7 +404,7 @@ class TradingService(Workspaces, AdvancedTools, MarketDataTools, OrderTools, Pol
                     and "price_tick" not in args and args.get("execution_mode") != "unbounded"):
                 raise UncertainOutcome("legacy unbounded order outcome is unresolved; inspect exchange receipts before resuming; do not replace or reprice the pending request")
             self.store.event(trader, "tool_request", {"call_id": key, "name": name, "args": args, "source": source})
-            if name.startswith('workspace_') or name in ("indicator_compute", "indicator_catalog", "account_history", "ledger", "web_read", "web_search", "strategy_test", "strategy_analyze", "chart_export", "market_history", "market_indicators", "order_cancel_all"):
+            if name.startswith('workspace_') or name in ("window_stats", "order_flow", "market_events", "event_alert_set", "indicator_compute", "indicator_catalog", "account_history", "ledger", "web_read", "web_search", "strategy_test", "strategy_analyze", "chart_export", "market_history", "market_indicators", "order_cancel_all"):
                 slow = True
             else:
                 return self.finish_call(config, key, name, args, source)
@@ -437,6 +451,10 @@ class TradingService(Workspaces, AdvancedTools, MarketDataTools, OrderTools, Pol
             overlay=self.compute_indicator(data,{**args['indicator'],'instrument':args['instrument']})['indicator'] if 'indicator' in args else None
             return render_chart(data,study,args.get("width",1000),args.get("height",600),overlay=overlay)
         if name == "risk_events": return self.read_risk_events(config,args)
+        if name == "market_events": return self.read_market_events(config,args)
+        if name == "event_alert_set": return self.alerts.set_event(config, args, stop)
+        if name in ("window_stats", "order_flow"): return self.read_window_stats(config, args, detailed=name == "order_flow")
+        if name == "combined_alert_set": return self.alerts.set(config, args, combined=True)
         if name == "market_read":
             instrument = args["instrument"]
             self.check_instrument(config, instrument)

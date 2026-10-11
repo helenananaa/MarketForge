@@ -61,6 +61,25 @@ class Client:
     def candles(self, instrument, **query):
         return self.call('market_history', {'instrument': instrument, **query})
 
+    def window_stats(self, instrument, **query):
+        return self.call('window_stats', {'instrument': instrument, **query})
+
+    def order_flow(self, instrument, **query):
+        return self.call('order_flow', {'instrument': instrument, **query})
+
+    def market_events(self, instrument, **query):
+        return self.call('market_events', {'instrument': instrument, **query})
+
+    def iter_market_events(self, instrument, **query):
+        query = {"from_start": True, "limit": 500, **query}
+        if "after_command_seq" in query: query.pop("from_start", None)
+        while True:
+            page = self.market_events(instrument, **query)
+            yield page
+            if not page["has_more"]: break
+            query.pop("from_start", None)
+            query["after_command_seq"] = page["next_after_command_seq"]
+
     def trade(self, instrument, action, request_id, **fields):
         return self.call('trade', {'instrument': instrument, 'action': action, **fields}, request_id)
 

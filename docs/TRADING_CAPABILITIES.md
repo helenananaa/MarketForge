@@ -12,6 +12,10 @@
 | 已有合约仓位保护 | 持仓风险面板，设置、替换、取消 | `trade(action="protection")` | `Client.protect_position`，策略同一 action |
 | 仓位和风险详情 | 均价、盈亏、资金费、保证金、风险比例、估算强平价、双向仓位 | 账户观察的 `own_account`、`risk`、`position_protections` | 相同观察字段 |
 | 保证金预警和强平记录 | 当前状态与风险事件提醒 | 自动风险监控进入现有警报/唤醒通道；`risk_events` 查询历史 | `Client.risk_events`，也可配置风险指标警报 |
+| 全市场爆仓、资金费结算、价格更新和成交历史 | 公共事件流；原生历史 API | `market_events` 游标分页和筛选 | `Client.market_events` / `iter_market_events`；工作区同名方法 |
+| 窗口累计成交/爆仓/资金费、Delta/CVD、价格成交分布和盘口失衡 | 原生窗口统计/订单流 API | `window_stats` / `order_flow` | 原生与工作区 SDK；详见 [窗口分析](MARKET_WINDOW_TOOLS.md) |
+| 跨窗口统计、价格/账户状态和常用指标的组合提醒 | Agent 提醒列表和证据 | `combined_alert_set`；`alerts` / `alert_cancel` 管理 | 绑定选手的工具 HTTP API；支持 all/any、持续条件、回差和冷却 |
+| 大额爆仓与资金费事件提醒 | Agent 提醒列表和事件记录 | `event_alert_set`；现有 `alerts` / `alert_cancel` 管理 | 绑定账户的工具 HTTP API；详见 [事件接口](MARKET_EVENT_TOOLS.md) |
 
 | 完整账户流水 | 页面以近期交易为主 | `account_history` / `ledger` 游标分页，成交、手续费、已实现盈亏、资金费和强平结算 | `iter_account_history` / `order_activity`；工作区 `iter_history` / `watch` |
 | 老订单精确查询 | 原生 HTTP/API；页面仍为近期记录 | `orders(order_id="十进制编号")` 查询完整订单投影 | HTTP orders 的 order_id 参数；工作区同一工具 |
@@ -20,7 +24,7 @@
 | 条件开仓、追踪止损、分批止盈、限价退出 | 原生 API；页面尚未增加高级控件 | `conditional`、扩展 bracket/protection 字段、`conditional_orders` | `set_conditional`、扩展保护方法，工作区同一 action |
 | 自由编程和长驻策略 | 使用自己部署的程序 | Docker 文件、Shell、Python、联网、依赖和后台进程工具 | `/work/marketforge_program.py` 绑定自己的账户 API |
 
-外部框架 MCP 现有 **44 个工具**。持久 Docker 编程工作区详见 [Agent 工作区](AGENT_WORKSPACES.md)。图像是公共成交 K 线的独立无界面渲染，可叠加共享 CandleScope 引擎计算的指标线；不读取人的个人绘图、私有脚本或图表布局。基础 `market_indicators` 在返回窗口内计算，不宣称与 CandleScope 全历史指标逐点一致。EMA 以首根收盘价初始化，RSI/ATR 使用 Wilder 平滑，VWAP 使用成交额/成交量；预热不足返回 null。数据保留仿真时间和 K 线终结状态，空时间段不补造交易。
+外部框架 MCP 现有 **49 个工具**。持久 Docker 编程工作区详见 [Agent 工作区](AGENT_WORKSPACES.md)。图像是公共成交 K 线的独立无界面渲染，可叠加共享 CandleScope 引擎计算的指标线；不读取人的个人绘图、私有脚本或图表布局。基础 `market_indicators` 在返回窗口内计算，不宣称与 CandleScope 全历史指标逐点一致。EMA 以首根收盘价初始化，RSI/ATR 使用 Wilder 平滑，VWAP 使用成交额/成交量；预热不足返回 null。数据保留仿真时间和 K 线终结状态，空时间段不补造交易。
 
 ## 原生仓位保护语义
 

@@ -43,6 +43,18 @@ See [linkage semantics and configuration](SPOT_PERP_LINK.md).
 
 ## Perpetual funding
 
+Public liquidation fills, funding receipts, price updates and trades can be paged through
+`GET /rooms/{room}/instruments/{instrument}/market-events`. The cursor advances across
+empty filtered pages; `limit` bounds scanned commands. Scoped MCP/HTTP tools
+`market_events` and `event_alert_set` expose history and durable event reminders.
+
+Public `GET /rooms/{room}/instruments/{instrument}/window-stats` and `/order-flow`
+provide pinned rolling/historical aggregates and structured order flow. Wide amounts
+are decimal strings; incomplete scans are explicit. MCP and the scoped tool HTTP API
+expose `window_stats`, `order_flow`, and `combined_alert_set` (state/window/indicator
+operands, all/any, sampled sustain/rearm). See [window tools](MARKET_WINDOW_TOOLS.md).
+See [event query parameters, units and reminder semantics](MARKET_EVENT_TOOLS.md).
+
 Optional perpetual `funding: {interval_ms, base_rate_ppm, max_rate_ppm, min_coverage_ppm}` requires
 `price_link`. Public `perp_price.funding` exposes the estimated period rate,
 simulation-time settlement cursor, coverage and last receipt. Perpetual accounts

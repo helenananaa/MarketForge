@@ -241,6 +241,28 @@ class Client:
         room, market = (urllib.parse.quote(v, safe="") for v in (room_id, instrument_id))
         return self._request("GET", f"/rooms/{room}/instruments/{market}/risk-events", query={"account_id":account_id,"after_command_seq":after_command_seq,"from_start":from_start,"limit":limit})
 
+    def window_stats(self, room_id, instrument_id, **query):
+        return self._request("GET", f"/rooms/{urllib.parse.quote(room_id, safe='')}/instruments/{urllib.parse.quote(instrument_id, safe='')}/window-stats", query=query)
+
+    def order_flow(self, room_id, instrument_id, **query):
+        return self._request("GET", f"/rooms/{urllib.parse.quote(room_id, safe='')}/instruments/{urllib.parse.quote(instrument_id, safe='')}/order-flow", query=query)
+
+    def market_events(self, room_id, instrument_id, **query):
+        """Public liquidation/funding/price/trade history, never private accounts."""
+        room, market = (urllib.parse.quote(v, safe="") for v in (room_id, instrument_id))
+        return self._request("GET", f"/rooms/{room}/instruments/{market}/market-events", query=query)
+
+    def iter_market_events(self, room_id, instrument_id, **query):
+        """Yield history pages; scan through empty filtered pages too."""
+        query = {"from_start": True, "limit": 500, **query}
+        if "after_command_seq" in query: query.pop("from_start", None)
+        while True:
+            page = self.market_events(room_id, instrument_id, **query)
+            yield page
+            if not page["has_more"]: break
+            query.pop("from_start", None)
+            query["after_command_seq"] = page["next_after_command_seq"]
+
     def protect_position(self, room_id, instrument_id, account_id, take_profit_tick=None, stop_loss_tick=None, position_side="Both", trigger="Mark", idempotency_key=None, **protection_fields):
         """Replace the full perpetual position protection; omit TP/SL to remove."""
         spec = {"take_profit_tick":take_profit_tick,"stop_loss_tick":stop_loss_tick,"trigger":trigger,**protection_fields} if take_profit_tick is not None or stop_loss_tick is not None or protection_fields else None

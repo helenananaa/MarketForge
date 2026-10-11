@@ -161,6 +161,7 @@ class DockerWorkspace(DockerSandbox):
 
 
 PROGRAM_TOOLS = {'market_read','market_history','market_indicators','chart_export','risk_events',
+    'market_events','window_stats','order_flow',
     'orders','fills','account_history','market_rules','portfolio','ledger','trade','order_cancel_all','policy_status',
     'conditional_orders','indicator_compute','indicator_catalog'}
 

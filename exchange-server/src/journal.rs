@@ -325,6 +325,17 @@ pub trait JournalStore: Send {
         Err(JournalError::UnsupportedOperation("query_executions"))
     }
 
+    fn query_execution_window(
+        &mut self,
+        _room_id: &str,
+        _start_ms: u64,
+        _end_ms: u64,
+        _through_command_seq: u64,
+        _limit: usize,
+    ) -> Result<ExecutionWindow, JournalError> {
+        Err(JournalError::UnsupportedOperation("query_execution_window"))
+    }
+
     fn create_room(
         &mut self,
         owner_user_id: &str,
@@ -1279,6 +1290,13 @@ pub struct ExecutionPage {
     pub has_more: bool,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ExecutionWindow {
+    pub executions: Vec<RoomExecutionSummary>,
+    pub truncated: bool,
+    pub missing_timestamps: bool,
+}
+
 fn execution_page_from_sorted(
     executions: &[RoomExecutionSummary],
     after_command_seq: Option<u64>,
@@ -1953,6 +1971,37 @@ impl JournalStore for InMemoryJournalStore {
         ))
     }
 
+    fn query_execution_window(
+        &mut self,
+        room_id: &str,
+        start_ms: u64,
+        end_ms: u64,
+        through_command_seq: u64,
+        limit: usize,
+    ) -> Result<ExecutionWindow, JournalError> {
+        let eligible = self
+            .executions
+            .iter()
+            .filter(|r| r.room_id == room_id && r.execution.command_seq <= through_command_seq);
+        let missing_timestamps = eligible
+            .clone()
+            .any(|r| r.execution.market_time_ms.is_none());
+        let mut rows = eligible
+            .filter(|r| {
+                r.execution
+                    .market_time_ms
+                    .is_some_and(|t| t >= start_ms && t <= end_ms)
+            })
+            .map(|r| &r.execution)
+            .collect::<Vec<_>>();
+        rows.sort_by_key(|e| e.command_seq);
+        Ok(ExecutionWindow {
+            truncated: rows.len() > limit,
+            missing_timestamps,
+            executions: rows.into_iter().take(limit).cloned().collect(),
+        })
+    }
+
     fn create_room(
         &mut self,
         owner_user_id: &str,
@@ -2621,6 +2670,18 @@ impl JournalStore for SharedInMemoryJournalStore {
     ) -> Result<ExecutionPage, JournalError> {
         self.lock()?
             .query_executions(room_id, after_command_seq, from_start, limit)
+    }
+
+    fn query_execution_window(
+        &mut self,
+        room_id: &str,
+        start_ms: u64,
+        end_ms: u64,
+        through_command_seq: u64,
+        limit: usize,
+    ) -> Result<ExecutionWindow, JournalError> {
+        self.lock()?
+            .query_execution_window(room_id, start_ms, end_ms, through_command_seq, limit)
     }
 
     fn create_room(
@@ -4172,6 +4233,53 @@ impl JournalStore for PostgresJournalStore {
                 executions,
                 latest_command_seq,
                 has_more,
+            })
+        })
+    }
+
+    fn query_execution_window(
+        &mut self,
+        room_id: &str,
+        start_ms: u64,
+        end_ms: u64,
+        through_command_seq: u64,
+        limit: usize,
+    ) -> Result<ExecutionWindow, JournalError> {
+        let room = room_id.to_string();
+        let (start, end) = (
+            i64_from_u64(start_ms, "window start")?,
+            i64_from_u64(end_ms, "window end")?,
+        );
+        let head = i64_from_u64(through_command_seq, "window head")?;
+        let sql_limit =
+            i64::try_from(limit + 1).map_err(|_| JournalError::CountOutOfRange(limit))?;
+        run_postgres(&mut self.client, move |client| {
+            let mut tx = client
+                .build_transaction()
+                .isolation_level(postgres::IsolationLevel::RepeatableRead)
+                .read_only(true)
+                .start()
+                .map_err(JournalError::Postgres)?;
+            let missing_timestamps: bool = tx.query_one(
+                "SELECT EXISTS(SELECT 1 FROM marketforge_executions WHERE room_id=$1 AND command_seq<=$2 AND market_time_ms IS NULL)",
+                &[&room, &head]).map_err(JournalError::Postgres)?.get(0);
+            let rows = tx.query(
+                "SELECT execution_json FROM marketforge_executions WHERE room_id=$1 AND command_seq<=$2 AND market_time_ms >= $3 AND market_time_ms <= $4 ORDER BY command_seq LIMIT $5",
+                &[&room, &head, &start, &end, &sql_limit]).map_err(JournalError::Postgres)?;
+            let truncated = rows.len() > limit;
+            let executions = rows
+                .into_iter()
+                .take(limit)
+                .map(|row| {
+                    let value: Value = row.get("execution_json");
+                    serde_json::from_value(value).map_err(JournalError::Serialize)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            tx.commit().map_err(JournalError::Postgres)?;
+            Ok(ExecutionWindow {
+                executions,
+                truncated,
+                missing_timestamps,
             })
         })
     }
@@ -7542,6 +7650,55 @@ mod tests {
                 clearing_events_omitted: false,
             },
         }
+    }
+
+    #[test]
+    fn execution_windows_pin_head_time_boundaries_caps_and_unknown_history() {
+        let mut store = InMemoryJournalStore::new();
+        let records = (1..=4)
+            .map(|seq| new_order_record(seq, seq, 10, Side::Buy, vec![], vec![]))
+            .collect::<Vec<_>>();
+        store.executions = records;
+        let exact = store
+            .query_execution_window("room-1", 2000, 2000, 4, 10)
+            .unwrap();
+        assert_eq!(
+            exact
+                .executions
+                .iter()
+                .map(|e| e.command_seq)
+                .collect::<Vec<_>>(),
+            vec![2]
+        );
+        assert!(!exact.truncated && !exact.missing_timestamps);
+        let pinned = store
+            .query_execution_window("room-1", 2000, 4000, 2, 10)
+            .unwrap();
+        assert_eq!(pinned.executions.len(), 1);
+        let capped = store
+            .query_execution_window("room-1", 2000, 4000, 4, 1)
+            .unwrap();
+        assert!(capped.truncated);
+        store.executions[3].execution.market_time_ms = None;
+        assert!(
+            !store
+                .query_execution_window("room-1", 0, 4000, 3, 10)
+                .unwrap()
+                .missing_timestamps
+        );
+        assert!(
+            store
+                .query_execution_window("room-1", 2000, 3000, 4, 10)
+                .unwrap()
+                .missing_timestamps
+        );
+        store.executions[3].room_id = "other-room".to_string();
+        assert!(
+            !store
+                .query_execution_window("room-1", 0, 4000, 4, 10)
+                .unwrap()
+                .missing_timestamps
+        );
     }
 
     fn spot_scenario(room_id: &str) -> ScenarioConfig {
