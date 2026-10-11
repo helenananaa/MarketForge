@@ -222,6 +222,10 @@ impl ExchangeActor {
                     rejected_command: Some(command),
                     price_updates: Vec::new(),
                     funding_settlement: None,
+                    book_delta: None,
+                    is_liquidation: false,
+                    wallet_updates: Vec::new(),
+                margin_updates: Vec::new(),
                 });
             }
         };
@@ -239,6 +243,10 @@ impl ExchangeActor {
                 rejected_command: None,
                 price_updates: Vec::new(),
                 funding_settlement: None,
+                book_delta: None,
+                is_liquidation: false,
+                wallet_updates: Vec::new(),
+                margin_updates: Vec::new(),
                 result: ActorExecutionResult::Accepted(MarketExecution::Perp(
                     PerpTradingExecution {
                         command: crate::CommandRecord {

@@ -74,7 +74,30 @@ pub struct VenueAccountStore {
     balances: crate::shared_map::SharedMap<AccountId, Arc<BTreeMap<AssetId, VenueAssetBalance>>>,
 }
 
+pub(crate) struct VenueWalletState {
+    balances: crate::shared_map::SharedMap<AccountId, Arc<BTreeMap<AssetId, VenueAssetBalance>>>,
+}
+
 impl VenueAccountStore {
+    pub(crate) fn wallet_state(&self) -> VenueWalletState {
+        VenueWalletState {
+            balances: self.balances.clone(),
+        }
+    }
+
+    pub(crate) fn changed_wallet_accounts(&self, before: &VenueWalletState) -> Vec<AccountId> {
+        before
+            .balances
+            .diff(&self.balances)
+            .map(|change| {
+                use im::ordmap::DiffItem;
+                match change {
+                    DiffItem::Add(id, _) | DiffItem::Remove(id, _) => *id,
+                    DiffItem::Update { new: (id, _), .. } => *id,
+                }
+            })
+            .collect()
+    }
     pub(crate) fn margin_changes(&self, asset: &str) -> Option<&im::OrdSet<AccountId>> {
         self.margin_changes.get(asset)?.accounts()
     }

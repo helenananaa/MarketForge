@@ -34,12 +34,19 @@ mod storage;
 mod nodes;
 use nodes::{NodeSlot, OrderNodes};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct PriceLevel {
     head: NodeSlot,
     tail: NodeSlot,
     qty: u128,
     len: usize,
+}
+
+/// Cheap persistent-map view; comparing it visits changed tree nodes only.
+#[derive(Clone)]
+pub(crate) struct BookDepthState {
+    bids: OrdMap<PriceTick, PriceLevel>,
+    asks: OrdMap<PriceTick, PriceLevel>,
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +72,50 @@ struct OrderLocation {
 }
 
 impl OrderBook {
+    pub(crate) fn depth_state(&self) -> BookDepthState {
+        BookDepthState {
+            bids: self.bids.clone(),
+            asks: self.asks.clone(),
+        }
+    }
+
+    pub(crate) fn delta_since(&self, before: &BookDepthState) -> BookSnapshot {
+        fn levels(
+            before: &OrdMap<PriceTick, PriceLevel>,
+            after: &OrdMap<PriceTick, PriceLevel>,
+        ) -> Vec<BookLevel> {
+            before
+                .diff(after)
+                .filter_map(|change| {
+                    use im::ordmap::DiffItem;
+                    match change {
+                        DiffItem::Add(price, value) => Some(BookLevel {
+                            price_tick: *price,
+                            qty: value.qty as Qty,
+                        }),
+                        DiffItem::Remove(price, _) => Some(BookLevel {
+                            price_tick: *price,
+                            qty: 0,
+                        }),
+                        DiffItem::Update {
+                            old: (_, old),
+                            new: (price, new),
+                        } if old.qty != new.qty => Some(BookLevel {
+                            price_tick: *price,
+                            qty: new.qty as Qty,
+                        }),
+                        _ => None,
+                    }
+                })
+                .collect()
+        }
+        let mut bids = levels(&before.bids, &self.bids);
+        bids.reverse();
+        BookSnapshot {
+            bids,
+            asks: levels(&before.asks, &self.asks),
+        }
+    }
     pub fn new() -> Self {
         Self::default()
     }

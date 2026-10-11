@@ -259,25 +259,37 @@ pub struct PerpAccountSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hedge_positions: Option<Box<HedgePositions>>,
     pub account_id: AccountId,
+    #[serde(with = "crate::funding::json_money")]
     pub cash_balance: Money,
+    #[serde(with = "crate::funding::json_money")]
     pub position_qty: PositionQty,
     pub avg_entry_price_tick: PriceTick,
+    #[serde(with = "crate::funding::json_money")]
     pub realized_pnl: Money,
+    #[serde(with = "crate::funding::json_money")]
     pub unrealized_pnl: Money,
+    #[serde(with = "crate::funding::json_money")]
     pub equity: Money,
+    #[serde(with = "crate::funding::json_money")]
     pub initial_margin: Money,
     #[serde(default)]
+    #[serde(with = "crate::funding::json_money")]
     pub maintenance_margin: Money,
     #[serde(default)]
+    #[serde(with = "crate::funding::json_money")]
     pub portfolio_initial_margin: Money,
     #[serde(default)]
+    #[serde(with = "crate::funding::json_money")]
     pub portfolio_maintenance_margin: Money,
     #[serde(default = "default_perp_margin_status")]
     pub margin_status: PerpMarginStatus,
     #[serde(default)]
+    #[serde(with = "crate::funding::json_money")]
     pub reserved_margin: Money,
     #[serde(default)]
+    #[serde(with = "crate::funding::json_money")]
     pub available_cash: Money,
+    #[serde(with = "crate::funding::json_money")]
     pub fees_paid: Money,
     #[serde(default, with = "crate::funding::json_money")]
     pub funding_pnl: Money,
@@ -397,6 +409,13 @@ pub struct PerpAccountStore {
     cross_margin_contexts: SharedMap<AccountId, PerpCrossMarginContext>,
     config: PerpClearingConfig,
     mark_price_tick: PriceTick,
+}
+
+pub(crate) struct PerpMarginState {
+    accounts: SharedMap<AccountId, PerpAccount>,
+    contexts: SharedMap<AccountId, PerpCrossMarginContext>,
+    mark: PriceTick,
+    config: PerpClearingConfig,
 }
 
 /// Account-local inputs needed by peer markets. No portfolio projection or
@@ -949,6 +968,57 @@ impl PerpAccountStore {
         self.config
     }
 
+    pub(crate) fn margin_state(&self) -> PerpMarginState {
+        PerpMarginState {
+            accounts: self.accounts.clone(),
+            contexts: self.cross_margin_contexts.clone(),
+            mark: self.mark_price_tick,
+            config: self.config,
+        }
+    }
+
+    pub(crate) fn margin_updates_since(
+        &self,
+        before: &PerpMarginState,
+    ) -> Vec<PerpAccountSnapshot> {
+        fn ids<K: Ord + Clone, V: Clone + PartialEq>(
+            before: &SharedMap<K, V>,
+            after: &SharedMap<K, V>,
+        ) -> Vec<K> {
+            before
+                .diff(after)
+                .map(|change| {
+                    use im::ordmap::DiffItem;
+                    match change {
+                        DiffItem::Add(id, _) | DiffItem::Remove(id, _) => id.clone(),
+                        DiffItem::Update { new: (id, _), .. } => id.clone(),
+                    }
+                })
+                .collect()
+        }
+        let mut changed = std::collections::BTreeSet::new();
+        changed.extend(ids(&before.accounts, &self.accounts));
+        changed.extend(ids(&before.contexts, &self.cross_margin_contexts));
+        if before.mark != self.mark_price_tick {
+            changed.extend(self.open_position_accounts());
+        }
+        changed
+            .into_iter()
+            .filter_map(|id| {
+                let after = self.account_snapshot(id)?;
+                let old = before.accounts.get(&id).map(|a| {
+                    Self::snapshot_with_context(
+                        a,
+                        before.config,
+                        before.mark,
+                        before.contexts.get(&id).copied().unwrap_or_default(),
+                    )
+                });
+                (old.as_ref() != Some(&after)).then_some(after)
+            })
+            .collect()
+    }
+
     pub fn account_snapshot(&self, account_id: AccountId) -> Option<PerpAccountSnapshot> {
         self.account(account_id)
             .map(|account| self.snapshot_with_cross_margin(account))
@@ -1101,8 +1171,21 @@ impl PerpAccountStore {
     }
 
     fn snapshot_with_cross_margin(&self, account: &PerpAccount) -> PerpAccountSnapshot {
-        let mut snapshot = account.snapshot(self.config, self.mark_price_tick);
-        let context = self.cross_margin_context(account.account_id);
+        Self::snapshot_with_context(
+            account,
+            self.config,
+            self.mark_price_tick,
+            self.cross_margin_context(account.account_id),
+        )
+    }
+
+    fn snapshot_with_context(
+        account: &PerpAccount,
+        config: PerpClearingConfig,
+        mark: PriceTick,
+        context: PerpCrossMarginContext,
+    ) -> PerpAccountSnapshot {
+        let mut snapshot = account.snapshot(config, mark);
         // Snapshots are an infallible projection API. The mutation/risk paths
         // use `checked_snapshot_with_cross_margin` and reject overflow; this
         // fallback only keeps inspection of corrupt/extreme restored state

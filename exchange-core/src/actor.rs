@@ -102,6 +102,62 @@ pub struct ExchangeActor {
 }
 
 impl ExchangeActor {
+    fn margin_state(&self) -> BTreeMap<InstrumentId, crate::perp::PerpMarginState> {
+        self.markets
+            .iter()
+            .filter_map(|(id, market)| match &market.engine {
+                MarketEngine::Perp(engine) => Some((id.clone(), engine.margin_state())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn attach_margin_updates(
+        &self,
+        execution: &mut ActorExecution,
+        before: &BTreeMap<InstrumentId, crate::perp::PerpMarginState>,
+    ) {
+        for (id, state) in before {
+            if let MarketEngine::Perp(engine) = &self.markets[id].engine {
+                execution.margin_updates.extend(
+                    engine
+                        .margin_updates_since(state)
+                        .into_iter()
+                        .map(|account| ExecutionMarginUpdate {
+                            instrument_id: id.clone(),
+                            account,
+                        }),
+                );
+            }
+        }
+    }
+
+    fn attach_wallet_updates(
+        &self,
+        execution: &mut ActorExecution,
+        before: &crate::account::VenueWalletState,
+    ) {
+        execution.wallet_updates = self
+            .venue_accounts
+            .changed_wallet_accounts(before)
+            .into_iter()
+            .map(|id| ExecutionWalletUpdate {
+                account_id: id,
+                venue_id: self.config.venue_id.clone(),
+                balances: self
+                    .venue_account_snapshot(id)
+                    .balances
+                    .into_iter()
+                    .map(|v| ExecutionWalletBalance {
+                        asset_id: v.asset_id,
+                        total: v.total.to_string(),
+                        reserved: v.reserved.to_string(),
+                        available: v.available.to_string(),
+                    })
+                    .collect(),
+            })
+            .collect();
+    }
     /// Even dormant automation can be advanced by an ordinary fill. Such
     /// transactions retain the coordinated room execution path.
     pub(crate) fn has_order_automation(&self) -> bool {
@@ -516,17 +572,21 @@ impl ExchangeActor {
                 total_transfer: 0,
             };
             let command_seq = self.take_command_seq();
+            let wallet_before = self.venue_accounts.wallet_state();
+            let margin_before = self.margin_state();
             self.sync_market_accounts_from_venue(&id)?;
             let MarketEngine::Perp(engine) =
                 &mut self.markets.get_mut(&id).expect("configured market").engine
             else {
                 unreachable!();
             };
+            let book_before = engine.book().depth_state();
             let result = engine.apply(Command::SettleFunding(settlement))?;
+            let book_delta = engine.book().delta_since(&book_before);
             let Command::SettleFunding(settlement) = &result.command.command else {
                 unreachable!();
             };
-            let execution = ActorExecution {
+            let mut execution = ActorExecution {
                 rejected_command: None,
                 room_id: self.room_id.clone(),
                 instrument_id: id.clone(),
@@ -535,6 +595,10 @@ impl ExchangeActor {
                 status: self.status(),
                 price_updates: Vec::new(),
                 funding_settlement: Some(settlement.clone()),
+                book_delta: Some(book_delta),
+                is_liquidation: false,
+                wallet_updates: Vec::new(),
+                margin_updates: Vec::new(),
                 result: ActorExecutionResult::Accepted(MarketExecution::Perp(result)),
             };
             self.sync_venue_accounts_from_execution(&id, &execution)?;
@@ -550,6 +614,8 @@ impl ExchangeActor {
                 .ok_or(ClearingError::BalanceOverflow)?;
             state.covered_ms = 0;
             state.rate_time_sum = 0;
+            self.attach_wallet_updates(&mut execution, &wallet_before);
+            self.attach_margin_updates(&mut execution, &margin_before);
             self.pending_clock_executions.push(execution);
         }
         Ok(())
@@ -1025,20 +1091,49 @@ impl ExchangeActor {
         command: Command,
         origin: CommandOrigin,
     ) -> Result<ActorExecution, ActorRejectReason> {
+        let wallet_before = self.venue_accounts.wallet_state();
+        let margin_before = self.margin_state();
         if matches!(command, Command::SetConditionalOrder { .. }) {
-            return self.apply_conditional_command(instrument_id, command, origin);
+            let before = self.market(instrument_id)?.engine.book().depth_state();
+            let mut execution = self.apply_conditional_command(instrument_id, command, origin)?;
+            if matches!(execution.result, ActorExecutionResult::Accepted(_)) {
+                execution.book_delta = Some(
+                    self.market(instrument_id)?
+                        .engine
+                        .book()
+                        .delta_since(&before),
+                );
+            }
+            self.attach_wallet_updates(&mut execution, &wallet_before);
+            self.attach_margin_updates(&mut execution, &margin_before);
+            return Ok(execution);
         }
         if matches!(
             command,
             Command::SetPositionProtection { .. } | Command::NewOrderWithProtection { .. }
         ) {
-            return self.apply_position_protection_command(instrument_id, command, origin);
+            let before = self.market(instrument_id)?.engine.book().depth_state();
+            let mut execution =
+                self.apply_position_protection_command(instrument_id, command, origin)?;
+            if matches!(execution.result, ActorExecutionResult::Accepted(_)) {
+                execution.book_delta = Some(
+                    self.market(instrument_id)?
+                        .engine
+                        .book()
+                        .delta_since(&before),
+                );
+            }
+            self.attach_wallet_updates(&mut execution, &wallet_before);
+            self.attach_margin_updates(&mut execution, &margin_before);
+            return Ok(execution);
         }
         let retained = command.clone();
         let mut execution = self.apply_to_instrument_inner(instrument_id, command, origin)?;
         if matches!(execution.result, ActorExecutionResult::Rejected(_)) {
             execution.rejected_command = Some(retained);
         }
+        self.attach_wallet_updates(&mut execution, &wallet_before);
+        self.attach_margin_updates(&mut execution, &margin_before);
         Ok(execution)
     }
 
@@ -1093,6 +1188,10 @@ impl ExchangeActor {
                     result: ActorExecutionResult::Rejected(reason),
                     price_updates: Vec::new(),
                     funding_settlement: None,
+                    book_delta: None,
+                    is_liquidation: false,
+                    wallet_updates: Vec::new(),
+                    margin_updates: Vec::new(),
                 });
             }
         }
@@ -1107,6 +1206,10 @@ impl ExchangeActor {
                 result: ActorExecutionResult::Rejected(ActorRejectReason::FundingManaged),
                 price_updates: Vec::new(),
                 funding_settlement: None,
+                book_delta: None,
+                is_liquidation: false,
+                wallet_updates: Vec::new(),
+                margin_updates: Vec::new(),
             });
         }
         if let Some(price) = self.perp_price_snapshot(instrument_id)? {
@@ -1127,6 +1230,10 @@ impl ExchangeActor {
                     rejected_command: None,
                     price_updates: Vec::new(),
                     funding_settlement: None,
+                    book_delta: None,
+                    is_liquidation: false,
+                    wallet_updates: Vec::new(),
+                    margin_updates: Vec::new(),
                     room_id: self.room_id.clone(),
                     instrument_id: instrument_id.to_string(),
                     command_seq,
@@ -1147,6 +1254,10 @@ impl ExchangeActor {
                 rejected_command: None,
                 price_updates: Vec::new(),
                 funding_settlement: None,
+                book_delta: None,
+                is_liquidation: false,
+                wallet_updates: Vec::new(),
+                margin_updates: Vec::new(),
                 room_id: self.room_id.clone(),
                 instrument_id: instrument_id.to_string(),
                 command_seq,
@@ -1408,6 +1519,8 @@ impl ExchangeActor {
             });
         }
 
+        let wallet_before = self.venue_accounts.wallet_state();
+        let margin_before = self.margin_state();
         let command_seq = self.take_command_seq();
         let perp_quote_asset = self
             .markets
@@ -1442,6 +1555,8 @@ impl ExchangeActor {
             }
         }
         *self = staged;
+        self.attach_wallet_updates(&mut execution, &wallet_before);
+        self.attach_margin_updates(&mut execution, &margin_before);
         Ok(execution)
     }
 
@@ -1669,6 +1784,10 @@ impl ExchangeActor {
             rejected_command: None,
             price_updates: Vec::new(),
             funding_settlement: None,
+            book_delta: None,
+            is_liquidation: false,
+            wallet_updates: Vec::new(),
+            margin_updates: Vec::new(),
             room_id: self.room_id.clone(),
             instrument_id: instrument_id.to_string(),
             command_seq,
@@ -3012,7 +3131,11 @@ impl MarketActor {
 
     pub fn apply_from(&mut self, command: Command, origin: CommandOrigin) -> ActorExecution {
         let retained = command.clone();
+        let before = self.engine.book().depth_state();
         let mut execution = self.apply_from_inner(command, origin);
+        if matches!(execution.result, ActorExecutionResult::Accepted(_)) {
+            execution.book_delta = Some(self.engine.book().delta_since(&before));
+        }
         if matches!(execution.result, ActorExecutionResult::Rejected(_)) {
             execution.rejected_command = Some(retained);
         }
@@ -3032,6 +3155,10 @@ impl MarketActor {
                 status: self.status,
                 price_updates: Vec::new(),
                 funding_settlement: None,
+                book_delta: None,
+                is_liquidation: false,
+                wallet_updates: Vec::new(),
+                margin_updates: Vec::new(),
                 result: ActorExecutionResult::Rejected(ActorRejectReason::FundingManaged),
             };
         }
@@ -3041,6 +3168,10 @@ impl MarketActor {
                 rejected_command: None,
                 price_updates: Vec::new(),
                 funding_settlement: None,
+                book_delta: None,
+                is_liquidation: false,
+                wallet_updates: Vec::new(),
+                margin_updates: Vec::new(),
                 room_id: self.room_id.clone(),
                 instrument_id: self.config.instrument_id().to_string(),
                 command_seq: seq,
@@ -3058,6 +3189,10 @@ impl MarketActor {
                 rejected_command: None,
                 price_updates: Vec::new(),
                 funding_settlement: None,
+                book_delta: None,
+                is_liquidation: false,
+                wallet_updates: Vec::new(),
+                margin_updates: Vec::new(),
                 room_id: self.room_id.clone(),
                 instrument_id: self.config.instrument_id().to_string(),
                 command_seq: seq,
@@ -3076,6 +3211,10 @@ impl MarketActor {
             rejected_command: None,
             price_updates: Vec::new(),
             funding_settlement: None,
+            book_delta: None,
+            is_liquidation: false,
+            wallet_updates: Vec::new(),
+            margin_updates: Vec::new(),
             room_id: self.room_id.clone(),
             instrument_id: self.config.instrument_id().to_string(),
             command_seq: seq,
@@ -3097,6 +3236,10 @@ impl MarketActor {
                 rejected_command: None,
                 price_updates: Vec::new(),
                 funding_settlement: None,
+                book_delta: None,
+                is_liquidation: false,
+                wallet_updates: Vec::new(),
+                margin_updates: Vec::new(),
                 room_id: self.room_id.clone(),
                 instrument_id: self.config.instrument_id().to_string(),
                 command_seq: seq,
@@ -3106,6 +3249,7 @@ impl MarketActor {
             };
         }
 
+        let before = self.engine.book().depth_state();
         let result = match &mut self.engine {
             MarketEngine::Spot(_) => {
                 ActorExecutionResult::Rejected(ActorRejectReason::WrongMarketKind)
@@ -3120,6 +3264,10 @@ impl MarketActor {
             rejected_command: None,
             price_updates: Vec::new(),
             funding_settlement: None,
+            book_delta: Some(self.engine.book().delta_since(&before)),
+            is_liquidation: true,
+            wallet_updates: Vec::new(),
+            margin_updates: Vec::new(),
             room_id: self.room_id.clone(),
             instrument_id: self.config.instrument_id().to_string(),
             command_seq: seq,
@@ -3201,6 +3349,31 @@ pub struct ActorExecution {
     /// Derived, public price changes, committed with the originating command.
     pub price_updates: Vec<crate::PerpPriceSnapshot>,
     pub funding_settlement: Option<crate::FundingSettlement>,
+    pub book_delta: Option<BookSnapshot>,
+    pub is_liquidation: bool,
+    pub wallet_updates: Vec<ExecutionWalletUpdate>,
+    pub margin_updates: Vec<ExecutionMarginUpdate>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ExecutionMarginUpdate {
+    pub instrument_id: InstrumentId,
+    pub account: PerpAccountSnapshot,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ExecutionWalletUpdate {
+    pub account_id: AccountId,
+    pub venue_id: String,
+    pub balances: Vec<ExecutionWalletBalance>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ExecutionWalletBalance {
+    pub asset_id: String,
+    pub total: String,
+    pub reserved: String,
+    pub available: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3268,6 +3441,13 @@ impl MarketEngine {
         match self {
             Self::Spot(engine) => engine.apply(command).map(MarketExecution::Spot),
             Self::Perp(engine) => engine.apply(command).map(MarketExecution::Perp),
+        }
+    }
+
+    pub(crate) fn book(&self) -> &crate::engine::OrderBook {
+        match self {
+            Self::Spot(e) => e.book(),
+            Self::Perp(e) => e.book(),
         }
     }
 

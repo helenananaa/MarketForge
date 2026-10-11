@@ -29,6 +29,9 @@ pub struct SpotTradingEngine {
 }
 
 impl SpotTradingEngine {
+    pub(crate) fn book(&self) -> &OrderBook {
+        &self.book
+    }
     pub(crate) fn reservation_balance(&self, id: AccountId) -> Option<(Money, PositionQty)> {
         self.accounts.reservation_balance(id)
     }
@@ -277,6 +280,9 @@ pub struct PendingLiquidation {
 }
 
 impl PerpTradingEngine {
+    pub(crate) fn book(&self) -> &OrderBook {
+        &self.book
+    }
     pub(crate) fn margin_changes(&self) -> Option<&im::OrdSet<AccountId>> {
         self.accounts.risk.margin_changes.accounts()
     }
@@ -810,6 +816,17 @@ impl PerpTradingEngine {
 
     pub fn account_snapshot(&self, account_id: AccountId) -> Option<PerpAccountSnapshot> {
         self.accounts.account_snapshot(account_id)
+    }
+
+    pub(crate) fn margin_state(&self) -> crate::perp::PerpMarginState {
+        self.accounts.margin_state()
+    }
+
+    pub(crate) fn margin_updates_since(
+        &self,
+        before: &crate::perp::PerpMarginState,
+    ) -> Vec<PerpAccountSnapshot> {
+        self.accounts.margin_updates_since(before)
     }
 
     pub fn account_snapshots(&self) -> Vec<PerpAccountSnapshot> {

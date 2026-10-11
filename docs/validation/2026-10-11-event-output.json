@@ -1,0 +1,39 @@
+{
+  "base_commit": "8f99502b7d01dea86d8e9ec14b1cb989db34f673",
+  "transport": "real HTTP/SSE with isolated PostgreSQL and process restart",
+  "live_passed": true,
+  "replay_passed": true,
+  "checks": [
+    "full_fills",
+    "depth_reconstruction",
+    "account_isolation",
+    "transfer_lifecycle",
+    "healthy_margin",
+    "partial_liquidation",
+    "adl",
+    "funding",
+    "multiple_instruments",
+    "process_restart",
+    "execution_replay_equality",
+    "wallet_replay_equality"
+  ],
+  "receipt_streams": 5,
+  "execution_payloads": 12,
+  "wallet_receipts": 2,
+  "wallet_statuses": [
+    "Pending",
+    "Completed"
+  ],
+  "live_seconds": 46.438,
+  "replay_seconds": 0.438,
+  "test_command": "cargo test --workspace --all-targets",
+  "isolated_tests": {
+    "passed": 582,
+    "failed": 0,
+    "ignored": 13,
+    "postgres_required": true,
+    "event_output_tests_passed": 11
+  },
+  "patch_sha256": "33d7ae0fb84c165cfe9eab9c9bef86aab0da4a3d6e9530b409bee9db6826fd53",
+  "strict_clippy_passed": true
+}

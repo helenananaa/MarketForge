@@ -1,5 +1,7 @@
 mod account_activity;
 mod account_events;
+mod stream_output;
+mod wallet_output;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     convert::Infallible,
@@ -1757,6 +1759,7 @@ fn app_with_cors_origins(state: SharedState, cors_origins: Vec<HeaderValue>) -> 
         .route("/rooms/{room_id}/candles", get(room_candles))
         .route("/rooms/{room_id}/stream/public", get(public_room_stream))
         .route("/rooms/{room_id}/stream/private", get(private_room_stream))
+        .route("/rooms/{room_id}/wallet-events", get(wallet_output::read))
         .route("/rooms/{room_id}/accounts", get(account_snapshots))
         .route(
             "/rooms/{room_id}/venue/accounts",
@@ -2886,6 +2889,11 @@ fn execution_summary_matches(
         && stored.reject_reason == replayed.reject_reason
         && stored.price_updates == replayed.price_updates
         && stored.funding_settlement == replayed.funding_settlement
+        && (stored.book_delta.is_none()
+            || (stored.book_delta == replayed.book_delta
+                && stored.is_liquidation == replayed.is_liquidation))
+        && (stored.wallet_updates.is_empty() || stored.wallet_updates == replayed.wallet_updates)
+        && (stored.margin_updates.is_empty() || stored.margin_updates == replayed.margin_updates)
         && stored.clearing_event_count == replayed.clearing_event_count
         && clearing_event_summaries_match(
             stored.clearing_event_count,
@@ -5326,7 +5334,20 @@ async fn scoped_room_stream(
             private_stream_snapshot(&app, &journal, &room_id, &user_id, latest_seq).await?
         }
     };
+    let wallet_latest = app
+        .rooms
+        .simulation_room(&room_id)
+        .map_err(api_error_from_room)?
+        .wallet_event_count() as u64;
+    let wallet_cursor = query.wallet_cursor.unwrap_or(wallet_latest);
+    if wallet_cursor > wallet_latest {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "wallet cursor is ahead of room",
+        ));
+    }
     let after = query.after_command_seq;
+    validate_event_cursor(&room_id, after, latest_seq)?;
     let fetched = stream_history_executions(&app, &journal, &room_id, &cached, after).await?;
     drop(app);
     let connection = lifecycle.open_sse_connection();
@@ -5402,6 +5423,9 @@ async fn scoped_room_stream(
         }
     }
     let stream_state = ScopedStreamState {
+        shared: state.clone(),
+        wallet_cursor,
+        wallet_poll: tokio::time::interval(Duration::from_millis(250)),
         room_id,
         scope,
         user_id,
@@ -5419,7 +5443,56 @@ async fn scoped_room_stream(
             return None;
         }
         loop {
+            if matches!(state.scope, StreamScope::Private)
+                && state
+                    .journal
+                    .user_room_role(&state.user_id, &state.room_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .as_deref()
+                    == Some("spectator")
+            {
+                state.terminate = true;
+                return Some((
+                    Ok(SseEvent::default()
+                        .event("resync_required")
+                        .data("{\"code\":\"account_access_revoked\"}")),
+                    state,
+                ));
+            }
+            if !state
+                .journal
+                .user_can_access_room(&state.user_id, &state.room_id)
+                .await
+                .unwrap_or(false)
+            {
+                state.terminate = true;
+                return Some((
+                    Ok(SseEvent::default()
+                        .event("resync_required")
+                        .data("{\"code\":\"unauthorized\"}")),
+                    state,
+                ));
+            }
             if let Some(event) = state.backlog.pop_front() {
+                if matches!(state.scope, StreamScope::Private)
+                    && !stream_output::private_payload_allowed(
+                        &event.payload,
+                        &state.user_id,
+                        &state.room_id,
+                        &state.journal,
+                    )
+                    .await
+                {
+                    state.terminate = true;
+                    return Some((
+                        Ok(SseEvent::default()
+                            .event("resync_required")
+                            .data("{\"code\":\"account_access_revoked\"}")),
+                        state,
+                    ));
+                }
                 let data = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string());
                 let sse = SseEvent::default()
                     .id(event.stream_seq.to_string())
@@ -5427,7 +5500,29 @@ async fn scoped_room_stream(
                     .data(data);
                 return Some((Ok(sse), state));
             }
-            match state.receiver.recv().await {
+            let received = tokio::select! {
+                biased;
+                _ = state.shutdown.changed() => return None,
+                _ = state.wallet_poll.tick(), if matches!(state.scope, StreamScope::Private) => {
+                    match wallet_output::page(&state.shared, &state.journal, &state.room_id, &state.user_id, state.wallet_cursor, 500).await {
+                        Ok(payload) => {
+                            state.wallet_cursor = payload["next_wallet_cursor"].as_u64().unwrap();
+                            if !payload["events"].as_array().unwrap().is_empty() {
+                                state.stream_seq += 1;
+                                state.backlog.push_back(UserStreamEvent { api_version:"http.v1".into(), stream:"private".into(),
+                                    stream_seq:state.stream_seq, command_seq:None, kind:"wallet".into(), payload });
+                            }
+                        }
+                        Err(_) => {
+                            state.terminate = true;
+                            return Some((Ok(SseEvent::default().event("resync_required").data("{\"code\":\"wallet_history_unavailable\"}")), state));
+                        }
+                    }
+                    continue;
+                },
+                value = state.receiver.recv() => value,
+            };
+            match received {
                 Ok(execution) => {
                     if state
                         .min_command_seq
@@ -5478,6 +5573,9 @@ async fn scoped_room_stream(
 }
 
 struct ScopedStreamState {
+    shared: SharedState,
+    wallet_cursor: u64,
+    wallet_poll: tokio::time::Interval,
     room_id: RoomId,
     scope: StreamScope,
     user_id: String,
@@ -5510,12 +5608,25 @@ fn public_stream_snapshot(
         .ticker(room_id, &instrument_id)
         .map_err(api_error_from_room)?;
     let clock = app.rooms.clock(room_id).map_err(api_error_from_room)?;
+    let room = app
+        .rooms
+        .simulation_room(room_id)
+        .map_err(api_error_from_room)?;
+    let mut markets = Vec::new();
+    for instrument in room.instrument_ids() {
+        markets.push(serde_json::json!({"instrument_id":instrument,
+            "book":app.rooms.book_snapshot_for(room_id, &instrument).map_err(api_error_from_room)?,
+            "ticker":app.rooms.ticker(room_id, &instrument).map_err(api_error_from_room)?,
+            "perp_price":room.perp_price_snapshot(&instrument).map_err(|e| api_error_from_room(RoomManagerError::Actor(e)))?}));
+    }
     Ok(serde_json::json!({
+        "markets":markets,
         "cursor": {
             "room_id": room_id,
             "scope": "public",
             "version": "stream.v1",
             "command_seq": at_command_seq,
+            "wallet_cursor": room.wallet_event_count(),
         },
         "instrument_id": instrument_id,
         "book": book,
@@ -5536,47 +5647,88 @@ async fn private_stream_snapshot(
     if let Some(cursor) = payload.get_mut("cursor") {
         cursor["scope"] = serde_json::json!("private");
     }
-    let instrument_id = app
-        .rooms
-        .room(room_id)
-        .map(|room| room.primary_instrument_id().to_string())
-        .map_err(api_error_from_room)?;
     let is_admin = journal
         .user_can_administer_room(user_id, room_id)
         .await
         .map_err(api_error_from_journal)?;
-    let accounts = app
+    let room = app
         .rooms
-        .account_snapshots_for(room_id, &instrument_id)
+        .simulation_room(room_id)
         .map_err(api_error_from_room)?;
-    let account_ids = match &accounts {
-        AccountSnapshots::Spot(items) => {
-            items.iter().map(|item| item.account_id).collect::<Vec<_>>()
-        }
-        AccountSnapshots::Perp(items) => {
-            items.iter().map(|item| item.account_id).collect::<Vec<_>>()
-        }
-    };
-    let mut visible_accounts = Vec::new();
-    for account_id in account_ids {
-        if is_admin
-            || journal
-                .user_can_access_account(user_id, room_id, account_id)
-                .await
-                .map_err(api_error_from_journal)?
-        {
-            visible_accounts.push(account_id);
-        }
-    }
+    let mut visible_accounts = BTreeSet::new();
+    let mut account_states = Vec::new();
+    let mut wallet_balances = Vec::new();
     let mut orders = Vec::new();
-    for account_id in &visible_accounts {
-        let mut resting = app
+    let mut open_orders = Vec::new();
+    for instrument in room.instrument_ids() {
+        let snapshots = app
             .rooms
-            .resting_orders_for_account(room_id, &instrument_id, *account_id)
+            .account_snapshots_for(room_id, &instrument)
             .map_err(api_error_from_room)?;
-        orders.append(&mut resting);
+        let values = match snapshots {
+            AccountSnapshots::Spot(items) => items
+                .into_iter()
+                .map(|a| {
+                    (
+                        a.account_id,
+                        serde_json::to_value(SpotAccountStateSummary::from_snapshot(a)).unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            AccountSnapshots::Perp(items) => items
+                .into_iter()
+                .map(|a| {
+                    (
+                        a.account_id,
+                        serde_json::to_value(PerpAccountStateSummary::from_snapshot(a)).unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+        };
+        for (id, account) in values {
+            if is_admin
+                || journal
+                    .user_can_access_account(user_id, room_id, id)
+                    .await
+                    .map_err(api_error_from_journal)?
+            {
+                visible_accounts.insert(id);
+                account_states
+                    .push(serde_json::json!({"instrument_id":instrument,"account":account}));
+                let resting = app
+                    .rooms
+                    .resting_orders_for_account(room_id, &instrument, id)
+                    .map_err(api_error_from_room)?;
+                for order in resting {
+                    open_orders.push(serde_json::json!({"instrument_id":instrument,"order":order}));
+                    if instrument == room.primary_exchange().primary_instrument_id() {
+                        orders.push(order);
+                    }
+                }
+            }
+        }
     }
+    for id in &visible_accounts {
+        for venue in room.venue_ids() {
+            let exchange = room
+                .exchange(venue)
+                .map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:?}")))?;
+            let balances = exchange.venue_account_snapshot(*id).balances.into_iter().map(|v| serde_json::json!({
+                "asset_id":v.asset_id,"total":v.total.to_string(),"reserved":v.reserved.to_string(),"available":v.available.to_string()
+            })).collect::<Vec<_>>();
+            wallet_balances
+                .push(serde_json::json!({"account_id":id,"venue_id":venue,"balances":balances}));
+        }
+        let balances = room.portfolio_snapshot(*id).balances.into_iter().map(|v| serde_json::json!({
+            "asset_id":v.asset_id,"total":v.total.to_string(),"reserved":v.reserved.to_string(),"available":v.available.to_string()
+        })).collect::<Vec<_>>();
+        wallet_balances
+            .push(serde_json::json!({"account_id":id,"scope":"portfolio","balances":balances}));
+    }
+    payload["account_states"] = serde_json::json!(account_states);
+    payload["wallet_balances"] = serde_json::json!(wallet_balances);
     payload["accounts"] = serde_json::json!(visible_accounts);
+    payload["open_orders"] = serde_json::json!(open_orders);
     payload["orders"] = serde_json::to_value(&orders).map_err(api_error_from_json)?;
     Ok(payload)
 }
@@ -5599,15 +5751,23 @@ async fn stream_history_executions(
             .cloned()
             .collect());
     }
-    let page = journal
-        .query_executions(room_id, Some(after), false, ROOM_EVENT_CACHE_CAPACITY)
-        .await
-        .map_err(api_error_from_journal)?;
-    Ok(page
-        .executions
-        .into_iter()
-        .filter(|execution| execution.command_seq > after)
-        .collect())
+    let mut cursor = Some(after);
+    let mut result = Vec::new();
+    loop {
+        let page = journal
+            .query_executions(room_id, cursor, false, 500)
+            .await
+            .map_err(api_error_from_journal)?;
+        if page.executions.is_empty() {
+            break;
+        }
+        cursor = page.executions.last().map(|e| e.command_seq);
+        result.extend(page.executions);
+        if !page.has_more {
+            break;
+        }
+    }
+    Ok(result)
 }
 
 fn clock_status_name(status: MarketStatus) -> &'static str {
@@ -5625,74 +5785,35 @@ async fn scoped_event_from_execution(
     journal: &JournalCoordinator,
     stream_seq: u64,
 ) -> Option<UserStreamEvent> {
-    let kinds = execution
-        .events
-        .iter()
-        .map(event_kind_name)
-        .collect::<Vec<_>>();
-    let is_public = kinds.iter().any(|kind| {
-        matches!(
-            *kind,
-            "trade_printed" | "order_canceled" | "order_rested" | "order_accepted"
-        )
-    });
-    match scope {
-        StreamScope::Public if is_public || kinds.is_empty() => Some(UserStreamEvent {
-            api_version: "http.v1".to_string(),
-            stream: "public".to_string(),
-            stream_seq,
-            command_seq: Some(execution.command_seq),
-            kind: "execution".to_string(),
-            payload: serde_json::json!({
-                "command_seq": execution.command_seq,
-                "instrument_id": execution.instrument_id,
-                "events": kinds,
-                "accepted": execution.accepted,
-                "price_updates": execution.price_updates,
-                "funding_settlement": execution.funding_settlement,
-            }),
+    let payload = match scope {
+        StreamScope::Public => serde_json::json!({
+            "command_seq": execution.command_seq,
+            "instrument_id": execution.instrument_id,
+            "market_time_ms": execution.market_time_ms,
+            "status": execution.status,
+            "events": execution.events.iter().map(event_kind_name).collect::<Vec<_>>(),
+            "accepted": execution.accepted,
+            "trades": stream_output::public_trades(execution),
+            "book_delta": execution.book_delta,
+            "book_delta_available": execution.book_delta.is_some(),
+            "liquidations": stream_output::public_liquidations(execution),
+            "price_updates": execution.price_updates,
+            "funding_settlement": execution.funding_settlement,
         }),
-        StreamScope::Private => {
-            if !user_can_see_private_execution(execution, user_id, journal).await {
-                return None;
-            }
-            let mut visible = execution.clone();
-            if execution.funding_settlement.is_some()
-                && !journal
-                    .user_can_administer_room(user_id, &execution.room_id)
-                    .await
-                    .unwrap_or(false)
-            {
-                visible.clearing_events.clear();
-                for event in &execution.clearing_events {
-                    let id = match event {
-                        ClearingEventSummary::PerpFundingSettled { account_id, .. }
-                        | ClearingEventSummary::PerpMarginStatusChanged { account_id, .. } => {
-                            *account_id
-                        }
-                        _ => continue,
-                    };
-                    if journal
-                        .user_can_access_account(user_id, &execution.room_id, id)
-                        .await
-                        .unwrap_or(false)
-                    {
-                        visible.clearing_events.push(event.clone());
-                    }
-                }
-                visible.clearing_event_count = visible.clearing_events.len();
-            }
-            Some(UserStreamEvent {
-                api_version: "http.v1".to_string(),
-                stream: "private".to_string(),
-                stream_seq,
-                command_seq: Some(execution.command_seq),
-                kind: "execution".to_string(),
-                payload: serde_json::to_value(visible).unwrap_or_else(|_| serde_json::json!({})),
-            })
+        StreamScope::Private => stream_output::private_payload(execution, user_id, journal).await?,
+    };
+    Some(UserStreamEvent {
+        api_version: "http.v1".into(),
+        stream: match scope {
+            StreamScope::Public => "public",
+            StreamScope::Private => "private",
         }
-        StreamScope::Public => None,
-    }
+        .into(),
+        stream_seq,
+        command_seq: Some(execution.command_seq),
+        kind: "execution".into(),
+        payload,
+    })
 }
 
 fn event_kind_name(event: &EventSummary) -> &'static str {
@@ -5710,71 +5831,6 @@ fn event_kind_name(event: &EventSummary) -> &'static str {
         EventSummary::OrderAmended { .. } => "order_amended",
         EventSummary::AmendRejected { .. } => "amend_rejected",
     }
-}
-
-async fn user_can_see_private_execution(
-    execution: &RoomExecutionSummary,
-    user_id: &str,
-    journal: &JournalCoordinator,
-) -> bool {
-    if journal
-        .user_can_administer_room(user_id, &execution.room_id)
-        .await
-        .unwrap_or(false)
-    {
-        return true;
-    }
-    if let Some(account_id) = execution.submit_account_id
-        && journal
-            .user_can_access_account(user_id, &execution.room_id, account_id)
-            .await
-            .unwrap_or(false)
-    {
-        return true;
-    }
-    let mut accounts = Vec::new();
-    for event in &execution.events {
-        if let EventSummary::TradePrinted {
-            maker_account_id,
-            taker_account_id,
-            ..
-        } = event
-        {
-            accounts.push(*maker_account_id);
-            accounts.push(*taker_account_id);
-        }
-    }
-    for clearing in &execution.clearing_events {
-        match clearing {
-            ClearingEventSummary::PerpFundingSettled { account_id, .. } => {
-                accounts.push(*account_id)
-            }
-            ClearingEventSummary::SpotTradeSettled {
-                buyer_account_id,
-                seller_account_id,
-                ..
-            }
-            | ClearingEventSummary::PerpTradeSettled {
-                buyer_account_id,
-                seller_account_id,
-                ..
-            } => {
-                accounts.push(*buyer_account_id);
-                accounts.push(*seller_account_id);
-            }
-            _ => {}
-        }
-    }
-    for account_id in accounts {
-        if journal
-            .user_can_access_account(user_id, &execution.room_id, account_id)
-            .await
-            .unwrap_or(false)
-        {
-            return true;
-        }
-    }
-    false
 }
 
 async fn account_snapshots(
@@ -7476,6 +7532,7 @@ pub struct RoomEventsQuery {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct RoomEventStreamQuery {
+    pub wallet_cursor: Option<u64>,
     pub after_command_seq: Option<u64>,
     #[serde(default)]
     pub replay_from_start: bool,
@@ -7609,6 +7666,14 @@ pub struct RoomTransfersResponse {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RoomExecutionSummary {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wallet_updates: Vec<exchange_core::actor::ExecutionWalletUpdate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub margin_updates: Vec<exchange_core::actor::ExecutionMarginUpdate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub book_delta: Option<BookSnapshot>,
+    #[serde(default)]
+    pub is_liquidation: bool,
     pub room_id: String,
     #[serde(default)]
     pub instrument_id: Option<InstrumentId>,
@@ -7635,6 +7700,14 @@ pub struct RoomExecutionSummary {
 
 #[derive(Deserialize)]
 struct RoomExecutionSummaryPayload {
+    #[serde(default)]
+    wallet_updates: Vec<exchange_core::actor::ExecutionWalletUpdate>,
+    #[serde(default)]
+    margin_updates: Vec<exchange_core::actor::ExecutionMarginUpdate>,
+    #[serde(default)]
+    book_delta: Option<BookSnapshot>,
+    #[serde(default)]
+    is_liquidation: bool,
     room_id: String,
     #[serde(default)]
     instrument_id: Option<InstrumentId>,
@@ -7667,6 +7740,10 @@ impl<'de> Deserialize<'de> for RoomExecutionSummary {
             serde_json::from_value(payload).map_err(serde::de::Error::custom)?;
 
         Ok(Self {
+            wallet_updates: payload.wallet_updates,
+            margin_updates: payload.margin_updates,
+            book_delta: payload.book_delta,
+            is_liquidation: payload.is_liquidation,
             room_id: payload.room_id,
             instrument_id: payload.instrument_id,
             submit_account_id: payload.submit_account_id,
@@ -7703,6 +7780,10 @@ impl RoomExecutionSummary {
         let clearing_event_count = clearing_events.len();
 
         Self {
+            wallet_updates: execution.wallet_updates,
+            margin_updates: execution.margin_updates,
+            book_delta: execution.book_delta,
+            is_liquidation: execution.is_liquidation,
             room_id: execution.room_id,
             instrument_id: Some(execution.instrument_id),
             submit_account_id,
@@ -10211,7 +10292,11 @@ fn execution_account_id(execution: &exchange_core::ActorExecution) -> Option<Acc
                 _ => None,
             }
         }
-        ActorExecutionResult::Rejected(_) => None,
+        ActorExecutionResult::Rejected(_) => execution
+            .rejected_command
+            .as_ref()
+            .and_then(Command::new_order)
+            .map(|order| order.account_id),
     }
 }
 
@@ -10232,6 +10317,7 @@ impl std::error::Error for AgentWorkerError {}
 
 #[cfg(test)]
 mod tests {
+    include!("event_output_tests.rs");
     include!("market_behavior_server_tests.rs");
     include!("price_link_tests.rs");
     include!("funding_tests.rs");
@@ -10350,6 +10436,10 @@ mod tests {
         RoomExecutionSummary {
             price_updates: Vec::new(),
             funding_settlement: None,
+            book_delta: None,
+            is_liquidation: false,
+            wallet_updates: Vec::new(),
+            margin_updates: Vec::new(),
             room_id: room_id.to_string(),
             instrument_id: Some("V-BTC-SPOT".to_string()),
             submit_account_id: None,
@@ -11116,6 +11206,10 @@ mod tests {
         let execution = RoomExecutionSummary {
             price_updates: Vec::new(),
             funding_settlement: None,
+            book_delta: None,
+            is_liquidation: false,
+            wallet_updates: Vec::new(),
+            margin_updates: Vec::new(),
             room_id: "i128-room".to_string(),
             instrument_id: Some("V-BTC-SPOT".to_string()),
             submit_account_id: None,
@@ -11176,6 +11270,10 @@ mod tests {
         let stored = RoomExecutionSummary {
             price_updates: Vec::new(),
             funding_settlement: None,
+            book_delta: None,
+            is_liquidation: false,
+            wallet_updates: Vec::new(),
+            margin_updates: Vec::new(),
             room_id: "clearing-validation-room".to_string(),
             instrument_id: Some("V-BTC-SPOT".to_string()),
             submit_account_id: None,
@@ -11369,6 +11467,15 @@ mod tests {
         fn remove_portfolio_margin_fields(value: &mut serde_json::Value) {
             match value {
                 serde_json::Value::Object(fields) => {
+                    // Legacy journals predate the structured event receipts.
+                    for field in [
+                        "book_delta",
+                        "is_liquidation",
+                        "wallet_updates",
+                        "margin_updates",
+                    ] {
+                        fields.remove(field);
+                    }
                     fields.remove("portfolio_initial_margin");
                     fields.remove("portfolio_maintenance_margin");
                     for value in fields.values_mut() {

@@ -213,24 +213,17 @@ fn activity(
         .collect::<Vec<_>>();
     let mut settlements = Vec::new();
     if filter.is_none() {
-        for event in &e.clearing_events {
-            let id = match event {
-                ClearingEventSummary::PerpFundingSettled { account_id, .. }
-                | ClearingEventSummary::PerpMarginStatusChanged { account_id, .. }
-                | ClearingEventSummary::PerpLiquidationSettled { account_id, .. } => *account_id,
-                _ => continue,
-            };
-            if id != account {
-                continue;
-            }
-            let mut data = serde_json::to_value(event).ok()?;
-            if let Some(value) = data.as_object_mut() {
-                value.remove("auto_deleveraging_allocations");
-                value.remove("socialized_loss_allocations");
-            }
-            settlements.push(data);
-        }
+        settlements = stream_output::account_events(e, &BTreeSet::from([account]))
+            .into_iter()
+            .filter(|v| {
+                !matches!(
+                    v["type"].as_str(),
+                    Some("SpotTradeSettled" | "PerpTradeSettled")
+                )
+            })
+            .collect();
     }
+
     let admission = if filter.is_none() && e.submit_account_id == Some(account) {
         Some(serde_json::json!({"accepted":e.accepted,"reject_reason":e.reject_reason}))
     } else {

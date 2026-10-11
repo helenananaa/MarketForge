@@ -38,29 +38,25 @@ pub(super) async fn read(
     validate_event_cursor(&room, q.after_command_seq, page.latest_command_seq)?;
     let mut events = Vec::new();
     for e in &page.executions {
-        if e.instrument_id.as_deref() != Some(&instrument) {
-            continue;
-        }
-        for c in &e.clearing_events {
-            let id = match c {
-                ClearingEventSummary::PerpMarginStatusChanged { account_id, .. }
-                | ClearingEventSummary::PerpLiquidationSettled { account_id, .. }
-                | ClearingEventSummary::PerpFundingSettled { account_id, .. } => *account_id,
-                _ => continue,
-            };
-            if id != q.account_id {
+        for data in
+            stream_output::account_events(e, &std::collections::BTreeSet::from([q.account_id]))
+        {
+            let event_instrument = data["instrument_id"]
+                .as_str()
+                .or(e.instrument_id.as_deref());
+            if event_instrument != Some(&instrument) {
                 continue;
             }
-            let mut data = serde_json::to_value(c)
-                .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
-            // Loss-sharing counterpart allocations are unrelated private accounts.
-            if let Some(o) = data.as_object_mut() {
-                o.remove("auto_deleveraging_allocations");
-                o.remove("socialized_loss_allocations");
+            if matches!(
+                data["type"].as_str(),
+                Some("SpotTradeSettled" | "PerpTradeSettled")
+            ) {
+                continue;
             }
             events.push(serde_json::json!({"command_seq":e.command_seq,"market_time_ms":e.market_time_ms,"event":data}));
         }
     }
+
     let next = page
         .executions
         .last()

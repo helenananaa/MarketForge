@@ -90,6 +90,7 @@ GET  /rooms/{id}/ticker
 GET  /rooms/{id}/candles?interval_ms=
 GET  /rooms/{id}/stream/public
 GET  /rooms/{id}/stream/private
+GET  /rooms/{id}/wallet-events?wallet_cursor=0&limit=100
 GET  /rooms/{id}/events/stream          admin audit (contiguous command_seq)
 POST /rooms/{id}/members                owner/admin; roles owner|admin|instructor|trader|spectator
 POST /rooms/{id}/members/{user_id}      remove member and account assignments
@@ -122,6 +123,8 @@ See `docs/RUNTIME_CONTRACT.md` §7. Bodies are `{ "error": "...", "code"?: "..."
 - Snapshot payload includes `cursor: { room_id, scope, version: stream.v1, command_seq }`. Apply later `execution` events only when `command_seq` is greater than that boundary. Mixing a later snapshot with older deltas is invalid.
 - Public stream: book, trades, and allowed room status. Private stream: the viewer's current orders/accounts plus rest-only post, partial fill remainder, cancel, amend, and reject for accounts they can access. Access is by membership/assignment, not “this execution ever touched the account”.
 - If the in-memory 1024-event cache does not contain `after_command_seq + 1`, the server fills from the durable journal. Live lag still emits `resync_required`. `scope` query that disagrees with the path returns 400. Private streams close after membership revocation; private snapshots omit other accounts.
+
+See [EVENT_OUTPUT.md](EVENT_OUTPUT.md) for structured fills, absolute depth deltas, public liquidation fills, private funding/margin/ADL and wallet receipts. Save both `after_command_seq` and `wallet_cursor` for private reconnects; transfer events have their own durable cursor.
 
 ## Ticker
 

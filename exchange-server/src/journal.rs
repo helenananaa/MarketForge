@@ -7524,6 +7524,10 @@ mod tests {
             execution: RoomExecutionSummary {
                 price_updates: Vec::new(),
                 funding_settlement: None,
+                book_delta: None,
+                is_liquidation: false,
+                wallet_updates: Vec::new(),
+                margin_updates: Vec::new(),
                 room_id: "room-1".to_string(),
                 instrument_id: Some("V-BTC-SPOT".to_string()),
                 submit_account_id: None,
@@ -8799,6 +8803,10 @@ mod tests {
             execution: RoomExecutionSummary {
                 price_updates: Vec::new(),
                 funding_settlement: None,
+                book_delta: None,
+                is_liquidation: false,
+                wallet_updates: Vec::new(),
+                margin_updates: Vec::new(),
                 room_id: "room-1".to_string(),
                 instrument_id: Some("V-BTC-PERP".to_string()),
                 submit_account_id: None,

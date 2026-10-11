@@ -81,6 +81,9 @@ impl<T: Clone> History<T> {
 }
 
 impl<T> History<T> {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len == 0
+    }
     pub(crate) fn len(&self) -> usize {
         self.len
     }

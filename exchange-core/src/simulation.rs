@@ -27,6 +27,31 @@ use crate::{
 
 pub type UserId = String;
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WalletBalance {
+    pub total: String,
+    pub reserved: String,
+    pub available: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct WalletTransferEvent {
+    pub wallet_seq: u64,
+    pub market_time_ms: u64,
+    pub account_id: AccountId,
+    pub venue_id: String,
+    pub asset_id: String,
+    pub transfer_id: u64,
+    pub kind: VenueTransferKind,
+    pub status: VenueTransferStatus,
+    pub amount: String,
+    pub reject_reason: Option<String>,
+    pub venue_balance: Option<WalletBalance>,
+    pub portfolio_balance: Option<WalletBalance>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub margin_updates: Vec<crate::actor::ExecutionMarginUpdate>,
+}
+
 #[cfg(test)]
 thread_local! {
     pub(crate) static SNAPSHOT_LIQUIDATION_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -34,6 +59,8 @@ thread_local! {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SimulationRoom {
+    #[serde(default, skip_serializing_if = "crate::history::History::is_empty")]
+    wallet_events: crate::history::History<WalletTransferEvent>,
     room_id: RoomId,
     primary_venue_id: VenueId,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -55,6 +82,63 @@ pub struct SimulationRoom {
 }
 
 impl SimulationRoom {
+    /// Transfers have their own durable cursor; they are not matching commands.
+    pub fn wallet_event_count(&self) -> usize {
+        self.wallet_events.len()
+    }
+
+    pub fn wallet_events_from(&self, start: usize) -> impl Iterator<Item = &WalletTransferEvent> {
+        self.wallet_events.iter_from(start)
+    }
+
+    fn record_wallet_transfer(&mut self, venue_id: &str, transfer: &VenueTransfer) {
+        let exchange = &self.exchanges[venue_id];
+        let venue = exchange.venue_balance_snapshot(transfer.account_id, &transfer.asset_id);
+        let portfolio = self
+            .portfolios
+            .balance_snapshot(transfer.account_id, &transfer.asset_id);
+        self.wallet_events.push(WalletTransferEvent {
+            wallet_seq: self.wallet_events.len() as u64,
+            market_time_ms: exchange.clock().market_time_ms(),
+            account_id: transfer.account_id,
+            venue_id: venue_id.into(),
+            asset_id: transfer.asset_id.clone(),
+            transfer_id: transfer.transfer_id,
+            kind: transfer.kind,
+            status: transfer.status,
+            amount: transfer.amount.to_string(),
+            reject_reason: transfer.reject_reason.as_ref().map(|r| format!("{r:?}")),
+            venue_balance: venue.map(|v| WalletBalance {
+                total: v.total.to_string(),
+                reserved: v.reserved.to_string(),
+                available: v.available.to_string(),
+            }),
+            margin_updates: exchange
+                .instrument_ids()
+                .into_iter()
+                .filter_map(|id| {
+                    match exchange
+                        .account_snapshot_for(id, transfer.account_id)
+                        .ok()
+                        .flatten()?
+                    {
+                        AccountSnapshot::Perp(account) => {
+                            Some(crate::actor::ExecutionMarginUpdate {
+                                instrument_id: id.into(),
+                                account,
+                            })
+                        }
+                        _ => None,
+                    }
+                })
+                .collect(),
+            portfolio_balance: portfolio.map(|v| WalletBalance {
+                total: v.total.to_string(),
+                reserved: v.reserved.to_string(),
+                available: v.available.to_string(),
+            }),
+        });
+    }
     pub fn from_scenario(scenario: ScenarioConfig) -> Result<SimulationBootstrap, ScenarioError> {
         let instruments = std::iter::once(&scenario.market)
             .chain(scenario.extra_markets.iter())
@@ -103,6 +187,7 @@ impl SimulationRoom {
             pending_venue_transfers: Vec::new(),
             next_command_seq: 0,
             pending_clock_executions: Vec::new(),
+            wallet_events: crate::history::History::default(),
         };
 
         for portfolio in &scenario.initial_portfolios {
@@ -159,6 +244,7 @@ impl SimulationRoom {
             pending_venue_transfers: Vec::new(),
             next_command_seq,
             pending_clock_executions: Vec::new(),
+            wallet_events: crate::history::History::default(),
         }
     }
 
@@ -709,6 +795,7 @@ impl SimulationRoom {
             for (venue_id, due) in &due_by_venue {
                 for transfer in due {
                     self.apply_portfolio_effect_for_finished_transfer(venue_id, transfer);
+                    self.record_wallet_transfer(venue_id, transfer);
                 }
                 completed.extend(due.iter().cloned());
             }
@@ -729,6 +816,8 @@ impl SimulationRoom {
         let mut staged = self.clone();
         let transfer =
             staged.submit_deposit_inner(venue_id, account_id, asset_id.into(), amount)?;
+        let venue = venue_id.unwrap_or(&staged.primary_venue_id).to_string();
+        staged.record_wallet_transfer(&venue, &transfer);
         *self = staged;
         Ok(transfer)
     }
@@ -776,6 +865,8 @@ impl SimulationRoom {
         let mut staged = self.clone();
         let transfer =
             staged.submit_withdrawal_inner(venue_id, account_id, asset_id.into(), amount)?;
+        let venue = venue_id.unwrap_or(&staged.primary_venue_id).to_string();
+        staged.record_wallet_transfer(&venue, &transfer);
         *self = staged;
         Ok(transfer)
     }
