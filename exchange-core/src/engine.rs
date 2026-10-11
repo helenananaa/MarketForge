@@ -1,5 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::sync::{Arc, OnceLock};
+use im::{OrdMap, OrdSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -12,22 +11,51 @@ use crate::{
     },
 };
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default)]
 pub struct OrderBook {
-    #[serde(default)]
-    reduce_orders: HashSet<OrderId>,
-    // Derived from the live book, never trusted from a checkpoint. Cloned
-    // candidates share the immutable index until their first book mutation.
-    #[serde(skip)]
-    account_orders: OnceLock<Arc<BTreeMap<AccountId, Vec<Order>>>>,
-    #[serde(default)]
-    order_expirations: BTreeMap<OrderId, u64>,
-    bids: BTreeMap<PriceTick, VecDeque<Order>>,
-    asks: BTreeMap<PriceTick, VecDeque<Order>>,
-    order_index: HashMap<OrderId, OrderLocation>,
-    seen_order_ids: HashSet<OrderId>,
+    reduce_orders: OrdSet<OrderId>,
+    // Derived, incremental account index; rebuilt from queues on recovery.
+    account_orders: OrdMap<AccountId, OrdSet<OrderId>>,
+    order_expirations: OrdMap<OrderId, u64>,
+    bids: OrdMap<PriceTick, PriceLevel>,
+    asks: OrdMap<PriceTick, PriceLevel>,
+    // Accepted IDs are never reused; internal slots can be reclaimed in each
+    // isolated candidate. FIFO links resolve directly into shared node chunks.
+    order_index: OrderNodes,
+    seen_order_ids: OrdSet<OrderId>,
     next_seq: u64,
     next_trade_id: u64,
+}
+
+#[path = "orderbook_storage.rs"]
+mod storage;
+
+#[path = "orderbook_nodes.rs"]
+mod nodes;
+use nodes::{NodeSlot, OrderNodes};
+
+#[derive(Clone, Debug)]
+struct PriceLevel {
+    head: NodeSlot,
+    tail: NodeSlot,
+    qty: u128,
+    len: usize,
+}
+
+#[derive(Clone, Debug)]
+struct OrderNode {
+    order: Order,
+    prev: Option<NodeSlot>,
+    next: Option<NodeSlot>,
+}
+
+impl OrderNode {
+    fn location(&self) -> OrderLocation {
+        OrderLocation {
+            side: self.order.side,
+            price_tick: self.order.price_tick,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -79,7 +107,6 @@ impl OrderBook {
         order: NewOrder,
         guard: &mut G,
     ) -> Vec<Event> {
-        self.account_orders.take();
         let mut events = Vec::new();
 
         if order.qty == 0 {
@@ -216,25 +243,10 @@ impl OrderBook {
     }
 
     pub fn cancel_order(&mut self, cancel: CancelOrder) -> Vec<Event> {
-        self.account_orders.take();
-        let Some(location) = self.order_index.remove(&cancel.order_id) else {
-            return vec![Event::CancelRejected {
-                order_id: cancel.order_id,
-                reason: CancelRejectReason::UnknownOrder,
-            }];
-        };
-
-        let book_side = self.book_side_mut(location.side);
-        let Some(queue) = book_side.get_mut(&location.price_tick) else {
-            return vec![Event::CancelRejected {
-                order_id: cancel.order_id,
-                reason: CancelRejectReason::UnknownOrder,
-            }];
-        };
-
-        let Some(index) = queue
-            .iter()
-            .position(|order| order.order_id == cancel.order_id)
+        let Some(location) = self
+            .order_index
+            .get(&cancel.order_id)
+            .map(OrderNode::location)
         else {
             return vec![Event::CancelRejected {
                 order_id: cancel.order_id,
@@ -242,12 +254,9 @@ impl OrderBook {
             }];
         };
 
-        let removed = queue
-            .remove(index)
-            .expect("position returned an in-bounds order index");
-        if queue.is_empty() {
-            book_side.remove(&location.price_tick);
-        }
+        let removed = self
+            .remove_resting_order(location, cancel.order_id)
+            .expect("indexed orders have a live price level");
         self.order_expirations.remove(&cancel.order_id);
         self.reduce_orders.remove(&cancel.order_id);
 
@@ -293,8 +302,11 @@ impl OrderBook {
     }
 
     pub fn amend_order(&mut self, amend: AmendOrder) -> Vec<Event> {
-        self.account_orders.take();
-        let Some(location) = self.order_index.get(&amend.order_id).copied() else {
+        let Some(location) = self
+            .order_index
+            .get(&amend.order_id)
+            .map(OrderNode::location)
+        else {
             return vec![Event::AmendRejected {
                 order_id: amend.order_id,
                 reason: AmendRejectReason::UnknownOrder,
@@ -370,57 +382,43 @@ impl OrderBook {
                 .bids
                 .iter()
                 .rev()
-                .map(|(price_tick, queue)| BookLevel {
+                .map(|(price_tick, level)| BookLevel {
                     price_tick: *price_tick,
-                    qty: queue.iter().map(|order| order.remaining_qty).sum(),
+                    qty: level.qty as Qty,
                 })
                 .collect(),
             asks: self
                 .asks
                 .iter()
-                .map(|(price_tick, queue)| BookLevel {
+                .map(|(price_tick, level)| BookLevel {
                     price_tick: *price_tick,
-                    qty: queue.iter().map(|order| order.remaining_qty).sum(),
+                    qty: level.qty as Qty,
                 })
                 .collect(),
         }
     }
 
     pub fn best_bid(&self) -> Option<PriceTick> {
-        self.bids.keys().next_back().copied()
+        self.bids.get_max().map(|(price, _)| *price)
     }
 
     pub fn best_ask(&self) -> Option<PriceTick> {
-        self.asks.keys().next().copied()
+        self.asks.get_min().map(|(price, _)| *price)
     }
 
     pub fn order_owner(&self, order_id: OrderId) -> Option<u64> {
-        let location = self.order_index.get(&order_id).copied()?;
-        self.resting_order(location, order_id)
-            .map(|order| order.account_id)
+        self.order_index
+            .get(&order_id)
+            .map(|node| node.order.account_id)
     }
 
     pub fn resting_orders_for_account(&self, account_id: AccountId) -> Vec<Order> {
-        self.orders_by_account()
+        self.account_orders
             .get(&account_id)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    fn orders_by_account(&self) -> &BTreeMap<AccountId, Vec<Order>> {
-        self.account_orders.get_or_init(|| {
-            let mut accounts: BTreeMap<AccountId, Vec<Order>> = BTreeMap::new();
-            for order in self.bids.values().chain(self.asks.values()).flatten() {
-                accounts
-                    .entry(order.account_id)
-                    .or_default()
-                    .push(order.clone());
-            }
-            for orders in accounts.values_mut() {
-                orders.sort_unstable_by_key(|order| order.order_id);
-            }
-            Arc::new(accounts)
-        })
+            .into_iter()
+            .flatten()
+            .map(|id| self.order_index[id].order.clone())
+            .collect()
     }
 
     pub(crate) fn cancel_orders_for_account(&mut self, account_id: AccountId) -> Vec<Event> {
@@ -433,11 +431,11 @@ impl OrderBook {
     }
 
     pub(crate) fn order_ids_for_account(&self, account_id: AccountId) -> Vec<OrderId> {
-        self.orders_by_account()
+        self.account_orders
             .get(&account_id)
             .into_iter()
             .flatten()
-            .map(|order| order.order_id)
+            .copied()
             .collect()
     }
 
@@ -446,12 +444,12 @@ impl OrderBook {
         account_id: AccountId,
         side: Side,
     ) -> Vec<OrderId> {
-        self.orders_by_account()
+        self.account_orders
             .get(&account_id)
             .into_iter()
             .flatten()
-            .filter(|order| order.side == side)
-            .map(|order| order.order_id)
+            .filter(|id| self.order_index[*id].order.side == side)
+            .copied()
             .collect()
     }
 
@@ -463,26 +461,20 @@ impl OrderBook {
     ) -> Result<FillQuote, ClearingError> {
         let mut quote = FillQuote::default();
 
-        let mut add_level = |price_tick: PriceTick, queue: &VecDeque<Order>| {
+        let mut add_level = |price_tick: PriceTick, level: &PriceLevel| {
             if quote.qty >= requested_qty || !crosses(side, limit_price, price_tick) {
-                return Ok(false);
+                return Ok(true);
             }
-            for order in queue {
-                let remaining = requested_qty - quote.qty;
-                let fill_qty = remaining.min(order.remaining_qty);
-                quote.qty = quote
-                    .qty
-                    .checked_add(fill_qty)
-                    .ok_or(ClearingError::NotionalOverflow)?;
-                quote.notional = quote
-                    .notional
-                    .checked_add(notional(price_tick, fill_qty)?)
-                    .ok_or(ClearingError::NotionalOverflow)?;
-                if quote.qty == requested_qty {
-                    return Ok(true);
-                }
-            }
-            Ok(false)
+            let fill_qty = level.qty.min(u128::from(requested_qty - quote.qty)) as Qty;
+            quote.qty = quote
+                .qty
+                .checked_add(fill_qty)
+                .ok_or(ClearingError::NotionalOverflow)?;
+            quote.notional = quote
+                .notional
+                .checked_add(notional(price_tick, fill_qty)?)
+                .ok_or(ClearingError::NotionalOverflow)?;
+            Ok(quote.qty == requested_qty)
         };
 
         match side {
@@ -530,7 +522,10 @@ impl OrderBook {
                 break;
             }
 
-            let Some(mut resting) = self.pop_front_at(incoming.side.opposite(), best_price) else {
+            let Some((maker_slot, mut resting)) = self
+                .front_at(incoming.side.opposite(), best_price)
+                .map(|(slot, order)| (slot, order.clone()))
+            else {
                 break;
             };
 
@@ -542,7 +537,7 @@ impl OrderBook {
                 resting.remaining_qty,
             );
             if maker_cap == 0 {
-                self.order_index.remove(&resting.order_id);
+                self.remove_node_at(maker_slot).expect("live maker");
                 self.order_expirations.remove(&resting.order_id);
                 self.reduce_orders.remove(&resting.order_id);
                 events.push(Event::OrderExpired {
@@ -575,7 +570,7 @@ impl OrderBook {
             events.push(Event::TradePrinted(trade));
 
             if resting.remaining_qty == 0 {
-                self.order_index.remove(&resting.order_id);
+                self.remove_node_at(maker_slot).expect("live maker");
                 self.order_expirations.remove(&resting.order_id);
                 self.reduce_orders.remove(&resting.order_id);
                 events.push(Event::OrderFilled {
@@ -592,7 +587,7 @@ impl OrderBook {
                     remaining_qty,
                 ) == 0
                 {
-                    self.order_index.remove(&resting_order_id);
+                    self.remove_node_at(maker_slot).expect("live maker");
                     self.order_expirations.remove(&resting_order_id);
                     self.reduce_orders.remove(&resting_order_id);
                     events.push(Event::OrderExpired {
@@ -600,7 +595,8 @@ impl OrderBook {
                         unfilled_qty: remaining_qty,
                     });
                 } else {
-                    self.push_front_at(resting);
+                    self.update_qty_at(maker_slot, remaining_qty)
+                        .expect("live partially filled maker");
                     events.push(Event::OrderPartiallyFilled {
                         order_id: resting_order_id,
                         remaining_qty,
@@ -609,31 +605,34 @@ impl OrderBook {
             }
             // Expire exhausted protection orders immediately, before another fill
             // could open a new position in the same matching command.
-            let expired = self
-                .reduce_orders
-                .iter()
-                .filter_map(|id| {
-                    let loc = self.order_index.get(id)?;
-                    let o = self.resting_order(*loc, *id)?;
-                    (guard.cap(o.account_id, o.side, o.position_side, true, o.remaining_qty) == 0)
-                        .then_some(*id)
-                })
-                .collect::<Vec<_>>();
-            for id in expired {
-                events.extend(
-                    self.cancel_order(CancelOrder { order_id: id })
-                        .into_iter()
-                        .map(|e| match e {
-                            Event::OrderCanceled {
-                                order_id,
-                                remaining_qty,
-                            } => Event::OrderExpired {
-                                order_id,
-                                unfilled_qty: remaining_qty,
-                            },
-                            other => other,
-                        }),
-                );
+            // Ordinary matching has no reduce-only orders to scan.
+            if !self.reduce_orders.is_empty() {
+                let expired = self
+                    .reduce_orders
+                    .iter()
+                    .filter_map(|id| {
+                        let o = &self.order_index.get(id)?.order;
+                        (guard.cap(o.account_id, o.side, o.position_side, true, o.remaining_qty)
+                            == 0)
+                            .then_some(*id)
+                    })
+                    .collect::<Vec<_>>();
+                for id in expired {
+                    events.extend(
+                        self.cancel_order(CancelOrder { order_id: id })
+                            .into_iter()
+                            .map(|e| match e {
+                                Event::OrderCanceled {
+                                    order_id,
+                                    remaining_qty,
+                                } => Event::OrderExpired {
+                                    order_id,
+                                    unfilled_qty: remaining_qty,
+                                },
+                                other => other,
+                            }),
+                    );
+                }
             }
 
             if incoming.remaining_qty == 0 {
@@ -683,8 +682,8 @@ impl OrderBook {
                     if !crosses(side, limit_price, *price_tick) {
                         break;
                     }
-                    fillable_qty = fillable_qty
-                        .saturating_add(queue.iter().map(|order| order.remaining_qty).sum::<Qty>());
+                    fillable_qty =
+                        fillable_qty.saturating_add(queue.qty.min(u128::from(Qty::MAX)) as Qty);
                     if fillable_qty >= qty {
                         return true;
                     }
@@ -695,8 +694,8 @@ impl OrderBook {
                     if !crosses(side, limit_price, *price_tick) {
                         break;
                     }
-                    fillable_qty = fillable_qty
-                        .saturating_add(queue.iter().map(|order| order.remaining_qty).sum::<Qty>());
+                    fillable_qty =
+                        fillable_qty.saturating_add(queue.qty.min(u128::from(Qty::MAX)) as Qty);
                     if fillable_qty >= qty {
                         return true;
                     }
@@ -707,10 +706,8 @@ impl OrderBook {
     }
 
     fn resting_order(&self, location: OrderLocation, order_id: OrderId) -> Option<&Order> {
-        self.book_side(location.side)
-            .get(&location.price_tick)?
-            .iter()
-            .find(|order| order.order_id == order_id)
+        let node = self.order_index.get(&order_id)?;
+        (node.location() == location).then_some(&node.order)
     }
 
     fn update_resting_qty(
@@ -719,12 +716,20 @@ impl OrderBook {
         order_id: OrderId,
         new_qty: Qty,
     ) -> Option<()> {
-        let order = self
+        let slot = self.order_index.slot(&order_id)?;
+        (self.order_index.at(slot)?.location() == location).then_some(())?;
+        self.update_qty_at(slot, new_qty)
+    }
+
+    fn update_qty_at(&mut self, slot: NodeSlot, new_qty: Qty) -> Option<()> {
+        let node = self.order_index.at_mut(slot)?;
+        let location = node.location();
+        let old_qty = node.order.remaining_qty;
+        node.order.remaining_qty = new_qty;
+        let level = self
             .book_side_mut(location.side)
-            .get_mut(&location.price_tick)?
-            .iter_mut()
-            .find(|order| order.order_id == order_id)?;
-        order.remaining_qty = new_qty;
+            .get_mut(&location.price_tick)?;
+        level.qty = level.qty - u128::from(old_qty) + u128::from(new_qty);
         Some(())
     }
 
@@ -733,57 +738,112 @@ impl OrderBook {
         location: OrderLocation,
         order_id: OrderId,
     ) -> Option<Order> {
-        let book_side = self.book_side_mut(location.side);
-        let queue = book_side.get_mut(&location.price_tick)?;
-        let index = queue.iter().position(|order| order.order_id == order_id)?;
-        let removed = queue.remove(index);
-        if queue.is_empty() {
-            book_side.remove(&location.price_tick);
+        let slot = self.order_index.slot(&order_id)?;
+        (self.order_index.at(slot)?.location() == location).then_some(())?;
+        self.remove_node_at(slot)
+    }
+
+    fn remove_node_at(&mut self, slot: NodeSlot) -> Option<Order> {
+        let node = self.order_index.remove(slot)?;
+        let location = node.location();
+        let order_id = node.order.order_id;
+        if let Some(prev) = node.prev {
+            self.order_index
+                .at_mut(prev)
+                .expect("live previous link")
+                .next = node.next;
         }
-        self.order_index.remove(&order_id);
-        removed
+        if let Some(next) = node.next {
+            self.order_index.at_mut(next).expect("live next link").prev = node.prev;
+        }
+        let side = self.book_side_mut(location.side);
+        let level = side.get_mut(&location.price_tick).expect("live level");
+        if level.len == 1 {
+            side.remove(&location.price_tick);
+        } else {
+            level.len -= 1;
+            level.qty -= u128::from(node.order.remaining_qty);
+            if level.head == slot {
+                level.head = node.next.expect("next head");
+            }
+            if level.tail == slot {
+                level.tail = node.prev.expect("previous tail");
+            }
+        }
+        let ids = self
+            .account_orders
+            .get_mut(&node.order.account_id)
+            .expect("live account index");
+        ids.remove(&order_id);
+        if ids.is_empty() {
+            self.account_orders.remove(&node.order.account_id);
+        }
+        Some(node.order)
     }
 
     fn insert_resting_order(&mut self, order: Order) {
-        let location = OrderLocation {
-            side: order.side,
-            price_tick: order.price_tick,
-        };
-        let order_id = order.order_id;
-        self.book_side_mut(order.side)
-            .entry(order.price_tick)
-            .or_default()
-            .push_back(order);
-        self.order_index.insert(order_id, location);
+        self.attach_order(order);
     }
 
-    fn pop_front_at(&mut self, side: Side, price_tick: PriceTick) -> Option<Order> {
-        let book_side = self.book_side_mut(side);
-        let order = book_side.get_mut(&price_tick)?.pop_front();
-        if book_side
-            .get(&price_tick)
-            .is_some_and(|queue| queue.is_empty())
-        {
-            book_side.remove(&price_tick);
+    fn front_at(&self, side: Side, price_tick: PriceTick) -> Option<(NodeSlot, &Order)> {
+        let head = self.book_side(side).get(&price_tick)?.head;
+        self.order_index.at(head).map(|node| (head, &node.order))
+    }
+
+    fn attach_order(&mut self, order: Order) {
+        let id = order.order_id;
+        let old = self.book_side(order.side).get(&order.price_tick).cloned();
+        let prev = old.as_ref().map(|level| level.tail);
+        let side = order.side;
+        let price = order.price_tick;
+        let account = order.account_id;
+        let qty = order.remaining_qty;
+        let slot = self.order_index.insert(
+            id,
+            OrderNode {
+                order,
+                prev,
+                next: None,
+            },
+        );
+        if let Some(prev) = prev {
+            self.order_index.at_mut(prev).expect("live tail").next = Some(slot);
         }
-        order
+        let level = match old {
+            Some(level) => PriceLevel {
+                head: level.head,
+                tail: slot,
+                qty: level.qty + u128::from(qty),
+                len: level.len + 1,
+            },
+            None => PriceLevel {
+                head: slot,
+                tail: slot,
+                qty: u128::from(qty),
+                len: 1,
+            },
+        };
+        self.book_side_mut(side).insert(price, level);
+        self.account_orders.entry(account).or_default().insert(id);
     }
 
-    fn push_front_at(&mut self, order: Order) {
-        self.book_side_mut(order.side)
-            .entry(order.price_tick)
-            .or_default()
-            .push_front(order);
+    fn level_orders<'a>(&'a self, level: &PriceLevel) -> impl Iterator<Item = &'a Order> {
+        let mut next = Some(level.head);
+        std::iter::from_fn(move || {
+            let node = self.order_index.at(next?)?;
+            next = node.next;
+            Some(&node.order)
+        })
     }
 
-    fn book_side_mut(&mut self, side: Side) -> &mut BTreeMap<PriceTick, VecDeque<Order>> {
+    fn book_side_mut(&mut self, side: Side) -> &mut OrdMap<PriceTick, PriceLevel> {
         match side {
             Side::Buy => &mut self.bids,
             Side::Sell => &mut self.asks,
         }
     }
 
-    fn book_side(&self, side: Side) -> &BTreeMap<PriceTick, VecDeque<Order>> {
+    fn book_side(&self, side: Side) -> &OrdMap<PriceTick, PriceLevel> {
         match side {
             Side::Buy => &self.bids,
             Side::Sell => &self.asks,
@@ -866,6 +926,144 @@ fn price_increases_aggression(
 
 #[cfg(test)]
 mod tests {
+    fn assert_links(book: &OrderBook) {
+        let mut indexed = std::collections::BTreeSet::new();
+        let mut accounts: OrdMap<AccountId, OrdSet<OrderId>> = OrdMap::new();
+        for (side, levels) in [(Side::Buy, &book.bids), (Side::Sell, &book.asks)] {
+            for (price, level) in levels {
+                let mut prev = None;
+                let mut next = Some(level.head);
+                let mut qty = 0u128;
+                let mut count = 0;
+                while let Some(id) = next {
+                    let node = book.order_index.at(id).expect("live price slot");
+                    let order_id = node.order.order_id;
+                    assert!(
+                        indexed.insert(order_id),
+                        "duplicate node or cyclic price queue"
+                    );
+                    assert_eq!(book.order_index.slot(&order_id), Some(id));
+                    assert_eq!(node.prev, prev);
+                    assert_eq!(node.order.side, side);
+                    assert_eq!(node.order.price_tick, *price);
+                    assert!(book.seen_order_ids.contains(&order_id));
+                    accounts
+                        .entry(node.order.account_id)
+                        .or_default()
+                        .insert(order_id);
+                    qty += u128::from(node.order.remaining_qty);
+                    count += 1;
+                    prev = Some(id);
+                    next = node.next;
+                }
+                assert_eq!(prev, Some(level.tail));
+                assert_eq!(count, level.len);
+                assert_eq!(qty, level.qty);
+            }
+        }
+        assert_eq!(indexed.len(), book.order_index.len());
+        assert_eq!(accounts, book.account_orders);
+    }
+
+    #[test]
+    fn recycled_node_slots_keep_old_candidates_and_fifo_independent() {
+        let mut book = OrderBook::new();
+        for id in 1..=128 {
+            book.place_order(limit(id, Side::Sell, 100, 3));
+        }
+        let original = book.clone();
+        let original_wire = serde_json::to_value(&original).unwrap();
+        let mut live: Vec<_> = (1..=128).collect();
+        for generation in 0..8 {
+            for id in &live {
+                book.cancel_order(CancelOrder { order_id: *id });
+            }
+            let empty = book.clone();
+            assert_links(&empty);
+            live = (1000 + generation * 128..1128 + generation * 128).collect();
+            for id in &live {
+                book.place_order(limit(*id, Side::Sell, 100, 3));
+            }
+            assert_eq!(book.order_index.allocated_slots(), 128);
+            let events = book.place_order(market(20_000 + generation, Side::Buy, 1));
+            assert_eq!(trade_events(&events)[0].maker_order_id, live[0]);
+            assert_links(&book);
+            assert_links(&empty);
+            assert!(empty.snapshot().asks.is_empty());
+            assert_links(&original);
+            assert_eq!(serde_json::to_value(&original).unwrap(), original_wire);
+        }
+        let mut restored: OrderBook =
+            serde_json::from_value(serde_json::to_value(&book).unwrap()).unwrap();
+        assert_links(&restored);
+        assert_eq!(
+            restored.place_order(market(30_000, Side::Buy, 4)),
+            book.place_order(market(30_000, Side::Buy, 4))
+        );
+    }
+
+    #[test]
+    fn crowded_price_nodes_preserve_fifo_amends_and_independent_candidates() {
+        let mut book = OrderBook::new();
+        for id in 1..=4096 {
+            book.place_order(limit(id, Side::Sell, 100, 3));
+        }
+        let frozen = book.clone();
+        assert!(book.order_index.ptr_eq(&frozen.order_index));
+        assert!(book.asks.ptr_eq(&frozen.asks));
+        assert!(book.seen_order_ids.ptr_eq(&frozen.seen_order_ids));
+        for id in (1..=4096).step_by(3) {
+            book.cancel_order(CancelOrder { order_id: id });
+        }
+        book.amend_order(AmendOrder {
+            order_id: 2,
+            price_tick: None,
+            qty: Some(2),
+        });
+        book.amend_order(AmendOrder {
+            order_id: 3,
+            price_tick: Some(101),
+            qty: Some(1),
+        });
+        let fills = trade_events(&book.place_order(market(5000, Side::Buy, 4)));
+        assert_eq!(
+            fills
+                .iter()
+                .map(|t| (t.maker_order_id, t.qty))
+                .collect::<Vec<_>>(),
+            vec![(2, 2), (5, 2)]
+        );
+        assert_eq!(book.order_index[&5].order.remaining_qty, 1);
+        assert_links(&book);
+        assert_links(&frozen);
+        assert_eq!(frozen.snapshot().asks[0].qty, 4096 * 3);
+        let mut recovered: OrderBook =
+            serde_json::from_value(serde_json::to_value(&book).unwrap()).unwrap();
+        assert_links(&recovered);
+        assert_eq!(recovered.snapshot(), book.snapshot());
+        assert_eq!(
+            recovered.place_order(market(5001, Side::Buy, 7)),
+            book.place_order(market(5001, Side::Buy, 7))
+        );
+        assert_links(&book);
+        assert_links(&recovered);
+    }
+
+    #[test]
+    fn checkpoint_links_are_derived_and_duplicate_queue_nodes_are_rejected() {
+        let mut book = OrderBook::new();
+        book.place_order(limit(1, Side::Sell, 100, 2));
+        let mut wire = serde_json::to_value(book).unwrap();
+        wire["order_index"] = serde_json::json!({});
+        wire["account_orders"] = serde_json::json!({"999":[1]});
+        let restored: OrderBook = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(restored.order_owner(1), Some(1001));
+        assert_links(&restored);
+        let duplicate = wire["asks"]["100"][0].clone();
+        wire["asks"]["100"].as_array_mut().unwrap().push(duplicate);
+        assert!(serde_json::from_value::<OrderBook>(wire).is_err());
+    }
+
     #[test]
     fn account_lookup_survives_fills_amends_cancel_and_restore() {
         let mut book = OrderBook::new();

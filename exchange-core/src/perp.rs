@@ -359,7 +359,7 @@ pub struct PerpAccountStore {
     #[serde(skip)]
     sync_checks: SharedMap<AccountId, Arc<MarginSyncCheck>>,
     #[serde(skip)]
-    reservation_index: OnceLock<Arc<BTreeMap<AccountId, Vec<OrderId>>>>,
+    reservation_index: OnceLock<im::OrdMap<AccountId, im::OrdSet<OrderId>>>,
     accounts: SharedMap<AccountId, PerpAccount>,
     #[serde(default)]
     order_reservations: SharedMap<OrderId, PerpOrderReservation>,
@@ -639,7 +639,7 @@ impl PerpAccountStore {
             return Ok(());
         }
         fn next_value<'a, T>(
-            cursor: &mut std::iter::Peekable<std::collections::btree_map::Iter<'a, AccountId, T>>,
+            cursor: &mut std::iter::Peekable<impl Iterator<Item = (&'a AccountId, &'a T)>>,
             id: AccountId,
         ) -> Option<&'a T> {
             while cursor.peek().is_some_and(|(key, _)| **key < id) {
@@ -1015,15 +1015,13 @@ impl PerpAccountStore {
         self.release_order_reservation(order_id)?;
 
         let reservation = self.reservation_for_order(account_id, Some(side), price_tick, qty)?;
-        self.reservation_index.take();
-        self.order_reservations.insert(order_id, reservation);
+        self.insert_reservation(order_id, reservation);
         self.refresh_reserved_margin_for(account_id)?;
         Ok(())
     }
 
     pub fn release_order_reservation(&mut self, order_id: OrderId) -> Result<(), ClearingError> {
-        self.reservation_index.take();
-        let Some(reservation) = self.order_reservations.remove(&order_id) else {
+        let Some(reservation) = self.remove_reservation(order_id) else {
             return Ok(());
         };
         self.refresh_reserved_margin_for(reservation.account_id)?;
@@ -1043,11 +1041,10 @@ impl PerpAccountStore {
             self.reservation_for_order(existing.account_id, existing.side, price_tick, qty)?;
 
         if qty == 0 {
-            self.order_reservations.remove(&order_id);
+            self.remove_reservation(order_id);
         } else {
-            self.order_reservations.insert(order_id, next_reservation);
+            self.insert_reservation(order_id, next_reservation);
         }
-        self.reservation_index.take();
         self.refresh_reserved_margin_for(existing.account_id)?;
         Ok(())
     }
@@ -1104,9 +1101,8 @@ impl PerpAccountStore {
             // A legacy reservation without a side is already modeled in both
             // directions. Preserve that conservative state during amendment.
             let mut staged = self.clone();
-            staged.reservation_index.take();
             if new_qty == 0 {
-                staged.order_reservations.remove(&order_id);
+                staged.remove_reservation(order_id);
             } else {
                 let reservation = staged.reservation_for_order(
                     existing.account_id,
@@ -1114,7 +1110,7 @@ impl PerpAccountStore {
                     new_price_tick,
                     new_qty,
                 )?;
-                staged.order_reservations.insert(order_id, reservation);
+                staged.insert_reservation(order_id, reservation);
             }
             let after = staged.risk_exposure(existing.account_id)?;
             return Ok(Some((before, after)));
@@ -1134,12 +1130,14 @@ impl PerpAccountStore {
 
     pub fn settle_trade(&mut self, trade: &Trade) -> Result<Vec<PerpClearingEvent>, ClearingError> {
         let mut staged = self.clone();
-        let events = staged.settle_trade_inner(trade)?;
+        let events = staged.settle_trade_in_transaction(trade)?;
         *self = staged;
         Ok(events)
     }
 
-    fn settle_trade_inner(
+    /// Caller owns the rollback candidate for the complete command, including
+    /// earlier fills, reservations and derived margin state.
+    pub(crate) fn settle_trade_in_transaction(
         &mut self,
         trade: &Trade,
     ) -> Result<Vec<PerpClearingEvent>, ClearingError> {
@@ -1582,8 +1580,7 @@ impl PerpAccountStore {
         order_id: OrderId,
         fill_qty: Qty,
     ) -> Result<(), ClearingError> {
-        self.reservation_index.take();
-        let Some(mut reservation) = self.order_reservations.remove(&order_id) else {
+        let Some(mut reservation) = self.remove_reservation(order_id) else {
             return Ok(());
         };
 
@@ -1606,7 +1603,7 @@ impl PerpAccountStore {
         reservation.qty = remaining_qty;
         reservation.reserved_margin = next_reservation.reserved_margin;
         let account_id = next_reservation.account_id;
-        self.order_reservations.insert(order_id, reservation);
+        self.insert_reservation(order_id, reservation);
         self.refresh_reserved_margin_for(account_id)?;
         Ok(())
     }
@@ -1635,16 +1632,39 @@ impl PerpAccountStore {
         })
     }
 
+    // A checkpoint starts without this derived index. Build it once on first
+    // read, then keep its persistent account sets current at every write.
+    fn remove_reservation(&mut self, id: OrderId) -> Option<PerpOrderReservation> {
+        let reservation = self.order_reservations.remove(&id)?;
+        if let Some(index) = self.reservation_index.get_mut()
+            && let Some(ids) = index.get_mut(&reservation.account_id)
+        {
+            ids.remove(&id);
+            if ids.is_empty() {
+                index.remove(&reservation.account_id);
+            }
+        }
+        Some(reservation)
+    }
+
+    fn insert_reservation(&mut self, id: OrderId, reservation: PerpOrderReservation) {
+        self.remove_reservation(id);
+        if let Some(index) = self.reservation_index.get_mut() {
+            index.entry(reservation.account_id).or_default().insert(id);
+        }
+        self.order_reservations.insert(id, reservation);
+    }
+
     fn reservations_for(
         &self,
         account_id: AccountId,
     ) -> impl Iterator<Item = (&OrderId, &PerpOrderReservation)> {
         let index = self.reservation_index.get_or_init(|| {
-            let mut index: BTreeMap<AccountId, Vec<OrderId>> = BTreeMap::new();
+            let mut index: im::OrdMap<AccountId, im::OrdSet<OrderId>> = im::OrdMap::new();
             for (&id, reservation) in self.order_reservations.iter() {
-                index.entry(reservation.account_id).or_default().push(id);
+                index.entry(reservation.account_id).or_default().insert(id);
             }
-            Arc::new(index)
+            index
         });
         index
             .get(&account_id)
@@ -2545,7 +2565,7 @@ mod tests {
             let restored: PerpAccountStore = serde_json::from_value(json).unwrap();
             for id in 1..=20 {
                 assert_eq!(accounts.risk_exposure(id), restored.risk_exposure(id));
-                let expected: Vec<_> = accounts
+                let expected: im::OrdSet<_> = accounts
                     .order_reservations
                     .iter()
                     .filter(|(_, r)| r.account_id == id)

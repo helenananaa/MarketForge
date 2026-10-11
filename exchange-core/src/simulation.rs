@@ -38,9 +38,9 @@ pub struct SimulationRoom {
     exchanges: BTreeMap<VenueId, ExchangeActor>,
     portfolios: PortfolioStore,
     #[serde(default)]
-    user_accounts: BTreeMap<UserId, BTreeSet<AccountId>>,
+    user_accounts: crate::shared_map::SharedMap<UserId, BTreeSet<AccountId>>,
     #[serde(default)]
-    asset_ledger: Vec<AssetLedgerEntry>,
+    asset_ledger: crate::history::History<AssetLedgerEntry>,
     #[serde(default)]
     next_asset_ledger_seq: u64,
     #[serde(default)]
@@ -94,8 +94,8 @@ impl SimulationRoom {
             market_events: scenario.market_events.clone(),
             exchanges,
             portfolios: PortfolioStore::new(),
-            user_accounts: scenario_user_accounts(&scenario),
-            asset_ledger: Vec::new(),
+            user_accounts: scenario_user_accounts(&scenario).into(),
+            asset_ledger: crate::history::History::default(),
             next_asset_ledger_seq: 0,
             pending_venue_transfers: Vec::new(),
             next_command_seq: 0,
@@ -150,8 +150,8 @@ impl SimulationRoom {
             market_events: Vec::new(),
             exchanges,
             portfolios,
-            user_accounts: BTreeMap::new(),
-            asset_ledger: Vec::new(),
+            user_accounts: crate::shared_map::SharedMap::default(),
+            asset_ledger: crate::history::History::default(),
             next_asset_ledger_seq: 0,
             pending_venue_transfers: Vec::new(),
             next_command_seq,

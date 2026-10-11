@@ -1,0 +1,138 @@
+{
+  "date": "2026-10-11",
+  "base_head": "71b58e9f9de3a9aede2521af9729d844d8913ace",
+  "scope": "One local commit containing the three matching/transaction/history optimization stages and the measured HTTP SQL round-trip fix; later database/concurrency optimization is a separate worktree task.",
+  "files": [
+    "Cargo.lock",
+    "exchange-core/Cargo.toml",
+    "exchange-core/src/actor.rs",
+    "exchange-core/src/conditional_orders_actor.rs",
+    "exchange-core/src/engine.rs",
+    "exchange-core/src/orderbook_storage.rs",
+    "exchange-core/src/orderbook_nodes.rs",
+    "exchange-core/src/perp.rs",
+    "exchange-core/src/portfolio.rs",
+    "exchange-core/src/shared_map.rs",
+    "exchange-core/src/simulation.rs",
+    "exchange-core/src/spot.rs",
+    "exchange-core/src/trading.rs",
+    "exchange-core/src/history.rs",
+    "exchange-core/examples/benchmark_order_transactions.rs",
+    "exchange-core/examples/benchmark_matching_transactions.rs",
+    "exchange-core/examples/benchmark_mixed_transactions.rs",
+    "exchange-core/tests/orderbook_legacy_contract.rs",
+    "exchange-core/tests/fixtures/legacy_orderbook.json",
+    "exchange-server/src/journal.rs",
+    "docs/validation/2026-10-10-order-transactions.json",
+    "docs/validation/2026-10-10-matching-hotpath.json",
+    "docs/validation/2026-10-10-mixed-hotpath.json",
+    "docs/validation/2026-10-11-spot-http-hotpath.json"
+  ],
+  "partial_files": [
+    "exchange-core/src/actor.rs",
+    "exchange-core/src/conditional_orders_actor.rs",
+    "exchange-server/src/journal.rs"
+  ],
+  "candidate_source_sha256": {
+    "Cargo.lock": "8ad8bd782dca7597494ff2c9b3310011b40ef239cdfd204e5d21ac630df882b8",
+    "exchange-core/Cargo.toml": "00ff643bc6593843b841e5421b75127ec927d9b7f72a02356e97adb53920af6d",
+    "exchange-core/src/actor.rs": "cbb152309ddd797d9d626dbc715b2dea0515d4927cec77dc9d056885b51974dd",
+    "exchange-core/src/conditional_orders_actor.rs": "4cf8eaab4af67f340722669a34a25b941effcb8c5a759c9d71d3d5f55ee28db2",
+    "exchange-core/src/engine.rs": "2187a9673e9c4b836d4a14009d904746b13393be00794b39d3f68da55f44dce1",
+    "exchange-core/src/orderbook_storage.rs": "d043ffb2e01b7c8ea5e990ba1ed0386dcfb76428a7a030d9aefaf2f171b0ad50",
+    "exchange-core/src/orderbook_nodes.rs": "1fa4478a6d75cae1809403b9c911aee522f2763c4630eb935c314facaef06fdd",
+    "exchange-core/src/perp.rs": "6663d398282d12f8d5a91397befd4b4d2b46ba8ce9869943df701fbac87fa1fe",
+    "exchange-core/src/portfolio.rs": "0324f7ff3b1b82a20d80ae3d87ef16bf1ee02bcd6a23d97d693bee1004f15308",
+    "exchange-core/src/shared_map.rs": "1122506f67aec42cac8054c928ba349a3e1ffa6fb3e41de582bfe2bdbc0de061",
+    "exchange-core/src/simulation.rs": "0ee2315c2fb33dcddc77cc9234fb19990475a8fbf00117daea2c50d04bce9f25",
+    "exchange-core/src/spot.rs": "7d1f1afeced8132b884d970fb163da53542015a6ce47c47a1c4b45d12cae81d9",
+    "exchange-core/src/trading.rs": "f9dcff6b4657618b200f0338a42c66c4c71e0266ac5df2af74458c27c5791c97",
+    "exchange-core/src/history.rs": "a047899b1a6a6041da7034223886ec6102c20c1fe78090f6f6710561b67d6c98",
+    "exchange-core/examples/benchmark_order_transactions.rs": "16bb0c051d0b9360f5963cda69d7c9969d5efc995f54144b8854375724fbbf08",
+    "exchange-core/examples/benchmark_matching_transactions.rs": "c270558984f7fe03e67e112c7b7b968ea640ab41cac596895320b1ab46764a8a",
+    "exchange-core/examples/benchmark_mixed_transactions.rs": "34ab5fc086192997e21a7be5beb1c1c4d1cb1f8107b6a1e73e7c92567d94a8c5",
+    "exchange-core/tests/orderbook_legacy_contract.rs": "afd85620997ea17431f0fe61fa347d2801b0cf47bdf6ae933f4d44bd194acce0",
+    "exchange-core/tests/fixtures/legacy_orderbook.json": "6a61160ee8c1d3735e0c3cae0fe0bb635e8a4685ace6578750a4f329b3e7533e",
+    "exchange-server/src/journal.rs": "7d14013eaa625e2da4874e3420a252c679a1e54d32ef875d67a722d8be7b0baf",
+    "docs/validation/2026-10-10-order-transactions.json": "77f75ce2e90674739193dd38c231d6fbc24889ae7175307907c35d0438e4176f",
+    "docs/validation/2026-10-10-matching-hotpath.json": "92965e898d23cf4c12a81f953f0ca56483df1f034a3d5c4d8995fd23fc02763c",
+    "docs/validation/2026-10-10-mixed-hotpath.json": "b3b046631e700373424587cc264538fdd993b975404e1525f8b4e581b3e75a43",
+    "docs/validation/2026-10-11-spot-http-hotpath.json": "e288f194bd1cdd75522972724a4bc8561658d2a5e4c729a9a9c120edd25c92d2"
+  },
+  "candidate_git_text_sha256": {
+    "Cargo.lock": "8ad8bd782dca7597494ff2c9b3310011b40ef239cdfd204e5d21ac630df882b8",
+    "exchange-core/Cargo.toml": "00ff643bc6593843b841e5421b75127ec927d9b7f72a02356e97adb53920af6d",
+    "exchange-core/src/actor.rs": "25f2242be9caebbae4616e030de38385d22c43d4bf847253bdf870863765fc50",
+    "exchange-core/src/conditional_orders_actor.rs": "dffc2bf85efae19900a05078df916048f8eb5a2610a3a5843cd1c53d4460816c",
+    "exchange-core/src/engine.rs": "2187a9673e9c4b836d4a14009d904746b13393be00794b39d3f68da55f44dce1",
+    "exchange-core/src/orderbook_storage.rs": "d043ffb2e01b7c8ea5e990ba1ed0386dcfb76428a7a030d9aefaf2f171b0ad50",
+    "exchange-core/src/orderbook_nodes.rs": "1fa4478a6d75cae1809403b9c911aee522f2763c4630eb935c314facaef06fdd",
+    "exchange-core/src/perp.rs": "6663d398282d12f8d5a91397befd4b4d2b46ba8ce9869943df701fbac87fa1fe",
+    "exchange-core/src/portfolio.rs": "0324f7ff3b1b82a20d80ae3d87ef16bf1ee02bcd6a23d97d693bee1004f15308",
+    "exchange-core/src/shared_map.rs": "1122506f67aec42cac8054c928ba349a3e1ffa6fb3e41de582bfe2bdbc0de061",
+    "exchange-core/src/simulation.rs": "0ee2315c2fb33dcddc77cc9234fb19990475a8fbf00117daea2c50d04bce9f25",
+    "exchange-core/src/spot.rs": "7d1f1afeced8132b884d970fb163da53542015a6ce47c47a1c4b45d12cae81d9",
+    "exchange-core/src/trading.rs": "f9dcff6b4657618b200f0338a42c66c4c71e0266ac5df2af74458c27c5791c97",
+    "exchange-core/src/history.rs": "a047899b1a6a6041da7034223886ec6102c20c1fe78090f6f6710561b67d6c98",
+    "exchange-core/examples/benchmark_order_transactions.rs": "6384de0ec9ae35714c329d50686e6496ff03e2b104554dbb540b192345670148",
+    "exchange-core/examples/benchmark_matching_transactions.rs": "c270558984f7fe03e67e112c7b7b968ea640ab41cac596895320b1ab46764a8a",
+    "exchange-core/examples/benchmark_mixed_transactions.rs": "34ab5fc086192997e21a7be5beb1c1c4d1cb1f8107b6a1e73e7c92567d94a8c5",
+    "exchange-core/tests/orderbook_legacy_contract.rs": "afd85620997ea17431f0fe61fa347d2801b0cf47bdf6ae933f4d44bd194acce0",
+    "exchange-core/tests/fixtures/legacy_orderbook.json": "6a61160ee8c1d3735e0c3cae0fe0bb635e8a4685ace6578750a4f329b3e7533e",
+    "exchange-server/src/journal.rs": "b91f78f172fb0d0a9038eae2ec00829a0a68ace438e8e8f1733d6120a8508782",
+    "docs/validation/2026-10-10-order-transactions.json": "fa2b677d7970aa0634f0d305cbb7b1763d21ddd31431b0dfe5c27d3ae12789bd",
+    "docs/validation/2026-10-10-matching-hotpath.json": "211f36c84ad7333ca9998695ddef69d09a14b956d03852e65a1b467c2884c6b0",
+    "docs/validation/2026-10-10-mixed-hotpath.json": "88d98bc032873dff75e16a53e1a24478d3d8a516630323d543ad986b642148d4",
+    "docs/validation/2026-10-11-spot-http-hotpath.json": "55d1a7a43b3572dd63e9b5712f5c8722e1011f11c5dc9ff6a451421b9b861210"
+  },
+  "line_endings": "Git text blobs use LF. Five task-owned files were normalized from CRLF to LF in the working tree after staging; historical report JSON content and measured source hashes remain preserved. Validation source hashes describe the candidate working-copy line endings.",
+  "validation": {
+    "workspace-tests.log": {
+      "passed": 538,
+      "failed": 0,
+      "ignored": 12
+    },
+    "postgres-tests.log": {
+      "passed": 214,
+      "failed": 0,
+      "ignored": 1
+    },
+    "fmt": true,
+    "clippy": true,
+    "real_postgres_required": true,
+    "owned_postgres_stopped": true
+  },
+  "test_scope": "Fresh HEAD export with only this task applied. Unrelated conditional-order behavior, trade-summary fields, Pine broker, bot observation/history/scheduling and research edits are excluded. Full workspace and required real PostgreSQL tests were rerun against exactly these staged candidate sources.",
+  "performance_scope": "Historical benchmark reports retain their original snapshots, source hashes, scope, outliers and status fields. Measurements were made in the then-combined working tree; this isolated commit preparation revalidates correctness, not a new performance run. Older uncommitted status values describe the time those reports were recorded.",
+  "performance_reports": [
+    "docs/validation/2026-10-10-order-transactions.json",
+    "docs/validation/2026-10-10-matching-hotpath.json",
+    "docs/validation/2026-10-10-mixed-hotpath.json",
+    "docs/validation/2026-10-11-spot-http-hotpath.json"
+  ],
+  "known_limits": [
+    "Raw batch matching still has persistent-node overhead relative to the original mutable book.",
+    "Historical -27% spot HTTP observation was not reproduced as a stable code regression in paired controls.",
+    "The HTTP fix improves the measured paired spot throughput by about 15% and p99 by about 19.5%; concurrent capacity and production SLO remain unqualified."
+  ],
+  "preservation": {
+    "unrelated_changes_remain_uncommitted": true,
+    "runtime_binaries_logs_databases_excluded": true,
+    "push_requested": false,
+    "unrelated_working_files_byte_identical": true,
+    "all_previous_working_file_contents_preserved_ignoring_CRLF": true
+  },
+  "receipt_sha256": {
+    "workspace-tests.log": "aa651ac2078de4d6d5fb0ca3b92b50f4061bca5582c64e01a466922e06541234",
+    "postgres-tests.log": "972c9e5997189026f4865edfc1207f713738d2d971cf688b6e7ac43b887008dd",
+    "clippy.log": "02be675012bb0b8d779141f1e6bd16205eead0519369b93a30390fcfb7192544",
+    "fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "working_tree_line_endings_normalized": [
+    "exchange-core/examples/benchmark_order_transactions.rs",
+    "docs/validation/2026-10-10-order-transactions.json",
+    "docs/validation/2026-10-10-matching-hotpath.json",
+    "docs/validation/2026-10-10-mixed-hotpath.json",
+    "docs/validation/2026-10-11-spot-http-hotpath.json"
+  ]
+}

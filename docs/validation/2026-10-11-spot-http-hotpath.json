@@ -1,0 +1,2876 @@
+{
+  "title": "Spot HTTP regression investigation and PostgreSQL projection round-trip optimization",
+  "date": "2026-10-11",
+  "base_head": "71b58e9f9de3a9aede2521af9729d844d8913ace",
+  "previous_report": "docs/validation/2026-10-10-mixed-hotpath.json",
+  "status": {
+    "investigation": "completed locally",
+    "fix": "implemented and validated, uncommitted",
+    "historical_27_percent_regression": "not reproduced as a stable code regression in request-paired controls",
+    "spot_http_gain": "confirmed in all four request-paired fix runs",
+    "production_slo": "not specified or qualified"
+  },
+  "findings": {
+    "historical_sample": "Previous two-per-version serial batches reported spot 193.36 -> 140.46 requests/s (-27%). That observation remains preserved in the earlier report.",
+    "same_binary_variability": "In this run, the unchanged pre-fix binary spans 138.30 to 261.93 requests/s in serial cases. An unrelated worktree was compiling/testing PostgreSQL on the same host during serial measurements; its processes were not stopped. Pinning process CPU does not isolate disk, other work, or power/frequency effects.",
+    "history_control": "Two controls alternate stage-2 and pre-fix requests at every command, reversing AB/BA order. Their throughput ratios are 0.9787 and 0.9933, median throughput difference about -1.4%; this does not support attributing the earlier -27% to history storage. It does not identify a unique historical environmental cause.",
+    "benchmark_launch_fix": "Historical harness changed process affinity after Popen; child initialization/descendant creation could happen first. The new harness creates only owned children suspended, sets affinity, and resumes their primary thread before initialization. Affinity inheritance was checked in an owned child. This removes a measurement race; no claim that it specifically caused the historical -27%.",
+    "bottleneck": "Pre-fix diagnostic spans: journal about 67%, preparation/auth/lock about 31%, candidate application about 2%. SQL-string execution in the locked postgres driver separately prepares every projection statement before execution.",
+    "implementation": "8 fixed-schema projection writes use execute_typed with explicit migration-compatible parameter types. Parse/Bind/Execute can be sent together. This avoids a separate preparation round trip; it is not a persistent prepared-statement cache and does not remove server-side SQL parsing.",
+    "unchanged_contracts": "SQL text, parameter values/order, error paths, transaction begin/commit/rollback, unique/idempotency checks, projection order, journal durability and clearing behavior are preserved. No schema/fee/account/orderbook changes."
+  },
+  "paired_performance": {
+    "scope": "Release loopback HTTP/1.1 persistent connection, real private PostgreSQL with default durability. 8 funded accounts, 100 live orders, initially 10 levels per side. 1819 deterministic mixed limit/cancel/amend/market commands per case (400 cycles) with growing histories and replenishment. Setup, response JSON validation, SQL digest checks and restarts excluded from request timing; request through full response body included. No dedicated warm-up; cold first requests retained.",
+    "control": "Two API processes stay alive with separate fresh databases on one private PG cluster. At each command requests execute sequentially AB/BA, alternating first version and reversing starting parity across runs. No overlapping timed order requests. CPU masks: API 4, PG parent/descendants 16, client 64, applied before initialization. This compares service costs under similar instantaneous host conditions; it is not concurrent client capacity, open-loop queueing or a dedicated-host benchmark.",
+    "aggregation": "Median of per-case service-time throughput and nearest-rank percentiles. Percentile medians are not pooled quantiles. Per-command paired samples and per-run ratios retained; no samples or slow runs discarded.",
+    "groups": [
+      {
+        "name": "history_control",
+        "variants": [
+          "stage2",
+          "before"
+        ],
+        "summary": {
+          "before": {
+            "http_commands_per_second": 297.91297967071773,
+            "p50_us": 2370.5,
+            "p95_us": 5292.700000000001,
+            "p99_us": 37443.9
+          },
+          "stage2": {
+            "http_commands_per_second": 302.01572865221664,
+            "p50_us": 2362.3999999999996,
+            "p95_us": 4992.15,
+            "p99_us": 37420.65
+          }
+        },
+        "pairs": [
+          {
+            "run": 500,
+            "throughput_ratio": 0.9787445798634795,
+            "p99_ratio": 1.0146256112311463,
+            "median_paired_command_latency_ratio": 1.0016782923375465
+          },
+          {
+            "run": 501,
+            "throughput_ratio": 0.9933131508767984,
+            "p99_ratio": 0.9856316513088917,
+            "median_paired_command_latency_ratio": 1.0021868954495752
+          }
+        ],
+        "throughput_ratio": 0.9864154459775722,
+        "p99_ratio": 1.0006213147019092
+      },
+      {
+        "name": "spot_fix",
+        "variants": [
+          "before",
+          "after"
+        ],
+        "summary": {
+          "after": {
+            "http_commands_per_second": 353.8621052704475,
+            "p50_us": 1982.5,
+            "p95_us": 4580.65,
+            "p99_us": 28751.0
+          },
+          "before": {
+            "http_commands_per_second": 307.6902771037237,
+            "p50_us": 2289.65,
+            "p95_us": 5067.549999999999,
+            "p99_us": 35729.05
+          }
+        },
+        "pairs": [
+          {
+            "run": 502,
+            "throughput_ratio": 1.1606602000068595,
+            "p99_ratio": 0.7738971391133436,
+            "median_paired_command_latency_ratio": 0.8714031800931932
+          },
+          {
+            "run": 503,
+            "throughput_ratio": 1.1339595029740754,
+            "p99_ratio": 0.819371080316256,
+            "median_paired_command_latency_ratio": 0.8717513386443777
+          },
+          {
+            "run": 504,
+            "throughput_ratio": 1.1247216375617928,
+            "p99_ratio": 0.7925723023505808,
+            "median_paired_command_latency_ratio": 0.8820325169445714
+          },
+          {
+            "run": 505,
+            "throughput_ratio": 1.1521736748366096,
+            "p99_ratio": 0.8370905728749415,
+            "median_paired_command_latency_ratio": 0.8757427100155397
+          }
+        ],
+        "throughput_ratio": 1.1500594318460022,
+        "p99_ratio": 0.8046953389468793
+      },
+      {
+        "name": "perp_guard",
+        "variants": [
+          "before",
+          "after"
+        ],
+        "summary": {
+          "after": {
+            "http_commands_per_second": 317.7633354287991,
+            "p50_us": 2094.75,
+            "p95_us": 5474.75,
+            "p99_us": 30968.95
+          },
+          "before": {
+            "http_commands_per_second": 273.8817729468242,
+            "p50_us": 2446.95,
+            "p95_us": 6333.85,
+            "p99_us": 39588.7
+          }
+        },
+        "pairs": [
+          {
+            "run": 506,
+            "throughput_ratio": 1.1608555792311348,
+            "p99_ratio": 0.7832621376829846,
+            "median_paired_command_latency_ratio": 0.8594254690399286
+          },
+          {
+            "run": 507,
+            "throughput_ratio": 1.1595918651635249,
+            "p99_ratio": 0.7812669412736292,
+            "median_paired_command_latency_ratio": 0.879125262928846
+          }
+        ],
+        "throughput_ratio": 1.1602208208667277,
+        "p99_ratio": 0.7822674146915661
+      }
+    ],
+    "cases": [
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "stage2",
+        "mode": "Spot",
+        "run": 500,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2456.1,
+          "p95_us": 5599.7,
+          "p99_us": 38692.4,
+          "max_us": 86767.0,
+          "http_commands_per_second": 285.98760568393686
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2112.2,
+            "p95_us": 3789.1,
+            "p99_us": 9465.2,
+            "max_us": 34756.4,
+            "http_commands_per_second": 401.55733531603323
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2671.9,
+            "p95_us": 4855.4,
+            "p99_us": 15496.9,
+            "max_us": 45024.9,
+            "http_commands_per_second": 305.8144294071155
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2077.8,
+            "p95_us": 3711.9,
+            "p99_us": 17493.5,
+            "max_us": 54515.6,
+            "http_commands_per_second": 371.6627587876175
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 4859.7,
+            "p95_us": 43030.3,
+            "p99_us": 48816.8,
+            "max_us": 86767.0,
+            "http_commands_per_second": 74.46060181590047
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "before",
+        "mode": "Spot",
+        "run": 500,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2456.5,
+          "p95_us": 6011.3,
+          "p99_us": 39258.3,
+          "max_us": 71235.9,
+          "http_commands_per_second": 279.90881897128725
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2117.2,
+            "p95_us": 3943.1,
+            "p99_us": 13192.2,
+            "max_us": 36525.2,
+            "http_commands_per_second": 393.263827593138
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2674.6,
+            "p95_us": 5038.1,
+            "p99_us": 20200.0,
+            "max_us": 63901.2,
+            "http_commands_per_second": 298.3217453168446
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2077.9,
+            "p95_us": 3988.3,
+            "p99_us": 28950.2,
+            "max_us": 51265.8,
+            "http_commands_per_second": 359.0332634445167
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 4951.1,
+            "p95_us": 44924.9,
+            "p99_us": 50410.2,
+            "max_us": 71235.9,
+            "http_commands_per_second": 74.12570399960802
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "stage2",
+        "mode": "Spot",
+        "run": 501,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2268.7,
+          "p95_us": 4384.6,
+          "p99_us": 36148.9,
+          "max_us": 52487.9,
+          "http_commands_per_second": 318.0438516204964
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1951.2,
+            "p95_us": 3272.3,
+            "p99_us": 6212.5,
+            "max_us": 37732.2,
+            "http_commands_per_second": 450.3256789296864
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2464.7,
+            "p95_us": 3781.9,
+            "p99_us": 10343.9,
+            "max_us": 47595.3,
+            "http_commands_per_second": 344.0793847533684
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1932.8,
+            "p95_us": 2972.2,
+            "p99_us": 17950.5,
+            "max_us": 51815.3,
+            "http_commands_per_second": 406.3764942082714
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 4377.8,
+            "p95_us": 41445.3,
+            "p99_us": 51933.2,
+            "max_us": 52487.9,
+            "http_commands_per_second": 81.38781857125149
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "before",
+        "mode": "Spot",
+        "run": 501,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2284.5,
+          "p95_us": 4574.1,
+          "p99_us": 35629.5,
+          "max_us": 54010.4,
+          "http_commands_per_second": 315.9171403701482
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1928.1,
+            "p95_us": 3065.8,
+            "p99_us": 11809.6,
+            "max_us": 35629.5,
+            "http_commands_per_second": 450.49899138281376
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2476.4,
+            "p95_us": 3732.3,
+            "p99_us": 10972.7,
+            "max_us": 45824.1,
+            "http_commands_per_second": 342.5128401636577
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1943.1,
+            "p95_us": 3389.1,
+            "p99_us": 16926.2,
+            "max_us": 50978.5,
+            "http_commands_per_second": 398.039575482832
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 4539.0,
+            "p95_us": 42057.7,
+            "p99_us": 48352.5,
+            "max_us": 54010.4,
+            "http_commands_per_second": 80.92017241175614
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "before",
+        "mode": "Spot",
+        "run": 502,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2262.8,
+          "p95_us": 4510.0,
+          "p99_us": 36632.0,
+          "max_us": 51452.5,
+          "http_commands_per_second": 314.52431802084635
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1886.2,
+            "p95_us": 3389.6,
+            "p99_us": 8805.3,
+            "max_us": 34087.5,
+            "http_commands_per_second": 444.96351672297897
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2427.0,
+            "p95_us": 4075.7,
+            "p99_us": 13518.6,
+            "max_us": 47503.3,
+            "http_commands_per_second": 340.439860429361
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1899.3,
+            "p95_us": 3100.5,
+            "p99_us": 16813.8,
+            "max_us": 50961.8,
+            "http_commands_per_second": 406.20519048992406
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 4408.4,
+            "p95_us": 42586.9,
+            "p99_us": 49390.2,
+            "max_us": 51452.5,
+            "http_commands_per_second": 79.78657410573014
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "after",
+        "mode": "Spot",
+        "run": 502,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 1948.4,
+          "p95_us": 3859.2,
+          "p99_us": 28349.4,
+          "max_us": 76218.2,
+          "http_commands_per_second": 365.0558578610966
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1702.3,
+            "p95_us": 3014.5,
+            "p99_us": 5735.2,
+            "max_us": 35066.1,
+            "http_commands_per_second": 497.8181060306645
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2081.5,
+            "p95_us": 3438.8,
+            "p99_us": 11257.6,
+            "max_us": 46839.4,
+            "http_commands_per_second": 396.2002793353134
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1685.1,
+            "p95_us": 2581.0,
+            "p99_us": 17503.1,
+            "max_us": 76218.2,
+            "http_commands_per_second": 430.01426464819406
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 3580.1,
+            "p95_us": 30435.7,
+            "p99_us": 49767.8,
+            "max_us": 60507.0,
+            "http_commands_per_second": 103.1748660248571
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "before",
+        "mode": "Spot",
+        "run": 503,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2430.1,
+          "p95_us": 7256.1,
+          "p99_us": 38411.9,
+          "max_us": 67166.1,
+          "http_commands_per_second": 271.9750332003167
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2021.8,
+            "p95_us": 4658.7,
+            "p99_us": 13047.2,
+            "max_us": 36686.1,
+            "http_commands_per_second": 384.30207399853253
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2588.1,
+            "p95_us": 6055.7,
+            "p99_us": 17790.6,
+            "max_us": 46532.1,
+            "http_commands_per_second": 288.92981870683315
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1990.9,
+            "p95_us": 4998.0,
+            "p99_us": 24052.2,
+            "max_us": 67166.1,
+            "http_commands_per_second": 343.3674752198131
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 4944.2,
+            "p95_us": 42837.3,
+            "p99_us": 52674.8,
+            "max_us": 52795.8,
+            "http_commands_per_second": 73.11183566564962
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "after",
+        "mode": "Spot",
+        "run": 503,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2085.9,
+          "p95_us": 6087.6,
+          "p99_us": 31473.6,
+          "max_us": 80477.2,
+          "http_commands_per_second": 308.4086734691888
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1821.0,
+            "p95_us": 4256.7,
+            "p99_us": 10298.2,
+            "max_us": 37605.3,
+            "http_commands_per_second": 432.17189025370845
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2201.0,
+            "p95_us": 5572.1,
+            "p99_us": 22492.5,
+            "max_us": 44222.6,
+            "http_commands_per_second": 326.3044942553551
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1806.4,
+            "p95_us": 4477.4,
+            "p99_us": 22600.7,
+            "max_us": 50568.6,
+            "http_commands_per_second": 377.8581901990765
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 3934.5,
+            "p95_us": 36902.1,
+            "p99_us": 59078.6,
+            "max_us": 80477.2,
+            "http_commands_per_second": 86.55905010790885
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "before",
+        "mode": "Spot",
+        "run": 504,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2207.2,
+          "p95_us": 5067.9,
+          "p99_us": 34791.4,
+          "max_us": 75471.1,
+          "http_commands_per_second": 321.0443928855504
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1873.0,
+            "p95_us": 3405.7,
+            "p99_us": 12865.1,
+            "max_us": 31915.3,
+            "http_commands_per_second": 452.19738064904254
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2381.3,
+            "p95_us": 4530.7,
+            "p99_us": 10975.8,
+            "max_us": 43139.1,
+            "http_commands_per_second": 349.77067173748287
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1855.5,
+            "p95_us": 3587.7,
+            "p99_us": 16675.7,
+            "max_us": 48217.8,
+            "http_commands_per_second": 407.6846518449514
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 4260.9,
+            "p95_us": 41180.7,
+            "p99_us": 60285.2,
+            "max_us": 75471.1,
+            "http_commands_per_second": 81.79344227620027
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "after",
+        "mode": "Spot",
+        "run": 504,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 1912.8,
+          "p95_us": 4641.7,
+          "p99_us": 27574.7,
+          "max_us": 52688.1,
+          "http_commands_per_second": 361.08557529626785
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1673.1,
+            "p95_us": 3472.0,
+            "p99_us": 10127.5,
+            "max_us": 36026.6,
+            "http_commands_per_second": 489.0739645935057
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2049.5,
+            "p95_us": 3865.1,
+            "p99_us": 12071.7,
+            "max_us": 46872.1,
+            "http_commands_per_second": 390.0295838829029
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1664.6,
+            "p95_us": 3619.3,
+            "p99_us": 17806.9,
+            "max_us": 51347.6,
+            "http_commands_per_second": 428.9164305660432
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 3417.5,
+            "p95_us": 29827.6,
+            "p99_us": 50967.8,
+            "max_us": 52688.1,
+            "http_commands_per_second": 102.99921349800573
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "before",
+        "mode": "Spot",
+        "run": 505,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2316.5,
+          "p95_us": 5067.2,
+          "p99_us": 34826.1,
+          "max_us": 70219.5,
+          "http_commands_per_second": 300.85623618660105
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1956.0,
+            "p95_us": 3972.2,
+            "p99_us": 9154.8,
+            "max_us": 34802.7,
+            "http_commands_per_second": 415.29276877778466
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2504.9,
+            "p95_us": 4420.8,
+            "p99_us": 12407.5,
+            "max_us": 53905.1,
+            "http_commands_per_second": 326.61315770803367
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1917.8,
+            "p95_us": 3764.8,
+            "p99_us": 18829.2,
+            "max_us": 54752.9,
+            "http_commands_per_second": 381.6895871263736
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 4484.2,
+            "p95_us": 40373.3,
+            "p99_us": 50749.3,
+            "max_us": 70219.5,
+            "http_commands_per_second": 78.64451460408975
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "after",
+        "mode": "Spot",
+        "run": 505,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2016.6,
+          "p95_us": 4519.6,
+          "p99_us": 29152.6,
+          "max_us": 54030.8,
+          "http_commands_per_second": 346.6386352446271
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1760.2,
+            "p95_us": 3330.1,
+            "p99_us": 12323.0,
+            "max_us": 35049.2,
+            "http_commands_per_second": 452.6143173769549
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2140.6,
+            "p95_us": 3799.4,
+            "p99_us": 16541.2,
+            "max_us": 49422.1,
+            "http_commands_per_second": 368.78808875792
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1747.2,
+            "p95_us": 3921.1,
+            "p99_us": 16776.1,
+            "max_us": 51352.5,
+            "http_commands_per_second": 421.49031599655854
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 3680.7,
+            "p95_us": 31511.4,
+            "p99_us": 33155.8,
+            "max_us": 54030.8,
+            "http_commands_per_second": 104.00472264644593
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "db15e01327c4b3b4967b2e5b23a81c94404e1dbcd3fdd46a0a60504fac069678"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "6a5cb5b8b227f4687efa236b5e1396740d73d503c73eabfc8a80f14f5720251e"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "cd6b10264724072566e40ce3d99761b3e6162fdeebf0b55cb57eb1c7d5861ea6"
+          }
+        },
+        "variant": "before",
+        "mode": "Perp",
+        "run": 506,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2484.1,
+          "p95_us": 6020.8,
+          "p99_us": 39702.8,
+          "max_us": 68246.8,
+          "http_commands_per_second": 272.62417585329456
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2075.8,
+            "p95_us": 4712.0,
+            "p99_us": 9855.6,
+            "max_us": 41731.1,
+            "http_commands_per_second": 385.13896492086485
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2688.0,
+            "p95_us": 5227.0,
+            "p99_us": 11854.4,
+            "max_us": 59161.7,
+            "http_commands_per_second": 297.00025509570605
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2071.7,
+            "p95_us": 4124.6,
+            "p99_us": 18985.4,
+            "max_us": 68246.8,
+            "http_commands_per_second": 345.685482212235
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 5264.6,
+            "p95_us": 51480.1,
+            "p99_us": 64926.5,
+            "max_us": 66347.8,
+            "http_commands_per_second": 69.37029049433477
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "db15e01327c4b3b4967b2e5b23a81c94404e1dbcd3fdd46a0a60504fac069678"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "6a5cb5b8b227f4687efa236b5e1396740d73d503c73eabfc8a80f14f5720251e"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "cd6b10264724072566e40ce3d99761b3e6162fdeebf0b55cb57eb1c7d5861ea6"
+          }
+        },
+        "variant": "after",
+        "mode": "Perp",
+        "run": 506,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2087.8,
+          "p95_us": 5437.0,
+          "p99_us": 31097.7,
+          "max_us": 81242.6,
+          "http_commands_per_second": 316.477295572587
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1796.9,
+            "p95_us": 4029.9,
+            "p99_us": 14981.0,
+            "max_us": 44563.4,
+            "http_commands_per_second": 426.79152003723556
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2214.9,
+            "p95_us": 4837.5,
+            "p99_us": 11192.8,
+            "max_us": 62944.6,
+            "http_commands_per_second": 340.5267657879957
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1796.7,
+            "p95_us": 4181.7,
+            "p99_us": 19773.5,
+            "max_us": 72020.0,
+            "http_commands_per_second": 381.37665339889077
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 4249.3,
+            "p95_us": 37230.7,
+            "p99_us": 52167.8,
+            "max_us": 81242.6,
+            "http_commands_per_second": 90.20919874024659
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "db15e01327c4b3b4967b2e5b23a81c94404e1dbcd3fdd46a0a60504fac069678"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "6a5cb5b8b227f4687efa236b5e1396740d73d503c73eabfc8a80f14f5720251e"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "cd6b10264724072566e40ce3d99761b3e6162fdeebf0b55cb57eb1c7d5861ea6"
+          }
+        },
+        "variant": "before",
+        "mode": "Perp",
+        "run": 507,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2409.8,
+          "p95_us": 6646.9,
+          "p99_us": 39474.6,
+          "max_us": 67289.6,
+          "http_commands_per_second": 275.1393700403538
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2031.5,
+            "p95_us": 4528.8,
+            "p99_us": 12931.3,
+            "max_us": 39474.6,
+            "http_commands_per_second": 393.66459149582147
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2594.8,
+            "p95_us": 5572.4,
+            "p99_us": 14645.9,
+            "max_us": 65277.3,
+            "http_commands_per_second": 298.48817159085297
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2044.0,
+            "p95_us": 4700.8,
+            "p99_us": 21940.4,
+            "max_us": 60300.2,
+            "http_commands_per_second": 345.2735248231811
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 5034.7,
+            "p95_us": 49436.9,
+            "p99_us": 62706.6,
+            "max_us": 67289.6,
+            "http_commands_per_second": 70.41661426496955
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "db15e01327c4b3b4967b2e5b23a81c94404e1dbcd3fdd46a0a60504fac069678"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "6a5cb5b8b227f4687efa236b5e1396740d73d503c73eabfc8a80f14f5720251e"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "cd6b10264724072566e40ce3d99761b3e6162fdeebf0b55cb57eb1c7d5861ea6"
+          }
+        },
+        "variant": "after",
+        "mode": "Perp",
+        "run": 507,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2101.7,
+          "p95_us": 5512.5,
+          "p99_us": 30840.2,
+          "max_us": 59098.3,
+          "http_commands_per_second": 319.04937528501114
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1834.2,
+            "p95_us": 4312.2,
+            "p99_us": 12343.6,
+            "max_us": 38790.8,
+            "http_commands_per_second": 426.32352002728464
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2250.6,
+            "p95_us": 4541.8,
+            "p99_us": 14652.9,
+            "max_us": 58875.4,
+            "http_commands_per_second": 342.75891864201844
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1820.8,
+            "p95_us": 4068.5,
+            "p99_us": 19445.5,
+            "max_us": 59098.3,
+            "http_commands_per_second": 389.6327302403118
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 4045.8,
+            "p95_us": 39339.9,
+            "p99_us": 41007.7,
+            "max_us": 57593.6,
+            "http_commands_per_second": 90.96711138668083
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      }
+    ]
+  },
+  "serial_comparison": {
+    "qualification": "diagnostic only; strong same-binary variation, including a slow fixed run, retained without filtering",
+    "cases": [
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "stage2",
+        "mode": "Spot",
+        "run": 300,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 3381.7,
+          "p95_us": 14357.8,
+          "p99_us": 51552.0,
+          "max_us": 180104.1,
+          "http_commands_per_second": 176.04085851226506
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2653.1,
+            "p95_us": 9208.8,
+            "p99_us": 23095.9,
+            "max_us": 52282.8,
+            "http_commands_per_second": 252.81393302635607
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 3867.6,
+            "p95_us": 11464.5,
+            "p99_us": 26089.9,
+            "max_us": 66793.0,
+            "http_commands_per_second": 190.96116401035226
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2667.8,
+            "p95_us": 10139.0,
+            "p99_us": 31513.4,
+            "max_us": 60348.9,
+            "http_commands_per_second": 230.09521109739998
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 7993.2,
+            "p95_us": 94119.2,
+            "p99_us": 131187.3,
+            "max_us": 180104.1,
+            "http_commands_per_second": 43.50888544984989
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "before",
+        "mode": "Spot",
+        "run": 301,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 4853.8,
+          "p95_us": 17985.5,
+          "p99_us": 61777.0,
+          "max_us": 99817.6,
+          "http_commands_per_second": 138.29895463857392
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 4337.8,
+            "p95_us": 11004.6,
+            "p99_us": 35834.3,
+            "max_us": 43950.1,
+            "http_commands_per_second": 184.28088672253895
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 5284.9,
+            "p95_us": 15617.6,
+            "p99_us": 31298.3,
+            "max_us": 65925.3,
+            "http_commands_per_second": 147.5412625337135
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 3981.6,
+            "p95_us": 12937.0,
+            "p99_us": 36290.7,
+            "max_us": 74314.3,
+            "http_commands_per_second": 173.49703530434786
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 10792.9,
+            "p95_us": 80259.2,
+            "p99_us": 90749.2,
+            "max_us": 99817.6,
+            "http_commands_per_second": 39.18751122232353
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "after",
+        "mode": "Spot",
+        "run": 302,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 3652.5,
+          "p95_us": 13985.0,
+          "p99_us": 46804.1,
+          "max_us": 84769.8,
+          "http_commands_per_second": 180.73136748277858
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 3242.7,
+            "p95_us": 12171.0,
+            "p99_us": 21816.2,
+            "max_us": 63244.5,
+            "http_commands_per_second": 228.1920515972367
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 3903.3,
+            "p95_us": 12450.8,
+            "p99_us": 29178.8,
+            "max_us": 78854.0,
+            "http_commands_per_second": 186.4197465537199
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 3150.9,
+            "p95_us": 9069.1,
+            "p99_us": 28455.3,
+            "max_us": 69672.0,
+            "http_commands_per_second": 232.52996555533622
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 7041.8,
+            "p95_us": 65735.0,
+            "p99_us": 76806.6,
+            "max_us": 84769.8,
+            "http_commands_per_second": 57.55662348672845
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "after",
+        "mode": "Spot",
+        "run": 303,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2641.4,
+          "p95_us": 9803.1,
+          "p99_us": 37477.6,
+          "max_us": 79956.0,
+          "http_commands_per_second": 240.05654512784588
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2242.4,
+            "p95_us": 7314.1,
+            "p99_us": 19001.5,
+            "max_us": 48395.8,
+            "http_commands_per_second": 305.3140193092875
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2865.5,
+            "p95_us": 8054.7,
+            "p99_us": 20916.6,
+            "max_us": 53217.8,
+            "http_commands_per_second": 254.71029517232634
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2259.0,
+            "p95_us": 6875.5,
+            "p99_us": 22314.1,
+            "max_us": 79956.0,
+            "http_commands_per_second": 287.78765185205384
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 5522.1,
+            "p95_us": 40254.5,
+            "p99_us": 61456.9,
+            "max_us": 66301.5,
+            "http_commands_per_second": 75.79056762132971
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "before",
+        "mode": "Spot",
+        "run": 304,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2924.9,
+          "p95_us": 10124.0,
+          "p99_us": 46965.7,
+          "max_us": 81687.0,
+          "http_commands_per_second": 220.28609435491634
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2488.5,
+            "p95_us": 5613.1,
+            "p99_us": 18091.4,
+            "max_us": 41872.7,
+            "http_commands_per_second": 308.4965179668178
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 3180.0,
+            "p95_us": 8667.8,
+            "p99_us": 23413.4,
+            "max_us": 62566.3,
+            "http_commands_per_second": 234.6171731801586
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2460.7,
+            "p95_us": 7351.5,
+            "p99_us": 22491.9,
+            "max_us": 81687.0,
+            "http_commands_per_second": 277.37867993960634
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 6002.4,
+            "p95_us": 62745.7,
+            "p99_us": 67648.4,
+            "max_us": 74931.1,
+            "http_commands_per_second": 59.511839850782394
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "stage2",
+        "mode": "Spot",
+        "run": 305,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 3690.0,
+          "p95_us": 12258.8,
+          "p99_us": 53647.5,
+          "max_us": 78401.0,
+          "http_commands_per_second": 176.14014503974101
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2993.4,
+            "p95_us": 9151.0,
+            "p99_us": 26291.9,
+            "max_us": 58155.2,
+            "http_commands_per_second": 232.4357625761757
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 3991.9,
+            "p95_us": 9895.6,
+            "p99_us": 25933.4,
+            "max_us": 56299.2,
+            "http_commands_per_second": 193.64182806992844
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2930.5,
+            "p95_us": 9045.2,
+            "p99_us": 32853.8,
+            "max_us": 54971.4,
+            "http_commands_per_second": 221.6141990433469
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 8989.3,
+            "p95_us": 70555.0,
+            "p99_us": 78063.4,
+            "max_us": 78401.0,
+            "http_commands_per_second": 47.13309197419595
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "before",
+        "mode": "Spot",
+        "run": 306,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 3290.9,
+          "p95_us": 13018.6,
+          "p99_us": 47667.6,
+          "max_us": 91642.4,
+          "http_commands_per_second": 191.59286707444875
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2842.4,
+            "p95_us": 10023.6,
+            "p99_us": 24772.7,
+            "max_us": 38497.7,
+            "http_commands_per_second": 255.99077445742302
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 3534.3,
+            "p95_us": 11744.8,
+            "p99_us": 22608.7,
+            "max_us": 67787.2,
+            "http_commands_per_second": 208.01468218024684
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2705.5,
+            "p95_us": 9802.1,
+            "p99_us": 26202.5,
+            "max_us": 66178.2,
+            "http_commands_per_second": 240.74357505051555
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 7425.0,
+            "p95_us": 58840.6,
+            "p99_us": 75212.0,
+            "max_us": 91642.4,
+            "http_commands_per_second": 52.04451950652011
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "stage2",
+        "mode": "Spot",
+        "run": 307,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2894.3,
+          "p95_us": 11709.5,
+          "p99_us": 45106.5,
+          "max_us": 67259.4,
+          "http_commands_per_second": 218.46926691694668
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2480.8,
+            "p95_us": 8737.5,
+            "p99_us": 18341.4,
+            "max_us": 36151.4,
+            "http_commands_per_second": 294.7093918260836
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 3080.9,
+            "p95_us": 8939.4,
+            "p99_us": 27840.4,
+            "max_us": 51057.0,
+            "http_commands_per_second": 236.02615158546925
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2463.2,
+            "p95_us": 7992.6,
+            "p99_us": 29361.8,
+            "max_us": 58202.1,
+            "http_commands_per_second": 274.27283756780884
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 6991.3,
+            "p95_us": 50824.8,
+            "p99_us": 60409.3,
+            "max_us": 67259.4,
+            "http_commands_per_second": 59.46126193922679
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "after",
+        "mode": "Spot",
+        "run": 308,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 1966.8,
+          "p95_us": 5868.4,
+          "p99_us": 29101.6,
+          "max_us": 60684.7,
+          "http_commands_per_second": 331.8988333673899
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1691.4,
+            "p95_us": 3980.7,
+            "p99_us": 13889.6,
+            "max_us": 37620.9,
+            "http_commands_per_second": 459.6108531755304
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2124.0,
+            "p95_us": 5253.4,
+            "p99_us": 19556.8,
+            "max_us": 57350.1,
+            "http_commands_per_second": 350.4160608082567
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1668.8,
+            "p95_us": 4033.8,
+            "p99_us": 17566.1,
+            "max_us": 60684.7,
+            "http_commands_per_second": 417.1064967778002
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 3887.7,
+            "p95_us": 38386.5,
+            "p99_us": 54587.9,
+            "max_us": 59135.0,
+            "http_commands_per_second": 92.51501703756553
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "after",
+        "mode": "Spot",
+        "run": 309,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2771.7,
+          "p95_us": 14792.1,
+          "p99_us": 103690.1,
+          "max_us": 340575.1,
+          "http_commands_per_second": 157.71116380365268
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2182.3,
+            "p95_us": 8285.4,
+            "p99_us": 68415.0,
+            "max_us": 179677.5,
+            "http_commands_per_second": 221.1305184175529
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 3004.0,
+            "p95_us": 10968.5,
+            "p99_us": 100270.3,
+            "max_us": 171801.8,
+            "http_commands_per_second": 169.8806148847014
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2170.4,
+            "p95_us": 10865.7,
+            "p99_us": 51122.8,
+            "max_us": 137462.8,
+            "http_commands_per_second": 217.82536874839832
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 6220.6,
+            "p95_us": 116500.7,
+            "p99_us": 308860.4,
+            "max_us": 340575.1,
+            "http_commands_per_second": 38.70133191407809
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "stage2",
+        "mode": "Spot",
+        "run": 310,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 3765.4,
+          "p95_us": 20429.7,
+          "p99_us": 69726.9,
+          "max_us": 317425.1,
+          "http_commands_per_second": 140.0734080145091
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 3250.9,
+            "p95_us": 14336.0,
+            "p99_us": 39026.6,
+            "max_us": 107067.5,
+            "http_commands_per_second": 179.94692584255148
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 3832.5,
+            "p95_us": 17342.8,
+            "p99_us": 53270.4,
+            "max_us": 95729.6,
+            "http_commands_per_second": 153.3031419606394
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 3228.7,
+            "p95_us": 13918.2,
+            "p99_us": 30876.8,
+            "max_us": 55465.6,
+            "http_commands_per_second": 192.4758125270188
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 8743.5,
+            "p95_us": 91540.7,
+            "p99_us": 241452.7,
+            "max_us": 317425.1,
+            "http_commands_per_second": 36.17032373958901
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "eea44ae261be0469a1c9ddf21fdfe4127573fcc0f6dab5cce9f35187281ecd34"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "e70db89cebd78038ab5f39045b408db54d2012426c893af53eebe46322bc6e8f"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "da08c1cc61911715ebad65222d3e4410e78c102fe0c96c253fadfe1d16eb758e"
+          }
+        },
+        "variant": "before",
+        "mode": "Spot",
+        "run": 311,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2458.2,
+          "p95_us": 8036.0,
+          "p99_us": 40371.3,
+          "max_us": 72657.4,
+          "http_commands_per_second": 261.93356883738744
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2069.8,
+            "p95_us": 6275.0,
+            "p99_us": 13762.4,
+            "max_us": 34278.2,
+            "http_commands_per_second": 359.1444771974503
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2662.9,
+            "p95_us": 7146.8,
+            "p99_us": 15416.7,
+            "max_us": 47470.9,
+            "http_commands_per_second": 284.4690218471871
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2000.7,
+            "p95_us": 5973.9,
+            "p99_us": 24214.4,
+            "max_us": 51870.0,
+            "http_commands_per_second": 336.3141133460959
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 5155.8,
+            "p95_us": 46674.4,
+            "p99_us": 54790.1,
+            "max_us": 72657.4,
+            "http_commands_per_second": 68.16224632227191
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "db15e01327c4b3b4967b2e5b23a81c94404e1dbcd3fdd46a0a60504fac069678"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "6a5cb5b8b227f4687efa236b5e1396740d73d503c73eabfc8a80f14f5720251e"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "cd6b10264724072566e40ce3d99761b3e6162fdeebf0b55cb57eb1c7d5861ea6"
+          }
+        },
+        "variant": "before",
+        "mode": "Perp",
+        "run": 400,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 3097.6,
+          "p95_us": 12715.3,
+          "p99_us": 51647.8,
+          "max_us": 138872.3,
+          "http_commands_per_second": 189.4334559790859
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2665.0,
+            "p95_us": 9028.6,
+            "p99_us": 25628.3,
+            "max_us": 72090.3,
+            "http_commands_per_second": 256.4603821937137
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 3260.9,
+            "p95_us": 11060.4,
+            "p99_us": 25884.0,
+            "max_us": 70131.9,
+            "http_commands_per_second": 213.2668872737848
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2533.2,
+            "p95_us": 10310.0,
+            "p99_us": 29698.1,
+            "max_us": 62713.5,
+            "http_commands_per_second": 247.61929523834286
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 8102.2,
+            "p95_us": 66453.8,
+            "p99_us": 110019.3,
+            "max_us": 138872.3,
+            "http_commands_per_second": 45.89487759927934
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "db15e01327c4b3b4967b2e5b23a81c94404e1dbcd3fdd46a0a60504fac069678"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "6a5cb5b8b227f4687efa236b5e1396740d73d503c73eabfc8a80f14f5720251e"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "cd6b10264724072566e40ce3d99761b3e6162fdeebf0b55cb57eb1c7d5861ea6"
+          }
+        },
+        "variant": "after",
+        "mode": "Perp",
+        "run": 401,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 1913.8,
+          "p95_us": 5491.6,
+          "p99_us": 30424.3,
+          "max_us": 58862.7,
+          "http_commands_per_second": 341.4989057203564
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1668.5,
+            "p95_us": 3468.8,
+            "p99_us": 13321.1,
+            "max_us": 38039.4,
+            "http_commands_per_second": 470.4892289036624
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2032.3,
+            "p95_us": 4465.3,
+            "p99_us": 11528.2,
+            "max_us": 54839.0,
+            "http_commands_per_second": 369.8719689497314
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1634.3,
+            "p95_us": 3604.6,
+            "p99_us": 25692.5,
+            "max_us": 58862.7,
+            "http_commands_per_second": 403.67448738890624
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 4010.0,
+            "p95_us": 31663.9,
+            "p99_us": 34948.3,
+            "max_us": 55103.1,
+            "http_commands_per_second": 95.66460448856411
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "db15e01327c4b3b4967b2e5b23a81c94404e1dbcd3fdd46a0a60504fac069678"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "6a5cb5b8b227f4687efa236b5e1396740d73d503c73eabfc8a80f14f5720251e"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "cd6b10264724072566e40ce3d99761b3e6162fdeebf0b55cb57eb1c7d5861ea6"
+          }
+        },
+        "variant": "after",
+        "mode": "Perp",
+        "run": 402,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 1973.7,
+          "p95_us": 4969.7,
+          "p99_us": 30808.6,
+          "max_us": 91320.3,
+          "http_commands_per_second": 340.9615050711885
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 1684.6,
+            "p95_us": 3472.6,
+            "p99_us": 9782.4,
+            "max_us": 40338.5,
+            "http_commands_per_second": 475.5414667672781
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2089.4,
+            "p95_us": 4103.6,
+            "p99_us": 12496.7,
+            "max_us": 62074.3,
+            "http_commands_per_second": 368.16111219985356
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 1704.6,
+            "p95_us": 3749.0,
+            "p99_us": 22194.7,
+            "max_us": 58446.4,
+            "http_commands_per_second": 415.91706281033913
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 3800.8,
+            "p95_us": 35046.7,
+            "p99_us": 37724.5,
+            "max_us": 91320.3,
+            "http_commands_per_second": 92.32982873924726
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      },
+      {
+        "projection_hashes": {
+          "executions": {
+            "rows": 1919,
+            "sha256": "db15e01327c4b3b4967b2e5b23a81c94404e1dbcd3fdd46a0a60504fac069678"
+          },
+          "orders": {
+            "rows": 1042,
+            "sha256": "457c443069dc45a4df4a9d7f6d4af8dd5a95b6d45ba705f0df9572bcf83e66db"
+          },
+          "order_events": {
+            "rows": 4187,
+            "sha256": "6aa229bd75187ce783f92fd3d138eacd2302f68d5af074686a65baacf5dfd190"
+          },
+          "trades": {
+            "rows": 442,
+            "sha256": "69c10a9eeb6c09309adcb425a2600bb4d5b16e194cb579a3d0c5b827abbc5f74"
+          },
+          "market_ticks": {
+            "rows": 442,
+            "sha256": "70b9dd7fa4e4f40ed3f2efafc10435b1e94910888e507801d0019640c7a794ce"
+          },
+          "account_ledger": {
+            "rows": 884,
+            "sha256": "6a5cb5b8b227f4687efa236b5e1396740d73d503c73eabfc8a80f14f5720251e"
+          },
+          "position_snapshots": {
+            "rows": 884,
+            "sha256": "cd6b10264724072566e40ce3d99761b3e6162fdeebf0b55cb57eb1c7d5861ea6"
+          }
+        },
+        "variant": "before",
+        "mode": "Perp",
+        "run": 403,
+        "commands": 1819,
+        "latency": {
+          "count": 1819,
+          "p50_us": 2641.4,
+          "p95_us": 8928.7,
+          "p99_us": 41672.6,
+          "max_us": 150581.3,
+          "http_commands_per_second": 231.10493250217718
+        },
+        "operations": {
+          "Cancel": {
+            "count": 477,
+            "p50_us": 2111.8,
+            "p95_us": 6179.2,
+            "p99_us": 14616.4,
+            "max_us": 41672.6,
+            "http_commands_per_second": 339.75571350516145
+          },
+          "PlaceLimit": {
+            "count": 842,
+            "p50_us": 2880.6,
+            "p95_us": 8109.3,
+            "p99_us": 19801.0,
+            "max_us": 71868.6,
+            "http_commands_per_second": 252.96138316159852
+          },
+          "Amend": {
+            "count": 400,
+            "p50_us": 2101.5,
+            "p95_us": 6932.2,
+            "p99_us": 20604.4,
+            "max_us": 84787.6,
+            "http_commands_per_second": 292.89609803818195
+          },
+          "PlaceMarket": {
+            "count": 100,
+            "p50_us": 5819.2,
+            "p95_us": 63958.1,
+            "p99_us": 140654.4,
+            "max_us": 150581.3,
+            "http_commands_per_second": 56.41143295024517
+          }
+        },
+        "all_events_and_final_book_match": true,
+        "postgres_restart_recovery": true,
+        "idempotency_replay": true
+      }
+    ]
+  },
+  "handler_diagnostics": {
+    "scope": "Only disposable local server copies emit per-request nanosecond spans to a log. No timing/log instrumentation remains in production source/binary. Three complete spot streams before and after. Diagnostic builds use alias package version 0.0.3; measurements are separate, not paired, and are not the speed qualification.",
+    "results": [
+      {
+        "variant": "before",
+        "requests": 5457,
+        "phases": {
+          "prepare_auth_lock": {
+            "mean_us": 1309.6984973428623,
+            "percent_of_measured_handler_time": 30.751781739469234
+          },
+          "candidate_apply": {
+            "mean_us": 88.91280923584387,
+            "percent_of_measured_handler_time": 2.0876769035094562
+          },
+          "response_setup": {
+            "mean_us": 3.746289169873557,
+            "percent_of_measured_handler_time": 0.08796304425684148
+          },
+          "journal": {
+            "mean_us": 2847.1433205057724,
+            "percent_of_measured_handler_time": 66.8510578204172
+          },
+          "publish": {
+            "mean_us": 9.434414513468939,
+            "percent_of_measured_handler_time": 0.2215204923472754
+          }
+        }
+      },
+      {
+        "variant": "after",
+        "requests": 5457,
+        "phases": {
+          "prepare_auth_lock": {
+            "mean_us": 1046.5639912039583,
+            "percent_of_measured_handler_time": 33.9506719199822
+          },
+          "candidate_apply": {
+            "mean_us": 59.37885284955103,
+            "percent_of_measured_handler_time": 1.9262577052368042
+          },
+          "response_setup": {
+            "mean_us": 2.459519882719443,
+            "percent_of_measured_handler_time": 0.07978714471421908
+          },
+          "journal": {
+            "mean_us": 1968.566300164926,
+            "percent_of_measured_handler_time": 63.86054667593442
+          },
+          "publish": {
+            "mean_us": 5.633040131940627,
+            "percent_of_measured_handler_time": 0.18273655413234913
+          }
+        }
+      }
+    ]
+  },
+  "correctness": {
+    "workspace_tests": {
+      "passed": 542,
+      "failed": 0,
+      "ignored": 12,
+      "threads": 1
+    },
+    "required_real_postgres_server_tests": {
+      "passed": 216,
+      "failed": 0,
+      "ignored": 1,
+      "receipt": {
+        "passed": true,
+        "real_postgres_required": true,
+        "test": "entire exchange-server library, single harness thread",
+        "data": "E:\\projects\\MarketForge\\.local\\http-hotpath-optimization\\postgres-data"
+      }
+    },
+    "clippy_all_targets_deny_warnings": true,
+    "fmt_check": true,
+    "git_diff_check": true,
+    "http_cases": {
+      "serial": 16,
+      "paired": 16,
+      "all_events_and_final_books_match": true,
+      "restart_recovery_and_idempotency_replay": true
+    },
+    "persisted_projection_equivalence": "Seven projection tables (executions/orders/order_events/trades/market_ticks/account_ledger/position_snapshots) are compared by ordered canonical JSON hashes with created_at/updated_at omitted. All spot versions match; all perp versions match. Paired command indices, sequences, action types and trade counts match exactly.",
+    "sql_structural_check": "Strip explicit Type annotations/comment and restore execute method names: all 8 hot write bodies match pre-fix source after whitespace normalization. Parameter ordering and all checks/error paths remain identical."
+  },
+  "workspace_preservation": {
+    "allowed_production_file": "exchange-server/src/journal.rs",
+    "other_initial_tracked_diffs_unchanged": true,
+    "all_core_sources_byte_identical": true,
+    "unrelated_processes_not_stopped": true,
+    "owned_clusters_stopped": true,
+    "release_target_restored_to_uninstrumented_candidate": true,
+    "commit_or_push": false
+  },
+  "logs_directory": ".local/http-hotpath-optimization/",
+  "source_hashes": {
+    "exchange-server/src/journal.rs": "191f1f9e6a3bf7eecfd382b8225c66bb0ce8fe739e12ae7c5cc6a89a771d229f",
+    "Cargo.lock": "8ad8bd782dca7597494ff2c9b3310011b40ef239cdfd204e5d21ac630df882b8",
+    ".local/http-hotpath-optimization/http_harness.py": "607effa1144e8087638d739a3118a3eebb6ee2dece95f72862a81d81c4486c99",
+    ".local/http-hotpath-optimization/owned_process.py": "6c42f98cf1c1583112696a33cff997365f091175fdb620eebcdb6df65781217e",
+    ".local/http-hotpath-optimization/run_interleaved.py": "ab33f3057e65846e8fa5ae8d8cb8a744d106b2394297c0cd978ebc8b358aaca3",
+    ".local/http-hotpath-optimization/run_comparison.py": "7c2c88dc7554a9571580f47b45cf508929d09e62a8e18df4374c845cb7f1579b"
+  },
+  "binary_hashes": {
+    ".local/http-hotpath-optimization/stage2-server.exe": "7e5d4d3762fc7388a26c42811f2f950e45e7ef958ee57f546dc46a89ca05bae5",
+    ".local/http-hotpath-optimization/before-server.exe": "7e5d4d3762fc7388a26c42811f2f950e45e7ef958ee57f546dc46a89ca05bae5",
+    ".local/http-hotpath-optimization/after-server.exe": "87d2517b4f97205ccdbcb611901fded829cbb1144ae669ec38d1bb8a33037d4e",
+    ".local/http-hotpath-optimization/profile-server.exe": "44ba7c64b968b7d85cbda0e077eea60103e062cc62d9d17e17d8e96291b7aa5d",
+    ".local/http-hotpath-optimization/after-profile-server.exe": "4aa558f090ea191a06485a9cfef0b23e3ac627f7117817d0be817e488cf121b2"
+  },
+  "reproduction_sources": {
+    ".local/http-hotpath-optimization/http_harness.py": "import http.client\nimport json\nimport math\nimport os\nfrom pathlib import Path\nimport socket\nimport statistics\nimport hashlib\nfrom owned_process import launch\nimport subprocess\nimport time\nimport sys\nimport ctypes\nfrom ctypes import wintypes\n\nkernel=ctypes.WinDLL('kernel32',use_last_error=True)\nkernel.SetProcessAffinityMask.argtypes=[wintypes.HANDLE,ctypes.c_size_t]\nkernel.SetProcessAffinityMask.restype=wintypes.BOOL\nkernel.GetCurrentProcess.restype=wintypes.HANDLE\nassert kernel.SetProcessAffinityMask(kernel.GetCurrentProcess(),64), ctypes.get_last_error()\nmemory = '--memory' in sys.argv\n\nroot = Path(__file__).resolve().parents[2]\nout = Path(__file__).resolve().parent\npgbin = Path('D:/SQL/bin')\ndata = out / 'http-postgres-data'\ntrace = json.loads((out/'http-trace.json').read_text(encoding='utf-8-sig'))\nenv = {k: v for k, v in os.environ.items() if not k.startswith(('MARKETFORGE_', 'PG'))}\nflags = subprocess.CREATE_NO_WINDOW\n\ndef port():\n    with socket.socket() as s:\n        s.bind(('127.0.0.1', 0))\n        return s.getsockname()[1]\n\ndef control(args):\n    with (out/'http-pg-control.log').open('a', encoding='utf-8') as log:\n        process=launch([str(x) for x in args],16,env=env,cwd=root,stdout=log,stderr=subprocess.STDOUT)\n        assert process.wait(timeout=60)==0\n\ndef stats(values):\n    values = sorted(values)\n    return {'count':len(values), **{f'p{p}_us':values[math.ceil(len(values)*p/100)-1] for p in [50,95,99]},\n            'max_us':values[-1], 'http_commands_per_second':len(values)*1e6/sum(values)}\n\ndef payloads():\n    owners = {o['NewOrder']['order_id']:o['NewOrder']['account_id'] for o in trace['seed_orders']}\n    result = []\n    for command, expected in trace['trace']:\n        kind, value = next(iter(command.items()))\n        if kind == 'NewOrder':\n            owners[value['order_id']] = value['account_id']\n            account = value['account_id']\n            action = {'side':value['side'], 'qty':value['qty']}\n            if value['kind'] == 'Market':\n                action = {'PlaceMarket':action}\n            else:\n                action['price_tick'] = value['kind']['Limit']['price_tick']\n                action = {'PlaceLimit':action}\n        else:\n            account = owners[value['order_id']]\n            action = {('Cancel' if kind == 'CancelOrder' else 'Amend'):\n                      {k:v for k,v in value.items() if k != 'account_id'}}\n        request = {'participant_id':'mixed-benchmark', 'account_id':account, 'action':action}\n        result.append((json.dumps(request).encode(),expected))\n    return result\n\nrequests = payloads()\nPAIR = None\n\ndef normalized_expected(events):\n    return [{'type':kind, **value} for event in events for kind,value in event.items()]\n\ndef scenario(mode):\n    instrument = {'instrument_id':'BENCH', 'symbol':'BENCH', 'base_asset':'BASE',\n                  'quote_asset':'QUOTE', 'venue_id':'default-venue', 'tick_size':1,'lot_size':1}\n    market = {'instrument':instrument,'clearing':{'maker_fee_ppm':0,'taker_fee_ppm':0},\n              'risk':({'allow_short':False} if mode == 'Spot' else {})}\n    if mode == 'Perp':\n        market['clearing']['leverage'] = 1\n        market['initial_mark_price_tick'] = 1000\n    accounts = [{('Spot' if mode == 'Spot' else 'Basic'):{'account_id':i,'cash_balance':1_000_000_000_000,\n                       **({'position_qty':10_000_000} if mode == 'Spot' else {})}}\n                for i in range(1,9)]\n    return {'room_id':'mixed', 'market':{mode:market},'accounts':accounts,'seed_orders':trace['seed_orders']}\n\ndef case(variant, mode, number, pgport):\n    name = f'mixed_{number}_{variant}_{mode.lower()}' + ('_memory' if memory else '')\n    if not memory:\n        control([pgbin/'createdb.exe','-h','127.0.0.1','-p',pgport,'-U','forge',name])\n    bind = port()\n    caseenv = env | {'MARKETFORGE_BIND_ADDR':f'127.0.0.1:{bind}'}\n    if not memory:\n        caseenv['MARKETFORGE_DATABASE_URL'] = f'postgresql://forge@127.0.0.1:{pgport}/{name}'\n    workdir = out / name\n    workdir.mkdir(exist_ok=True)\n    binary = out / f'{variant}-server.exe'\n    process = None\n    conn = None\n    log = (out/f'{name}.log').open('w',encoding='utf-8')\n    def stop():\n        nonlocal process, conn\n        if conn:\n            conn.close()\n            conn = None\n        if process and process.poll() is None:\n            process.terminate()\n            process.wait(timeout=20)\n        process = None\n    def start():\n        nonlocal process, conn\n        process = launch([str(binary)],4,env=caseenv,cwd=workdir,stdout=log,stderr=subprocess.STDOUT)\n        deadline = time.monotonic()+25\n        while time.monotonic()<deadline:\n            assert process.poll() is None, 'server exited, see '+str(log.name)\n            try:\n                c = http.client.HTTPConnection('127.0.0.1',bind,timeout=20)\n                c.request('GET','/health/ready')\n                r = c.getresponse()\n                r.read()\n                c.close()\n                if r.status==200:\n                    conn = http.client.HTTPConnection('127.0.0.1',bind,timeout=20)\n                    return\n            except OSError:\n                pass\n            time.sleep(.05)\n        raise RuntimeError('server readiness exceeded 25 seconds')\n    def request(method,path,body=None,key=None):\n        headers = {'Content-Type':'application/json'}\n        if key:\n            headers['Idempotency-Key'] = key\n        paired = PAIR is not None and key is not None and key.startswith('command-') and not PAIR.complete\n        if paired:\n            PAIR.wait_turn(variant,int(key.split('-')[1]))\n        start_ns = time.perf_counter_ns()\n        conn.request(method,path,body=body,headers=headers)\n        response = conn.getresponse()\n        raw = response.read()\n        us = (time.perf_counter_ns()-start_ns)/1000\n        if paired:\n            PAIR.done(variant)\n        decoded = json.loads(raw)\n        assert 200<=response.status<300, (response.status,decoded)\n        return decoded,us\n    try:\n        start()\n        request('POST','/rooms',json.dumps({'scenario':scenario(mode),'agents':[],\n                                         'autostart_agents':False}).encode())\n        times=[]\n        categories={}\n        last=None\n        samples=[]\n        for index,(body,expected) in enumerate(requests):\n            key=f'command-{index}'\n            receipt,us=request('POST','/rooms/mixed/instruments/BENCH/orders',body,key)\n            assert receipt['accepted'], (index,receipt)\n            normalized=[{k:v for k,v in event.items() if k!='seq'} for event in receipt['events']]\n            assert normalized==normalized_expected(expected), (index,normalized,expected)\n            times.append(us)\n            samples.append({\"index\":index,\"command_seq\":receipt[\"command_seq\"],\"us\":us,\"action\":next(iter(json.loads(body)[\"action\"])),\"trades\":sum(e[\"type\"]==\"TradePrinted\" for e in receipt[\"events\"])})\n            kind=next(iter(json.loads(body)['action']))\n            categories.setdefault(kind,[]).append(us)\n            last=(body,key,receipt)\n        if PAIR is not None:\n            PAIR.wait_complete()\n        book,_=request('GET','/rooms/mixed/instruments/BENCH/book')\n        assert book==trace['final_book'], (book,trace['final_book'])\n        # Recovery is outside timed request samples. Terminate only this owned\n        # process after all acknowledged commands, then recover from real PG.\n        if not memory:\n            stop()\n            start()\n        recovered,_=request('GET','/rooms/mixed/instruments/BENCH/book')\n        assert recovered==book\n        replayed,_=request('POST','/rooms/mixed/instruments/BENCH/orders',last[0],last[1])\n        assert replayed==last[2]\n        unchanged,_=request('GET','/rooms/mixed/instruments/BENCH/book')\n        assert unchanged==book\n        (out/(name+'-samples.json')).write_text(json.dumps(samples))\n        projection_hashes={}\n        if not memory:\n            for table in ['executions','orders','order_events','trades','market_ticks','account_ledger','position_snapshots']:\n                query=f\"SELECT COALESCE(jsonb_agg(item ORDER BY item::text),'[]'::jsonb)::text FROM (SELECT to_jsonb(t)-'created_at'-'updated_at' AS item FROM marketforge_{table} AS t) AS rows\"\n                values=subprocess.check_output([str(pgbin/'psql.exe'),'-h','127.0.0.1','-p',str(pgport),'-U','forge','-d',name,'-At','-c',query],env=env,cwd=root,creationflags=flags,timeout=30)\n                decoded=json.loads(values)\n                projection_hashes[table]={'rows':len(decoded),'sha256':hashlib.sha256(json.dumps(decoded,sort_keys=True,separators=(',',':')).encode()).hexdigest()}\n        row={'projection_hashes':projection_hashes,'variant':variant,'mode':mode,'run':number,'commands':len(times),'latency':stats(times),\n             'operations':{k:stats(v) for k,v in categories.items()},\n             'all_events_and_final_book_match':True,'postgres_restart_recovery':not memory,\n             'idempotency_replay':True}\n        print(json.dumps(row),flush=True)\n        return row\n    finally:\n        stop()\n        log.close()\n\n",
+    ".local/http-hotpath-optimization/owned_process.py": "\"\"\"Pin owned children before their first instruction (including descendants).\"\"\"\nimport ctypes\nfrom ctypes import wintypes\nimport subprocess\n\nk=ctypes.WinDLL('kernel32',use_last_error=True)\nk.SetProcessAffinityMask.argtypes=[wintypes.HANDLE,ctypes.c_size_t]\nk.SetProcessAffinityMask.restype=wintypes.BOOL\nk.CreateToolhelp32Snapshot.argtypes=[wintypes.DWORD,wintypes.DWORD]\nk.CreateToolhelp32Snapshot.restype=wintypes.HANDLE\nk.OpenThread.argtypes=[wintypes.DWORD,wintypes.BOOL,wintypes.DWORD]\nk.OpenThread.restype=wintypes.HANDLE\nk.ResumeThread.argtypes=[wintypes.HANDLE]\nk.ResumeThread.restype=wintypes.DWORD\nk.CloseHandle.argtypes=[wintypes.HANDLE]\nclass ThreadEntry(ctypes.Structure):\n    _fields_=[('dwSize',wintypes.DWORD),('cntUsage',wintypes.DWORD),\n              ('th32ThreadID',wintypes.DWORD),('th32OwnerProcessID',wintypes.DWORD),\n              ('tpBasePri',wintypes.LONG),('tpDeltaPri',wintypes.LONG),('dwFlags',wintypes.DWORD)]\nk.Thread32First.argtypes=[wintypes.HANDLE,ctypes.POINTER(ThreadEntry)]\nk.Thread32Next.argtypes=[wintypes.HANDLE,ctypes.POINTER(ThreadEntry)]\n\ndef launch(args,affinity,**kwargs):\n    p=subprocess.Popen(args,creationflags=subprocess.CREATE_NO_WINDOW|0x00000004,**kwargs)\n    snapshot=None\n    try:\n        assert k.SetProcessAffinityMask(p._handle,affinity),ctypes.get_last_error()\n        snapshot=k.CreateToolhelp32Snapshot(4,0)\n        assert snapshot!=wintypes.HANDLE(-1).value,ctypes.get_last_error()\n        entry=ThreadEntry();entry.dwSize=ctypes.sizeof(entry)\n        found=k.Thread32First(snapshot,ctypes.byref(entry));resumed=0\n        while found:\n            if entry.th32OwnerProcessID==p.pid:\n                thread=k.OpenThread(2,False,entry.th32ThreadID)\n                assert thread,ctypes.get_last_error()\n                try:\n                    previous=k.ResumeThread(thread)\n                    assert previous!=0xFFFFFFFF,ctypes.get_last_error()\n                    resumed+=int(previous>0)\n                finally:\n                    k.CloseHandle(thread)\n            found=k.Thread32Next(snapshot,ctypes.byref(entry))\n        assert resumed==1,('owned child primary thread not resumed',p.pid,resumed)\n        return p\n    except BaseException:\n        p.kill();p.wait(timeout=20)\n        raise\n    finally:\n        if snapshot:\n            k.CloseHandle(snapshot)\n",
+    ".local/http-hotpath-optimization/run_interleaved.py": "import concurrent.futures\nimport json\nimport threading\nimport http_harness as h\n\nclass Pair:\n    def __init__(self,variants,parity):\n        self.variants=variants\n        self.parity=parity\n        self.index=0\n        self.phase=0\n        self.complete=False\n        self.error=None\n        self.condition=threading.Condition()\n    def turn(self):\n        first=(self.index+self.parity)%2\n        return self.variants[first if self.phase==0 else 1-first]\n    def wait_turn(self,variant,index):\n        with self.condition:\n            assert self.condition.wait_for(lambda:self.error or (self.index==index and self.turn()==variant),timeout=30)\n            if self.error:\n                raise RuntimeError(self.error)\n    def done(self,variant):\n        with self.condition:\n            assert self.turn()==variant\n            self.phase+=1\n            if self.phase==2:\n                self.index+=1\n                self.phase=0\n                self.complete=self.index==len(h.requests)\n            self.condition.notify_all()\n    def wait_complete(self):\n        with self.condition:\n            assert self.condition.wait_for(lambda:self.error or self.complete,timeout=30)\n            if self.error:\n                raise RuntimeError(self.error)\n    def abort(self,error):\n        with self.condition:\n            self.error=str(error)\n            self.condition.notify_all()\n\nassert not (h.data/'postmaster.pid').exists()\npgport=h.port()\nstarted=False\nrows=[]\ntry:\n    h.control([h.pgbin/'pg_ctl.exe','-D',h.data,'-w','-t','20','-l',h.out/'http-postgres.log',\n               '-o',f'-h 127.0.0.1 -p {pgport}','start'])\n    started=True\n    cases=[(['stage2','before'],'Spot'),(['stage2','before'],'Spot')]\n    cases += [(['before','after'],'Spot')]*4\n    cases += [(['before','after'],'Perp')]*2\n    for number,(variants,mode) in enumerate(cases,start=500):\n        pair=Pair(variants,number%2)\n        h.PAIR=pair\n        def worker(variant):\n            try:\n                return h.case(variant,mode,number,pgport)\n            except BaseException as e:\n                pair.abort(e)\n                raise\n        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:\n            futures=[pool.submit(worker,v) for v in variants]\n            results=[f.result() for f in futures]\n        assert results[0]['projection_hashes']==results[1]['projection_hashes']\n        rows.extend(results)\n        (h.out/'interleaved-partial.json').write_text(json.dumps(rows,indent=2),encoding='utf-8')\n        print('completed paired run',number,mode,variants,flush=True)\n    (h.out/'interleaved-results.json').write_text(json.dumps(rows,indent=2),encoding='utf-8')\nfinally:\n    if started:\n        h.control([h.pgbin/'pg_ctl.exe','-D',h.data,'-w','-t','20','-m','fast','stop'])\n",
+    ".local/http-hotpath-optimization/run_comparison.py": "from http_harness import *\nassert not (data/'postmaster.pid').exists()\npgport=port()\nstarted=False\ntry:\n    control([pgbin/'pg_ctl.exe','-D',data,'-w','-t','20','-l',out/'http-postgres.log','-o',f'-h 127.0.0.1 -p {pgport}','start'])\n    started=True\n    rows=[]\n    variants=['stage2','before','after','after','before','stage2','before','stage2','after','after','stage2','before']\n    for i,variant in enumerate(variants,start=300):\n        rows.append(case(variant,'Spot',i,pgport))\n        (out/'comparison-partial.json').write_text(json.dumps(rows,indent=2))\n    assert len({json.dumps(r['projection_hashes'],sort_keys=True) for r in rows})==1,'durable projections differ across variants'\n    for i,variant in enumerate(['before','after','after','before'],start=400):\n        rows.append(case(variant,'Perp',i,pgport))\n    perps=[r for r in rows if r['mode']=='Perp']\n    assert len({json.dumps(r['projection_hashes'],sort_keys=True) for r in perps})==1,'perp projections differ'\n    (out/'comparison-results.json').write_text(json.dumps(rows,indent=2))\nfinally:\n    if started:\n        control([pgbin/'pg_ctl.exe','-D',data,'-w','-t','20','-m','fast','stop'])\n"
+  },
+  "receipt_hashes": {
+    "workspace-tests.log": "e353ce0e665c133ca8ca5ffe2382fd1511d6cfa824c762c9e0727e9198677292",
+    "postgres-tests.log": "c286b5ff13c5a86cc847a9f74b64f8345286f8da870c60b8de7e6a4ca76803d5",
+    "clippy.log": "3b1577972ab168cfdda32b327419864289ca61c181fe45fc2f9ea44d5303eb77",
+    "interleaved-results.json": "550907752062b784e89fa7b5b17c98ed7aba0d99d3697188ed63186dc6ca309e",
+    "comparison-results.json": "fa8098341d6421d149ddd01bad2a22a6ab981e0bb2ed550cd7a3ef560c146fac"
+  }
+}

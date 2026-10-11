@@ -16,7 +16,7 @@ use exchange_core::{
     model::{AccountId, OrderKind, Side},
     transfer::{VenueTransfer, VenueTransferKind, VenueTransferRejectReason, VenueTransferStatus},
 };
-use postgres::{Client, NoTls, error::SqlState};
+use postgres::{Client, NoTls, error::SqlState, types::Type};
 use serde::{Deserialize, Serialize, de::Error as _};
 use serde_json::Value;
 
@@ -2858,6 +2858,9 @@ impl PostgresJournalStore {
         tx: &mut postgres::Transaction<'_>,
         record: &JournalExecution,
     ) -> Result<(), JournalError> {
+        // These hot projection statements bind the migration schema types.
+        // execute_typed sends Parse/Bind/Execute together; execute(&str) would
+        // first prepare the same SQL again for each command/event/ledger row.
         validate_execution_idempotency(record)?;
         let command_seq = i64::try_from(record.command_seq)
             .map_err(|_| JournalError::SequenceOutOfRange(record.command_seq))?;
@@ -2872,7 +2875,7 @@ impl PostgresJournalStore {
         let command_json = record.command_json()?;
         let execution_json = record.execution_json()?;
 
-        tx.execute(
+        tx.execute_typed(
             r#"
             INSERT INTO marketforge_executions (
                 room_id,
@@ -2892,19 +2895,19 @@ impl PostgresJournalStore {
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             "#,
             &[
-                &record.room_id,
-                &command_seq,
-                &record.participant_id,
-                &account_id,
-                &command_json,
-                &execution_json,
-                &record.execution.accepted,
-                &record.execution.reject_reason,
-                &clearing_event_count,
-                &market_time_ms,
-                &record.request_user_id,
-                &record.idempotency_key,
-                &record.request_fingerprint,
+                (&record.room_id, Type::TEXT),
+                (&command_seq, Type::INT8),
+                (&record.participant_id, Type::TEXT),
+                (&account_id, Type::TEXT),
+                (&command_json, Type::JSONB),
+                (&execution_json, Type::JSONB),
+                (&record.execution.accepted, Type::BOOL),
+                (&record.execution.reject_reason, Type::TEXT),
+                (&clearing_event_count, Type::INT4),
+                (&market_time_ms, Type::INT8),
+                (&record.request_user_id, Type::TEXT),
+                (&record.idempotency_key, Type::TEXT),
+                (&record.request_fingerprint, Type::TEXT),
             ],
         )
         .map_err(JournalError::Postgres)?;
@@ -3001,7 +3004,7 @@ impl PostgresJournalStore {
             };
 
             let inserted = tx
-                .execute(
+                .execute_typed(
                     r#"
                 INSERT INTO marketforge_orders (
                     room_id,
@@ -3024,18 +3027,18 @@ impl PostgresJournalStore {
                 ON CONFLICT (room_id, instrument_id, order_id) DO NOTHING
                 "#,
                     &[
-                        &record.room_id,
-                        &instrument_id,
-                        &order_id,
-                        &account_id,
-                        &record.participant_id,
-                        &side_name(order.side),
-                        &order_type,
-                        &limit_price_tick,
-                        &original_qty,
-                        &initial_status,
-                        &command_seq,
-                        &market_time_ms,
+                        (&record.room_id, Type::TEXT),
+                        (&instrument_id, Type::TEXT),
+                        (&order_id, Type::INT8),
+                        (&account_id, Type::INT8),
+                        (&record.participant_id, Type::TEXT),
+                        (&side_name(order.side), Type::TEXT),
+                        (&order_type, Type::TEXT),
+                        (&limit_price_tick, Type::INT8),
+                        (&original_qty, Type::INT8),
+                        (&initial_status, Type::TEXT),
+                        (&command_seq, Type::INT8),
+                        (&market_time_ms, Type::INT8),
                     ],
                 )
                 .map_err(JournalError::Postgres)?;
@@ -3078,7 +3081,7 @@ impl PostgresJournalStore {
                 let taker_account_id = i64_from_u64(*taker_account_id, "taker_account_id")?;
                 let qty = i64_from_u64(*qty, "qty")?;
 
-                tx.execute(
+                tx.execute_typed(
                     r#"
                     INSERT INTO marketforge_trades (
                         room_id,
@@ -3098,24 +3101,24 @@ impl PostgresJournalStore {
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                     "#,
                     &[
-                        &record.room_id,
-                        &instrument_id,
-                        &trade_id,
-                        &command_seq,
-                        &event_seq,
-                        &maker_order_id,
-                        &maker_account_id,
-                        &taker_order_id,
-                        &taker_account_id,
-                        price_tick,
-                        &qty,
-                        &side_name(*taker_side),
-                        &market_time_ms,
+                        (&record.room_id, Type::TEXT),
+                        (&instrument_id, Type::TEXT),
+                        (&trade_id, Type::INT8),
+                        (&command_seq, Type::INT8),
+                        (&event_seq, Type::INT8),
+                        (&maker_order_id, Type::INT8),
+                        (&maker_account_id, Type::INT8),
+                        (&taker_order_id, Type::INT8),
+                        (&taker_account_id, Type::INT8),
+                        (price_tick, Type::INT8),
+                        (&qty, Type::INT8),
+                        (&side_name(*taker_side), Type::TEXT),
+                        (&market_time_ms, Type::INT8),
                     ],
                 )
                 .map_err(JournalError::Postgres)?;
 
-                tx.execute(
+                tx.execute_typed(
                     r#"
                     INSERT INTO marketforge_market_ticks (
                         room_id,
@@ -3138,15 +3141,15 @@ impl PostgresJournalStore {
                         market_time_ms = EXCLUDED.market_time_ms
                     "#,
                     &[
-                        &record.room_id,
-                        &instrument_id,
-                        &command_seq,
-                        &event_seq,
-                        &trade_id,
-                        price_tick,
-                        &qty,
-                        &side_name(*taker_side),
-                        &market_time_ms,
+                        (&record.room_id, Type::TEXT),
+                        (&instrument_id, Type::TEXT),
+                        (&command_seq, Type::INT8),
+                        (&event_seq, Type::INT8),
+                        (&trade_id, Type::INT8),
+                        (price_tick, Type::INT8),
+                        (&qty, Type::INT8),
+                        (&side_name(*taker_side), Type::TEXT),
+                        (&market_time_ms, Type::INT8),
                     ],
                 )
                 .map_err(JournalError::Postgres)?;
@@ -3182,7 +3185,7 @@ impl PostgresJournalStore {
             .map(|qty| i64_from_u64(qty, "remaining_qty"))
             .transpose()?;
 
-        tx.execute(
+        tx.execute_typed(
             r#"
             INSERT INTO marketforge_order_events (
                 room_id,
@@ -3209,17 +3212,17 @@ impl PostgresJournalStore {
                 payload_json = EXCLUDED.payload_json
             "#,
             &[
-                &record.room_id,
-                &instrument_id,
-                &command_seq,
-                &event_seq,
-                &event_type(event),
-                &order_id,
-                &reason,
-                &price_tick,
-                &qty,
-                &remaining_qty,
-                &payload_json,
+                (&record.room_id, Type::TEXT),
+                (&instrument_id, Type::TEXT),
+                (&command_seq, Type::INT8),
+                (&event_seq, Type::INT8),
+                (&event_type(event), Type::TEXT),
+                (&order_id, Type::INT8),
+                (&reason, Type::TEXT),
+                (&price_tick, Type::INT8),
+                (&qty, Type::INT8),
+                (&remaining_qty, Type::INT8),
+                (&payload_json, Type::JSONB),
             ],
         )
         .map_err(JournalError::Postgres)?;
@@ -3253,7 +3256,7 @@ impl PostgresJournalStore {
             .map(|qty| i64_from_u64(qty, "remaining_qty"))
             .transpose()?;
 
-        tx.execute(
+        tx.execute_typed(
             r#"
             UPDATE marketforge_orders
             SET
@@ -3266,14 +3269,14 @@ impl PostgresJournalStore {
             WHERE room_id = $1 AND instrument_id = $2 AND order_id = $3
             "#,
             &[
-                &record.room_id,
-                &instrument_id,
-                &order_id,
-                &status,
-                &remaining_qty,
-                &limit_price_tick,
-                &command_seq,
-                &market_time_ms,
+                (&record.room_id, Type::TEXT),
+                (&instrument_id, Type::TEXT),
+                (&order_id, Type::INT8),
+                (&status, Type::TEXT),
+                (&remaining_qty, Type::INT8),
+                (&limit_price_tick, Type::INT8),
+                (&command_seq, Type::INT8),
+                (&market_time_ms, Type::INT8),
             ],
         )
         .map_err(JournalError::Postgres)?;
@@ -3295,7 +3298,7 @@ impl PostgresJournalStore {
         for (index, event) in record.execution.clearing_events.iter().enumerate() {
             let rows = clearing_ledger_rows(index, event)?;
             for row in rows {
-                tx.execute(
+                tx.execute_typed(
                     r#"
                     INSERT INTO marketforge_account_ledger (
                         room_id,
@@ -3358,39 +3361,39 @@ impl PostgresJournalStore {
                         payload_json = EXCLUDED.payload_json
                     "#,
                     &[
-                        &record.room_id,
-                        &instrument_id,
-                        &command_seq,
-                        &row.ledger_seq,
-                        &row.market_kind,
-                        &row.account_id,
-                        &row.trade_id,
-                        &row.account_side,
-                        &row.cash_delta,
-                        &row.position_delta,
-                        &row.fee,
-                        &row.realized_pnl,
-                        &row.price_tick,
-                        &row.qty,
-                        &row.notional,
-                        &row.cash_balance,
-                        &row.position_qty,
-                        &row.avg_entry_price_tick,
-                        &row.realized_pnl_total,
-                        &row.unrealized_pnl,
-                        &row.equity,
-                        &row.initial_margin,
-                        &row.maintenance_margin,
-                        &row.portfolio_initial_margin,
-                        &row.portfolio_maintenance_margin,
-                        &row.margin_status,
-                        &row.fees_paid,
-                        &row.payload_json,
+                        (&record.room_id, Type::TEXT),
+                        (&instrument_id, Type::TEXT),
+                        (&command_seq, Type::INT8),
+                        (&row.ledger_seq, Type::INT8),
+                        (&row.market_kind, Type::TEXT),
+                        (&row.account_id, Type::INT8),
+                        (&row.trade_id, Type::INT8),
+                        (&row.account_side, Type::TEXT),
+                        (&row.cash_delta, Type::INT8),
+                        (&row.position_delta, Type::INT8),
+                        (&row.fee, Type::INT8),
+                        (&row.realized_pnl, Type::INT8),
+                        (&row.price_tick, Type::INT8),
+                        (&row.qty, Type::INT8),
+                        (&row.notional, Type::INT8),
+                        (&row.cash_balance, Type::INT8),
+                        (&row.position_qty, Type::INT8),
+                        (&row.avg_entry_price_tick, Type::INT8),
+                        (&row.realized_pnl_total, Type::INT8),
+                        (&row.unrealized_pnl, Type::INT8),
+                        (&row.equity, Type::INT8),
+                        (&row.initial_margin, Type::INT8),
+                        (&row.maintenance_margin, Type::INT8),
+                        (&row.portfolio_initial_margin, Type::INT8),
+                        (&row.portfolio_maintenance_margin, Type::INT8),
+                        (&row.margin_status, Type::TEXT),
+                        (&row.fees_paid, Type::INT8),
+                        (&row.payload_json, Type::JSONB),
                     ],
                 )
                 .map_err(JournalError::Postgres)?;
 
-                tx.execute(
+                tx.execute_typed(
                     r#"
                     INSERT INTO marketforge_position_snapshots (
                         room_id,
@@ -3436,26 +3439,26 @@ impl PostgresJournalStore {
                         payload_json = EXCLUDED.payload_json
                     "#,
                     &[
-                        &record.room_id,
-                        &instrument_id,
-                        &command_seq,
-                        &row.ledger_seq,
-                        &row.market_kind,
-                        &row.account_id,
-                        &row.trade_id,
-                        &row.cash_balance,
-                        &row.position_qty,
-                        &row.avg_entry_price_tick,
-                        &row.realized_pnl_total,
-                        &row.unrealized_pnl,
-                        &row.equity,
-                        &row.initial_margin,
-                        &row.maintenance_margin,
-                        &row.portfolio_initial_margin,
-                        &row.portfolio_maintenance_margin,
-                        &row.margin_status,
-                        &row.fees_paid,
-                        &row.payload_json,
+                        (&record.room_id, Type::TEXT),
+                        (&instrument_id, Type::TEXT),
+                        (&command_seq, Type::INT8),
+                        (&row.ledger_seq, Type::INT8),
+                        (&row.market_kind, Type::TEXT),
+                        (&row.account_id, Type::INT8),
+                        (&row.trade_id, Type::INT8),
+                        (&row.cash_balance, Type::INT8),
+                        (&row.position_qty, Type::INT8),
+                        (&row.avg_entry_price_tick, Type::INT8),
+                        (&row.realized_pnl_total, Type::INT8),
+                        (&row.unrealized_pnl, Type::INT8),
+                        (&row.equity, Type::INT8),
+                        (&row.initial_margin, Type::INT8),
+                        (&row.maintenance_margin, Type::INT8),
+                        (&row.portfolio_initial_margin, Type::INT8),
+                        (&row.portfolio_maintenance_margin, Type::INT8),
+                        (&row.margin_status, Type::TEXT),
+                        (&row.fees_paid, Type::INT8),
+                        (&row.payload_json, Type::JSONB),
                     ],
                 )
                 .map_err(JournalError::Postgres)?;

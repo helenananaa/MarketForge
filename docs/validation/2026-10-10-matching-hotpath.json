@@ -1,0 +1,5087 @@
+{
+  "title": "Matching hot-path iteration: incremental node chunks, direct price extrema and in-place partial fills",
+  "date": "2026-10-10",
+  "base_head": "71b58e9f9de3a9aede2521af9729d844d8913ace",
+  "status": "implemented and validated locally; not committed or pushed",
+  "previous_stage_report": "docs/validation/2026-10-10-order-transactions.json",
+  "architecture": {
+    "transaction": "Command-level isolated candidates and clearing-failure rollback retained. No undo-log replacement or relaxation of failure contracts.",
+    "nodes": "Order ID -> compact slot handle in a persistent ordered index; large order nodes in persistent Vector chunks. FIFO links and price heads/tails use direct private slot handles. Freed slots are reused within each candidate version.",
+    "prices": "Use ordered-map get_min/get_max instead of constructing a keys iterator for each best-price lookup.",
+    "partial_fill": "Update remaining quantity and cached level total in place; preserve the existing FIFO links and account index instead of removing and reinserting the maker.",
+    "reduce_only": "Skip the reduce-only scan when there are no protected orders. Earlier attribution of two allocations per fill to the empty set was incorrect; the isolated extrema probe identifies the nonempty price-tree iterator as their source.",
+    "checkpoint": "Legacy queue/location JSON fields remain; slot handles and account indexes are derived on restore.",
+    "memory": "Arena chunks/free list share immutable versions. Slots are reused, but the active arena retains capacity up to its historical peak slot count; checkpoint reconstruction compacts it. This is not a claim of bounded total memory because accepted order IDs and histories are also retained.",
+    "selection": "A hash-trie of compact slot handles was also tested locally and was slower on the exploratory matrix; the final implementation keeps an ordered index."
+  },
+  "correctness": {
+    "workspace": {
+      "passed": 541,
+      "failed": 0,
+      "ignored": 12,
+      "command": "PATH=.venv/Scripts;<existing PATH>; cargo test --workspace -- --test-threads=1",
+      "log": ".local/hotpath-optimization/workspace-tests.log"
+    },
+    "postgres": {
+      "passed": 216,
+      "failed": 0,
+      "ignored": 1,
+      "real_postgres_required": true,
+      "isolated_cluster_stopped": true,
+      "command": ".venv/Scripts/python.exe .local/hotpath-optimization/run_postgres_tests.py",
+      "log": ".local/hotpath-optimization/postgres-tests.log"
+    },
+    "differential": {
+      "complete_state_and_events_equal": true,
+      "golden_raw_commands": 320,
+      "old_checkpoint_imports": 300,
+      "passed": true,
+      "perp_commands": 10000,
+      "raw_commands": 10000,
+      "seeds": [
+        1,
+        7,
+        23,
+        99,
+        2026
+      ],
+      "spot_commands": 10000
+    },
+    "differential_scope": "5 seeds, 16 accounts, limit/post-only/IOC/FOK/market/cancel/amend, duplicate/invalid IDs and quantities. Randomized stream uses Both position side and excludes reduce-only; existing core/server tests cover hedge/reduce-only/protection/liquidation.",
+    "new_regression": "128 slots, eight complete cancel/refill generations, partial-head FIFO, old live and empty candidates remain independent, slots reused without arena growth, serialize/restore and continue matching.",
+    "golden_fixture_unchanged": true,
+    "quality": {
+      "clippy": "cargo clippy --workspace --all-targets -- -D warnings: passed",
+      "format": "cargo fmt --all -- --check: passed",
+      "whitespace": "git diff --check: passed"
+    }
+  },
+  "performance": {
+    "environment": {
+      "cpu": "Intel Core i9-13900HX",
+      "logical_processors": 32,
+      "rustc": "1.97.1",
+      "profile": "release",
+      "same_benchmark_sources": true,
+      "serde_json_both": "1.0.150",
+      "baseline_core_version_alias": "0.0.0 (only to allow old/current differential dependencies)",
+      "own_tests_and_builds_stopped_during_final_measurements": true,
+      "other_host_workload_isolated": false,
+      "stage1_core_version_alias": "0.0.1 (only to allow frozen stage1 dependency)",
+      "same_matching_source_in_all_three": true
+    },
+    "method": "Each matrix: legacy, stage1, current, current, stage1, legacy; three blocks per executable, median of six block medians per variant. All own tests/builds stopped during final measurements. Other work on this Windows host was not isolated; values are local microbenchmarks, not service SLO or production qualification.",
+    "matching_scope": "Release, two spot accounts, one price, unit makers, 1/100/1000 complete fills, sequential and permuted IDs; partial rows fill 1 of a 1000-unit head maker. Empty input event history. Shared raw resets clone the seed; unique raw resets independently deserialize it; both resets are excluded. Spot apply includes its internal candidate and clearing. All event/account assertions and state/result destruction excluded. 5 warmups, 20 samples, 3 blocks. Seed validated against ordinary apply at 16 makers. No server, journal, network or durable commit timing.",
+    "matching_comparability": "Shared reset excludes its clone: old queues are copied and unique, persistent versions still share nodes with the live seed. Unique reset independently deserializes each variant outside the timer; decoding also changes allocation/cache layout, so it is a distinct workload. Both are reported. Legacy raw has no equivalent command rollback; spot apply includes candidate/clearing/old-state drop. Assertions and result/state destruction excluded. Blocks alternate book sizes. IDs are sequential or a coprime permutation, avoiding a favorable key-locality-only conclusion.",
+    "matching": [
+      {
+        "orders": 100,
+        "shuffled_ids": false,
+        "maker_fills": 1,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.19999999999999998,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.3
+              ],
+              "median_block_p95_us": 0.3,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 2.6,
+              "block_medians_us": [
+                4.7,
+                2.5,
+                2.5,
+                2.9000000000000004,
+                2.5,
+                2.7
+              ],
+              "median_block_p95_us": 2.75,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 2.0,
+              "block_medians_us": [
+                2.4,
+                2.0,
+                1.7999999999999998,
+                2.0,
+                2.2,
+                1.9
+              ],
+              "median_block_p95_us": 2.15,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 0.5,
+              "block_medians_us": [
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5
+              ],
+              "median_block_p95_us": 0.7999999999999999,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 4.25,
+              "block_medians_us": [
+                4.300000000000001,
+                4.199999999999999,
+                4.0,
+                4.300000000000001,
+                4.1,
+                4.300000000000001
+              ],
+              "median_block_p95_us": 4.4,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 2.0,
+              "block_medians_us": [
+                2.2,
+                2.0,
+                1.7999999999999998,
+                2.0,
+                2.6,
+                1.7999999999999998
+              ],
+              "median_block_p95_us": 2.2,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 0.3,
+              "block_medians_us": [
+                0.39999999999999997,
+                0.3,
+                0.3,
+                0.39999999999999997,
+                0.3,
+                0.3
+              ],
+              "median_block_p95_us": 0.7,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 4.4,
+              "block_medians_us": [
+                4.5,
+                7.300000000000001,
+                4.300000000000001,
+                4.1,
+                4.8999999999999995,
+                3.8
+              ],
+              "median_block_p95_us": 5.4,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 1.0,
+          "book_match_unique": 0.6,
+          "spot_match": 1.035294117647059
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 20.0,
+          "book_match_unique": 1.5,
+          "spot_match": 1.6923076923076923
+        }
+      },
+      {
+        "orders": 100,
+        "shuffled_ids": false,
+        "maker_fills": 100,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 5.25,
+              "block_medians_us": [
+                7.8,
+                5.3,
+                5.1000000000000005,
+                4.8999999999999995,
+                5.2,
+                5.4
+              ],
+              "median_block_p95_us": 5.9,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 6.1,
+              "block_medians_us": [
+                8.5,
+                5.699999999999999,
+                5.9,
+                5.4,
+                7.9,
+                6.3
+              ],
+              "median_block_p95_us": 7.6,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 134.75,
+              "block_medians_us": [
+                229.8,
+                101.0,
+                104.1,
+                253.79999999999998,
+                160.4,
+                109.1
+              ],
+              "median_block_p95_us": 187.54999999999998,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 34.3,
+              "block_medians_us": [
+                34.8,
+                33.0,
+                33.699999999999996,
+                33.800000000000004,
+                35.3,
+                37.4
+              ],
+              "median_block_p95_us": 35.5,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 28.65,
+              "block_medians_us": [
+                28.900000000000002,
+                28.099999999999998,
+                28.2,
+                35.7,
+                28.4,
+                33.1
+              ],
+              "median_block_p95_us": 45.25,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 66.6,
+              "block_medians_us": [
+                166.5,
+                61.50000000000001,
+                61.699999999999996,
+                140.0,
+                63.7,
+                69.5
+              ],
+              "median_block_p95_us": 93.25,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 18.9,
+              "block_medians_us": [
+                21.5,
+                29.3,
+                18.8,
+                19.0,
+                18.2,
+                18.0
+              ],
+              "median_block_p95_us": 27.450000000000003,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 16.6,
+              "block_medians_us": [
+                18.8,
+                26.299999999999997,
+                16.7,
+                16.5,
+                15.9,
+                15.6
+              ],
+              "median_block_p95_us": 21.3,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 47.45,
+              "block_medians_us": [
+                111.8,
+                48.0,
+                46.9,
+                120.19999999999999,
+                44.9,
+                43.800000000000004
+              ],
+              "median_block_p95_us": 67.25,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.5510204081632654,
+          "book_match_unique": 0.5794066317626528,
+          "spot_match": 0.7124624624624626
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 3.5999999999999996,
+          "book_match_unique": 2.7213114754098364,
+          "spot_match": 0.3521335807050093
+        }
+      },
+      {
+        "orders": 100,
+        "shuffled_ids": true,
+        "maker_fills": 1,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.35,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 2.55,
+              "block_medians_us": [
+                2.6,
+                2.5,
+                2.5,
+                2.6,
+                2.5,
+                2.7
+              ],
+              "median_block_p95_us": 2.7,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 1.95,
+              "block_medians_us": [
+                2.0999999999999996,
+                2.0,
+                1.7999999999999998,
+                3.1,
+                1.9,
+                1.9
+              ],
+              "median_block_p95_us": 2.1999999999999997,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 0.6,
+              "block_medians_us": [
+                0.6,
+                0.5,
+                0.6,
+                0.7,
+                0.5,
+                0.6
+              ],
+              "median_block_p95_us": 1.1,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 4.1,
+              "block_medians_us": [
+                4.5,
+                3.9,
+                4.1,
+                4.300000000000001,
+                4.1,
+                4.1
+              ],
+              "median_block_p95_us": 4.3,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 1.9,
+              "block_medians_us": [
+                2.4,
+                2.0,
+                1.7999999999999998,
+                2.0999999999999996,
+                1.7999999999999998,
+                1.7999999999999998
+              ],
+              "median_block_p95_us": 2.2,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 0.3,
+              "block_medians_us": [
+                0.3,
+                0.39999999999999997,
+                0.3,
+                0.3,
+                0.39999999999999997,
+                0.3
+              ],
+              "median_block_p95_us": 0.44999999999999996,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 4.25,
+              "block_medians_us": [
+                4.300000000000001,
+                4.199999999999999,
+                4.1,
+                4.300000000000001,
+                6.9,
+                3.7
+              ],
+              "median_block_p95_us": 4.5,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.9743589743589743,
+          "book_match_unique": 0.5,
+          "spot_match": 1.0365853658536586
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 19.0,
+          "book_match_unique": 1.5,
+          "spot_match": 1.6666666666666667
+        }
+      },
+      {
+        "orders": 100,
+        "shuffled_ids": true,
+        "maker_fills": 100,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 5.050000000000001,
+              "block_medians_us": [
+                4.8999999999999995,
+                5.0,
+                5.2,
+                5.1000000000000005,
+                5.0,
+                5.699999999999999
+              ],
+              "median_block_p95_us": 5.8999999999999995,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 5.8500000000000005,
+              "block_medians_us": [
+                5.800000000000001,
+                5.800000000000001,
+                5.9,
+                5.9,
+                5.699999999999999,
+                6.3
+              ],
+              "median_block_p95_us": 6.2,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 109.19999999999999,
+              "block_medians_us": [
+                196.0,
+                111.0,
+                103.1,
+                158.2,
+                102.5,
+                107.39999999999999
+              ],
+              "median_block_p95_us": 177.7,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 35.5,
+              "block_medians_us": [
+                38.0,
+                35.2,
+                34.0,
+                34.400000000000006,
+                35.800000000000004,
+                36.8
+              ],
+              "median_block_p95_us": 39.7,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 31.25,
+              "block_medians_us": [
+                32.199999999999996,
+                29.8,
+                30.800000000000004,
+                40.1,
+                30.5,
+                31.7
+              ],
+              "median_block_p95_us": 33.0,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 67.85,
+              "block_medians_us": [
+                155.1,
+                66.1,
+                67.3,
+                153.3,
+                68.39999999999999,
+                66.4
+              ],
+              "median_block_p95_us": 113.60000000000002,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 19.0,
+              "block_medians_us": [
+                19.599999999999998,
+                19.2,
+                18.8,
+                18.7,
+                28.099999999999998,
+                17.900000000000002
+              ],
+              "median_block_p95_us": 19.7,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 16.4,
+              "block_medians_us": [
+                17.6,
+                16.900000000000002,
+                16.6,
+                16.2,
+                15.7,
+                16.2
+              ],
+              "median_block_p95_us": 20.05,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 62.85,
+              "block_medians_us": [
+                140.2,
+                77.60000000000001,
+                48.099999999999994,
+                133.8,
+                46.6,
+                45.5
+              ],
+              "median_block_p95_us": 100.1,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.5352112676056338,
+          "book_match_unique": 0.5247999999999999,
+          "spot_match": 0.9263080324244658
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 3.7623762376237617,
+          "book_match_unique": 2.803418803418803,
+          "spot_match": 0.5755494505494506
+        }
+      },
+      {
+        "orders": 10000,
+        "shuffled_ids": false,
+        "maker_fills": 1,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 0.3,
+              "block_medians_us": [
+                0.8999999999999999,
+                0.3,
+                0.3,
+                0.5,
+                0.19999999999999998,
+                0.3
+              ],
+              "median_block_p95_us": 0.7999999999999999,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 2.6,
+              "block_medians_us": [
+                3.0,
+                0.7999999999999999,
+                2.7,
+                2.5,
+                1.5,
+                4.5
+              ],
+              "median_block_p95_us": 5.5,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 225.45,
+              "block_medians_us": [
+                839.9,
+                168.3,
+                184.7,
+                980.1,
+                229.7,
+                221.20000000000002
+              ],
+              "median_block_p95_us": 590.75,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 3.65,
+              "block_medians_us": [
+                3.5999999999999996,
+                3.5,
+                3.5999999999999996,
+                3.8,
+                3.7,
+                6.2
+              ],
+              "median_block_p95_us": 4.3500000000000005,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 12.05,
+              "block_medians_us": [
+                12.9,
+                12.3,
+                11.7,
+                11.8,
+                11.2,
+                12.5
+              ],
+              "median_block_p95_us": 18.799999999999997,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 6.95,
+              "block_medians_us": [
+                8.9,
+                6.9,
+                6.5,
+                9.3,
+                7.0,
+                6.8
+              ],
+              "median_block_p95_us": 7.7,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 3.0999999999999996,
+              "block_medians_us": [
+                3.5,
+                2.8,
+                5.0,
+                3.4,
+                2.8,
+                2.8
+              ],
+              "median_block_p95_us": 3.6499999999999995,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 8.350000000000001,
+              "block_medians_us": [
+                9.799999999999999,
+                7.4,
+                17.0,
+                8.600000000000001,
+                8.1,
+                8.1
+              ],
+              "median_block_p95_us": 12.4,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 6.699999999999999,
+              "block_medians_us": [
+                7.0,
+                6.3999999999999995,
+                7.199999999999999,
+                7.1,
+                6.1,
+                5.9
+              ],
+              "median_block_p95_us": 7.4,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.8493150684931506,
+          "book_match_unique": 0.6929460580912864,
+          "spot_match": 0.9640287769784172
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 10.333333333333332,
+          "book_match_unique": 3.211538461538462,
+          "spot_match": 0.029718341095586603
+        }
+      },
+      {
+        "orders": 10000,
+        "shuffled_ids": false,
+        "maker_fills": 100,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 6.800000000000001,
+              "block_medians_us": [
+                16.7,
+                6.3999999999999995,
+                6.9,
+                19.1,
+                5.5,
+                6.7
+              ],
+              "median_block_p95_us": 7.75,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 11.799999999999999,
+              "block_medians_us": [
+                11.399999999999999,
+                9.2,
+                13.9,
+                12.2,
+                9.5,
+                12.6
+              ],
+              "median_block_p95_us": 17.1,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 14742.7,
+              "block_medians_us": [
+                15863.9,
+                13021.0,
+                16482.6,
+                14650.6,
+                12471.4,
+                14834.800000000001
+              ],
+              "median_block_p95_us": 16836.55,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 73.7,
+              "block_medians_us": [
+                71.8,
+                77.60000000000001,
+                74.1,
+                84.9,
+                69.5,
+                73.30000000000001
+              ],
+              "median_block_p95_us": 77.05,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 93.4,
+              "block_medians_us": [
+                84.9,
+                80.3,
+                133.39999999999998,
+                97.80000000000001,
+                89.0,
+                108.8
+              ],
+              "median_block_p95_us": 144.39999999999998,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 120.94999999999999,
+              "block_medians_us": [
+                119.3,
+                113.2,
+                206.3,
+                110.0,
+                122.6,
+                129.9
+              ],
+              "median_block_p95_us": 172.45,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 28.799999999999997,
+              "block_medians_us": [
+                28.5,
+                29.099999999999998,
+                32.199999999999996,
+                28.4,
+                29.5,
+                26.9
+              ],
+              "median_block_p95_us": 30.05,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 54.05,
+              "block_medians_us": [
+                58.6,
+                58.300000000000004,
+                75.6,
+                49.8,
+                48.900000000000006,
+                49.7
+              ],
+              "median_block_p95_us": 79.75,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 65.05,
+              "block_medians_us": [
+                66.3,
+                68.30000000000001,
+                77.3,
+                63.800000000000004,
+                63.7,
+                63.3
+              ],
+              "median_block_p95_us": 74.7,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.3907734056987788,
+          "book_match_unique": 0.5786937901498929,
+          "spot_match": 0.537825547747003
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 4.235294117647058,
+          "book_match_unique": 4.580508474576272,
+          "spot_match": 0.0044123532324472445
+        }
+      },
+      {
+        "orders": 10000,
+        "shuffled_ids": false,
+        "maker_fills": 1000,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 82.75,
+              "block_medians_us": [
+                199.2,
+                43.0,
+                86.89999999999999,
+                171.29999999999998,
+                46.0,
+                78.6
+              ],
+              "median_block_p95_us": 156.85000000000002,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 100.9,
+              "block_medians_us": [
+                113.4,
+                51.6,
+                125.69999999999999,
+                158.8,
+                59.8,
+                88.39999999999999
+              ],
+              "median_block_p95_us": 146.0,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 125337.0,
+              "block_medians_us": [
+                124732.6,
+                125941.40000000001,
+                131328.59999999998,
+                123908.8,
+                123512.7,
+                143134.5
+              ],
+              "median_block_p95_us": 144389.80000000002,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 777.25,
+              "block_medians_us": [
+                713.5,
+                678.0999999999999,
+                841.0,
+                1244.8999999999999,
+                694.6,
+                1091.2
+              ],
+              "median_block_p95_us": 1222.05,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 591.6500000000001,
+              "block_medians_us": [
+                598.3,
+                597.3000000000001,
+                772.4,
+                586.0,
+                481.09999999999997,
+                487.3
+              ],
+              "median_block_p95_us": 840.0,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 1063.3999999999999,
+              "block_medians_us": [
+                1040.1,
+                1086.6999999999998,
+                1318.6000000000001,
+                2007.8999999999999,
+                990.6999999999999,
+                1021.5
+              ],
+              "median_block_p95_us": 1296.05,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 281.8,
+              "block_medians_us": [
+                271.0,
+                300.7,
+                350.2,
+                269.09999999999997,
+                292.6,
+                264.9
+              ],
+              "median_block_p95_us": 302.95000000000005,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 347.5,
+              "block_medians_us": [
+                365.5,
+                339.3,
+                435.3,
+                355.70000000000005,
+                336.09999999999997,
+                302.59999999999997
+              ],
+              "median_block_p95_us": 465.65,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 941.75,
+              "block_medians_us": [
+                1027.2,
+                921.7,
+                653.0,
+                961.8,
+                972.0,
+                656.6999999999999
+              ],
+              "median_block_p95_us": 1267.9,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.3625603087809585,
+          "book_match_unique": 0.5873404884644637,
+          "spot_match": 0.885602783524544
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 3.405438066465257,
+          "book_match_unique": 3.44400396432111,
+          "spot_match": 0.00751374294900947
+        }
+      },
+      {
+        "orders": 10000,
+        "shuffled_ids": true,
+        "maker_fills": 1,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 0.3,
+              "block_medians_us": [
+                0.3,
+                0.19999999999999998,
+                0.3,
+                0.3,
+                0.3,
+                0.39999999999999997
+              ],
+              "median_block_p95_us": 0.6,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 1.5499999999999998,
+              "block_medians_us": [
+                1.5999999999999999,
+                1.5999999999999999,
+                1.5,
+                1.4,
+                1.2,
+                6.3999999999999995
+              ],
+              "median_block_p95_us": 4.5,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 225.35000000000002,
+              "block_medians_us": [
+                615.3000000000001,
+                187.4,
+                167.2,
+                662.4,
+                167.1,
+                263.3
+              ],
+              "median_block_p95_us": 359.25,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 4.05,
+              "block_medians_us": [
+                4.1,
+                3.5,
+                5.800000000000001,
+                3.4,
+                4.1,
+                4.0
+              ],
+              "median_block_p95_us": 4.45,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 10.8,
+              "block_medians_us": [
+                11.399999999999999,
+                12.1,
+                15.9,
+                10.200000000000001,
+                9.700000000000001,
+                9.9
+              ],
+              "median_block_p95_us": 16.5,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 6.85,
+              "block_medians_us": [
+                7.4,
+                6.8,
+                6.9,
+                7.0,
+                6.7,
+                6.6000000000000005
+              ],
+              "median_block_p95_us": 7.1499999999999995,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 2.9000000000000004,
+              "block_medians_us": [
+                2.8,
+                2.9000000000000004,
+                3.0,
+                2.9000000000000004,
+                2.9000000000000004,
+                2.8
+              ],
+              "median_block_p95_us": 3.1999999999999997,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 8.8,
+              "block_medians_us": [
+                8.5,
+                12.700000000000001,
+                7.5,
+                9.799999999999999,
+                8.3,
+                9.1
+              ],
+              "median_block_p95_us": 18.95,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 6.2,
+              "block_medians_us": [
+                6.2,
+                6.5,
+                6.0,
+                6.2,
+                6.1,
+                6.2
+              ],
+              "median_block_p95_us": 6.6000000000000005,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.7160493827160495,
+          "book_match_unique": 0.8148148148148149,
+          "spot_match": 0.905109489051095
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 9.666666666666668,
+          "book_match_unique": 5.677419354838711,
+          "spot_match": 0.02751275793210561
+        }
+      },
+      {
+        "orders": 10000,
+        "shuffled_ids": true,
+        "maker_fills": 100,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 6.25,
+              "block_medians_us": [
+                6.2,
+                5.6,
+                6.0,
+                7.6,
+                6.3,
+                9.2
+              ],
+              "median_block_p95_us": 9.45,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 10.65,
+              "block_medians_us": [
+                10.1,
+                9.799999999999999,
+                11.1,
+                23.0,
+                10.200000000000001,
+                29.3
+              ],
+              "median_block_p95_us": 24.25,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 14240.849999999999,
+              "block_medians_us": [
+                15063.0,
+                12701.699999999999,
+                14099.9,
+                14381.8,
+                13218.6,
+                20310.9
+              ],
+              "median_block_p95_us": 15722.0,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 81.9,
+              "block_medians_us": [
+                85.2,
+                78.2,
+                139.6,
+                82.5,
+                81.3,
+                80.0
+              ],
+              "median_block_p95_us": 96.8,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 82.54999999999998,
+              "block_medians_us": [
+                78.89999999999999,
+                71.2,
+                89.2,
+                89.2,
+                86.19999999999999,
+                61.60000000000001
+              ],
+              "median_block_p95_us": 111.85,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 196.04999999999998,
+              "block_medians_us": [
+                297.5,
+                177.1,
+                378.9,
+                195.89999999999998,
+                196.2,
+                184.4
+              ],
+              "median_block_p95_us": 302.45,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 43.2,
+              "block_medians_us": [
+                42.5,
+                43.699999999999996,
+                43.699999999999996,
+                42.3,
+                43.0,
+                43.4
+              ],
+              "median_block_p95_us": 48.449999999999996,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 54.75,
+              "block_medians_us": [
+                59.5,
+                59.2,
+                49.4,
+                63.7,
+                47.9,
+                50.300000000000004
+              ],
+              "median_block_p95_us": 102.89999999999999,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 180.89999999999998,
+              "block_medians_us": [
+                136.79999999999998,
+                305.5,
+                204.79999999999998,
+                140.0,
+                157.0,
+                204.79999999999998
+              ],
+              "median_block_p95_us": 300.6,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.5274725274725275,
+          "book_match_unique": 0.6632344033918839,
+          "spot_match": 0.9227237949502678
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 6.912000000000001,
+          "book_match_unique": 5.140845070422535,
+          "spot_match": 0.01270289343683839
+        }
+      },
+      {
+        "orders": 10000,
+        "shuffled_ids": true,
+        "maker_fills": 1000,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 48.55,
+              "block_medians_us": [
+                46.9,
+                45.599999999999994,
+                50.2,
+                52.3,
+                46.1,
+                77.10000000000001
+              ],
+              "median_block_p95_us": 51.25,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 99.9,
+              "block_medians_us": [
+                135.6,
+                60.099999999999994,
+                64.2,
+                182.7,
+                56.1,
+                227.4
+              ],
+              "median_block_p95_us": 156.0,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 135982.15000000002,
+              "block_medians_us": [
+                123328.8,
+                128698.59999999999,
+                151029.1,
+                131412.40000000002,
+                140551.9,
+                326008.7
+              ],
+              "median_block_p95_us": 155501.7,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 815.55,
+              "block_medians_us": [
+                730.1999999999999,
+                698.5999999999999,
+                1032.8,
+                900.9000000000001,
+                1187.0,
+                658.5
+              ],
+              "median_block_p95_us": 1184.8,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 673.55,
+              "block_medians_us": [
+                683.9,
+                478.59999999999997,
+                1081.0,
+                663.1999999999999,
+                724.2,
+                551.1999999999999
+              ],
+              "median_block_p95_us": 863.5999999999999,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 2557.55,
+              "block_medians_us": [
+                3038.6,
+                1560.1000000000001,
+                4452.099999999999,
+                2778.1,
+                2337.0,
+                2129.3
+              ],
+              "median_block_p95_us": 4000.8,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 386.75,
+              "block_medians_us": [
+                371.5,
+                627.6,
+                446.7,
+                365.7,
+                362.9,
+                402.0
+              ],
+              "median_block_p95_us": 646.0,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 384.4,
+              "block_medians_us": [
+                403.5,
+                365.3,
+                539.0,
+                435.5,
+                329.09999999999997,
+                364.0
+              ],
+              "median_block_p95_us": 601.65,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 2293.9,
+              "block_medians_us": [
+                3030.3,
+                2490.2000000000003,
+                2097.6,
+                2526.0,
+                1503.5,
+                1688.4
+              ],
+              "median_block_p95_us": 3731.6499999999996,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.47421985163386676,
+          "book_match_unique": 0.5707074456239329,
+          "spot_match": 0.8969130613282242
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 7.966014418125644,
+          "book_match_unique": 3.8478478478478473,
+          "spot_match": 0.01686912583747205
+        }
+      }
+    ],
+    "partial_matching": [
+      {
+        "orders": 100,
+        "shuffled_ids": false,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 0.15,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.19999999999999998,
+                0.09999999999999999,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.3,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.25,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 3.0,
+              "block_medians_us": [
+                2.9000000000000004,
+                3.1,
+                3.0,
+                2.9000000000000004,
+                3.0,
+                3.4
+              ],
+              "median_block_p95_us": 3.1999999999999997,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 1.9,
+              "block_medians_us": [
+                2.0999999999999996,
+                2.0,
+                1.7999999999999998,
+                1.7,
+                1.7,
+                2.3
+              ],
+              "median_block_p95_us": 2.1999999999999997,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 0.6499999999999999,
+              "block_medians_us": [
+                0.6,
+                0.6,
+                0.7,
+                0.6,
+                0.7999999999999999,
+                0.7
+              ],
+              "median_block_p95_us": 1.15,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 4.3500000000000005,
+              "block_medians_us": [
+                4.4,
+                4.199999999999999,
+                4.300000000000001,
+                4.1,
+                4.5,
+                4.7
+              ],
+              "median_block_p95_us": 4.699999999999999,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 1.1,
+              "block_medians_us": [
+                1.1,
+                1.1,
+                1.1,
+                1.1,
+                1.0,
+                1.1
+              ],
+              "median_block_p95_us": 1.4,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.3,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.35,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 3.35,
+              "block_medians_us": [
+                3.4,
+                3.4,
+                3.3000000000000003,
+                3.5999999999999996,
+                3.1999999999999997,
+                3.1
+              ],
+              "median_block_p95_us": 3.65,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.5789473684210527,
+          "book_match_unique": 0.3076923076923077,
+          "spot_match": 0.7701149425287356
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 7.333333333333334,
+          "book_match_unique": 1.0,
+          "spot_match": 1.1166666666666667
+        }
+      },
+      {
+        "orders": 100,
+        "shuffled_ids": true,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.35,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 3.1999999999999997,
+              "block_medians_us": [
+                3.3000000000000003,
+                3.0,
+                3.1999999999999997,
+                3.1999999999999997,
+                3.1,
+                3.3000000000000003
+              ],
+              "median_block_p95_us": 3.5999999999999996,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 1.9,
+              "block_medians_us": [
+                1.9,
+                2.0,
+                1.7999999999999998,
+                1.9,
+                1.9,
+                1.7999999999999998
+              ],
+              "median_block_p95_us": 2.0,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 0.6,
+              "block_medians_us": [
+                0.6,
+                0.5,
+                0.6,
+                0.7,
+                0.6,
+                0.7
+              ],
+              "median_block_p95_us": 1.1,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 4.199999999999999,
+              "block_medians_us": [
+                4.1,
+                4.300000000000001,
+                3.9,
+                4.199999999999999,
+                4.5,
+                4.199999999999999
+              ],
+              "median_block_p95_us": 4.55,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 1.1,
+              "block_medians_us": [
+                1.5999999999999999,
+                1.1,
+                1.1,
+                1.1,
+                1.0,
+                1.0
+              ],
+              "median_block_p95_us": 1.2,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.3,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.44999999999999996,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 3.5,
+              "block_medians_us": [
+                3.5,
+                4.4,
+                4.1,
+                3.5,
+                3.1999999999999997,
+                3.1
+              ],
+              "median_block_p95_us": 3.65,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.5789473684210527,
+          "book_match_unique": 0.3333333333333333,
+          "spot_match": 0.8333333333333335
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 11.000000000000002,
+          "book_match_unique": 1.0,
+          "spot_match": 1.09375
+        }
+      },
+      {
+        "orders": 10000,
+        "shuffled_ids": false,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 0.3,
+              "block_medians_us": [
+                0.3,
+                0.3,
+                0.3,
+                1.0,
+                0.3,
+                0.3
+              ],
+              "median_block_p95_us": 0.7,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 2.65,
+              "block_medians_us": [
+                2.5,
+                1.2,
+                3.1,
+                3.1,
+                1.7999999999999998,
+                2.8
+              ],
+              "median_block_p95_us": 4.95,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 176.0,
+              "block_medians_us": [
+                628.1,
+                167.1,
+                167.89999999999998,
+                736.0999999999999,
+                167.1,
+                184.1
+              ],
+              "median_block_p95_us": 302.3,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 5.5,
+              "block_medians_us": [
+                5.6,
+                5.699999999999999,
+                6.3,
+                5.4,
+                5.0,
+                4.8
+              ],
+              "median_block_p95_us": 9.75,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 10.45,
+              "block_medians_us": [
+                8.2,
+                9.6,
+                11.9,
+                10.6,
+                10.8,
+                10.299999999999999
+              ],
+              "median_block_p95_us": 15.25,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 7.3,
+              "block_medians_us": [
+                8.5,
+                7.5,
+                8.2,
+                7.1,
+                6.9,
+                6.9
+              ],
+              "median_block_p95_us": 8.3,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 2.8,
+              "block_medians_us": [
+                3.7,
+                2.8,
+                2.7,
+                2.0,
+                3.7,
+                2.8
+              ],
+              "median_block_p95_us": 6.4,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 5.4,
+              "block_medians_us": [
+                7.9,
+                5.4,
+                3.7,
+                6.6000000000000005,
+                5.4,
+                4.6
+              ],
+              "median_block_p95_us": 10.5,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 5.1000000000000005,
+              "block_medians_us": [
+                5.2,
+                5.1000000000000005,
+                5.2,
+                5.1000000000000005,
+                4.8999999999999995,
+                5.1000000000000005
+              ],
+              "median_block_p95_us": 5.35,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.509090909090909,
+          "book_match_unique": 0.5167464114832536,
+          "spot_match": 0.6986301369863015
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 9.333333333333334,
+          "book_match_unique": 2.0377358490566038,
+          "spot_match": 0.02897727272727273
+        }
+      },
+      {
+        "orders": 10000,
+        "shuffled_ids": true,
+        "variants": {
+          "legacy": {
+            "book_match_shared": {
+              "median_us": 0.6499999999999999,
+              "block_medians_us": [
+                1.2,
+                0.6,
+                0.5,
+                0.5,
+                0.7,
+                8.8
+              ],
+              "median_block_p95_us": 1.9,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 3.7,
+              "block_medians_us": [
+                4.0,
+                3.5,
+                3.1999999999999997,
+                1.3,
+                3.9,
+                14.399999999999999
+              ],
+              "median_block_p95_us": 6.199999999999999,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 203.0,
+              "block_medians_us": [
+                200.10000000000002,
+                173.1,
+                166.70000000000002,
+                205.89999999999998,
+                209.29999999999998,
+                4138.9
+              ],
+              "median_block_p95_us": 436.85,
+              "samples_per_block": 20
+            }
+          },
+          "stage1": {
+            "book_match_shared": {
+              "median_us": 5.449999999999999,
+              "block_medians_us": [
+                6.3,
+                5.2,
+                5.699999999999999,
+                5.699999999999999,
+                5.2,
+                4.5
+              ],
+              "median_block_p95_us": 8.2,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 11.2,
+              "block_medians_us": [
+                8.600000000000001,
+                10.200000000000001,
+                15.8,
+                11.0,
+                11.399999999999999,
+                11.399999999999999
+              ],
+              "median_block_p95_us": 15.25,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 7.45,
+              "block_medians_us": [
+                7.700000000000001,
+                7.1,
+                14.1,
+                7.0,
+                7.199999999999999,
+                7.9
+              ],
+              "median_block_p95_us": 8.1,
+              "samples_per_block": 20
+            }
+          },
+          "current": {
+            "book_match_shared": {
+              "median_us": 3.5,
+              "block_medians_us": [
+                3.9,
+                6.9,
+                4.1,
+                3.1,
+                2.6,
+                2.2
+              ],
+              "median_block_p95_us": 7.9,
+              "samples_per_block": 20
+            },
+            "book_match_unique": {
+              "median_us": 5.0,
+              "block_medians_us": [
+                5.6,
+                6.0,
+                5.1000000000000005,
+                4.8999999999999995,
+                4.6,
+                3.1999999999999997
+              ],
+              "median_block_p95_us": 7.85,
+              "samples_per_block": 20
+            },
+            "spot_match": {
+              "median_us": 5.15,
+              "block_medians_us": [
+                5.2,
+                5.2,
+                5.3,
+                5.0,
+                4.8,
+                5.1000000000000005
+              ],
+              "median_block_p95_us": 5.6499999999999995,
+              "samples_per_block": 20
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_match_shared": 0.6422018348623854,
+          "book_match_unique": 0.44642857142857145,
+          "spot_match": 0.6912751677852349
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_match_shared": 5.384615384615385,
+          "book_match_unique": 1.3513513513513513,
+          "spot_match": 0.02536945812807882
+        }
+      }
+    ],
+    "order_command_scope": "Release local microbenchmark of current dirty checkout. One funded account, no fills, empty history, no server/journal/network. Seed setup and external reset excluded; apply's internal clone and old-state drop included. 10 warmups, 80 samples, 3 blocks; ascending/descending sizes. Raw operations use an externally cloned reset: legacy queues are unshared, persistent nodes share roots with the seed. Raw add is prepared by add/cancel outside the timer (spare queue capacity in the legacy build). Account release and engine apply measured with live originals sharing account tables, as transaction candidates do. Seed book/accounts and order events checked against ordinary apply at n=16, canonicalizing unordered HashSet serialization.",
+    "order_commands": [
+      {
+        "orders": 100,
+        "levels": 1,
+        "variants": {
+          "legacy": {
+            "book_clone": {
+              "median_us": 0.39999999999999997,
+              "block_medians_us": [
+                0.7,
+                0.39999999999999997,
+                0.3,
+                0.39999999999999997,
+                0.39999999999999997,
+                0.3
+              ],
+              "median_block_p95_us": 0.39999999999999997,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.15,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.1,
+              "block_medians_us": [
+                1.7,
+                0.8999999999999999,
+                1.2,
+                1.1,
+                0.7999999999999999,
+                1.1
+              ],
+              "median_block_p95_us": 1.15,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.39999999999999997,
+              "block_medians_us": [
+                0.7,
+                0.39999999999999997,
+                0.39999999999999997,
+                0.5,
+                0.39999999999999997,
+                0.39999999999999997
+              ],
+              "median_block_p95_us": 0.5,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 2.85,
+              "block_medians_us": [
+                4.7,
+                2.6,
+                3.0,
+                2.9000000000000004,
+                2.3,
+                2.8
+              ],
+              "median_block_p95_us": 3.05,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 2.45,
+              "block_medians_us": [
+                4.300000000000001,
+                2.0999999999999996,
+                2.6,
+                2.4,
+                1.9,
+                2.5
+              ],
+              "median_block_p95_us": 2.65,
+              "samples_per_block": 80
+            }
+          },
+          "stage1": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.09999999999999999,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.39999999999999997,
+              "block_medians_us": [
+                0.39999999999999997,
+                0.39999999999999997,
+                0.39999999999999997,
+                0.3,
+                0.8999999999999999,
+                0.39999999999999997
+              ],
+              "median_block_p95_us": 0.5,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 1.45,
+              "block_medians_us": [
+                1.5999999999999999,
+                1.5,
+                1.4,
+                1.5999999999999999,
+                1.4,
+                1.4
+              ],
+              "median_block_p95_us": 1.65,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.0,
+              "block_medians_us": [
+                1.3,
+                1.0,
+                1.0,
+                1.1,
+                1.0,
+                1.0
+              ],
+              "median_block_p95_us": 1.1,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 5.1000000000000005,
+              "block_medians_us": [
+                5.6,
+                4.8999999999999995,
+                5.1000000000000005,
+                5.3,
+                5.1000000000000005,
+                4.8
+              ],
+              "median_block_p95_us": 5.4,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 3.5,
+              "block_medians_us": [
+                3.8,
+                3.5,
+                3.4,
+                3.7,
+                3.5,
+                3.3000000000000003
+              ],
+              "median_block_p95_us": 3.75,
+              "samples_per_block": 80
+            }
+          },
+          "current": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.15,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.25,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.3,
+                0.3,
+                0.3,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.3,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 1.35,
+              "block_medians_us": [
+                1.3,
+                1.4,
+                1.4,
+                1.4,
+                1.2,
+                1.3
+              ],
+              "median_block_p95_us": 1.4,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.0,
+              "block_medians_us": [
+                1.1,
+                1.0,
+                1.0,
+                1.2,
+                1.0,
+                0.8999999999999999
+              ],
+              "median_block_p95_us": 1.1,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 4.8999999999999995,
+              "block_medians_us": [
+                4.8999999999999995,
+                4.8999999999999995,
+                4.8999999999999995,
+                5.4,
+                4.5,
+                4.6
+              ],
+              "median_block_p95_us": 5.050000000000001,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 3.25,
+              "block_medians_us": [
+                3.1999999999999997,
+                3.3000000000000003,
+                3.3000000000000003,
+                3.7,
+                3.0,
+                3.1
+              ],
+              "median_block_p95_us": 3.45,
+              "samples_per_block": 80
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_clone": 1.0,
+          "book_add": 0.625,
+          "book_cancel_tail": 0.9310344827586208,
+          "reservation_release_cow": 1.0,
+          "engine_clone": 2.0,
+          "spot_add": 0.96078431372549,
+          "spot_cancel_tail": 0.9285714285714286
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_clone": 0.25,
+          "book_add": 2.5,
+          "book_cancel_tail": 13.500000000000002,
+          "reservation_release_cow": 0.9090909090909091,
+          "engine_clone": 0.5,
+          "spot_add": 1.7192982456140349,
+          "spot_cancel_tail": 1.3265306122448979
+        }
+      },
+      {
+        "orders": 100,
+        "levels": 100,
+        "variants": {
+          "legacy": {
+            "book_clone": {
+              "median_us": 4.65,
+              "block_medians_us": [
+                7.9,
+                4.6,
+                4.8,
+                4.300000000000001,
+                4.5,
+                4.7
+              ],
+              "median_block_p95_us": 4.8999999999999995,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.09999999999999999,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 0.15,
+              "block_medians_us": [
+                0.3,
+                0.09999999999999999,
+                0.19999999999999998,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.15,
+              "block_medians_us": [
+                1.5,
+                1.2,
+                1.3,
+                1.1,
+                0.7999999999999999,
+                1.1
+              ],
+              "median_block_p95_us": 1.25,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 4.75,
+              "block_medians_us": [
+                8.1,
+                4.6,
+                4.8999999999999995,
+                4.4,
+                4.5,
+                4.8999999999999995
+              ],
+              "median_block_p95_us": 5.0,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 10.35,
+              "block_medians_us": [
+                43.4,
+                8.9,
+                14.2,
+                9.0,
+                11.399999999999999,
+                9.3
+              ],
+              "median_block_p95_us": 15.600000000000001,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 8.75,
+              "block_medians_us": [
+                39.8,
+                8.600000000000001,
+                13.8,
+                8.7,
+                8.399999999999999,
+                8.8
+              ],
+              "median_block_p95_us": 13.75,
+              "samples_per_block": 80
+            }
+          },
+          "stage1": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.09999999999999999,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.39999999999999997,
+              "block_medians_us": [
+                0.3,
+                0.39999999999999997,
+                0.39999999999999997,
+                0.39999999999999997,
+                0.39999999999999997,
+                0.3
+              ],
+              "median_block_p95_us": 0.5,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 1.7,
+              "block_medians_us": [
+                1.7,
+                1.7,
+                1.9,
+                1.7,
+                1.5999999999999999,
+                1.5999999999999999
+              ],
+              "median_block_p95_us": 1.7,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.05,
+              "block_medians_us": [
+                1.2,
+                1.1,
+                1.0,
+                1.1,
+                1.0,
+                1.0
+              ],
+              "median_block_p95_us": 1.1,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 5.699999999999999,
+              "block_medians_us": [
+                5.699999999999999,
+                5.9,
+                5.699999999999999,
+                5.9,
+                5.5,
+                5.6
+              ],
+              "median_block_p95_us": 6.5,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 3.6999999999999997,
+              "block_medians_us": [
+                3.8,
+                3.8,
+                3.5999999999999996,
+                3.5999999999999996,
+                3.5999999999999996,
+                3.8
+              ],
+              "median_block_p95_us": 3.9,
+              "samples_per_block": 80
+            }
+          },
+          "current": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.09999999999999999,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.25,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.3,
+                0.3,
+                0.3,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.3,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 1.75,
+              "block_medians_us": [
+                1.7,
+                1.7999999999999998,
+                1.7999999999999998,
+                1.7999999999999998,
+                1.5999999999999999,
+                1.7
+              ],
+              "median_block_p95_us": 1.8499999999999999,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.0,
+              "block_medians_us": [
+                1.1,
+                1.0,
+                1.0,
+                1.2,
+                1.0,
+                1.0
+              ],
+              "median_block_p95_us": 1.1,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 5.7,
+              "block_medians_us": [
+                5.800000000000001,
+                5.800000000000001,
+                5.6,
+                6.3999999999999995,
+                5.5,
+                5.6
+              ],
+              "median_block_p95_us": 5.8500000000000005,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 3.7,
+              "block_medians_us": [
+                3.7,
+                3.8,
+                3.7,
+                4.1,
+                3.5,
+                3.7
+              ],
+              "median_block_p95_us": 3.8,
+              "samples_per_block": 80
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_clone": 1.0,
+          "book_add": 0.625,
+          "book_cancel_tail": 1.0294117647058825,
+          "reservation_release_cow": 0.9523809523809523,
+          "engine_clone": 2.0,
+          "spot_add": 1.0000000000000002,
+          "spot_cancel_tail": 1.0000000000000002
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_clone": 0.02150537634408602,
+          "book_add": 2.5,
+          "book_cancel_tail": 11.666666666666668,
+          "reservation_release_cow": 0.8695652173913044,
+          "engine_clone": 0.042105263157894736,
+          "spot_add": 0.5507246376811594,
+          "spot_cancel_tail": 0.4228571428571429
+        }
+      },
+      {
+        "orders": 1000,
+        "levels": 1,
+        "variants": {
+          "legacy": {
+            "book_clone": {
+              "median_us": 4.4,
+              "block_medians_us": [
+                87.80000000000001,
+                4.1,
+                4.7,
+                46.199999999999996,
+                3.3000000000000003,
+                3.5
+              ],
+              "median_block_p95_us": 5.0,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.15,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.09999999999999999,
+                0.19999999999999998,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 0.7,
+              "block_medians_us": [
+                0.7999999999999999,
+                0.7,
+                0.7,
+                0.6,
+                0.7,
+                0.7
+              ],
+              "median_block_p95_us": 0.7999999999999999,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 9.9,
+              "block_medians_us": [
+                14.9,
+                12.3,
+                9.9,
+                9.9,
+                9.700000000000001,
+                9.4
+              ],
+              "median_block_p95_us": 13.15,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 3.65,
+              "block_medians_us": [
+                99.7,
+                3.5999999999999996,
+                3.7,
+                45.5,
+                3.5999999999999996,
+                3.5
+              ],
+              "median_block_p95_us": 4.15,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 16.05,
+              "block_medians_us": [
+                238.29999999999998,
+                15.8,
+                16.3,
+                151.4,
+                15.6,
+                15.400000000000002
+              ],
+              "median_block_p95_us": 17.450000000000003,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 14.9,
+              "block_medians_us": [
+                235.5,
+                14.8,
+                15.0,
+                110.69999999999999,
+                14.600000000000001,
+                14.5
+              ],
+              "median_block_p95_us": 16.2,
+              "samples_per_block": 80
+            }
+          },
+          "stage1": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.09999999999999999,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.6499999999999999,
+              "block_medians_us": [
+                0.7,
+                0.7,
+                0.6,
+                0.6,
+                0.6,
+                0.7
+              ],
+              "median_block_p95_us": 0.7,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 2.05,
+              "block_medians_us": [
+                2.0999999999999996,
+                2.0,
+                2.2,
+                2.0,
+                2.0,
+                2.2
+              ],
+              "median_block_p95_us": 2.15,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.4,
+              "block_medians_us": [
+                1.4,
+                1.5,
+                1.4,
+                1.4,
+                1.4,
+                1.4
+              ],
+              "median_block_p95_us": 1.5,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 4.45,
+              "block_medians_us": [
+                4.5,
+                4.6,
+                4.4,
+                4.300000000000001,
+                4.4,
+                4.7
+              ],
+              "median_block_p95_us": 4.6,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 4.1499999999999995,
+              "block_medians_us": [
+                4.199999999999999,
+                4.199999999999999,
+                4.1,
+                4.0,
+                3.9,
+                4.300000000000001
+              ],
+              "median_block_p95_us": 4.5,
+              "samples_per_block": 80
+            }
+          },
+          "current": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.15,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.3,
+              "block_medians_us": [
+                0.3,
+                0.3,
+                0.3,
+                0.3,
+                0.19999999999999998,
+                0.3
+              ],
+              "median_block_p95_us": 0.3,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 1.7,
+              "block_medians_us": [
+                1.7999999999999998,
+                1.7,
+                1.7,
+                2.0,
+                1.5999999999999999,
+                1.7
+              ],
+              "median_block_p95_us": 1.7999999999999998,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.45,
+              "block_medians_us": [
+                1.4,
+                1.5,
+                1.5,
+                1.5,
+                1.3,
+                1.4
+              ],
+              "median_block_p95_us": 1.5,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.09999999999999999,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 4.199999999999999,
+              "block_medians_us": [
+                4.4,
+                4.199999999999999,
+                4.199999999999999,
+                4.5,
+                4.0,
+                4.1
+              ],
+              "median_block_p95_us": 4.3500000000000005,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 3.8499999999999996,
+              "block_medians_us": [
+                3.9,
+                3.9,
+                3.8,
+                4.1,
+                3.5999999999999996,
+                3.7
+              ],
+              "median_block_p95_us": 3.95,
+              "samples_per_block": 80
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_clone": 1.0,
+          "book_add": 0.46153846153846156,
+          "book_cancel_tail": 0.8292682926829269,
+          "reservation_release_cow": 1.0357142857142858,
+          "engine_clone": 2.0,
+          "spot_add": 0.9438202247191009,
+          "spot_cancel_tail": 0.927710843373494
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_clone": 0.022727272727272724,
+          "book_add": 2.0,
+          "book_cancel_tail": 2.428571428571429,
+          "reservation_release_cow": 0.14646464646464646,
+          "engine_clone": 0.0547945205479452,
+          "spot_add": 0.2616822429906541,
+          "spot_cancel_tail": 0.2583892617449664
+        }
+      },
+      {
+        "orders": 1000,
+        "levels": 100,
+        "variants": {
+          "legacy": {
+            "book_clone": {
+              "median_us": 7.8,
+              "block_medians_us": [
+                103.6,
+                7.8,
+                7.8,
+                45.599999999999994,
+                7.5,
+                7.4
+              ],
+              "median_block_p95_us": 11.6,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.09999999999999999,
+                0.19999999999999998,
+                0.09999999999999999,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 9.3,
+              "block_medians_us": [
+                15.2,
+                9.1,
+                9.5,
+                8.9,
+                8.8,
+                12.700000000000001
+              ],
+              "median_block_p95_us": 10.649999999999999,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 7.699999999999999,
+              "block_medians_us": [
+                15.0,
+                7.6,
+                7.8,
+                53.699999999999996,
+                7.5,
+                7.199999999999999
+              ],
+              "median_block_p95_us": 8.3,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 20.700000000000003,
+              "block_medians_us": [
+                181.20000000000002,
+                20.400000000000002,
+                21.0,
+                103.6,
+                19.9,
+                19.599999999999998
+              ],
+              "median_block_p95_us": 27.4,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 21.1,
+              "block_medians_us": [
+                118.7,
+                20.0,
+                20.299999999999997,
+                89.5,
+                19.8,
+                21.900000000000002
+              ],
+              "median_block_p95_us": 28.25,
+              "samples_per_block": 80
+            }
+          },
+          "stage1": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.09999999999999999,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.55,
+              "block_medians_us": [
+                0.5,
+                0.5,
+                0.7,
+                0.6,
+                0.7,
+                0.5
+              ],
+              "median_block_p95_us": 0.6499999999999999,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 2.5,
+              "block_medians_us": [
+                2.7,
+                2.6,
+                2.5,
+                2.3,
+                2.4,
+                2.5
+              ],
+              "median_block_p95_us": 2.55,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.4,
+              "block_medians_us": [
+                1.4,
+                1.4,
+                1.5,
+                1.4,
+                1.5,
+                1.4
+              ],
+              "median_block_p95_us": 1.5,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 5.25,
+              "block_medians_us": [
+                5.5,
+                5.0,
+                5.3,
+                4.8999999999999995,
+                5.3,
+                5.2
+              ],
+              "median_block_p95_us": 5.35,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 4.7,
+              "block_medians_us": [
+                4.8,
+                4.4,
+                4.7,
+                4.6,
+                4.8,
+                4.7
+              ],
+              "median_block_p95_us": 4.949999999999999,
+              "samples_per_block": 80
+            }
+          },
+          "current": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.3,
+              "block_medians_us": [
+                0.3,
+                0.3,
+                0.3,
+                0.3,
+                0.3,
+                0.3
+              ],
+              "median_block_p95_us": 0.3,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 2.6,
+              "block_medians_us": [
+                3.0,
+                2.6,
+                2.6,
+                2.6,
+                2.4,
+                2.4
+              ],
+              "median_block_p95_us": 2.6,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.4,
+              "block_medians_us": [
+                1.4,
+                1.5,
+                1.4,
+                1.5,
+                1.3,
+                1.3
+              ],
+              "median_block_p95_us": 1.5,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 5.15,
+              "block_medians_us": [
+                5.1000000000000005,
+                5.2,
+                5.2,
+                5.3,
+                4.8999999999999995,
+                4.8999999999999995
+              ],
+              "median_block_p95_us": 5.25,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 4.25,
+              "block_medians_us": [
+                4.199999999999999,
+                5.2,
+                4.300000000000001,
+                4.300000000000001,
+                4.1,
+                4.0
+              ],
+              "median_block_p95_us": 4.3500000000000005,
+              "samples_per_block": 80
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_clone": 1.0,
+          "book_add": 0.5454545454545454,
+          "book_cancel_tail": 1.04,
+          "reservation_release_cow": 1.0,
+          "engine_clone": 2.0,
+          "spot_add": 0.980952380952381,
+          "spot_cancel_tail": 0.9042553191489361
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_clone": 0.01282051282051282,
+          "book_add": 3.0,
+          "book_cancel_tail": 13.000000000000002,
+          "reservation_release_cow": 0.15053763440860213,
+          "engine_clone": 0.025974025974025976,
+          "spot_add": 0.24879227053140096,
+          "spot_cancel_tail": 0.2014218009478673
+        }
+      },
+      {
+        "orders": 10000,
+        "levels": 1,
+        "variants": {
+          "legacy": {
+            "book_clone": {
+              "median_us": 46.9,
+              "block_medians_us": [
+                332.90000000000003,
+                45.4,
+                43.2,
+                367.2,
+                42.7,
+                48.4
+              ],
+              "median_block_p95_us": 72.85,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                1.2,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.8499999999999999,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 5.5,
+              "block_medians_us": [
+                42.3,
+                3.4,
+                3.5999999999999996,
+                7.4,
+                7.8,
+                3.5
+              ],
+              "median_block_p95_us": 9.3,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 100.65,
+              "block_medians_us": [
+                206.89999999999998,
+                103.0,
+                98.9,
+                93.0,
+                102.2,
+                99.1
+              ],
+              "median_block_p95_us": 172.05,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 45.25,
+              "block_medians_us": [
+                182.9,
+                41.1,
+                41.6,
+                96.7,
+                48.699999999999996,
+                41.8
+              ],
+              "median_block_p95_us": 75.5,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 252.2,
+              "block_medians_us": [
+                2850.7,
+                271.2,
+                233.20000000000002,
+                401.4,
+                211.5,
+                209.0
+              ],
+              "median_block_p95_us": 530.1500000000001,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 183.1,
+              "block_medians_us": [
+                1757.8999999999999,
+                187.1,
+                179.1,
+                275.1,
+                167.70000000000002,
+                156.5
+              ],
+              "median_block_p95_us": 314.0,
+              "samples_per_block": 80
+            }
+          },
+          "stage1": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.09999999999999999,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.8999999999999999,
+              "block_medians_us": [
+                1.0,
+                0.8999999999999999,
+                1.0,
+                0.8999999999999999,
+                0.7999999999999999,
+                0.8999999999999999
+              ],
+              "median_block_p95_us": 1.1,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 2.7,
+              "block_medians_us": [
+                3.1,
+                2.8,
+                2.6,
+                2.7,
+                2.7,
+                2.7
+              ],
+              "median_block_p95_us": 2.8,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.95,
+              "block_medians_us": [
+                2.0,
+                2.0,
+                1.9,
+                1.9,
+                1.9,
+                2.0
+              ],
+              "median_block_p95_us": 2.0,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 6.3,
+              "block_medians_us": [
+                6.3,
+                6.6000000000000005,
+                6.2,
+                6.3,
+                6.5,
+                6.2
+              ],
+              "median_block_p95_us": 6.949999999999999,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 5.699999999999999,
+              "block_medians_us": [
+                5.699999999999999,
+                5.800000000000001,
+                5.699999999999999,
+                5.9,
+                5.699999999999999,
+                5.4
+              ],
+              "median_block_p95_us": 6.05,
+              "samples_per_block": 80
+            }
+          },
+          "current": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.3,
+              "block_medians_us": [
+                0.3,
+                0.3,
+                0.39999999999999997,
+                0.3,
+                0.3,
+                0.3
+              ],
+              "median_block_p95_us": 0.39999999999999997,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 2.05,
+              "block_medians_us": [
+                2.0,
+                2.0,
+                2.2,
+                2.5,
+                2.0999999999999996,
+                1.9
+              ],
+              "median_block_p95_us": 2.15,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.9,
+              "block_medians_us": [
+                1.9,
+                1.9,
+                2.0,
+                1.9,
+                1.7999999999999998,
+                1.7999999999999998
+              ],
+              "median_block_p95_us": 1.95,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 5.300000000000001,
+              "block_medians_us": [
+                5.4,
+                5.2,
+                5.4,
+                5.9,
+                4.8999999999999995,
+                5.0
+              ],
+              "median_block_p95_us": 5.45,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 4.65,
+              "block_medians_us": [
+                4.7,
+                4.6,
+                4.8,
+                5.2,
+                4.4,
+                4.5
+              ],
+              "median_block_p95_us": 5.0,
+              "samples_per_block": 80
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_clone": 1.0,
+          "book_add": 0.33333333333333337,
+          "book_cancel_tail": 0.7592592592592592,
+          "reservation_release_cow": 0.9743589743589743,
+          "engine_clone": 2.0,
+          "spot_add": 0.8412698412698414,
+          "spot_cancel_tail": 0.8157894736842107
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_clone": 0.0021321961620469083,
+          "book_add": 1.5,
+          "book_cancel_tail": 0.3727272727272727,
+          "reservation_release_cow": 0.018877297565822154,
+          "engine_clone": 0.00441988950276243,
+          "spot_add": 0.02101506740681999,
+          "spot_cancel_tail": 0.025395958492626984
+        }
+      },
+      {
+        "orders": 10000,
+        "levels": 100,
+        "variants": {
+          "legacy": {
+            "book_clone": {
+              "median_us": 59.0,
+              "block_medians_us": [
+                97.0,
+                50.5,
+                54.8,
+                63.2,
+                50.1,
+                69.4
+              ],
+              "median_block_p95_us": 100.0,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.3,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 0.35,
+              "block_medians_us": [
+                0.39999999999999997,
+                0.3,
+                0.39999999999999997,
+                0.3,
+                0.39999999999999997,
+                0.3
+              ],
+              "median_block_p95_us": 0.5,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 104.8,
+              "block_medians_us": [
+                146.1,
+                106.39999999999999,
+                103.2,
+                94.6,
+                101.3,
+                107.7
+              ],
+              "median_block_p95_us": 171.75,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 52.75,
+              "block_medians_us": [
+                93.2,
+                51.5,
+                49.1,
+                54.0,
+                50.4,
+                54.0
+              ],
+              "median_block_p95_us": 82.6,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 185.9,
+              "block_medians_us": [
+                391.9,
+                185.5,
+                186.3,
+                186.89999999999998,
+                179.9,
+                179.4
+              ],
+              "median_block_p95_us": 306.70000000000005,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 186.55,
+              "block_medians_us": [
+                1644.2,
+                176.60000000000002,
+                188.1,
+                185.0,
+                178.8,
+                194.9
+              ],
+              "median_block_p95_us": 395.34999999999997,
+              "samples_per_block": 80
+            }
+          },
+          "stage1": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.09999999999999999,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.8999999999999999,
+              "block_medians_us": [
+                0.8999999999999999,
+                0.8999999999999999,
+                0.8999999999999999,
+                0.5,
+                0.8999999999999999,
+                1.2
+              ],
+              "median_block_p95_us": 1.0,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 3.1,
+              "block_medians_us": [
+                3.1,
+                3.0,
+                3.1,
+                3.1,
+                3.3000000000000003,
+                3.1999999999999997
+              ],
+              "median_block_p95_us": 3.35,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.9,
+              "block_medians_us": [
+                1.9,
+                1.9,
+                1.9,
+                1.9,
+                1.9,
+                1.7999999999999998
+              ],
+              "median_block_p95_us": 1.95,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 6.7,
+              "block_medians_us": [
+                6.6000000000000005,
+                7.1,
+                6.9,
+                6.8,
+                6.6000000000000005,
+                6.3
+              ],
+              "median_block_p95_us": 7.0,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 5.95,
+              "block_medians_us": [
+                5.9,
+                6.3999999999999995,
+                6.2,
+                6.0,
+                5.6,
+                5.699999999999999
+              ],
+              "median_block_p95_us": 6.3,
+              "samples_per_block": 80
+            }
+          },
+          "current": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.39999999999999997,
+              "block_medians_us": [
+                0.39999999999999997,
+                0.39999999999999997,
+                0.39999999999999997,
+                0.39999999999999997,
+                0.3,
+                0.39999999999999997
+              ],
+              "median_block_p95_us": 0.39999999999999997,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 3.4,
+              "block_medians_us": [
+                3.4,
+                3.4,
+                3.8,
+                3.4,
+                3.0,
+                3.5999999999999996
+              ],
+              "median_block_p95_us": 3.9,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 1.9,
+              "block_medians_us": [
+                2.0,
+                1.9,
+                2.0,
+                1.9,
+                1.7999999999999998,
+                1.7999999999999998
+              ],
+              "median_block_p95_us": 2.0,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 7.0,
+              "block_medians_us": [
+                7.0,
+                7.0,
+                7.5,
+                6.9,
+                6.3999999999999995,
+                7.1
+              ],
+              "median_block_p95_us": 7.300000000000001,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 6.199999999999999,
+              "block_medians_us": [
+                6.0,
+                6.3999999999999995,
+                8.7,
+                6.1,
+                5.6,
+                6.3
+              ],
+              "median_block_p95_us": 6.5,
+              "samples_per_block": 80
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_clone": 1.0,
+          "book_add": 0.4444444444444445,
+          "book_cancel_tail": 1.096774193548387,
+          "reservation_release_cow": 1.0,
+          "engine_clone": 2.0,
+          "spot_add": 1.044776119402985,
+          "spot_cancel_tail": 1.042016806722689
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_clone": 0.001694915254237288,
+          "book_add": 4.0,
+          "book_cancel_tail": 9.714285714285715,
+          "reservation_release_cow": 0.01812977099236641,
+          "engine_clone": 0.003791469194312796,
+          "spot_add": 0.037654653039268425,
+          "spot_cancel_tail": 0.033235057625301524
+        }
+      },
+      {
+        "orders": 100000,
+        "levels": 1,
+        "variants": {
+          "legacy": {
+            "book_clone": {
+              "median_us": 4150.0,
+              "block_medians_us": [
+                8736.900000000001,
+                5628.700000000001,
+                3737.6000000000004,
+                3472.7999999999997,
+                3768.0,
+                4532.0
+              ],
+              "median_block_p95_us": 6654.7,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 3.6999999999999997,
+              "block_medians_us": [
+                11.0,
+                4.6,
+                2.5,
+                2.0999999999999996,
+                2.8,
+                4.8
+              ],
+              "median_block_p95_us": 6.6,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 734.15,
+              "block_medians_us": [
+                2566.3,
+                738.1,
+                545.3,
+                642.3000000000001,
+                730.1999999999999,
+                1868.1
+              ],
+              "median_block_p95_us": 1911.5,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 5670.45,
+              "block_medians_us": [
+                21811.1,
+                4854.1,
+                3791.6,
+                5597.099999999999,
+                5743.8,
+                12074.400000000001
+              ],
+              "median_block_p95_us": 8656.55,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 5059.4,
+              "block_medians_us": [
+                14272.099999999999,
+                3575.1,
+                3344.0,
+                5139.4,
+                4979.400000000001,
+                6274.7
+              ],
+              "median_block_p95_us": 7186.15,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 13530.25,
+              "block_medians_us": [
+                17761.3,
+                12447.400000000001,
+                11001.1,
+                14000.4,
+                13060.1,
+                20404.399999999998
+              ],
+              "median_block_p95_us": 20727.0,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 11810.9,
+              "block_medians_us": [
+                12947.3,
+                10483.900000000001,
+                9262.0,
+                13302.2,
+                10674.5,
+                20492.0
+              ],
+              "median_block_p95_us": 15578.3,
+              "samples_per_block": 80
+            }
+          },
+          "stage1": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.09999999999999999,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 1.25,
+              "block_medians_us": [
+                1.1,
+                1.3,
+                1.3,
+                0.8999999999999999,
+                1.4,
+                1.2
+              ],
+              "median_block_p95_us": 1.4,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 3.9,
+              "block_medians_us": [
+                3.5999999999999996,
+                3.9,
+                7.0,
+                4.1,
+                3.9,
+                3.8
+              ],
+              "median_block_p95_us": 4.1,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 3.1999999999999997,
+              "block_medians_us": [
+                3.0,
+                3.1999999999999997,
+                3.1,
+                3.5999999999999996,
+                3.1999999999999997,
+                3.1999999999999997
+              ],
+              "median_block_p95_us": 3.3000000000000003,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.19999999999999998,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 8.8,
+              "block_medians_us": [
+                7.8,
+                8.9,
+                8.8,
+                10.0,
+                8.600000000000001,
+                8.8
+              ],
+              "median_block_p95_us": 9.05,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 7.65,
+              "block_medians_us": [
+                7.0,
+                7.8,
+                7.5,
+                8.9,
+                7.5,
+                7.9
+              ],
+              "median_block_p95_us": 8.35,
+              "samples_per_block": 80
+            }
+          },
+          "current": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.39999999999999997,
+              "block_medians_us": [
+                0.39999999999999997,
+                0.39999999999999997,
+                0.39999999999999997,
+                0.39999999999999997,
+                0.6,
+                0.39999999999999997
+              ],
+              "median_block_p95_us": 0.5,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 3.3000000000000003,
+              "block_medians_us": [
+                3.1999999999999997,
+                3.3000000000000003,
+                3.4,
+                3.3000000000000003,
+                4.5,
+                3.3000000000000003
+              ],
+              "median_block_p95_us": 3.4,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 3.25,
+              "block_medians_us": [
+                3.1999999999999997,
+                3.1999999999999997,
+                3.3000000000000003,
+                3.4,
+                4.0,
+                3.1
+              ],
+              "median_block_p95_us": 3.4000000000000004,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 8.399999999999999,
+              "block_medians_us": [
+                8.2,
+                8.399999999999999,
+                8.399999999999999,
+                8.399999999999999,
+                9.2,
+                8.1
+              ],
+              "median_block_p95_us": 8.7,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 7.199999999999999,
+              "block_medians_us": [
+                7.1,
+                7.199999999999999,
+                7.199999999999999,
+                7.300000000000001,
+                15.1,
+                7.0
+              ],
+              "median_block_p95_us": 7.6000000000000005,
+              "samples_per_block": 80
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_clone": 1.0,
+          "book_add": 0.31999999999999995,
+          "book_cancel_tail": 0.8461538461538463,
+          "reservation_release_cow": 1.015625,
+          "engine_clone": 2.0,
+          "spot_add": 0.9545454545454543,
+          "spot_cancel_tail": 0.9411764705882352
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_clone": 2.4096385542168674e-05,
+          "book_add": 0.1081081081081081,
+          "book_cancel_tail": 0.004494994210992305,
+          "reservation_release_cow": 0.0005731467520214445,
+          "engine_clone": 3.9530379096335537e-05,
+          "spot_add": 0.0006208311006818055,
+          "spot_cancel_tail": 0.0006096063805467831
+        }
+      },
+      {
+        "orders": 100000,
+        "levels": 100,
+        "variants": {
+          "legacy": {
+            "book_clone": {
+              "median_us": 3405.3,
+              "block_medians_us": [
+                3315.7,
+                4569.8,
+                2490.1,
+                3494.9,
+                2948.6,
+                5011.3
+              ],
+              "median_block_p95_us": 5905.6,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 1.2000000000000002,
+              "block_medians_us": [
+                1.4,
+                1.3,
+                0.7999999999999999,
+                1.1,
+                0.8999999999999999,
+                1.5
+              ],
+              "median_block_p95_us": 2.6,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 11.4,
+              "block_medians_us": [
+                10.6,
+                13.8,
+                15.5,
+                11.2,
+                8.3,
+                11.600000000000001
+              ],
+              "median_block_p95_us": 20.6,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 6049.95,
+              "block_medians_us": [
+                7051.7,
+                5048.2,
+                4330.4,
+                7086.4,
+                4520.0,
+                7674.0
+              ],
+              "median_block_p95_us": 9948.3,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 3677.75,
+              "block_medians_us": [
+                4445.5,
+                2564.4,
+                2730.7999999999997,
+                5311.0,
+                2910.0,
+                5312.9
+              ],
+              "median_block_p95_us": 5770.75,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 11093.05,
+              "block_medians_us": [
+                12849.7,
+                10678.0,
+                8694.699999999999,
+                11508.1,
+                9552.5,
+                13965.6
+              ],
+              "median_block_p95_us": 16977.800000000003,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 9791.85,
+              "block_medians_us": [
+                10429.900000000001,
+                9153.8,
+                8328.1,
+                11900.8,
+                9130.8,
+                17418.5
+              ],
+              "median_block_p95_us": 13440.75,
+              "samples_per_block": 80
+            }
+          },
+          "stage1": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.09999999999999999,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 1.35,
+              "block_medians_us": [
+                1.7,
+                1.7,
+                0.8999999999999999,
+                1.4,
+                1.3,
+                1.2
+              ],
+              "median_block_p95_us": 1.5,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 4.300000000000001,
+              "block_medians_us": [
+                4.300000000000001,
+                5.3,
+                4.1,
+                4.4,
+                4.300000000000001,
+                4.199999999999999
+              ],
+              "median_block_p95_us": 4.75,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 3.2,
+              "block_medians_us": [
+                3.3000000000000003,
+                3.5999999999999996,
+                3.1,
+                3.3000000000000003,
+                3.1,
+                3.1
+              ],
+              "median_block_p95_us": 3.3,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 9.5,
+              "block_medians_us": [
+                9.5,
+                10.8,
+                9.4,
+                9.5,
+                9.5,
+                9.3
+              ],
+              "median_block_p95_us": 10.149999999999999,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 8.1,
+              "block_medians_us": [
+                8.1,
+                9.4,
+                8.0,
+                8.1,
+                8.1,
+                7.8
+              ],
+              "median_block_p95_us": 9.3,
+              "samples_per_block": 80
+            }
+          },
+          "current": {
+            "book_clone": {
+              "median_us": 0.09999999999999999,
+              "block_medians_us": [
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999,
+                0.09999999999999999
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "book_add": {
+              "median_us": 0.5,
+              "block_medians_us": [
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.5,
+                0.39999999999999997
+              ],
+              "median_block_p95_us": 0.5,
+              "samples_per_block": 80
+            },
+            "book_cancel_tail": {
+              "median_us": 4.65,
+              "block_medians_us": [
+                4.5,
+                5.4,
+                4.8,
+                4.8999999999999995,
+                4.4,
+                4.300000000000001
+              ],
+              "median_block_p95_us": 4.699999999999999,
+              "samples_per_block": 80
+            },
+            "reservation_release_cow": {
+              "median_us": 3.2,
+              "block_medians_us": [
+                3.1,
+                3.9,
+                3.3000000000000003,
+                3.4,
+                3.0,
+                3.0
+              ],
+              "median_block_p95_us": 3.3,
+              "samples_per_block": 80
+            },
+            "engine_clone": {
+              "median_us": 0.19999999999999998,
+              "block_medians_us": [
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998,
+                0.19999999999999998
+              ],
+              "median_block_p95_us": 0.19999999999999998,
+              "samples_per_block": 80
+            },
+            "spot_add": {
+              "median_us": 9.65,
+              "block_medians_us": [
+                9.4,
+                12.799999999999999,
+                10.1,
+                9.9,
+                9.0,
+                9.0
+              ],
+              "median_block_p95_us": 10.65,
+              "samples_per_block": 80
+            },
+            "spot_cancel_tail": {
+              "median_us": 8.0,
+              "block_medians_us": [
+                7.8,
+                11.0,
+                8.9,
+                8.2,
+                7.5,
+                7.6
+              ],
+              "median_block_p95_us": 8.2,
+              "samples_per_block": 80
+            }
+          }
+        },
+        "current_vs_stage1_latency_ratio": {
+          "book_clone": 1.0,
+          "book_add": 0.37037037037037035,
+          "book_cancel_tail": 1.0813953488372092,
+          "reservation_release_cow": 1.0,
+          "engine_clone": 2.0,
+          "spot_add": 1.0157894736842106,
+          "spot_cancel_tail": 0.9876543209876544
+        },
+        "current_vs_legacy_latency_ratio": {
+          "book_clone": 2.9365988312336647e-05,
+          "book_add": 0.41666666666666663,
+          "book_cancel_tail": 0.40789473684210525,
+          "reservation_release_cow": 0.0005289299911569518,
+          "engine_clone": 5.438107538576575e-05,
+          "spot_add": 0.0008699140452806038,
+          "spot_cancel_tail": 0.0008170059794625122
+        }
+      }
+    ],
+    "allocation_probe": {
+      "method": "Allocation counts only, System allocator, operation only, reset and destruction excluded; realloc counts full requested new size. No latency conclusions from this instrumented executable.",
+      "extrema_1000_before": {
+        "current": {
+          "allocation_calls": 2000,
+          "requested_bytes": 128000
+        },
+        "legacy": {
+          "allocation_calls": 0,
+          "requested_bytes": 0
+        },
+        "stage1": {
+          "allocation_calls": 2000,
+          "requested_bytes": 128000
+        }
+      },
+      "extrema_1000_after": {
+        "current": {
+          "allocation_calls": 0,
+          "requested_bytes": 0
+        },
+        "legacy": {
+          "allocation_calls": 0,
+          "requested_bytes": 0
+        },
+        "stage1": {
+          "allocation_calls": 2000,
+          "requested_bytes": 128000
+        }
+      },
+      "rows": {
+        "legacy": [
+          {
+            "maker_fills": 1,
+            "shared": {
+              "allocation_calls": 1,
+              "requested_bytes": 256
+            },
+            "shuffled_ids": false,
+            "spot": {
+              "allocation_calls": 1684,
+              "requested_bytes": 2426704
+            },
+            "unique": {
+              "allocation_calls": 1,
+              "requested_bytes": 256
+            }
+          },
+          {
+            "maker_fills": 100,
+            "shared": {
+              "allocation_calls": 8,
+              "requested_bytes": 65280
+            },
+            "shuffled_ids": false,
+            "spot": {
+              "allocation_calls": 166277,
+              "requested_bytes": 139203472
+            },
+            "unique": {
+              "allocation_calls": 8,
+              "requested_bytes": 65280
+            }
+          },
+          {
+            "maker_fills": 1000,
+            "shared": {
+              "allocation_calls": 11,
+              "requested_bytes": 524032
+            },
+            "shuffled_ids": false,
+            "spot": {
+              "allocation_calls": 1586403,
+              "requested_bytes": 1318938160
+            },
+            "unique": {
+              "allocation_calls": 11,
+              "requested_bytes": 524032
+            }
+          },
+          {
+            "maker_fills": 1,
+            "shared": {
+              "allocation_calls": 1,
+              "requested_bytes": 256
+            },
+            "shuffled_ids": true,
+            "spot": {
+              "allocation_calls": 1684,
+              "requested_bytes": 2426704
+            },
+            "unique": {
+              "allocation_calls": 1,
+              "requested_bytes": 256
+            }
+          },
+          {
+            "maker_fills": 100,
+            "shared": {
+              "allocation_calls": 8,
+              "requested_bytes": 65280
+            },
+            "shuffled_ids": true,
+            "spot": {
+              "allocation_calls": 167045,
+              "requested_bytes": 139835632
+            },
+            "unique": {
+              "allocation_calls": 8,
+              "requested_bytes": 65280
+            }
+          },
+          {
+            "maker_fills": 1000,
+            "shared": {
+              "allocation_calls": 11,
+              "requested_bytes": 524032
+            },
+            "shuffled_ids": true,
+            "spot": {
+              "allocation_calls": 1670162,
+              "requested_bytes": 1388525632
+            },
+            "unique": {
+              "allocation_calls": 11,
+              "requested_bytes": 524032
+            }
+          }
+        ],
+        "stage1": [
+          {
+            "maker_fills": 1,
+            "shared": {
+              "allocation_calls": 19,
+              "requested_bytes": 34888
+            },
+            "shuffled_ids": false,
+            "spot": {
+              "allocation_calls": 37,
+              "requested_bytes": 67416
+            },
+            "unique": {
+              "allocation_calls": 3,
+              "requested_bytes": 384
+            }
+          },
+          {
+            "maker_fills": 100,
+            "shared": {
+              "allocation_calls": 384,
+              "requested_bytes": 591816
+            },
+            "shuffled_ids": false,
+            "spot": {
+              "allocation_calls": 432,
+              "requested_bytes": 930984
+            },
+            "unique": {
+              "allocation_calls": 212,
+              "requested_bytes": 82400
+            }
+          },
+          {
+            "maker_fills": 1000,
+            "shared": {
+              "allocation_calls": 3009,
+              "requested_bytes": 3597784
+            },
+            "shuffled_ids": false,
+            "spot": {
+              "allocation_calls": 3260,
+              "requested_bytes": 6485344
+            },
+            "unique": {
+              "allocation_calls": 2043,
+              "requested_bytes": 686592
+            }
+          },
+          {
+            "maker_fills": 1,
+            "shared": {
+              "allocation_calls": 18,
+              "requested_bytes": 31792
+            },
+            "shuffled_ids": true,
+            "spot": {
+              "allocation_calls": 36,
+              "requested_bytes": 64320
+            },
+            "unique": {
+              "allocation_calls": 3,
+              "requested_bytes": 384
+            }
+          },
+          {
+            "maker_fills": 100,
+            "shared": {
+              "allocation_calls": 420,
+              "requested_bytes": 616584
+            },
+            "shuffled_ids": true,
+            "spot": {
+              "allocation_calls": 566,
+              "requested_bytes": 1508760
+            },
+            "unique": {
+              "allocation_calls": 208,
+              "requested_bytes": 78080
+            }
+          },
+          {
+            "maker_fills": 1000,
+            "shared": {
+              "allocation_calls": 3125,
+              "requested_bytes": 3708952
+            },
+            "shuffled_ids": true,
+            "spot": {
+              "allocation_calls": 3688,
+              "requested_bytes": 8485464
+            },
+            "unique": {
+              "allocation_calls": 2011,
+              "requested_bytes": 652032
+            }
+          }
+        ],
+        "current": [
+          {
+            "maker_fills": 1,
+            "shared": {
+              "allocation_calls": 15,
+              "requested_bytes": 25088
+            },
+            "shuffled_ids": false,
+            "spot": {
+              "allocation_calls": 30,
+              "requested_bytes": 54392
+            },
+            "unique": {
+              "allocation_calls": 1,
+              "requested_bytes": 256
+            }
+          },
+          {
+            "maker_fills": 100,
+            "shared": {
+              "allocation_calls": 47,
+              "requested_bytes": 121008
+            },
+            "shuffled_ids": false,
+            "spot": {
+              "allocation_calls": 92,
+              "requested_bytes": 456952
+            },
+            "unique": {
+              "allocation_calls": 21,
+              "requested_bytes": 78184
+            }
+          },
+          {
+            "maker_fills": 1000,
+            "shared": {
+              "allocation_calls": 191,
+              "requested_bytes": 795864
+            },
+            "shuffled_ids": false,
+            "spot": {
+              "allocation_calls": 406,
+              "requested_bytes": 3578032
+            },
+            "unique": {
+              "allocation_calls": 95,
+              "requested_bytes": 620432
+            }
+          },
+          {
+            "maker_fills": 1,
+            "shared": {
+              "allocation_calls": 15,
+              "requested_bytes": 25088
+            },
+            "shuffled_ids": true,
+            "spot": {
+              "allocation_calls": 30,
+              "requested_bytes": 54392
+            },
+            "unique": {
+              "allocation_calls": 1,
+              "requested_bytes": 256
+            }
+          },
+          {
+            "maker_fills": 100,
+            "shared": {
+              "allocation_calls": 133,
+              "requested_bytes": 235904
+            },
+            "shuffled_ids": true,
+            "spot": {
+              "allocation_calls": 274,
+              "requested_bytes": 1118664
+            },
+            "unique": {
+              "allocation_calls": 13,
+              "requested_bytes": 67496
+            }
+          },
+          {
+            "maker_fills": 1000,
+            "shared": {
+              "allocation_calls": 437,
+              "requested_bytes": 1124520
+            },
+            "shuffled_ids": true,
+            "spot": {
+              "allocation_calls": 1007,
+              "requested_bytes": 5928768
+            },
+            "unique": {
+              "allocation_calls": 31,
+              "requested_bytes": 534928
+            }
+          }
+        ]
+      },
+      "log": ".local/hotpath-optimization/extrema-after.json",
+      "source": ".local/hotpath-optimization/alloc-probe/src/main.rs",
+      "warning": "Requested allocation traffic includes the full requested new buffer size for realloc, not peak resident memory. Instrumented timings are not used for latency conclusions."
+    },
+    "runs": [
+      {
+        "scope": "matching",
+        "run": 0,
+        "variant": "legacy",
+        "start_unix": 1791637553.0954163,
+        "duration_seconds": 24.97162437438965,
+        "data": ".local/hotpath-optimization/qualified-matching-0-legacy.json",
+        "binary": ".local/transaction-refactor/matching-baseline-target/release/examples/benchmark_matching_transactions.exe",
+        "binary_sha256": "ebd6a46e000ad969c0b04e927e9bec34e663709b7041087b8faa12b54c144f7a"
+      },
+      {
+        "scope": "matching",
+        "run": 1,
+        "variant": "stage1",
+        "start_unix": 1791637578.0700583,
+        "duration_seconds": 7.116083145141602,
+        "data": ".local/hotpath-optimization/qualified-matching-1-stage1.json",
+        "binary": ".local/hotpath-optimization/stage1-target/release/examples/benchmark_matching_transactions.exe",
+        "binary_sha256": "2c84001cb4e8ca6b0569652dc8c98e4ba1eeb9d111547788900011d3cee41b4e"
+      },
+      {
+        "scope": "matching",
+        "run": 2,
+        "variant": "current",
+        "start_unix": 1791637585.189872,
+        "duration_seconds": 5.771212100982666,
+        "data": ".local/hotpath-optimization/qualified-matching-2-current.json",
+        "binary": ".local/hotpath-optimization/qualified-matching.exe",
+        "binary_sha256": "e87902facdcb7cfa953f4d51847d860db03a4f41c09ff94a30d09d0cb2b7a8cf"
+      },
+      {
+        "scope": "matching",
+        "run": 3,
+        "variant": "current",
+        "start_unix": 1791637590.9642396,
+        "duration_seconds": 4.925083160400391,
+        "data": ".local/hotpath-optimization/qualified-matching-3-current.json",
+        "binary": ".local/hotpath-optimization/qualified-matching.exe",
+        "binary_sha256": "e87902facdcb7cfa953f4d51847d860db03a4f41c09ff94a30d09d0cb2b7a8cf"
+      },
+      {
+        "scope": "matching",
+        "run": 4,
+        "variant": "stage1",
+        "start_unix": 1791637595.8923473,
+        "duration_seconds": 6.6046178340911865,
+        "data": ".local/hotpath-optimization/qualified-matching-4-stage1.json",
+        "binary": ".local/hotpath-optimization/stage1-target/release/examples/benchmark_matching_transactions.exe",
+        "binary_sha256": "2c84001cb4e8ca6b0569652dc8c98e4ba1eeb9d111547788900011d3cee41b4e"
+      },
+      {
+        "scope": "matching",
+        "run": 5,
+        "variant": "legacy",
+        "start_unix": 1791637602.5010347,
+        "duration_seconds": 32.00006651878357,
+        "data": ".local/hotpath-optimization/qualified-matching-5-legacy.json",
+        "binary": ".local/transaction-refactor/matching-baseline-target/release/examples/benchmark_matching_transactions.exe",
+        "binary_sha256": "ebd6a46e000ad969c0b04e927e9bec34e663709b7041087b8faa12b54c144f7a"
+      },
+      {
+        "scope": "orders",
+        "run": 0,
+        "variant": "legacy",
+        "start_unix": 1791637634.5275886,
+        "duration_seconds": 61.845030307769775,
+        "data": ".local/hotpath-optimization/qualified-orders-0-legacy.json",
+        "binary": ".local/transaction-refactor/matching-baseline-target/release/examples/benchmark_order_transactions.exe",
+        "binary_sha256": "dacbf8fd5acc1a470b8be33660dfe61a30b942e0891987dedaa3a3eff9f9f214"
+      },
+      {
+        "scope": "orders",
+        "run": 1,
+        "variant": "stage1",
+        "start_unix": 1791637696.3750718,
+        "duration_seconds": 6.902170658111572,
+        "data": ".local/hotpath-optimization/qualified-orders-1-stage1.json",
+        "binary": ".local/hotpath-optimization/stage1-target/release/examples/benchmark_order_transactions.exe",
+        "binary_sha256": "90676dcd644b3f2505ab7fef28366c12ad5f1b73f23f652f89cfe2566851c554"
+      },
+      {
+        "scope": "orders",
+        "run": 2,
+        "variant": "current",
+        "start_unix": 1791637703.2800717,
+        "duration_seconds": 4.337574243545532,
+        "data": ".local/hotpath-optimization/qualified-orders-2-current.json",
+        "binary": ".local/hotpath-optimization/qualified-orders.exe",
+        "binary_sha256": "ad3b9c123d7856ff94a6a46695977e1ebc981eb2e6daa57dedaa66b13b0b0088"
+      },
+      {
+        "scope": "orders",
+        "run": 3,
+        "variant": "current",
+        "start_unix": 1791637707.6206262,
+        "duration_seconds": 4.0920209884643555,
+        "data": ".local/hotpath-optimization/qualified-orders-3-current.json",
+        "binary": ".local/hotpath-optimization/qualified-orders.exe",
+        "binary_sha256": "ad3b9c123d7856ff94a6a46695977e1ebc981eb2e6daa57dedaa66b13b0b0088"
+      },
+      {
+        "scope": "orders",
+        "run": 4,
+        "variant": "stage1",
+        "start_unix": 1791637711.7157645,
+        "duration_seconds": 6.777000904083252,
+        "data": ".local/hotpath-optimization/qualified-orders-4-stage1.json",
+        "binary": ".local/hotpath-optimization/stage1-target/release/examples/benchmark_order_transactions.exe",
+        "binary_sha256": "90676dcd644b3f2505ab7fef28366c12ad5f1b73f23f652f89cfe2566851c554"
+      },
+      {
+        "scope": "orders",
+        "run": 5,
+        "variant": "legacy",
+        "start_unix": 1791637718.4954774,
+        "duration_seconds": 57.58373737335205,
+        "data": ".local/hotpath-optimization/qualified-orders-5-legacy.json",
+        "binary": ".local/transaction-refactor/matching-baseline-target/release/examples/benchmark_order_transactions.exe",
+        "binary_sha256": "dacbf8fd5acc1a470b8be33660dfe61a30b942e0891987dedaa3a3eff9f9f214"
+      }
+    ],
+    "raw_result_hashes": {
+      ".local/hotpath-optimization/qualified-matching-0-legacy.json": "c0ff498ad76b14e8f21ffc24f18e81064f28cdb5fceed867bec4de98de378638",
+      ".local/hotpath-optimization/qualified-matching-1-stage1.json": "97c9e5d5ae9c5187e94420a5057eec861e79313157f9c0f6e68268a9d747f63d",
+      ".local/hotpath-optimization/qualified-matching-2-current.json": "10fde60dba4629e421d1f8bc48ad544d7112459e322c139c6ffd621bbccdf467",
+      ".local/hotpath-optimization/qualified-matching-3-current.json": "4421be890203883996f4ef440c13a1389a35ec7bca96f840ceade5bdae135637",
+      ".local/hotpath-optimization/qualified-matching-4-stage1.json": "1b8b4d2607b27a5216ec447ed8b55688e1a330f15035272acc6991a0296927a3",
+      ".local/hotpath-optimization/qualified-matching-5-legacy.json": "990205965bc86c28d82579a324392575cb4a36f18a69a072158ab3766adbb9d4",
+      ".local/hotpath-optimization/qualified-orders-0-legacy.json": "0893ae4aef79a8609ac1822845271b727b46b1cb7d30fd2c40fb56e86f161eb8",
+      ".local/hotpath-optimization/qualified-orders-1-stage1.json": "11b4ba6989d71aafe2e67d1a0bea8548ac417364cbe0febbe8f146bf2ace57d2",
+      ".local/hotpath-optimization/qualified-orders-2-current.json": "79391054feb6a78412daedec05085e6a13b3700d848abf1c5bde37c26f867f44",
+      ".local/hotpath-optimization/qualified-orders-3-current.json": "32179ff7811e5a95eba29f4425c59c412eb3647995432a12a507fcaaaa235f3f",
+      ".local/hotpath-optimization/qualified-orders-4-stage1.json": "2786ebd13d1150bf4f4b9c28707581cf3216b0c0bf6bad66fb40d94b984fcfd8",
+      ".local/hotpath-optimization/qualified-orders-5-legacy.json": "e29db3beb12369e047b6540eecd67ce367d70fe699e6f1ed052d456afde9db16"
+    }
+  },
+  "limits": [
+    "Bulk raw matching still has overhead relative to the original mutable queue; stage2 improves it rather than eliminating it. Full spot transaction benefit and raw matching regression are separate findings.",
+    "Matching throughput is measured for one price and two accounts only; command-size scaling separately uses 1/100 levels and up to 100000 orders. No new throughput qualification for hedge/reduce-only/liquidation/perpetual scenarios.",
+    "Event/history growth, HTTP/WebSocket, scheduler contention, journal, PostgreSQL durable commit and crash recovery latency are excluded from these microbenchmarks.",
+    "Short sub-microsecond operations have coarse timer resolution and host noise; use absolute cost and block spread rather than precise multipliers.",
+    "Persistent chunks and index paths still incur copying/indirection. Matching an exchange-grade mutable arena plus explicit transaction log is outside this iteration."
+  ],
+  "workspace_preservation": {
+    "unchanged_other_tracked_diff_sections": 30,
+    "untouched_core_sources_match_stage1_copy": true,
+    "initial_patch": ".local/hotpath-optimization/initial-working-tree.patch",
+    "initial_status": ".local/hotpath-optimization/initial-status.txt",
+    "stage2_allowlist": [
+      "exchange-core/src/engine.rs",
+      "exchange-core/src/orderbook_storage.rs",
+      "exchange-core/src/orderbook_nodes.rs",
+      "exchange-core/examples/benchmark_matching_transactions.rs",
+      "docs/validation/2026-10-10-matching-hotpath.json"
+    ],
+    "golden_fixture_sha256": "6a61160ee8c1d3735e0c3cae0fe0bb635e8a4685ace6578750a4f329b3e7533e"
+  },
+  "source_hashes": {
+    "Cargo.lock": "8ad8bd782dca7597494ff2c9b3310011b40ef239cdfd204e5d21ac630df882b8",
+    "exchange-core/Cargo.toml": "00ff643bc6593843b841e5421b75127ec927d9b7f72a02356e97adb53920af6d",
+    "exchange-core/src/actor.rs": "d837e28289fc41b09fe557565198bf59f1afcdbc751589adf5d250111fc978b4",
+    "exchange-core/src/conditional_orders_actor.rs": "86d6a55c23fabc12b879935be28cff0b668bfac1c728caa00bf0edcb288a31cd",
+    "exchange-core/src/engine.rs": "2187a9673e9c4b836d4a14009d904746b13393be00794b39d3f68da55f44dce1",
+    "exchange-core/src/orderbook_storage.rs": "d043ffb2e01b7c8ea5e990ba1ed0386dcfb76428a7a030d9aefaf2f171b0ad50",
+    "exchange-core/src/perp.rs": "6663d398282d12f8d5a91397befd4b4d2b46ba8ce9869943df701fbac87fa1fe",
+    "exchange-core/src/portfolio.rs": "0324f7ff3b1b82a20d80ae3d87ef16bf1ee02bcd6a23d97d693bee1004f15308",
+    "exchange-core/src/shared_map.rs": "1122506f67aec42cac8054c928ba349a3e1ffa6fb3e41de582bfe2bdbc0de061",
+    "exchange-core/src/simulation.rs": "0ee2315c2fb33dcddc77cc9234fb19990475a8fbf00117daea2c50d04bce9f25",
+    "exchange-core/src/spot.rs": "7d1f1afeced8132b884d970fb163da53542015a6ce47c47a1c4b45d12cae81d9",
+    "exchange-core/src/trading.rs": "f9dcff6b4657618b200f0338a42c66c4c71e0266ac5df2af74458c27c5791c97",
+    "exchange-core/examples/benchmark_order_transactions.rs": "16bb0c051d0b9360f5963cda69d7c9969d5efc995f54144b8854375724fbbf08",
+    "exchange-core/examples/benchmark_matching_transactions.rs": "c270558984f7fe03e67e112c7b7b968ea640ab41cac596895320b1ab46764a8a",
+    "exchange-core/tests/orderbook_legacy_contract.rs": "afd85620997ea17431f0fe61fa347d2801b0cf47bdf6ae933f4d44bd194acce0",
+    "exchange-core/tests/fixtures/legacy_orderbook.json": "6a61160ee8c1d3735e0c3cae0fe0bb635e8a4685ace6578750a4f329b3e7533e",
+    "exchange-core/src/orderbook_nodes.rs": "1fa4478a6d75cae1809403b9c911aee522f2763c4630eb935c314facaef06fdd"
+  },
+  "binary_hashes": {
+    ".local/transaction-refactor/matching-baseline-target/release/examples/benchmark_matching_transactions.exe": "ebd6a46e000ad969c0b04e927e9bec34e663709b7041087b8faa12b54c144f7a",
+    ".local/hotpath-optimization/stage1-target/release/examples/benchmark_matching_transactions.exe": "2c84001cb4e8ca6b0569652dc8c98e4ba1eeb9d111547788900011d3cee41b4e",
+    ".local/hotpath-optimization/qualified-matching.exe": "e87902facdcb7cfa953f4d51847d860db03a4f41c09ff94a30d09d0cb2b7a8cf",
+    ".local/transaction-refactor/matching-baseline-target/release/examples/benchmark_order_transactions.exe": "dacbf8fd5acc1a470b8be33660dfe61a30b942e0891987dedaa3a3eff9f9f214",
+    ".local/hotpath-optimization/stage1-target/release/examples/benchmark_order_transactions.exe": "90676dcd644b3f2505ab7fef28366c12ad5f1b73f23f652f89cfe2566851c554",
+    ".local/hotpath-optimization/qualified-orders.exe": "ad3b9c123d7856ff94a6a46695977e1ebc981eb2e6daa57dedaa66b13b0b0088"
+  },
+  "baseline_core_hashes": {
+    "src/account.rs": "a003cad566382bc256f7bdfb65976c3561d6e24d553372177fa44f0ada630073",
+    "src/actor.rs": "5149d795f1c42307fde80eeb67a7996727989477bb31564f6e8c03b147087b56",
+    "src/agents.rs": "a24c7560c11366fbee2ab11d6529e0fef65baaf7ea98e5d5ef791f63595615aa",
+    "src/bots.rs": "4f78de41f195ec532ab0bb41b32aee1e1e512b3932ad9787343296fdbbe16b36",
+    "src/bot_risk.rs": "e9415d1cc7d0d2cf0b9eab6815b0452e375e1eb1b06256f6850b10add9b1c9cf",
+    "src/candles.rs": "e924eb4ec9507feb2d1edd1065cdb7cdd9311e0f4531897ca5df65c5fb702c6e",
+    "src/clock.rs": "b06318f815ee93a6530447eb192c0ed29b5e538c80ca8bd1c8ce9b23eef4562d",
+    "src/conditional_orders.rs": "3325f407ac0fd1f8d79073eeaaafc827b837381a0a1632289562805ac5b958fd",
+    "src/conditional_orders_actor.rs": "d599f5d24bea76fc5bfe85f7cfa122d6119ea6c3c84d3fdc643a16225d0fc5c9",
+    "src/engine.rs": "9f7723461a62d35501ed3b7bce6457cbd7dde7776405bdd57aefb0fb386189f9",
+    "src/funding.rs": "377469bc7c37cc0425b566a274fb4cf77b52d9ef546952e6f85594502436a582",
+    "src/funding_tests.rs": "07d85e5fe928881d1a387a21efaa7ef1780f06bd3b6f21496fb4633dd1efd93b",
+    "src/gateway.rs": "ac844ed205c036039af23ae89c49e7df30f640a1a01ec5518b4dcfdd0346f06b",
+    "src/hedge_tests.rs": "2094dfac297c9b0147e365f5fb4e317f7c189ec9dd22b17f227e7c177108b308",
+    "src/history.rs": "fc44d260b52c7397ec1fe5f3145ae808b79c33fccf49efbba08769bbf25ed9cb",
+    "src/jsonl.rs": "a1592c6d4b1876a99d2f6106405798d48e3a855b97740d66a2a718bfc7db293f",
+    "src/lib.rs": "ccc48eaa483d3efe7a1288b07c47c34ba37c3bbc16a072c3e99b8b941b8242fb",
+    "src/log.rs": "8bb98ef35159aad095dea388a2f1e094d1e83565e3792fe34464dccfddba1526",
+    "src/market.rs": "40916eb0efa6ddafb3e6167f1fcd076c853cb69abaf92852c99017d90944247f",
+    "src/market_behaviors_tests.rs": "42a9a8b398b713826dfcf541a7e6c19c95dddeb64ab865518ed39c5822cfcc98",
+    "src/market_behavior_integration_tests.rs": "b6a06cd9a716b3380f7c4be60a202044928ce1851bd022863546ab4de320424a",
+    "src/market_bots.rs": "94224c002bfb5266310f18039ee586ba5044198925bd8312c3deccce3a653f33",
+    "src/market_bots_tests.rs": "24bf4fedda93cd64a29f7f5fd6ed55baacc6c4a51b618f9cb4f9aea21295195b",
+    "src/market_events.rs": "5990f431f5b8ebc878c78ea50118388c206f2dfcb5e6b7007ddce0043e8fffd6",
+    "src/market_microstructure_integration_tests.rs": "def8e495949bfb2e62c7f93aae4b8f77d828251528f546f7a73b789f94a63643",
+    "src/market_microstructure_tests.rs": "52bf0abc3424e77a78810d8d4768d4b8c6930f61ef8f9941bca7462bafccc3a2",
+    "src/model.rs": "da33f359022714b72eaa4cb0b32899dae9ea66750a4bb781fade22415d332f8b",
+    "src/observation.rs": "7d8fefd2463eaf6f26d0522f4f4727e5be409b70b6f6ae37c79c206815b6e910",
+    "src/order_protection_tests.rs": "4ea6d999505e881b6e3e7f07b823ed8b1ba234b90ffdff8d17caa9dc3a384b4e",
+    "src/participant.rs": "638de3d376b23a5a07e3abb811f36ac256bc29bd6f37e99da7b702c6fb7e8533",
+    "src/performance.rs": "ba6afde9fe28796a7937245f4e69fdf5bc60ee74d2eed1d79e4964cdceee1c6e",
+    "src/perp.rs": "4c9c01f6601715c321af44261ace2e888a683ec0065bda9eed04b670ae777f6b",
+    "src/population.rs": "6cacef77e123eff13d9b0303882afdff40ecb50851fffc45a1a887ebe95c72e3",
+    "src/population_tests.rs": "e6203ae10dd4b529a5ebb9e400acb14b20fa61f487337a0fd7cfc1344c15517d",
+    "src/portfolio.rs": "42f38c82e59fccb4f9c590409be14bc9016955a3506fb2e042fc107af4c85bdb",
+    "src/position_protection.rs": "5ca7a2752651cc4614b412dcf7c20311f43e777dcf10f2b50ecb68a9aaf6e787",
+    "src/position_protection_actor.rs": "63dd4a812d5f754da4ec8e8dee2230fbf8bbe7fee86446e4297d0d68683a7e7e",
+    "src/price_link.rs": "fc582a19fb9077b2b5ae057fdc20a6e02c5e7fea70c1f8432a87591e1680b8a3",
+    "src/price_link_tests.rs": "a52736b6fca9e03665346dba8b31400efbe0217c064658f9cc9b21fdac38cb97",
+    "src/replay.rs": "4dfe90ab4e8419b57da25b2408998fb2eea7a02ff58d1f9f8b8483b5ec5200f5",
+    "src/risk.rs": "51b58e138879abcc718269dad90aaf36f9f83c88f25728f2bfd0eee690ffc11c",
+    "src/room.rs": "716c61c3827517de2e3999f8aaa42211534d088277647435c35182e64a798bd5",
+    "src/scenario.rs": "11de107988b2178121178c7a6ee03fd6539b890dee419e7cde7e06c7efd5df21",
+    "src/scheduler.rs": "5df8498687bcd9784f33bea5cf64dd86e1a3e09b9996388a3f6fa4ef41099dbc",
+    "src/shared_map.rs": "783deab6178d3c0413bb3e3a2b9021523fdde2772108eb535661296fc5e032b2",
+    "src/simulation.rs": "ee699a4ba7fbe31cc39620d43a9e1f812e7a1d0c06c09205fe3b81d14c72ea14",
+    "src/spot.rs": "b9d66f252375829f2f63ae2521054054ec9f34d8026b9e883b19b276a8416441",
+    "src/trading.rs": "792f29d8ffbf016f7998c41a2929770a972fc4b8d7d317ae2347284be250c876",
+    "src/training.rs": "8944b494cb20a68c30a7ab3f9164f9b36c54229d0b8c5aa3d1822fe840d46704",
+    "src/training_scenarios.rs": "733840c24b92fdc7c04e985e7b40fd1c9ffd590784b1798a14c790ea0696e6f8",
+    "src/transfer.rs": "384bd70e3711dca571da5133c0e304437156ad990e7d00bcba91e7815329f4ac",
+    "src/venue_rules.rs": "128b9e31e75b6a3db7a3fa67e595fdf3bc9f3ed792e03da0c4e84bfa012d4569"
+  },
+  "stage1_core_hashes": {
+    "src/account.rs": "a003cad566382bc256f7bdfb65976c3561d6e24d553372177fa44f0ada630073",
+    "src/actor.rs": "d837e28289fc41b09fe557565198bf59f1afcdbc751589adf5d250111fc978b4",
+    "src/agents.rs": "a24c7560c11366fbee2ab11d6529e0fef65baaf7ea98e5d5ef791f63595615aa",
+    "src/bots.rs": "4f78de41f195ec532ab0bb41b32aee1e1e512b3932ad9787343296fdbbe16b36",
+    "src/bot_risk.rs": "e9415d1cc7d0d2cf0b9eab6815b0452e375e1eb1b06256f6850b10add9b1c9cf",
+    "src/candles.rs": "e924eb4ec9507feb2d1edd1065cdb7cdd9311e0f4531897ca5df65c5fb702c6e",
+    "src/clock.rs": "b06318f815ee93a6530447eb192c0ed29b5e538c80ca8bd1c8ce9b23eef4562d",
+    "src/conditional_orders.rs": "3325f407ac0fd1f8d79073eeaaafc827b837381a0a1632289562805ac5b958fd",
+    "src/conditional_orders_actor.rs": "86d6a55c23fabc12b879935be28cff0b668bfac1c728caa00bf0edcb288a31cd",
+    "src/engine.rs": "7f8d03e506955b6002af8cad70b3b620ca2c0373000ae6ef9a783675ab85dc0a",
+    "src/funding.rs": "377469bc7c37cc0425b566a274fb4cf77b52d9ef546952e6f85594502436a582",
+    "src/funding_tests.rs": "07d85e5fe928881d1a387a21efaa7ef1780f06bd3b6f21496fb4633dd1efd93b",
+    "src/gateway.rs": "ac844ed205c036039af23ae89c49e7df30f640a1a01ec5518b4dcfdd0346f06b",
+    "src/hedge_tests.rs": "2094dfac297c9b0147e365f5fb4e317f7c189ec9dd22b17f227e7c177108b308",
+    "src/history.rs": "fc44d260b52c7397ec1fe5f3145ae808b79c33fccf49efbba08769bbf25ed9cb",
+    "src/jsonl.rs": "a1592c6d4b1876a99d2f6106405798d48e3a855b97740d66a2a718bfc7db293f",
+    "src/lib.rs": "ccc48eaa483d3efe7a1288b07c47c34ba37c3bbc16a072c3e99b8b941b8242fb",
+    "src/log.rs": "8bb98ef35159aad095dea388a2f1e094d1e83565e3792fe34464dccfddba1526",
+    "src/market.rs": "40916eb0efa6ddafb3e6167f1fcd076c853cb69abaf92852c99017d90944247f",
+    "src/market_behaviors_tests.rs": "42a9a8b398b713826dfcf541a7e6c19c95dddeb64ab865518ed39c5822cfcc98",
+    "src/market_behavior_integration_tests.rs": "b6a06cd9a716b3380f7c4be60a202044928ce1851bd022863546ab4de320424a",
+    "src/market_bots.rs": "94224c002bfb5266310f18039ee586ba5044198925bd8312c3deccce3a653f33",
+    "src/market_bots_tests.rs": "24bf4fedda93cd64a29f7f5fd6ed55baacc6c4a51b618f9cb4f9aea21295195b",
+    "src/market_events.rs": "5990f431f5b8ebc878c78ea50118388c206f2dfcb5e6b7007ddce0043e8fffd6",
+    "src/market_microstructure_integration_tests.rs": "def8e495949bfb2e62c7f93aae4b8f77d828251528f546f7a73b789f94a63643",
+    "src/market_microstructure_tests.rs": "52bf0abc3424e77a78810d8d4768d4b8c6930f61ef8f9941bca7462bafccc3a2",
+    "src/model.rs": "da33f359022714b72eaa4cb0b32899dae9ea66750a4bb781fade22415d332f8b",
+    "src/observation.rs": "7d8fefd2463eaf6f26d0522f4f4727e5be409b70b6f6ae37c79c206815b6e910",
+    "src/orderbook_storage.rs": "acef6d671610c892643682eff6a153777616ff1212f6d88e83778014fb00105c",
+    "src/order_protection_tests.rs": "4ea6d999505e881b6e3e7f07b823ed8b1ba234b90ffdff8d17caa9dc3a384b4e",
+    "src/participant.rs": "638de3d376b23a5a07e3abb811f36ac256bc29bd6f37e99da7b702c6fb7e8533",
+    "src/performance.rs": "ba6afde9fe28796a7937245f4e69fdf5bc60ee74d2eed1d79e4964cdceee1c6e",
+    "src/perp.rs": "6663d398282d12f8d5a91397befd4b4d2b46ba8ce9869943df701fbac87fa1fe",
+    "src/population.rs": "6cacef77e123eff13d9b0303882afdff40ecb50851fffc45a1a887ebe95c72e3",
+    "src/population_tests.rs": "e6203ae10dd4b529a5ebb9e400acb14b20fa61f487337a0fd7cfc1344c15517d",
+    "src/portfolio.rs": "0324f7ff3b1b82a20d80ae3d87ef16bf1ee02bcd6a23d97d693bee1004f15308",
+    "src/position_protection.rs": "5ca7a2752651cc4614b412dcf7c20311f43e777dcf10f2b50ecb68a9aaf6e787",
+    "src/position_protection_actor.rs": "63dd4a812d5f754da4ec8e8dee2230fbf8bbe7fee86446e4297d0d68683a7e7e",
+    "src/price_link.rs": "fc582a19fb9077b2b5ae057fdc20a6e02c5e7fea70c1f8432a87591e1680b8a3",
+    "src/price_link_tests.rs": "a52736b6fca9e03665346dba8b31400efbe0217c064658f9cc9b21fdac38cb97",
+    "src/replay.rs": "4dfe90ab4e8419b57da25b2408998fb2eea7a02ff58d1f9f8b8483b5ec5200f5",
+    "src/risk.rs": "51b58e138879abcc718269dad90aaf36f9f83c88f25728f2bfd0eee690ffc11c",
+    "src/room.rs": "716c61c3827517de2e3999f8aaa42211534d088277647435c35182e64a798bd5",
+    "src/scenario.rs": "11de107988b2178121178c7a6ee03fd6539b890dee419e7cde7e06c7efd5df21",
+    "src/scheduler.rs": "5df8498687bcd9784f33bea5cf64dd86e1a3e09b9996388a3f6fa4ef41099dbc",
+    "src/shared_map.rs": "1122506f67aec42cac8054c928ba349a3e1ffa6fb3e41de582bfe2bdbc0de061",
+    "src/simulation.rs": "0ee2315c2fb33dcddc77cc9234fb19990475a8fbf00117daea2c50d04bce9f25",
+    "src/spot.rs": "7d1f1afeced8132b884d970fb163da53542015a6ce47c47a1c4b45d12cae81d9",
+    "src/trading.rs": "f9dcff6b4657618b200f0338a42c66c4c71e0266ac5df2af74458c27c5791c97",
+    "src/training.rs": "8944b494cb20a68c30a7ab3f9164f9b36c54229d0b8c5aa3d1822fe840d46704",
+    "src/training_scenarios.rs": "733840c24b92fdc7c04e985e7b40fd1c9ffd590784b1798a14c790ea0696e6f8",
+    "src/transfer.rs": "384bd70e3711dca571da5133c0e304437156ad990e7d00bcba91e7815329f4ac",
+    "src/venue_rules.rs": "128b9e31e75b6a3db7a3fa67e595fdf3bc9f3ed792e03da0c4e84bfa012d4569"
+  }
+}

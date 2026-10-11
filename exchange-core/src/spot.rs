@@ -294,12 +294,17 @@ impl SpotAccountStore {
 
     pub fn settle_trade(&mut self, trade: &Trade) -> Result<SpotClearingEvent, ClearingError> {
         let mut staged = self.clone();
-        let event = staged.settle_trade_inner(trade)?;
+        let event = staged.settle_trade_in_transaction(trade)?;
         *self = staged;
         Ok(event)
     }
 
-    fn settle_trade_inner(&mut self, trade: &Trade) -> Result<SpotClearingEvent, ClearingError> {
+    /// Caller owns the rollback candidate for the complete command. A failed
+    /// fill must discard that candidate, including all preceding maker fills.
+    pub(crate) fn settle_trade_in_transaction(
+        &mut self,
+        trade: &Trade,
+    ) -> Result<SpotClearingEvent, ClearingError> {
         let notional = notional(trade.price_tick, trade.qty)?;
         let maker_fee = fee_for(notional, self.config.maker_fee_ppm)?;
         let taker_fee = fee_for(notional, self.config.taker_fee_ppm)?;

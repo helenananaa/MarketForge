@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet};
+use crate::shared_map::SharedMap;
+use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
@@ -6,7 +7,7 @@ use crate::{account::Money, market::AssetId, model::AccountId};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct PortfolioStore {
-    balances: BTreeMap<AccountId, BTreeMap<AssetId, PortfolioAssetBalance>>,
+    balances: SharedMap<AccountId, SharedMap<AssetId, PortfolioAssetBalance>>,
 }
 
 impl PortfolioStore {

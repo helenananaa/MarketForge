@@ -101,6 +101,7 @@ impl ExchangeActor {
         }
         let seq = self.take_command_seq();
         if let Some(spec) = spec {
+            let last_checked_event_seq = self.protection_event_seq(instrument);
             self.conditional_orders.insert(
                 mapkey,
                 crate::conditional_orders::ConditionalOrder {
@@ -109,7 +110,7 @@ impl ExchangeActor {
                     account_id: account,
                     spec: (**spec).clone(),
                     status: "armed".into(),
-                    last_checked_event_seq: self.protection_event_seq(instrument),
+                    last_checked_event_seq,
                     submitted_order_id: None,
                 },
             );

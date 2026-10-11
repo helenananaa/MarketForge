@@ -197,7 +197,7 @@ impl SpotTradingEngine {
         for record in events {
             match &record.event {
                 Event::TradePrinted(trade) => {
-                    let clearing_event = self.accounts.settle_trade(trade)?;
+                    let clearing_event = self.accounts.settle_trade_in_transaction(trade)?;
                     self.clearing_events.push(clearing_event.clone());
                     clearing_events.push(clearing_event);
                 }
@@ -259,7 +259,7 @@ pub struct PerpTradingEngine {
     log: EventLog,
     clearing_events: History<PerpClearingEvent>,
     #[serde(default)]
-    pending_liquidations: BTreeMap<AccountId, PendingLiquidation>,
+    pending_liquidations: crate::shared_map::SharedMap<AccountId, PendingLiquidation>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -307,7 +307,7 @@ impl PerpTradingEngine {
             risk: PerpRiskEngine::new(risk_config),
             log: EventLog::new(),
             clearing_events: History::default(),
-            pending_liquidations: BTreeMap::new(),
+            pending_liquidations: crate::shared_map::SharedMap::default(),
         })
     }
 
@@ -839,7 +839,7 @@ impl PerpTradingEngine {
         for record in events {
             match &record.event {
                 Event::TradePrinted(trade) => {
-                    let trade_clearing_events = self.accounts.settle_trade(trade)?;
+                    let trade_clearing_events = self.accounts.settle_trade_in_transaction(trade)?;
                     self.clearing_events
                         .extend(trade_clearing_events.iter().cloned());
                     clearing_events.extend(trade_clearing_events);
@@ -1367,6 +1367,36 @@ mod tests {
         assert_eq!(engine.command_log().len(), commands_before);
         assert_eq!(engine.event_log().len(), events_before);
         assert!(engine.clearing_log().is_empty());
+    }
+
+    #[test]
+    fn later_maker_failure_rolls_back_all_earlier_fills_and_shared_checkpoints() {
+        let mut engine = SpotTradingEngine::new(SpotClearingConfig::default());
+        engine.create_account_with_position(10, Money::MAX - 100, 2);
+        engine.create_account(20, 1000);
+        engine.apply(limit(1, 10, Side::Sell, 100, 1)).unwrap();
+        engine.apply(limit(2, 10, Side::Sell, 100, 1)).unwrap();
+        let checkpoint = engine.clone();
+        // Value's default numeric representation cannot hold Money::MAX;
+        // the streaming serializer preserves the full i128 exactly.
+        let before = serde_json::to_string(&engine).unwrap();
+        // First maker credits the seller to MAX; second maker overflows.
+        assert_eq!(
+            engine.apply(market(3, 20, Side::Buy, 2)),
+            Err(ClearingError::BalanceOverflow)
+        );
+        assert_eq!(serde_json::to_string(&engine).unwrap(), before);
+        assert_eq!(serde_json::to_string(&checkpoint).unwrap(), before);
+        // A failed candidate does not consume its order ID or sequence.
+        engine.apply(market(3, 20, Side::Buy, 1)).unwrap();
+        assert_eq!(
+            engine.account_snapshot(10).unwrap().cash_balance,
+            Money::MAX
+        );
+        assert_eq!(engine.account_snapshot(20).unwrap().position_qty, 1);
+        assert_eq!(engine.order_owner(1), None);
+        assert_eq!(engine.order_owner(2), Some(10));
+        assert_eq!(serde_json::to_string(&checkpoint).unwrap(), before);
     }
 
     #[test]

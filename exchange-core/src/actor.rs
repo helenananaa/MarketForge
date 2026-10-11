@@ -69,9 +69,10 @@ pub struct MarketActor {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ExchangeActor {
     #[serde(default)]
-    conditional_orders: BTreeMap<String, crate::conditional_orders::ConditionalOrder>,
+    conditional_orders:
+        crate::shared_map::SharedMap<String, crate::conditional_orders::ConditionalOrder>,
     #[serde(default)]
-    position_protections: BTreeMap<String, crate::PositionProtection>,
+    position_protections: crate::shared_map::SharedMap<String, crate::PositionProtection>,
     room_id: RoomId,
     config: ExchangeConfig,
     markets: BTreeMap<InstrumentId, MarketActor>,
@@ -129,8 +130,8 @@ impl ExchangeActor {
             price_links: BTreeMap::new(),
             spot_trade_prices: BTreeMap::new(),
             funding_states: BTreeMap::new(),
-            position_protections: BTreeMap::new(),
-            conditional_orders: BTreeMap::new(),
+            position_protections: crate::shared_map::SharedMap::default(),
+            conditional_orders: crate::shared_map::SharedMap::default(),
             pending_clock_executions: Vec::new(),
             funding_collateral_shortfalls: MarketReservations::default(),
         })
@@ -186,8 +187,8 @@ impl ExchangeActor {
             price_links: BTreeMap::new(),
             spot_trade_prices: BTreeMap::new(),
             funding_states: BTreeMap::new(),
-            position_protections: BTreeMap::new(),
-            conditional_orders: BTreeMap::new(),
+            position_protections: crate::shared_map::SharedMap::default(),
+            conditional_orders: crate::shared_map::SharedMap::default(),
             pending_clock_executions: Vec::new(),
             funding_collateral_shortfalls: MarketReservations::default(),
         })

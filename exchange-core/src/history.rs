@@ -3,16 +3,51 @@
 //! representation stays a plain array, including when reading old checkpoints.
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeSeq};
 use std::{
-    ops::Deref,
+    ops::{Deref, DerefMut},
     sync::{Arc, OnceLock},
 };
 
-const CHUNK_SIZE: usize = 256;
+const CHUNK_SIZE: usize = 32;
+
+#[derive(Debug)]
+struct Chunk<T>(Vec<T>);
+
+impl<T> Default for Chunk<T> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
+impl<T: Clone> Clone for Chunk<T> {
+    fn clone(&self) -> Self {
+        if self.is_empty() {
+            return Self::default();
+        }
+        // A detached tail will immediately be appended to. Preserve spare
+        // capacity so that cloning does not force another allocation/copy.
+        let mut values = Vec::with_capacity(CHUNK_SIZE);
+        values.extend_from_slice(&self.0);
+        Self(values)
+    }
+}
+
+impl<T> Deref for Chunk<T> {
+    type Target = Vec<T>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for Chunk<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct History<T> {
-    chunks: Arc<Vec<Arc<Vec<T>>>>,
-    tail: Arc<Vec<T>>,
+    chunks: im::Vector<Arc<Chunk<T>>>,
+    tail: Arc<Chunk<T>>,
     len: usize,
     contiguous: OnceLock<Arc<Vec<T>>>,
 }
@@ -20,7 +55,7 @@ pub(crate) struct History<T> {
 impl<T> Default for History<T> {
     fn default() -> Self {
         Self {
-            chunks: Arc::default(),
+            chunks: im::Vector::new(),
             tail: Arc::default(),
             len: 0,
             contiguous: OnceLock::new(),
@@ -32,7 +67,7 @@ impl<T: Clone> History<T> {
     pub(crate) fn push(&mut self, value: T) {
         self.contiguous.take();
         if self.tail.len() == CHUNK_SIZE {
-            Arc::make_mut(&mut self.chunks).push(std::mem::take(&mut self.tail));
+            self.chunks.push_back(std::mem::take(&mut self.tail));
         }
         Arc::make_mut(&mut self.tail).push(value);
         self.len += 1;
@@ -64,10 +99,10 @@ impl<T> History<T> {
         let sealed_len = self.len - self.tail.len();
         let first_chunk = (start / CHUNK_SIZE).min(self.chunks.len());
         let offset = start % CHUNK_SIZE;
-        self.chunks[first_chunk..]
-            .iter()
-            .enumerate()
-            .flat_map(move |(index, chunk)| chunk[if index == 0 { offset } else { 0 }..].iter())
+        (first_chunk..self.chunks.len())
+            .flat_map(move |index| {
+                self.chunks[index][if index == first_chunk { offset } else { 0 }..].iter()
+            })
             .chain(self.tail[start.saturating_sub(sealed_len)..].iter())
     }
 }
@@ -121,6 +156,49 @@ impl<'de, T: Deserialize<'de> + Clone> Deserialize<'de> for History<T> {
 mod tests {
     use super::*;
     #[test]
+    fn appending_to_long_forks_copies_a_small_tail_and_keeps_old_exports() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        #[derive(Debug)]
+        struct Counted(usize, Arc<AtomicUsize>);
+        impl Clone for Counted {
+            fn clone(&self) -> Self {
+                self.1.fetch_add(1, Ordering::Relaxed);
+                Self(self.0, self.1.clone())
+            }
+        }
+        let copies = Arc::new(AtomicUsize::new(0));
+        let mut history = History::default();
+        history.extend((0..10_175).map(|i| Counted(i, copies.clone())));
+        let exported = history.deref().as_ptr();
+        copies.store(0, Ordering::Relaxed);
+        let mut fork = history.clone();
+        assert_eq!(copies.load(Ordering::Relaxed), 0);
+        fork.push(Counted(20_000, copies.clone()));
+        assert!(copies.load(Ordering::Relaxed) < CHUNK_SIZE);
+        assert_eq!(history.deref().as_ptr(), exported);
+        assert_eq!(history.last().unwrap().0, 10_174);
+        assert_eq!(
+            fork.iter_from(10_174).map(|v| v.0).collect::<Vec<_>>(),
+            [10_174, 20_000]
+        );
+        // Sealing the shared full tail preserves earlier chunks; appending
+        // another branch does not change either the old export or the fork.
+        let checkpoint = fork.clone();
+        fork.push(Counted(20_001, copies.clone()));
+        assert!(Arc::ptr_eq(&fork.chunks[0], &history.chunks[0]));
+        assert_eq!(checkpoint.len(), 10_176);
+        assert_eq!(fork.len(), 10_177);
+        assert_eq!(history.deref().as_ptr(), exported);
+        assert_eq!(
+            fork.iter_from(10_174)
+                .rev()
+                .map(|v| v.0)
+                .collect::<Vec<_>>(),
+            [20_001, 20_000, 10_174]
+        );
+    }
+
+    #[test]
     fn append_forks_share_old_chunks_and_keep_array_compatibility() {
         let mut original = History::default();
         original.extend(0..1000u64);
@@ -157,7 +235,7 @@ mod tests {
         assert!(history.contiguous.get().is_none());
         let mut fork = history.clone();
         fork.push(900);
-        assert!(Arc::ptr_eq(&history.chunks, &fork.chunks));
+        assert!(history.chunks.ptr_eq(&fork.chunks));
         assert_eq!(history.len(), 900);
         assert_eq!(fork.iter_from(899).copied().collect::<Vec<_>>(), [899, 900]);
         let empty = History::<usize>::default();
