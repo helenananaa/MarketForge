@@ -1,0 +1,162 @@
+{
+  "tools": 49,
+  "program": {
+    "uid": 65534,
+    "receipt": {
+      "participant_id": "runnerqa",
+      "account_id": 20,
+      "action": {
+        "PlaceFillOrKill": {
+          "side": "Buy",
+          "price_tick": 101,
+          "qty": 1
+        }
+      },
+      "room_id": "agent-runner-qa",
+      "instrument_id": "V-BTC-SPOT",
+      "command_seq": 2,
+      "market_time_ms": 0,
+      "status": "Running",
+      "accepted": true,
+      "reject_reason": null,
+      "events": [
+        {
+          "type": "OrderAccepted",
+          "seq": 4,
+          "order_id": 3
+        },
+        {
+          "type": "TradePrinted",
+          "seq": 5,
+          "trade_id": 0,
+          "maker_order_id": 2,
+          "maker_account_id": 10,
+          "taker_order_id": 3,
+          "taker_account_id": 20,
+          "price_tick": 101,
+          "qty": 1,
+          "taker_side": "Buy"
+        },
+        {
+          "type": "OrderPartiallyFilled",
+          "seq": 6,
+          "order_id": 2,
+          "remaining_qty": 7
+        },
+        {
+          "type": "OrderFilled",
+          "seq": 7,
+          "order_id": 3
+        }
+      ],
+      "clearing_events": [
+        {
+          "type": "SpotTradeSettled",
+          "trade_id": 0,
+          "buyer_account_id": 20,
+          "seller_account_id": 10,
+          "price_tick": 101,
+          "qty": 1,
+          "notional": 101,
+          "buyer_fee": 0,
+          "seller_fee": 0,
+          "buyer": {
+            "account_id": 20,
+            "cash_balance": 99899,
+            "position_qty": 1,
+            "fees_paid": 0
+          },
+          "seller": {
+            "account_id": 10,
+            "cash_balance": 100101,
+            "position_qty": 49,
+            "fees_paid": 0
+          }
+        }
+      ],
+      "clearing_event_count": 1
+    },
+    "history_pages": 2,
+    "http": true
+  },
+  "job": {
+    "job_id": "b880fbe2634a2f1a68f50abaa9103347",
+    "status": "exited",
+    "output": "RUNNER_PROGRAM_OK\n",
+    "next_offset": 18,
+    "has_more": false,
+    "output_truncated": false,
+    "exit_code": 0
+  },
+  "shared_container": true,
+  "alert_fences_lease": true,
+  "codex": {
+    "session_id": "01a12aed-43a6-7ff1-aae9-6b3b14ce78ed",
+    "health": {
+      "state": "idle",
+      "active_turn_id": null
+    },
+    "mcp_tools": 49,
+    "native_mcp_context": true,
+    "native_files_in_work": true,
+    "resumed_same_thread": true,
+    "resumed_after_container_stop": true
+  },
+  "opencode": {
+    "session_id": "ses_ed5129113ffetCOV9trCsW5zbD",
+    "resumed_after_container_restart": true,
+    "mcp_connected": true
+  },
+  "cli_check": {
+    "codex": {
+      "trader": "runnerqa",
+      "environment": "docker",
+      "backend": "codex",
+      "session_id": "01a12aed-90a6-7090-88bb-a6fce02d08d4",
+      "health": {
+        "state": "idle",
+        "active_turn_id": null
+      },
+      "mcp_tools": 49,
+      "model_turn_started": false,
+      "second_invocation_resumed": true
+    },
+    "opencode": {
+      "trader": "runnerqa",
+      "environment": "docker",
+      "backend": "opencode",
+      "session_id": "ses_ed5124f30ffeZqEbmz2NPTO9QE",
+      "health": {
+        "state": "idle",
+        "active_turn_id": null
+      },
+      "mcp_connected": true,
+      "model_turn_started": false,
+      "second_invocation_resumed": true
+    }
+  },
+  "status": "passed",
+  "model_inference": false,
+  "files_retained": true,
+  "paused_trade_rejected": true,
+  "legacy_migration_retains_files": true,
+  "image_id": "sha256:042af2e18f99af436a8f1e73b028fb57da3178d4f32ce0fe5686ba84123b34c5",
+  "mounts": [
+    {
+      "Type": "volume",
+      "Name": "mf-workspace-dc5abc2b7afb1e6cb1759afe-data",
+      "Source": "/var/lib/docker/volumes/mf-workspace-dc5abc2b7afb1e6cb1759afe-data/_data",
+      "Destination": "/work",
+      "Driver": "local",
+      "Mode": "z",
+      "RW": true,
+      "Propagation": ""
+    }
+  ],
+  "native_versions": "codex-cli 0.162.1\n1.19.0",
+  "python_tests": {
+    "total": 146,
+    "passed": 139,
+    "skipped": 7
+  }
+}

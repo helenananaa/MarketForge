@@ -4,6 +4,8 @@
 
 默认服务只提供业务能力：行情、账户、交易、策略隔离执行、警报监控、回执和唤醒事件。模型调用、会话历史、规划、上下文压缩和工具选择由 Codex / OpenCode 等框架管理。
 
+会话连接器默认在每个交易员的独立 Linux 容器中运行 Codex/OpenCode，与脚本共用 `/work`。镜像构建、容器网关、模型认证和启动步骤见 [Docker 框架运行环境](AGENT_RUNNERS.md)。下面的宿主框架方式是显式兼容模式。
+
 `TradingService` 不包含模型循环；旧循环位于 `legacy.py`，仅在显式 `--enable-legacy-model-loop` 时启用。现有嵌入代码的 `Runtime` 保留兼容。既有 legacy 选手不会自动改成外部选手，避免改变账户执行方式。
 迁移已有选手时先暂停，等待旧任务退出，再点击“保留账户，改用外部框架”，或以运营令牌 `POST /traders/{id}/backend` 提交 `{"backend":"external"}`。原账户、资金、挂单、策略、笔记和历史回执保留；未知订单仍按原身份核对。其他旧待执行操作由新决策明确重新评估，不在启动时自动重放。
 
@@ -66,7 +68,7 @@ MCP 使用官方 Python SDK，支持任意兼容 stdio 的框架。MCP 进程只
 先安装并认证 Codex CLI，配置自己要使用的模型。连接器复用其本机配置，通过 app-server 管理会话，使用独立工作目录，不更改全局 MCP 配置。
 
 ```powershell
-.venv/Scripts/python.exe -m marketforge.agents.connectors --backend codex --trader trader-1 --state-file .local/agents/connections/trader-1-codex.json
+.venv/Scripts/python.exe -m marketforge.agents.connectors --environment host --backend codex --trader trader-1 --state-file .local/agents/connections/trader-1-codex.json
 ```
 
 首次创建原生线程，后续读取保存的 thread ID 并 `thread/resume`。思考中收到警报使用 `turn/steer`，空闲时使用 `turn/start`；暂停选手使用 `turn/interrupt`。正常轮次和上下文由 Codex 自身管理。连接器不调用 completion、不保存思维链，也不实现上下文压缩。无人值守连接器不处理交互批准/表单，应通过框架原生客户端检查需要人工处理的请求。
@@ -79,7 +81,7 @@ MCP 使用官方 Python SDK，支持任意兼容 stdio 的框架。MCP 进程只
 # 单独终端；端口可自选，在连接器里保持一致。
 opencode serve --hostname 127.0.0.1 --port 4096
 # 原业务终端已有 MARKETFORGE_TOOL_TOKEN。
-.venv/Scripts/python.exe -m marketforge.agents.connectors --backend opencode --trader trader-1 --opencode-url http://127.0.0.1:4096 --state-file .local/agents/connections/trader-1-opencode.json
+.venv/Scripts/python.exe -m marketforge.agents.connectors --environment host --backend opencode --trader trader-1 --opencode-url http://127.0.0.1:4096 --state-file .local/agents/connections/trader-1-opencode.json
 ```
 
 有 `OPENCODE_SERVER_PASSWORD` 时，连接器使用相同环境变量和可选 `OPENCODE_SERVER_USERNAME` 认证。活动会话收到警报后通过 `abort` 停止旧执行，再向**同一 session**发送 `prompt_async`，保留会话历史和目标；空闲时直接发送新信息。MCP 配置引用本机工具令牌文件，不把令牌正文放进框架配置。
@@ -88,7 +90,7 @@ opencode serve --hostname 127.0.0.1 --port 4096
 
 账户工具 HTTP 接口：`GET /tools/{trader}/schema`、`POST /tools/{trader}/call`、`GET /tools/{trader}/events?after=<seq>&wait=1`。`wait` 支持最长 20 秒有界长轮询，事件 seq 可持久化和分页，`tail=1` 可读取最新记录。只有绑定账户的工具令牌能读取这些接口。
 
-连接器的状态文件保存身份、框架 session ID 和事件游标，令牌另存本机 `.token` 文件。状态文件与工作目录绑定，不允许拿另一个选手的会话继续使用；文件锁防止同一状态文件被两个连接器同时操作。重启连接器会把最新业务上下文注入原会话，并合并待处理事件；交付是至少一次，遇到断线不能声称框架已经处理了消息，交易副作用依靠固定请求 ID/回执去重。
+连接器的宿主状态文件保存身份、框架 session ID 和事件游标。Docker 模式将工具令牌保存在该账户卷内，宿主兼容模式另存本机 `.token` 文件。状态文件与工作目录绑定，不允许拿另一个选手的会话继续使用；文件锁防止同一状态文件被两个连接器同时操作。重启连接器会把最新业务上下文注入原会话，并合并待处理事件；交付是至少一次，遇到断线不能声称框架已经处理了消息，交易副作用依靠固定请求 ID/回执去重。
 
 警报规则与策略仍是市场业务，需要常驻业务服务。轮询警报的采样限制沿用 [AI_TRADERS.md](AI_TRADERS.md)。暂停选手会关闭决策凭证、暂停监控/策略并通知连接器；挂单/成交不回滚。原生框架的文件/终端工具由其沙箱负责，账户令牌限制的是 MarketForge 接口权限，不代表对整个框架进程完成了对抗性隔离认证。
 
@@ -120,7 +122,7 @@ Web 面板选择交易员后显示业务状态、框架在线/思考/等待/重�
 
 ## 订单管理、警报分级与可选预算
 
-工具目录现有 27 项。新增 `orders`、`fills`、`order_cancel_all`、`policy_status`；`trade` 新增 `action=amend`。详见 [AGENT_POLICIES.md](AGENT_POLICIES.md)。
+工具目录现有 49 项。`orders`、`fills`、`order_cancel_all`、`policy_status` 和 `trade` 的 `action=amend` 见 [AGENT_POLICIES.md](AGENT_POLICIES.md)。
 
 普通警报使用 `priority=normal`，排队并在下一轮合并交付，不撤销当前凭证；紧急警报默认 `priority=urgent`，立即撤销旧凭证，仍允许模型继续、修改或放弃保留的计划。`sustain_seconds`、`hysteresis`、`interrupt_min_interval_seconds` 可减少抖动和重复中断。
 

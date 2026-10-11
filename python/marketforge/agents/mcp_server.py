@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import json
+import ipaddress
 import os
 from pathlib import Path
 import urllib.error
@@ -22,12 +23,25 @@ class ServiceError(ValueError):
         self.status = status
 
 
+def validate_service_url(url, allow_container_gateway=False):
+    parsed = urlsplit(url)
+    local = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    private = parsed.hostname == "host.docker.internal"
+    try:
+        address = ipaddress.ip_address(parsed.hostname or "")
+        private = address.is_private and not address.is_unspecified and not address.is_multicast
+    except ValueError:
+        pass
+    if parsed.scheme != "http" or not (local or allow_container_gateway and private) or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ("", "/"):
+        raise ValueError("business service must be a loopback HTTP base URL or an explicitly enabled private Docker gateway")
+    if not parsed.port or not 1 <= parsed.port <= 65535:
+        raise ValueError("business service URL requires an explicit port")
+
+
 class ServiceClient:
-    def __init__(self, url, trader, token, connection_id=None):
+    def __init__(self, url, trader, token, connection_id=None, *, allow_container_gateway=False):
         from .runtime import identifier
-        parsed = urlsplit(url)
-        if parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1", "::1") or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ("", "/"):
-            raise ValueError("business service must be a loopback HTTP base URL")
+        validate_service_url(url, allow_container_gateway)
         if not token or len(token) < 24:
             raise ValueError("set the scoped trader tool token environment variable")
         self.url, self.trader, self.token = url.rstrip("/"), identifier(trader), token
@@ -108,9 +122,10 @@ def main():
     parser.add_argument("--token-env", default="MARKETFORGE_TOOL_TOKEN")
     parser.add_argument("--token-file", help="optional local capability file; never put token bytes in configuration")
     parser.add_argument("--connection-id", help="native connector transport epoch; old transports cannot create fresh leases")
+    parser.add_argument("--allow-container-gateway", action="store_true", help="allow the explicitly configured private Docker host gateway")
     args = parser.parse_args()
     token = Path(args.token_file).read_text().strip() if args.token_file else os.environ.get(args.token_env, "")
-    asyncio.run(serve(ServiceClient(args.service_url, args.trader, token, args.connection_id)))
+    asyncio.run(serve(ServiceClient(args.service_url, args.trader, token, args.connection_id, allow_container_gateway=args.allow_container_gateway)))
 
 
 if __name__ == "__main__":

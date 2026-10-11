@@ -127,20 +127,20 @@ def mcp_command(client, token_file, connection_id=None):
 
 
 class CodexSession:
-    def __init__(self, client, state, workspace, token_file, executable="codex", ephemeral=False, instructions=INSTRUCTIONS, model=None, effort=None):
+    def __init__(self, client, state, workspace, token_file, executable="codex", ephemeral=False, instructions=INSTRUCTIONS, model=None, effort=None, runner=None):
         env = {k: v for k, v in os.environ.items() if not k.startswith("MARKETFORGE_")}
         env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])
-        self.rpc = CodexRPC([shutil.which(executable) or executable, "app-server"], env)
+        self.rpc = CodexRPC(runner.command('codex', 'app-server') if runner else [shutil.which(executable) or executable, "app-server"], env)
         self.active = None
         self.usage = None
         self.usage_reports = {}
         try:
             self.rpc.request("initialize", {"clientInfo": {"name": "marketforge", "title": "MarketForge", "version": "1.0.0"}})
             self.rpc.send({"method": "initialized", "params": {}})
-            command = mcp_command(client, token_file, state.get("connection_id"))
-            params = {"cwd": str(workspace.resolve()), "approvalPolicy": "never", "sandbox": "workspace-write",
-                "developerInstructions": instructions, "config": {"mcp_servers": {"marketforge": {
-                    "command": command[0], "args": command[1:], "env": {"PYTHONPATH": env["PYTHONPATH"]},
+            command = runner.mcp_command(state.get("connection_id")) if runner else mcp_command(client, token_file, state.get("connection_id"))
+            params = {"cwd": '/work' if runner else str(workspace.resolve()), "approvalPolicy": "never", "sandbox": "danger-full-access" if runner else "workspace-write",
+                "developerInstructions": instructions + (' Your native file and shell tools run in this trader\'s Linux container at /work; workspace_* MCP tools address the same persistent directory. Python programs use marketforge_program.Client() over the scoped HTTP API.' if runner else ''), "config": {"mcp_servers": {"marketforge": {
+                    "command": command[0], "args": command[1:], "env": {"PYTHONPATH": '/work:/opt/marketforge/python' if runner else env["PYTHONPATH"]},
                     "startup_timeout_sec": 30, "tool_timeout_sec": 45, "default_tools_approval_mode": "approve"}}}}
             if model:
                 params["model"] = model
@@ -152,6 +152,13 @@ class CodexSession:
                 params["ephemeral"] = True
             thread = self.rpc.request("thread/resume" if state.get("session_id") else "thread/start", params)["thread"]
             self.id = thread["id"]
+            if runner and not state.get('session_id') and not ephemeral:
+                # Codex defers creating a rollout until history exists. Persist
+                # a neutral initialization item without spending a model turn,
+                # so --check and pre-delivery reconnects can resume this ID.
+                self.rpc.request('thread/inject_items', {'threadId': self.id, 'items': [
+                    {'type': 'message', 'role': 'user', 'content': [{'type': 'input_text',
+                        'text': 'MarketForge trading session initialized; no market decision has been requested yet.'}]}]})
             for turn in thread.get("turns", []):
                 if turn["status"] == "inProgress":
                     self.active = turn["id"]
@@ -186,6 +193,13 @@ class CodexSession:
         self.rpc.request("thread/read", {"threadId": self.id, "includeTurns": False}, timeout=5)
         return {"state": "thinking" if self.active else "idle", "active_turn_id": self.active}
 
+    def check(self):
+        status = self.rpc.request('mcpServerStatus/list', {'threadId': self.id, 'serverName': 'marketforge', 'detail': 'toolsAndAuthOnly'})
+        servers = [item for item in status['data'] if item['name'] == 'marketforge']
+        if not servers or not servers[0].get('tools'):
+            raise ValueError('native Codex MarketForge MCP has no tools')
+        return {'health': self.health(), 'mcp_tools': len(servers[0]['tools'])}
+
     def deliver(self, payload):
         self.pump()
         goal = payload.get("context", {}).get("goal")
@@ -219,18 +233,22 @@ class CodexSession:
 
 
 class OpenCodeSession:
-    def __init__(self, client, state, workspace, token_file, url):
+    def __init__(self, client, state, workspace, token_file, url, runner=None, model=None):
         parsed = urlsplit(url)
         if parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1", "::1") or parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError("use a dedicated loopback OpenCode serve instance per trader")
         self.url = url.rstrip("/")
-        self.headers = {"Content-Type": "application/json", "x-opencode-directory": str(workspace.resolve())}
-        password = os.environ.get("OPENCODE_SERVER_PASSWORD")
+        self.runner = runner
+        self.model = model
+        if runner:
+            runner.start_opencode()
+        self.headers = {"Content-Type": "application/json", "x-opencode-directory": '/work' if runner else str(workspace.resolve())}
+        password = None if runner else os.environ.get("OPENCODE_SERVER_PASSWORD")
         if password:
             credentials = os.environ.get("OPENCODE_SERVER_USERNAME", "opencode") + ":" + password
             self.headers["Authorization"] = "Basic " + base64.b64encode(credentials.encode()).decode()
         self.request("/mcp", {"name": "marketforge", "config": {"type": "local", "enabled": True,
-            "command": mcp_command(client, token_file, state.get("connection_id")), "environment": {"PYTHONPATH": str(Path(__file__).resolve().parents[2])}}})
+            "command": runner.mcp_command(state.get("connection_id")) if runner else mcp_command(client, token_file, state.get("connection_id")), "environment": {"PYTHONPATH": '/work:/opt/marketforge/python' if runner else str(Path(__file__).resolve().parents[2])}}})
         if state.get("session_id"):
             self.id = state["session_id"]
             self.request("/session/" + self.id)  # Must exist; never silently lose conversation history.
@@ -241,6 +259,8 @@ class OpenCodeSession:
         self.usage_reports = {}
 
     def request(self, path, body=None, timeout=30):
+        if self.runner:
+            return self.runner.opencode_request(path, body, self.headers, timeout)
         request = urllib.request.Request(self.url + path, data=json.dumps(body).encode() if body is not None else None, headers=self.headers)
         with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect()).open(request, timeout=timeout) as response:
             raw = response.read(1_048_577)
@@ -276,12 +296,19 @@ class OpenCodeSession:
         active = self.id if status["type"] != "idle" else None
         return {"state": "thinking" if active else "idle", "active_turn_id": active}
 
+    def check(self):
+        status = self.request('/mcp').get('marketforge', {})
+        if status.get('status') != 'connected':
+            raise ValueError('native OpenCode MarketForge MCP is not connected')
+        return {'health': self.health(), 'mcp_connected': True}
+
     def deliver(self, payload):
         self.delivered_at = time.time()
         status = self.request("/session/status").get(self.id, {"type": "idle"})
         if status["type"] != "idle":
             self.request(f"/session/{self.id}/abort", {})
-        self.request(f"/session/{self.id}/prompt_async", {"system": INSTRUCTIONS,
+        self.request(f"/session/{self.id}/prompt_async", {"system": INSTRUCTIONS + (' Your native file and shell tools run in this trader\'s Linux container at /work; workspace_* MCP tools address the same persistent directory.' if getattr(self, 'runner', None) else ''),
+            **({'model': dict(zip(('providerID', 'modelID'), self.model.split('/', 1)))} if getattr(self, 'model', None) else {}),
             "parts": [{"type": "text", "text": ("Operator-configured trading objective:\n" + payload["context"]["goal"] + "\n\n" if payload.get("context", {}).get("goal") else "") + "MarketForge market wakeup (market data):\n" + json.dumps(payload, ensure_ascii=False)}]})
         self.active = self.id
 
@@ -476,28 +503,40 @@ def supervise(client, factory, state, path, stop, max_retries=8, retry_delay=1, 
 def main():
     parser = argparse.ArgumentParser(description="Relay MarketForge wakeups to a native Codex/OpenCode session")
     parser.add_argument("--backend", choices=["codex", "opencode"], required=True)
+    parser.add_argument("--environment", choices=["docker", "host"], default="docker", help="native frameworks default to the trader's Linux container; host is explicit legacy compatibility")
+    parser.add_argument("--model-env", action="append", default=[], help="explicit provider credential variable to copy into this trader's volume; repeat as needed")
+    parser.add_argument("--model-auth-file", help="explicit framework auth.json to copy into this trader's volume; no host config directory is mounted")
+    parser.add_argument("--check", action="store_true", help="initialize/resume framework and MCP without delivering a model turn")
     parser.add_argument("--trader", required=True)
     parser.add_argument("--service-url", default="http://127.0.0.1:57306")
     parser.add_argument("--token-env", default="MARKETFORGE_TOOL_TOKEN")
     parser.add_argument("--state-file", required=True)
     parser.add_argument("--workspace")
     parser.add_argument("--codex-executable", default="codex")
-    parser.add_argument("--model", help="optional Codex model override for this trader session; global settings stay unchanged")
+    parser.add_argument("--model", help="optional model override; OpenCode requires provider/model")
     parser.add_argument("--opencode-url", default="http://127.0.0.1:4096")
     parser.add_argument("--max-retries", type=int, default=8)
     parser.add_argument("--turn-timeout", type=int, default=300, help="wall-clock seconds before interrupting a stuck native turn")
     args = parser.parse_args()
     if not 0 <= args.max_retries <= 30 or not 30 <= args.turn_timeout <= 3600:
         parser.error("max-retries must be 0-30 and turn-timeout 30-3600")
+    if args.environment == 'docker' and (args.workspace or args.codex_executable != 'codex' or args.opencode_url != 'http://127.0.0.1:4096'):
+        parser.error('Docker uses /work and the framework executables/server in its image; host workspace/executable/URL overrides require --environment host')
+    if args.environment == 'host' and (args.model_env or args.model_auth_file):
+        parser.error('model credential provisioning is only supported for --environment docker')
+    if args.backend == 'opencode' and args.model and ('/' not in args.model or not all(args.model.split('/', 1))):
+        parser.error('OpenCode model must be provider/model')
     client = ServiceClient(args.service_url, args.trader, os.environ.get(args.token_env, ""))
     path = Path(args.state_file).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     workspace = Path(args.workspace).resolve() if args.workspace else path.parent / (client.trader + "-workspace")
-    workspace.mkdir(parents=True, exist_ok=True)
+    if args.environment == 'host':
+        workspace.mkdir(parents=True, exist_ok=True)
     state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     identity = {"backend": args.backend, "trader": client.trader, "service_url": client.url,
                 "framework_url": args.opencode_url if args.backend == "opencode" else args.codex_executable,
-                "workspace": str(workspace)}
+                "workspace": '/work' if args.environment == 'docker' else str(workspace),
+                **({'environment': 'docker'} if args.environment == 'docker' else {})}
     if state and state.get("identity") != identity:
         raise ValueError("state file belongs to a different trader/framework/workspace")
     state["identity"] = identity
@@ -510,13 +549,28 @@ def main():
     else:
         import fcntl
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    capability = path.with_suffix(".token")
-    capability.write_text(client.token, encoding="utf-8")
-    capability.chmod(0o600)
-    def factory():
-        return CodexSession(client, state, workspace, capability, args.codex_executable, model=args.model) if args.backend == "codex" else OpenCodeSession(client, state, workspace, capability, args.opencode_url)
     try:
-        supervise(client, factory, state, path, threading.Event(), args.max_retries, turn_timeout=args.turn_timeout)
+        runner = None
+        capability = path.with_suffix('.token')
+        if args.environment == 'docker':
+            from .runner import ContainerRunner
+            runner = ContainerRunner(client, model_env=args.model_env, auth_file=args.model_auth_file, backend=args.backend)
+        else:
+            capability.write_text(client.token, encoding='utf-8')
+            capability.chmod(0o600)
+        def factory():
+            return CodexSession(client, state, workspace, capability, args.codex_executable, model=args.model, runner=runner) if args.backend == 'codex' else OpenCodeSession(client, state, workspace, capability, args.opencode_url, runner=runner, model=args.model)
+        if args.check:
+            adapter = factory()
+            try:
+                state['session_id'] = adapter.id
+                save_state(path, state)
+                print(json.dumps({'trader': client.trader, 'environment': args.environment, 'backend': args.backend,
+                    'session_id': adapter.id, **adapter.check(), 'model_turn_started': False}))
+            finally:
+                adapter.close()
+        else:
+            supervise(client, factory, state, path, threading.Event(), args.max_retries, turn_timeout=args.turn_timeout)
     except KeyboardInterrupt:
         pass
     finally:

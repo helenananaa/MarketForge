@@ -137,7 +137,7 @@ export function AgentTraders({ room, instrument }: { room: string; instrument: s
           </fieldset>}
           <fieldset><legend>2 · 创建交易员</legend>
             <label>Agent 接入<select value={backend} onChange={e => setBackend(e.target.value)}><option value="external">外部框架 · MCP 工具（推荐）</option><option value="legacy" disabled={!status.plugins.length}>旧模型循环 · 兼容模式</option></select></label>
-            {backend === "external" && <p>模型和密钥在外部框架配置。创建并启动交易员后，生成账户工具令牌，再启动 Codex / OpenCode 会话连接器。</p>}
+            {backend === "external" && <p>Codex / OpenCode 默认在该交易员的独立 Linux 容器里运行，与 Python 脚本共用工作区。创建交易员后生成账户工具令牌，配置模型认证，再启动会话连接器。</p>}
             <label>选手名称<input value={name} onChange={e => setName(e.target.value)} /></label>
             <label>已分配的账户 ID<input type="number" min="1" value={account} onChange={e => setAccount(Number(e.target.value))} /></label>
             <label>允许交易的品种（逗号分隔）<input value={markets} onChange={e => setMarkets(e.target.value)} /></label>
@@ -164,7 +164,7 @@ export function AgentTraders({ room, instrument }: { room: string; instrument: s
           <button disabled={busy || t.status !== "running"} onClick={() => void action(async () => { await api(`/traders/${t.id}/stop`, {}); await refresh(); })}>暂停决策与策略</button>
           <small>暂停保留已有挂单。</small>
         </article>)}</div>
-        {toolAccess && <div className="agent-connect"><label>{toolAccess.trader} · 账户工具令牌（本次显示，轮换后旧令牌失效）<input type="password" readOnly value={toolAccess.token} onFocus={e => e.target.select()} /></label><button onClick={() => setToolAccess(null)}>隐藏令牌</button><p>连接器使用 MARKETFORGE_TOOL_TOKEN。请按 docs/AGENT_FRAMEWORKS.md 配置；不要向外部框架提供运营令牌。</p></div>}
+        {toolAccess && <div className="agent-connect"><label>{toolAccess.trader} · 账户工具令牌（本次显示，轮换后旧令牌失效）<input type="password" readOnly value={toolAccess.token} onFocus={e => e.target.select()} /></label><button onClick={() => setToolAccess(null)}>隐藏令牌</button><p>连接器使用 MARKETFORGE_TOOL_TOKEN。容器镜像、账户 API 网关和启动步骤见 docs/AGENT_RUNNERS.md；模型认证单独配置，运营令牌仅供管理服务。</p></div>}
         {selected && <div className="agent-records"><h3>{selected} · 策略与执行记录</h3>
           <AgentRuntimePanel runtime={runtime} />
           <AgentPolicyPanel key={selected} instruments={traders.find(t => t.id === selected)?.instruments ?? []} policy={runtime?.policy} save={async rules => { await api(`/traders/${selected}/policy`, rules); setRuntime(await api<AgentRuntime>(`/traders/${selected}/runtime`)); }} />

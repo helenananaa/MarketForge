@@ -1,7 +1,7 @@
 """Account-bound API for programs inside a MarketForge Docker workspace.
 
-The host relays requests through the workspace volume. No operator or exchange
-credential is installed in the container. Request IDs are durable trade intents.
+Runner containers use the scoped HTTP gateway. Older script-only workspaces
+retain the volume relay. Request IDs are durable trade intents in both modes.
 """
 import json
 import hashlib
@@ -9,17 +9,44 @@ import os
 from pathlib import Path
 import time
 import uuid
+import urllib.error
+import urllib.request
+from urllib.parse import urlsplit
+import ipaddress
 
 
 class Client:
-    def __init__(self, timeout=60):
+    def __init__(self, timeout=60, *, service_url=None, trader=None, token=None):
         self.root = Path('/work/.marketforge')
         self.timeout = timeout
+        config = self.root / 'api.json'
+        self.http = None
+        if service_url is None and config.exists():
+            settings = json.loads(config.read_text())
+            service_url, trader = settings['service_url'], settings['trader']
+            token = Path(settings['token_file']).read_text().strip()
+        if service_url is not None:
+            parsed = urlsplit(service_url)
+            private = parsed.hostname in ('localhost', 'host.docker.internal')
+            try:
+                address = ipaddress.ip_address(parsed.hostname or '')
+                private = address.is_private and not address.is_unspecified and not address.is_multicast
+            except ValueError:
+                pass
+            if parsed.scheme != 'http' or not private or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ('', '/'):
+                raise ValueError('use a private scoped HTTP gateway base URL')
+            if not isinstance(trader, str) or not trader or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in trader):
+                raise ValueError('invalid trader identity')
+            if not token or len(token) < 24:
+                raise ValueError('scoped trader token required')
+            self.http = (service_url.rstrip('/') + '/tools/' + trader + '/program', token)
 
     def call(self, name, arguments=None, request_id=None):
         request_id = request_id or uuid.uuid4().hex
         if not request_id or len(request_id) > 128 or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in request_id):
             raise ValueError('request_id must be 1-128 letters, digits, underscore or dash')
+        if self.http:
+            return self._http_call(name, arguments or {}, request_id)
         pending = self.root / 'requests' / (request_id + '.json')
         reply = self.root / 'responses' / (request_id + '.json')
         pending.parent.mkdir(parents=True, exist_ok=True)
@@ -51,6 +78,29 @@ class Client:
         if 'error' in result:
             raise RuntimeError(result['error'])
         return result['result']
+
+    def _http_call(self, name, arguments, request_id):
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *args, **kwargs):
+                raise ValueError('gateway redirects are disabled')
+        url, token = self.http
+        payload = json.dumps({'id': request_id, 'name': name, 'arguments': arguments}, allow_nan=False).encode()
+        if len(payload) > 262144:
+            raise ValueError('request exceeds 256 KiB')
+        request = urllib.request.Request(url, data=payload, headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+        try:
+            with urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect()).open(request, timeout=self.timeout) as response:
+                raw = response.read(4194305)
+        except urllib.error.HTTPError as exc:
+            value = json.loads(exc.read(8192))
+            if exc.code >= 500:
+                raise TimeoutError('Result unknown; retry the same request_id and arguments') from None
+            if exc.code == 400: raise ValueError(value.get('error', 'invalid request')) from None
+            raise RuntimeError(value.get('error', 'gateway request failed; retry the same request_id')) from None
+        except (OSError, urllib.error.URLError):
+            raise TimeoutError('Result unknown; retry the same request_id and arguments') from None
+        if len(raw) > 4194304: raise ValueError('response exceeds 4 MiB; narrow the query')
+        return json.loads(raw)
 
     def context(self):
         return self.call('context')

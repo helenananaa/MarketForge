@@ -14,6 +14,7 @@ from .sandbox import DockerSandbox
 
 HELPER = r"""
 import json, os, pathlib, signal, subprocess, sys, time
+os.umask(0o077)
 root = pathlib.Path('/work')
 request = json.load(sys.stdin)
 operation = request['op']
@@ -105,11 +106,12 @@ elif operation == 'reply':
 
 
 class DockerWorkspace(DockerSandbox):
-    def __init__(self, identity, image='marketforge-strategy:1'):
+    def __init__(self, identity, image='marketforge-strategy:1', runner=False):
         super().__init__(image)
         self.identity = hashlib.sha256(identity.encode()).hexdigest()[:24]
         self.name = 'mf-workspace-' + self.identity
         self.volume = self.name + '-data'
+        self.runner = runner
         self.command_lock=threading.RLock()
 
     def inspect(self):
@@ -122,18 +124,23 @@ class DockerWorkspace(DockerSandbox):
     def start(self):
         found = self._command('ps', '-a', '--filter', 'name=^/' + self.name + '$', '--format', '{{.Names}}')
         if found:
-            self.inspect()
+            data = self.inspect()
+            if self.runner and data['Config'].get('Labels', {}).get('marketforge.runner') != '1':
+                raise ValueError('existing script-only workspace cannot run frameworks; stop and remove its container while retaining its owned named volume, then reconnect')
+            if self.runner and data['Image'] != self._command('image', 'inspect', '--format', '{{.Id}}', self.image):
+                raise ValueError('runner image was rebuilt; explicitly recreate the owned container while retaining its named volume')
         else:
             self._command('volume', 'create', '--label', 'marketforge.workspace=' + self.identity, self.volume)
             volume=json.loads(self._command('volume','inspect',self.volume))[0]
             if volume.get('Labels',{}).get('marketforge.workspace')!=self.identity:
                 raise ValueError('workspace volume ownership mismatch')
             self._command('create', '--name', self.name, '--label', 'marketforge.workspace=' + self.identity,
+                *(['--label', 'marketforge.runner=1', '--init', '--add-host=host.docker.internal:host-gateway'] if self.runner else []),
                 '--network=bridge', '--cap-drop=ALL', '--security-opt=no-new-privileges',
                 '--user=65534:65534', '--read-only', '--tmpfs', '/tmp:rw,nosuid,size=256m',
                 '--pids-limit=256', '--memory=2g', '--memory-swap=2g', '--cpus=2',
                 '--log-driver=none', '-v', self.volume + ':/work', '-w', '/work',
-                '-e', 'HOME=/work', '-e', 'PYTHONPATH=/work',
+                '-e', 'HOME=/work', '-e', 'PYTHONPATH=/work' + (':/opt/marketforge/python' if self.runner else ''),
                 self.image, 'python', '-c', 'import time; time.sleep(10**9)')
         volume=json.loads(self._command('volume','inspect',self.volume))[0]
         if volume.get('Labels',{}).get('marketforge.workspace')!=self.identity:
@@ -170,8 +177,56 @@ class Workspaces:
     def workspace(self, trader):
         with self.guard:
             if trader not in self.workspace_instances:
-                self.workspace_instances[trader] = DockerWorkspace(str(self.store.path.resolve()) + ':' + trader)
+                saved = self.store.get('runner_config', trader) or {}
+                self.workspace_instances[trader] = DockerWorkspace(str(self.store.path.resolve()) + ':' + trader,
+                    image=saved.get('image', 'marketforge-strategy:1'), runner=bool(saved))
             return self.workspace_instances[trader]
+
+    def runner_start(self, trader, args):
+        self.config(trader)
+        if args != {'action': 'start'}:
+            raise ValueError('runner requires action=start')
+        url = getattr(self, 'container_gateway_url', None)
+        if not url:
+            raise ValueError('enable the dedicated container gateway before starting a Docker framework')
+        from .mcp_server import validate_service_url
+        validate_service_url(url, allow_container_gateway=True)
+        with self.lock(trader):
+            saved = self.store.get('runner_config', trader)
+            wanted = {'image': getattr(self, 'runner_image', 'marketforge-agent:1')}
+            if saved and saved != wanted:
+                raise ValueError('runner image changed; explicitly recreate the owned container, retaining its volume')
+            workspace = self.workspace_instances.get(trader)
+            if workspace and not workspace.runner:
+                raise ValueError('script-only workspace already active; reconnect using a new trader or migrate its owned container')
+            self.store.put('runner_config', trader, wanted)
+            workspace = self.workspace(trader)
+            workspace.start()
+            return {'container': workspace.name, 'identity': workspace.identity,
+                'image': workspace.inspect()['Image'], 'gateway_url': url, 'cwd': '/work'}
+
+    def runner_migrate(self, trader, args):
+        if args != {'action': 'migrate'}:
+            raise ValueError('runner migration requires action=migrate')
+        with self.lock(trader):
+            if self.config(trader)['status'] != 'paused':
+                raise ValueError('pause the trader before migrating its runner')
+            if self.store.get('framework_connection', trader) and self.connection_live(trader):
+                raise ValueError('disconnect the live connector before migrating its runner')
+            workspace = self.workspace(trader)
+            found = workspace._command('ps', '-a', '--filter', 'name=^/' + workspace.name + '$', '--format', '{{.Names}}')
+            if found:
+                workspace.inspect()  # Verify ownership before stopping/removing.
+                workspace.stop()
+                workspace._command('rm', workspace.name)
+            relay = self.workspace_relays.pop(trader, None)
+            if relay:
+                relay[0].set(); relay[1].join(timeout=3)
+            with self.guard:
+                self.workspace_instances.pop(trader, None)
+                self.store.put('runner_config', trader, {'image': getattr(self, 'runner_image', 'marketforge-agent:1')})
+            self.store.event(trader, 'runner_migrated', {'files_retained': True})
+            return {'container': workspace.name, 'volume': workspace.volume, 'files_retained': True, 'status': 'paused'}
 
     def workspace_execute(self, config, key, name, args, stop):
         from .runtime import integer, text_value
@@ -180,7 +235,8 @@ class Workspaces:
             raise ValueError('decision changed before workspace execution')
         if name == 'workspace_start':
             result = workspace.start()
-            self.start_workspace_relay(trader)
+            if not workspace.runner:
+                self.start_workspace_relay(trader)
             return {**result,'container':workspace.name,'network':'bridge',
                 'permissions':['shell','python','persistent-files','background-processes','internet','own-account-api']}
         if name == 'workspace_stop':

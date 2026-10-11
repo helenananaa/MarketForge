@@ -1,16 +1,16 @@
 # Agent 持久 Docker 编程工作区
 
-Codex/OpenCode 继续管理模型、规划和上下文。MarketForge 提供容器内编程环境和账户 API，不增加模型循环。MCP 现有 41 个业务工具，加 context、decision_begin、receipt，共 44 个。
+Codex/OpenCode 继续管理模型、规划和上下文。MarketForge 提供容器内编程环境和账户 API，不增加模型循环。MCP 现有 46 个业务工具，加 context、decision_begin、receipt，共 49 个。框架默认与脚本共用账户容器，启动见 [Docker 框架运行环境](AGENT_RUNNERS.md)；本文也保留旧脚本容器的 relay 兼容说明。
 
 ## 权限和生命周期
 
 每个选手绑定自己的 Docker container 和 named volume `/work`。允许任意 Python/数据文件、`/bin/sh` 命令、用户级 pip 依赖、互联网和多个后台进程。文件、依赖、任务记录在 stop/start 后保留。
 
-用户为 UID/GID 65534；限制为 2 CPU、2 GiB、256 进程，系统目录只读，`/tmp` 256 MiB，输出最多保存 4 MiB。不挂载宿主文件或 Docker socket，不注入模型、运营或交易所密钥。Docker bridge 联网明确开放，不使用 web_read 的逐 URL/IP 校验。宿主框架的权限保持原设置。
+用户为 UID/GID 65534；限制为 2 CPU、2 GiB、256 进程，系统目录只读，`/tmp` 256 MiB，输出最多保存 4 MiB。不挂载宿主文件或 Docker socket，不注入运营或交易所密钥；框架容器仅接收显式选择的模型认证与该账户工具令牌。Docker bridge 联网明确开放，不使用 web_read 的逐 URL/IP 校验。宿主兼容框架的权限保持原设置。
 
 先 context，再 decision_begin；写工具携带当前 decision_id/generation 和稳定 request_id：
 
-1. workspace_start 创建/恢复容器，写入账户 SDK，连接后台 relay。
+1. workspace_start 创建/恢复容器，写入账户 SDK。框架容器直接使用 HTTP 网关，旧脚本容器连接后台 relay。
 2. workspace_write(path="strategy.py",text="...") 写入 `/work` 内文件。
 3. workspace_exec(command="python -u strategy.py",wait_seconds=1) 返回 job_id。最多等待 15 秒，进程可以继续后台运行；相同请求 ID 不重复启动。
 4. workspace_process(job_id="...",offset=0) 读取输出，保存 next_offset；stop=true 终止进程组。新轮询使用新 ID。
@@ -26,7 +26,7 @@ $env:MARKETFORGE_AGENT_DOCKER_WSL='Ubuntu-22.04'
 
 ## 程序账户 API
 
-workspace_start 写入 `/work/marketforge_program.py`。程序无需密钥：
+workspace_start 写入 `/work/marketforge_program.py`。程序无需手工传入令牌：
 
 ```python
 from marketforge_program import Client
@@ -42,7 +42,7 @@ for page in api.iter_history("V-BTC-PERP",limit=500):
         print(activity)
 ```
 
-api.call 开放 market_read、market_history、market_indicators、chart_export、risk_events、orders、fills、account_history、market_rules、portfolio、ledger、trade、order_cancel_all、policy_status、conditional_orders、indicator_compute、indicator_catalog；context 也可读取。没有运营、模型控制、框架凭证或其他选手访问权。
+api.call 开放 market_read、market_history、market_indicators、market_events、window_stats、order_flow、chart_export、risk_events、orders、fills、account_history、market_rules、portfolio、ledger、trade、order_cancel_all、policy_status、conditional_orders、indicator_compute、indicator_catalog；context 也可读取。没有运营、模型控制、连接管理或其他选手访问权。
 
 程序不需要每笔订单再向 LLM 申请 decision lease。真实账户授权、max_order_qty、共享 orders_per_minute、当前可选账户策略继续检查。选手暂停、已登记框架离线或紧急警报等待重新评估时，新 trade/cancel_all 被阻止；已提交交易和原生保护不回滚。程序能操作该账户挂单，旧命名策略自身订单限制保留。
 
@@ -66,7 +66,7 @@ for page in api.watch("V-BTC-PERP",after_command_seq=cursor):
 
 watch 默认每 250 ms 游标轮询，has_more 时立即补页；队列超时和临时网络不确定结果按同一读取 ID 重试。默认从尾页开始，完整回放用 iter_history 或显式游标。读取和成交不构成事务，程序自行保存业务状态、检查序号和处理重放。
 
-服务正常退出先暂停选手，再停止已连接容器；恢复后选手为 paused。重新连接框架/恢复选手后，workspace_start 恢复文件和 relay，程序以新 launch 意图启动，读取持久状态续接。异常退出后遗留进程可能继续计算，没有 relay 不能调用交易 API，重新接通后仍受暂停检查。
+服务正常退出先暂停选手，再停止已连接容器；恢复后选手为 paused。重新连接框架/恢复选手后，workspace_start 恢复文件，程序以新 launch 意图启动，读取持久状态续接。异常退出后遗留进程可能继续计算；旧 relay 不通时不能调用交易 API，HTTP 框架容器受服务暂停/已登记连接器心跳过期检查。
 
 ## 共用人的指标引擎
 

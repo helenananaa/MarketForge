@@ -12,8 +12,12 @@ from urllib.parse import parse_qs, urlsplit
 from .runtime import Runtime, TradingService, identifier
 
 
-def handler(runtime, token, origins):
+def handler(runtime, token, origins, *, gateway=False):
     class Handler(BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(30)
+
         def log_message(self, *_):
             pass  # Never log Authorization, connection keys or request bodies.
 
@@ -41,18 +45,33 @@ def handler(runtime, token, origins):
         def do_POST(self):
             self.dispatch(True)
 
+        def reject(self, status, body):
+            # Drain small rejected POSTs so closing the socket does not reset
+            # an otherwise valid JSON error response (notably on Windows).
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+            except ValueError:
+                length = 0
+            if self.command == 'POST' and 0 < length <= 262144:
+                self.rfile.read(length)
+            return self.reply(status, body)
+
         def dispatch(self, write):
             origin = self.headers.get("Origin")
             if origin and origin not in origins:
-                return self.reply(403, {"error": "origin is not allowed"})
+                return self.reject(403, {"error": "origin is not allowed"})
             try:
                 url = urlsplit(self.path)
                 parts = url.path.strip("/").split("/")
+                # The container listener never exposes operator, lifecycle or
+                # connector ownership endpoints, even with an operator token.
+                if gateway and (len(parts) != 3 or parts[0] != "tools" or parts[2] not in {"schema", "call", "events", "runtime", "program"}):
+                    return self.reject(404, {"error": "unknown gateway endpoint"})
                 authorization = self.headers.get("Authorization", "")
-                operator = hmac.compare_digest(authorization, "Bearer " + token)
+                operator = not gateway and hmac.compare_digest(authorization, "Bearer " + token)
                 scoped = len(parts) == 3 and parts[0] == "tools" and authorization.startswith("Bearer ") and runtime.authorized(parts[1], authorization[7:])
                 if not operator and not scoped:
-                    return self.reply(401, {"error": "appropriate service or trader tool token required"})
+                    return self.reject(401, {"error": "appropriate service or trader tool token required"})
                 args = {}
                 if write:
                     length = int(self.headers.get("Content-Length", "0"))
@@ -72,6 +91,12 @@ def handler(runtime, token, origins):
                         result = runtime.runtime_status(trader)
                     elif parts[2] == "model" and write:
                         result = runtime.model_control(trader, args)
+                    elif parts[2] == "runner" and write:
+                        result = runtime.runner_start(trader, args)
+                    elif parts[2] == "program" and write:
+                        if set(args) != {"id", "name", "arguments"} or not isinstance(args["arguments"], dict):
+                            raise ValueError("expected id, name and arguments")
+                        result = runtime.program_call(trader, args)
                     elif parts[2] == "call" and write:
                         if set(args) != {"name", "arguments"} or not isinstance(args["arguments"], dict):
                             raise ValueError("expected name and arguments")
@@ -130,6 +155,8 @@ def handler(runtime, token, origins):
                         if args != {"backend": "external"}:
                             raise ValueError("only explicit migration to external backend is supported")
                         result = runtime.migrate_external(trader)
+                    elif parts[2] == 'runner' and write:
+                        result = runtime.runner_migrate(trader, args)
                     else:
                         return self.reply(404, {"error": "unknown endpoint"})
                 else:
@@ -150,8 +177,17 @@ def main():
     parser.add_argument("--data-dir", default=".local/agents")
     parser.add_argument("--plugin-dir", default="agent-plugins")
     parser.add_argument("--enable-legacy-model-loop", action="store_true", help="opt in to the old model harness instead of the model-free service")
+    parser.add_argument("--container-gateway-bind", help="optional dedicated scoped API listener, e.g. 0.0.0.0; operator API stays on loopback")
+    parser.add_argument("--container-gateway-port", type=int, default=57307)
+    parser.add_argument("--container-gateway-url", help="base URL reachable inside Docker, e.g. http://host.docker.internal:57307")
+    parser.add_argument("--runner-image", default="marketforge-agent:1")
     parser.add_argument("--origin", action="append", default=["http://127.0.0.1:57304", "http://localhost:57304"])
     args = parser.parse_args()
+    if bool(args.container_gateway_bind) != bool(args.container_gateway_url):
+        parser.error("container-gateway-bind and container-gateway-url must be supplied together")
+    if args.container_gateway_url:
+        from .mcp_server import validate_service_url
+        validate_service_url(args.container_gateway_url, allow_container_gateway=True)
     directory = Path(args.data_dir)
     directory.mkdir(parents=True, exist_ok=True)
     # An OS advisory lock prevents duplicate services from spending one account concurrently.
@@ -172,14 +208,24 @@ def main():
     token_path.write_text(token)
     token_path.chmod(0o600)
     runtime = Runtime(directory, args.plugin_dir, args.exchange_url) if args.enable_legacy_model_loop else TradingService(directory, None, args.exchange_url)
+    runtime.container_gateway_url = args.container_gateway_url
+    runtime.runner_image = args.runner_image
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler(runtime, token, set(args.origin)))
     server.daemon_threads = True
+    gateway_server = None
+    if args.container_gateway_bind:
+        gateway_server = ThreadingHTTPServer((args.container_gateway_bind, args.container_gateway_port), handler(runtime, token, set(), gateway=True))
+        gateway_server.daemon_threads = True
+        threading.Thread(target=gateway_server.serve_forever, daemon=True).start()
     print(f"Agent service: http://127.0.0.1:{args.port}; operator token: {token_path.resolve()}", flush=True)
     try:
         server.serve_forever()
     finally:
         for trader in runtime.store.all("trader"):
             runtime.stop(trader["id"])
+        if gateway_server:
+            gateway_server.shutdown()
+            gateway_server.server_close()
         runtime.close_workspaces()
         for _, worker in runtime.installers.values():
             worker.join(timeout=30)
