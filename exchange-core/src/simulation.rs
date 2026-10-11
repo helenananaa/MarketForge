@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -35,7 +38,7 @@ pub struct SimulationRoom {
     primary_venue_id: VenueId,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     market_events: Vec<crate::market_events::MarketEvent>,
-    exchanges: BTreeMap<VenueId, ExchangeActor>,
+    exchanges: BTreeMap<VenueId, Arc<ExchangeActor>>,
     portfolios: PortfolioStore,
     #[serde(default)]
     user_accounts: crate::shared_map::SharedMap<UserId, BTreeSet<AccountId>>,
@@ -85,7 +88,7 @@ impl SimulationRoom {
             for account in &scenario.accounts {
                 apply_account_to_exchange(account, &mut exchange)?;
             }
-            exchanges.insert(venue_id, exchange);
+            exchanges.insert(venue_id, Arc::new(exchange));
         }
 
         let mut room = Self {
@@ -143,7 +146,7 @@ impl SimulationRoom {
         let portfolios = exchange.portfolio_store().clone();
         let next_command_seq = exchange.next_command_seq();
         let mut exchanges = BTreeMap::new();
-        exchanges.insert(primary_venue_id.clone(), exchange);
+        exchanges.insert(primary_venue_id.clone(), Arc::new(exchange));
         Self {
             room_id,
             primary_venue_id,
@@ -188,6 +191,44 @@ impl SimulationRoom {
         self.next_command_seq
     }
 
+    pub(crate) fn fork_order_venue(&mut self, instrument: &str) -> bool {
+        if self.exchanges.values().any(|e| e.has_order_automation()) {
+            return false;
+        }
+        let Some(venue) = self.venue_id_for_instrument(instrument) else {
+            return false;
+        };
+        self.exchanges.retain(|id, _| *id == venue);
+        self.primary_venue_id = venue;
+        true
+    }
+
+    pub(crate) fn merge_order_venue(
+        &mut self,
+        predecessor: &Self,
+        mut candidate: Self,
+        execution: &mut ActorExecution,
+    ) -> Result<bool, ActorRejectReason> {
+        let venue = &candidate.primary_venue_id;
+        let (Some(current), Some(expected)) =
+            (self.exchanges.get(venue), predecessor.exchanges.get(venue))
+        else {
+            return Ok(false);
+        };
+        if candidate.exchanges.len() != 1 || !Arc::ptr_eq(current, expected) {
+            return Ok(false);
+        }
+        let next = self
+            .next_command_seq
+            .checked_add(1)
+            .ok_or(ActorRejectReason::Clearing(ClearingError::BalanceOverflow))?;
+        execution.command_seq = self.next_command_seq;
+        self.next_command_seq = next;
+        self.exchanges
+            .insert(venue.clone(), candidate.exchanges.remove(venue).unwrap());
+        Ok(true)
+    }
+
     pub fn venue_ids(&self) -> Vec<&str> {
         self.exchanges.keys().map(String::as_str).collect()
     }
@@ -206,14 +247,17 @@ impl SimulationRoom {
     }
 
     pub fn primary_exchange_mut(&mut self) -> &mut ExchangeActor {
-        self.exchanges
-            .get_mut(&self.primary_venue_id)
-            .expect("simulation room must have a primary exchange")
+        Arc::make_mut(
+            self.exchanges
+                .get_mut(&self.primary_venue_id)
+                .expect("simulation room must have a primary exchange"),
+        )
     }
 
     pub fn exchange(&self, venue_id: &str) -> Result<&ExchangeActor, SimulationRoomError> {
         self.exchanges
             .get(venue_id)
+            .map(Arc::as_ref)
             .ok_or_else(|| SimulationRoomError::VenueNotFound {
                 venue_id: venue_id.to_string(),
             })
@@ -225,24 +269,28 @@ impl SimulationRoom {
 
     pub fn pause(&mut self) {
         for exchange in self.exchanges.values_mut() {
+            let exchange = Arc::make_mut(exchange);
             exchange.pause();
         }
     }
 
     pub fn resume(&mut self) {
         for exchange in self.exchanges.values_mut() {
+            let exchange = Arc::make_mut(exchange);
             exchange.resume();
         }
     }
 
     pub fn close(&mut self) {
         for exchange in self.exchanges.values_mut() {
+            let exchange = Arc::make_mut(exchange);
             exchange.close();
         }
     }
 
     pub fn restore_status(&mut self, status: MarketStatus) {
         for exchange in self.exchanges.values_mut() {
+            let exchange = Arc::make_mut(exchange);
             exchange.restore_status(status);
         }
     }
@@ -271,7 +319,12 @@ impl SimulationRoom {
     }
 
     pub fn complete_flat_position_protections(&mut self) {
-        for exchange in self.exchanges.values_mut() {
+        for exchange in self
+            .exchanges
+            .values_mut()
+            .filter(|e| e.has_order_automation())
+        {
+            let exchange = Arc::make_mut(exchange);
             exchange.complete_flat_position_protections();
         }
     }
@@ -281,7 +334,8 @@ impl SimulationRoom {
     ) -> Vec<crate::position_protection::PositionExitRequest> {
         self.exchanges
             .values_mut()
-            .flat_map(|e| e.prepare_position_exits())
+            .filter(|e| e.has_order_automation())
+            .flat_map(|e| Arc::make_mut(e).prepare_position_exits())
             .collect()
     }
     pub fn prepare_conditional_orders(
@@ -289,7 +343,8 @@ impl SimulationRoom {
     ) -> Vec<crate::conditional_orders::ConditionalOrder> {
         self.exchanges
             .values_mut()
-            .flat_map(|e| e.prepare_conditional_orders())
+            .filter(|e| e.has_order_automation())
+            .flat_map(|e| Arc::make_mut(e).prepare_conditional_orders())
             .collect()
     }
     pub fn record_conditional_order(
@@ -301,6 +356,7 @@ impl SimulationRoom {
         if let Some(venue) = self.venue_id_for_instrument(&p.instrument_id) {
             self.exchanges
                 .get_mut(&venue)
+                .map(Arc::make_mut)
                 .unwrap()
                 .record_conditional_order(p, id, accepted);
         }
@@ -315,6 +371,7 @@ impl SimulationRoom {
         if let Some(venue) = self.venue_id_for_instrument(instrument) {
             self.exchanges
                 .get_mut(&venue)
+                .map(Arc::make_mut)
                 .unwrap()
                 .record_position_exit(instrument, account, side, order_id);
         }
@@ -346,6 +403,7 @@ impl SimulationRoom {
         let mut execution = self
             .exchanges
             .get_mut(&venue_id)
+            .map(Arc::make_mut)
             .expect("venue id was resolved from exchanges")
             .apply_to_instrument_from(instrument_id, command, origin)?;
         execution.command_seq = command_seq;
@@ -367,6 +425,7 @@ impl SimulationRoom {
         let mut execution = self
             .exchanges
             .get_mut(&venue_id)
+            .map(Arc::make_mut)
             .expect("venue id was resolved from exchanges")
             .liquidate_account(instrument_id, account_id, order_id)?;
         execution.command_seq = command_seq;
@@ -630,6 +689,7 @@ impl SimulationRoom {
                 let exchange = self
                     .exchanges
                     .get_mut(venue_id)
+                    .map(Arc::make_mut)
                     .expect("venue id was collected from exchanges");
                 let due = exchange
                     .advance_clock_venue_only(1)
@@ -800,6 +860,7 @@ impl SimulationRoom {
 
     pub(crate) fn normalize_after_restore(&mut self) -> Result<(), ActorRejectReason> {
         for exchange in self.exchanges.values_mut() {
+            let exchange = Arc::make_mut(exchange);
             exchange
                 .normalize_after_restore()
                 .map_err(ActorRejectReason::Clearing)?;
@@ -864,6 +925,7 @@ impl SimulationRoom {
     fn exchange_mut(&mut self, venue_id: &str) -> Result<&mut ExchangeActor, SimulationRoomError> {
         self.exchanges
             .get_mut(venue_id)
+            .map(Arc::make_mut)
             .ok_or_else(|| SimulationRoomError::VenueNotFound {
                 venue_id: venue_id.to_string(),
             })

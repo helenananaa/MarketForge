@@ -1,5 +1,6 @@
-//! Room-owned exchange execution. Human orders, clock commands and bot intents
-//! acquire the same FIFO room lane; unrelated rooms never acquire that lane.
+//! Room-owned exchange execution. Ordinary orders prepare in venue FIFO lanes
+//! and share a short room commit lane. Clock commands and bot intents exclude
+//! venue preparation with a room coordination barrier; rooms remain independent.
 //! A directory barrier coordinates rare operations which change global identity,
 //! competition configuration, room ownership or the set of rooms. It does not
 //! serialize ordinary room transactions. Committed immutable room snapshots are
@@ -19,12 +20,15 @@ struct Directory {
 
 struct RoomRuntime {
     state: Arc<AsyncMutex<Option<AppState>>>,
+    coordination: Arc<RwLock<()>>,
+    venues: std::sync::RwLock<BTreeMap<String, Arc<AsyncMutex<()>>>>,
     published: std::sync::RwLock<Arc<RoomManager>>,
     summary: std::sync::RwLock<RoomSummary>,
 }
 
 #[derive(Default)]
 pub(super) struct RoomSummary {
+    has_training: bool,
     pub(super) room_count: usize,
     pub(super) worker_count: usize,
     pub(super) cache_entries: usize,
@@ -43,6 +47,7 @@ impl RoomSummary {
     fn from_app(app: &AppState) -> Self {
         let (owned_leases, lost_leases, renew_failures) = app.room_lease_metrics();
         let mut summary = Self {
+            has_training: !app.training_runs.is_empty(),
             room_count: app.rooms.room_ids().len(),
             worker_count: app.agent_workers.len(),
             cache_entries: app.executions.values().map(VecDeque::len).sum(),
@@ -101,15 +106,54 @@ pub(super) struct RoomGuard {
     // Drop the room state before releasing the directory barrier.
     state: OwnedMutexGuard<Option<AppState>>,
     runtime: Arc<RoomRuntime>,
-    _directory: OwnedRwLockReadGuard<Directory>,
+    _coordination: Option<OwnedRwLockWriteGuard<()>>,
+    _directory: Arc<OwnedRwLockReadGuard<Directory>>,
     changed: bool,
     market_changed: bool,
+    #[cfg(feature = "bench-execution-timing")]
+    timing_started: Instant,
 }
 
 pub(super) struct MetadataGuard(OwnedRwLockReadGuard<Directory>);
 
 pub(super) struct RoomReadState {
     pub(super) rooms: Arc<RoomManager>,
+}
+
+/// Venue FIFO protects shared collateral while computation is outside the
+/// room commit mutex. The reader barrier excludes clock, transfer, bot,
+/// automation and administrative transactions until publication completes.
+pub(super) struct VenueOrderGuard {
+    runtime: Arc<RoomRuntime>,
+    _venue: OwnedMutexGuard<()>,
+    _coordination: OwnedRwLockReadGuard<()>,
+    directory: Arc<OwnedRwLockReadGuard<Directory>>,
+    pub(super) predecessor: Arc<RoomManager>,
+    pub(super) instrument: String,
+}
+
+impl VenueOrderGuard {
+    pub(super) fn metadata(&self) -> &AppState {
+        &self.directory.global
+    }
+
+    pub(super) async fn commit_lock(&self) -> StateGuard {
+        #[cfg(feature = "bench-execution-timing")]
+        let started = Instant::now();
+        let state = self.runtime.state.clone().lock_owned().await;
+        #[cfg(feature = "bench-execution-timing")]
+        bench_execution_timing::ROOM_WAIT.record(started);
+        StateGuard::Room(RoomGuard {
+            state,
+            runtime: self.runtime.clone(),
+            _coordination: None,
+            _directory: self.directory.clone(),
+            changed: false,
+            market_changed: false,
+            #[cfg(feature = "bench-execution-timing")]
+            timing_started: Instant::now(),
+        })
+    }
 }
 
 impl Deref for MetadataGuard {
@@ -120,6 +164,92 @@ impl Deref for MetadataGuard {
 }
 
 impl StateStore {
+    /// Read-only admission I/O runs behind the directory fence, but before
+    /// taking the room writer/commit lane. No membership update can interleave.
+    pub(super) async fn order_admission(
+        &self,
+        room: &str,
+        user: &str,
+    ) -> Result<(StateGuard, bool), JournalError> {
+        let directory = Arc::new(self.directory.clone().read_owned().await);
+        if let Some(runtime) = directory.rooms.get(room).cloned() {
+            let admin = directory
+                .global
+                .journal
+                .user_can_administer_room(user, room)
+                .await?;
+            #[cfg(feature = "bench-execution-timing")]
+            let started = Instant::now();
+            let coordination = runtime.coordination.clone().write_owned().await;
+            let state = runtime.state.clone().lock_owned().await;
+            #[cfg(feature = "bench-execution-timing")]
+            bench_execution_timing::ROOM_WAIT.record(started);
+            return Ok((
+                StateGuard::Room(RoomGuard {
+                    state,
+                    runtime,
+                    _coordination: Some(coordination),
+                    _directory: directory,
+                    changed: false,
+                    market_changed: false,
+                    #[cfg(feature = "bench-execution-timing")]
+                    timing_started: Instant::now(),
+                }),
+                admin,
+            ));
+        }
+        drop(directory);
+        let state = self.lock().await;
+        let admin = state.journal.user_can_administer_room(user, room).await?;
+        Ok((state, admin))
+    }
+
+    pub(super) async fn venue_order(
+        &self,
+        room: &str,
+        instrument: Option<&str>,
+    ) -> Option<VenueOrderGuard> {
+        #[cfg(feature = "bench-execution-timing")]
+        let started = Instant::now();
+        let directory = Arc::new(self.directory.clone().read_owned().await);
+        #[cfg(feature = "bench-execution-timing")]
+        bench_execution_timing::DIRECTORY_WAIT.record(started);
+        let runtime = directory.rooms.get(room)?.clone();
+        let coordination = runtime.coordination.clone().read_owned().await;
+        if runtime.summary.read().unwrap().has_training {
+            return None;
+        }
+        let snapshot = runtime.published.read().unwrap().clone();
+        let simulation = snapshot.simulation_room(room).ok()?;
+        if simulation.venue_ids().len() < 2 {
+            return None;
+        }
+        let instrument = instrument.map(str::to_owned).unwrap_or_else(|| {
+            simulation
+                .primary_exchange()
+                .primary_instrument_id()
+                .to_owned()
+        });
+        let venue = simulation.venue_id_for_instrument(&instrument)?;
+        let lane = runtime.venues.read().unwrap().get(&venue)?.clone();
+        #[cfg(feature = "bench-execution-timing")]
+        let started = Instant::now();
+        let venue_guard = lane.lock_owned().await;
+        #[cfg(feature = "bench-execution-timing")]
+        bench_execution_timing::VENUE_WAIT.record(started);
+        // Take the snapshot after acquiring the venue lane, so its accounts and
+        // books include the preceding venue transaction's committed result.
+        let predecessor = runtime.published.read().unwrap().clone();
+        Some(VenueOrderGuard {
+            runtime,
+            _venue: venue_guard,
+            _coordination: coordination,
+            directory,
+            predecessor,
+            instrument,
+        })
+    }
+
     pub(super) fn new(mut app: AppState) -> Self {
         app.order_ids = Some(Arc::new(AtomicU64::new(app.next_order_id)));
         let mut directory = Directory {
@@ -166,15 +296,27 @@ impl StateStore {
     }
 
     pub(super) async fn lock_room(&self, room: &str) -> StateGuard {
+        #[cfg(feature = "bench-execution-timing")]
+        let directory_started = Instant::now();
         let directory = self.directory.clone().read_owned().await;
+        #[cfg(feature = "bench-execution-timing")]
+        bench_execution_timing::DIRECTORY_WAIT.record(directory_started);
         if let Some(runtime) = directory.rooms.get(room).cloned() {
+            #[cfg(feature = "bench-execution-timing")]
+            let lock_started = Instant::now();
+            let coordination = runtime.coordination.clone().write_owned().await;
             let state = runtime.state.clone().lock_owned().await;
+            #[cfg(feature = "bench-execution-timing")]
+            bench_execution_timing::ROOM_WAIT.record(lock_started);
             return StateGuard::Room(RoomGuard {
                 state,
                 runtime,
-                _directory: directory,
+                _coordination: Some(coordination),
+                _directory: Arc::new(directory),
                 changed: false,
                 market_changed: false,
+                #[cfg(feature = "bench-execution-timing")]
+                timing_started: Instant::now(),
             });
         }
         // Creation and lazy leased-room acquisition must coordinate the directory.
@@ -233,6 +375,17 @@ impl Directory {
             let app = self.global.extract_room(&id);
             let snapshot = Arc::new(app.rooms.clone());
             let summary = RoomSummary::from_app(&app);
+            let venues = app
+                .rooms
+                .simulation_room(&id)
+                .ok()
+                .map(|room| {
+                    room.venue_ids()
+                        .into_iter()
+                        .map(|id| (id.to_owned(), Arc::new(AsyncMutex::new(()))))
+                        .collect()
+                })
+                .unwrap_or_default();
             if let Some(runtime) = self.rooms.get(&id) {
                 *runtime
                     .state
@@ -240,11 +393,14 @@ impl Directory {
                     .expect("exclusive directory barrier") = Some(app);
                 *runtime.published.write().unwrap() = snapshot;
                 *runtime.summary.write().unwrap() = summary;
+                *runtime.venues.write().unwrap() = venues;
             } else {
                 self.rooms.insert(
                     id,
                     Arc::new(RoomRuntime {
                         state: Arc::new(AsyncMutex::new(Some(app))),
+                        coordination: Arc::new(RwLock::new(())),
+                        venues: std::sync::RwLock::new(venues),
                         published: std::sync::RwLock::new(snapshot),
                         summary: std::sync::RwLock::new(summary),
                     }),
@@ -454,6 +610,8 @@ impl Drop for RoomGuard {
             }
             *self.runtime.summary.write().unwrap() = summary;
         }
+        #[cfg(feature = "bench-execution-timing")]
+        bench_execution_timing::ROOM_HELD.record(self.timing_started);
     }
 }
 

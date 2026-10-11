@@ -8,6 +8,8 @@ repository.workspace = true
 
 [features]
 risk-benchmark = []
+# Diagnostic counters for isolated load runs; absent from ordinary builds.
+bench-execution-timing = []
 
 [[example]]
 name = "benchmark_margin_progress"

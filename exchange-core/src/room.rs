@@ -148,6 +148,70 @@ impl RoomManager {
         Self::default()
     }
 
+    /// A private candidate for one venue. Room-wide effects (including dormant
+    /// automation and queued liquidation) must use the coordinated path.
+    pub fn fork_venue_order(
+        &self,
+        room_id: &str,
+        instrument: &str,
+    ) -> Result<Option<Self>, RoomManagerError> {
+        if self.pending_liquidation_count(room_id)? != 0 {
+            return Ok(None);
+        }
+        let mut candidate = self.clone();
+        if !candidate
+            .simulation_room_mut(room_id)?
+            .fork_order_venue(instrument)
+        {
+            return Ok(None);
+        }
+        // Engine commands and system order identities use the simulation
+        // cursor, not this public receipt history. Keep only the transaction's
+        // new executions so preparation does not copy the historical tail.
+        candidate
+            .executions
+            .insert(room_id.to_owned(), History::default());
+        Ok(Some(candidate))
+    }
+
+    /// Install exactly one ordinary execution, assigning its room sequence at
+    /// commit time. Never transplant a stale room tree or rebase system orders:
+    /// automatic follow-up work forces a fresh coordinated transaction instead.
+    pub fn merge_venue_order(
+        &mut self,
+        predecessor: &Self,
+        candidate: Self,
+        execution: &mut ActorExecution,
+    ) -> Result<bool, RoomManagerError> {
+        let room_id = execution.room_id.clone();
+        if candidate.execution_history_len(&room_id)? != 1
+            || candidate.pending_liquidation_count(&room_id)? != 0
+            || candidate.execution_history_from(&room_id, 0)?.next() != Some(execution)
+        {
+            return Ok(false);
+        }
+        let mut candidate = candidate;
+        let room =
+            candidate
+                .rooms
+                .remove(&room_id)
+                .ok_or_else(|| RoomManagerError::RoomNotFound {
+                    room_id: room_id.clone(),
+                })?;
+        if !self
+            .simulation_room_mut(&room_id)?
+            .merge_order_venue(predecessor.simulation_room(&room_id)?, room, execution)
+            .map_err(RoomManagerError::Actor)?
+        {
+            return Ok(false);
+        }
+        self.executions
+            .entry(room_id)
+            .or_default()
+            .push(execution.clone());
+        Ok(true)
+    }
+
     /// Move one complete room into a separate execution owner without replaying
     /// its history or changing liquidation, receipt, or last-trade state.
     pub fn take_room(&mut self, room_id: &str) -> Option<Self> {

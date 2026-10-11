@@ -16,6 +16,8 @@ use std::{
 };
 
 pub mod auth;
+#[cfg(feature = "bench-execution-timing")]
+mod bench_execution_timing;
 mod bot_history;
 pub mod bot_plugins;
 mod competition;
@@ -33,6 +35,9 @@ mod room_runtime;
 mod scheduler_delta;
 mod simulation_ws;
 pub mod storage_audit;
+#[cfg(test)]
+mod venue_order_tests;
+mod venue_orders;
 
 use axum::{
     Json, Router,
@@ -1903,6 +1908,8 @@ async fn metrics(State(state): State<SharedState>) -> Response {
     };
 
     let mut body = String::new();
+    #[cfg(feature = "bench-execution-timing")]
+    bench_execution_timing::append_metrics(&mut body);
     append_prometheus_metric(
         &mut body,
         "marketforge_process_up",
@@ -6349,7 +6356,7 @@ async fn submit_order_response(
     instrument_id: Option<InstrumentId>,
     request: SubmitOrderRequest,
 ) -> ApiResult<OrderResponse> {
-    let _authorization = authorize_room_read(
+    let authorization = authorize_room_read(
         &state,
         &headers,
         &room_id,
@@ -6360,14 +6367,17 @@ async fn submit_order_response(
         return Err(api_error(StatusCode::BAD_REQUEST, reason));
     }
     run_durable_state_transaction(state.clone(), async move {
-        let mut state = lock_room_state(&state, &room_id).await?;
+        if let Some(response) = venue_orders::submit(
+            &state, &headers, &room_id, instrument_id.as_deref(), &request,
+        ).await? {
+            return Ok(Json(response));
+        }
+        let (mut state, is_admin) = state.app.order_admission(&room_id, &authorization.user_id)
+            .await.map_err(api_error_from_journal)?;
+        #[cfg(feature = "bench-execution-timing")]
+        let prepare_started = Instant::now();
         let user_id = current_user_id(&headers,&state.auth_policy)?;
         competition::guard_order(&state,&room_id,&user_id,request.account_id)?;
-        let is_admin = state
-            .journal
-            .user_can_administer_room(&user_id, &room_id)
-            .await
-            .map_err(api_error_from_journal)?;
         let idempotency_key = request_idempotency_key(&headers)?;
         let instrument_id = instrument_id.or_else(|| request.instrument_id.clone());
         let request_fingerprint = serde_json::to_string(&(instrument_id.as_deref(), &request))
@@ -6470,6 +6480,10 @@ async fn submit_order_response(
                 .ok()
         });
         let mut gateway = OrderGateway::new(&mut candidate_rooms, first_order_id);
+        #[cfg(feature = "bench-execution-timing")]
+        bench_execution_timing::ORDER_PREPARE.record(prepare_started);
+        #[cfg(feature = "bench-execution-timing")]
+        let apply_started = Instant::now();
         let execution = gateway
             .submit_action(GatewayRequest {
                 participant_id: request.participant_id.clone(),
@@ -6479,6 +6493,11 @@ async fn submit_order_response(
                 action: request.action.clone(),
             })
             .map_err(|error| api_error_from_room(error.into_room_error()))?;
+
+        #[cfg(feature = "bench-execution-timing")]
+        bench_execution_timing::ORDER_APPLY.record(apply_started);
+        #[cfg(feature = "bench-execution-timing")]
+        let receipt_started = Instant::now();
 
         let next_order_id = gateway.next_order_id();
         if let Some(run) = state
@@ -6528,6 +6547,10 @@ async fn submit_order_response(
             settle_training_residuals(&mut candidate_rooms, &mut run)?;
             settled_run = Some((run_id.clone(), run));
         }
+        #[cfg(feature = "bench-execution-timing")]
+        bench_execution_timing::ORDER_RECEIPT.record(receipt_started);
+        #[cfg(feature = "bench-execution-timing")]
+        let journal_started = Instant::now();
         journal_new_executions(
             &mut state,
             &candidate_rooms,
@@ -6537,12 +6560,18 @@ async fn submit_order_response(
         )
         .await
         .map_err(api_error_from_journal)?;
+        #[cfg(feature = "bench-execution-timing")]
+        bench_execution_timing::ORDER_JOURNAL.record(journal_started);
+        #[cfg(feature = "bench-execution-timing")]
+        let publish_started = Instant::now();
         order_ids.commit(next_order_id);
         if let Some((_, run)) = settled_run {
             persist_training_progress(&mut state, &run, &[]).await?;
         }
         state.rooms = candidate_rooms;
         state.next_order_id = next_order_id;
+        #[cfg(feature = "bench-execution-timing")]
+        bench_execution_timing::ORDER_PUBLISH.record(publish_started);
 
         Ok(Json(response))
     })

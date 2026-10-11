@@ -102,6 +102,11 @@ pub struct ExchangeActor {
 }
 
 impl ExchangeActor {
+    /// Even dormant automation can be advanced by an ordinary fill. Such
+    /// transactions retain the coordinated room execution path.
+    pub(crate) fn has_order_automation(&self) -> bool {
+        !self.conditional_orders.is_empty() || !self.position_protections.is_empty()
+    }
     pub fn new(
         room_id: impl Into<RoomId>,
         config: ExchangeConfig,
