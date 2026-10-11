@@ -185,8 +185,8 @@ async fn fixed_native_delivery_workload() {
     let memory = serde_json::json!({
         "heap_before_receipt":crate::memory_diagnostics::snapshot(),
         "journal":store.memory_diagnostics(),
-        "original_capacity":crate::memory_diagnostics::KEEP_SPARE_CAPACITY.load(std::sync::atomic::Ordering::Relaxed),
-        "definition":"fixed-work requested heap before final state/execution receipt serialization"});
+        "storage_mode":crate::memory_diagnostics::storage_mode(),
+        "definition":"fixed-work requested heap before final state/execution receipt serialization; tight raw JSON vs production compression; includes test-only kind labels; historical spare-capacity results are not comparable"});
     let app = shared.app.lock_room(&room).await;
     let seq = latest_persisted_command_seq(&app, &room).unwrap_or(0);
     let mut payload = serde_json::json!({

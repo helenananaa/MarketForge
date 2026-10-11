@@ -40,6 +40,7 @@ pub mod storage_audit;
 #[cfg(test)]
 mod venue_order_tests;
 mod venue_orders;
+mod write_profile;
 
 use axum::{
     Json, Router,
@@ -1885,6 +1886,7 @@ async fn metrics(State(state): State<SharedState>) -> Response {
         agent_worker_count,
         event_cache_entries,
         journal,
+        query_projection,
         owned_room_leases,
         lost_room_leases,
         room_lease_renew_failures,
@@ -1899,6 +1901,7 @@ async fn metrics(State(state): State<SharedState>) -> Response {
             summary.worker_count,
             summary.cache_entries,
             coordinator.metrics_snapshot(),
+            coordinator.projection_metrics_snapshot(),
             summary.owned_leases,
             summary.lost_leases,
             summary.renew_failures,
@@ -2141,6 +2144,36 @@ async fn metrics(State(state): State<SharedState>) -> Response {
         "gauge",
         journal.write_workers,
     );
+    if let Some([pending, batches, records, errors]) = query_projection {
+        for (name, help, kind, value) in [
+            (
+                "marketforge_query_projection_pending",
+                "Sampled durable projection backlog across this database.",
+                "gauge",
+                pending,
+            ),
+            (
+                "marketforge_query_projection_batches_total",
+                "Query projection batches committed by this process.",
+                "counter",
+                batches,
+            ),
+            (
+                "marketforge_query_projection_records_total",
+                "Execution records projected by this process.",
+                "counter",
+                records,
+            ),
+            (
+                "marketforge_query_projection_errors_total",
+                "Query projection attempts rolled back and retried.",
+                "counter",
+                errors,
+            ),
+        ] {
+            append_prometheus_metric(&mut body, name, help, kind, value);
+        }
+    }
     append_prometheus_metric(
         &mut body,
         "marketforge_journal_read_workers",
@@ -6358,6 +6391,9 @@ async fn submit_order_response(
     instrument_id: Option<InstrumentId>,
     request: SubmitOrderRequest,
 ) -> ApiResult<OrderResponse> {
+    let mut profile = write_profile::Profile::new("order");
+    profile.field("room", &room_id);
+    profile.field("allocates_id", order_action_allocates_id(&request.action));
     let authorization = authorize_room_read(
         &state,
         &headers,
@@ -6368,6 +6404,7 @@ async fn submit_order_response(
     if let Some(reason) = order_action_precision_error(&request.action) {
         return Err(api_error(StatusCode::BAD_REQUEST, reason));
     }
+    profile.mark("authorization");
     run_durable_state_transaction(state.clone(), async move {
         if let Some(response) = venue_orders::submit(
             &state, &headers, &room_id, instrument_id.as_deref(), &request,
@@ -6376,6 +6413,7 @@ async fn submit_order_response(
         }
         let (mut state, is_admin) = state.app.order_admission(&room_id, &authorization.user_id)
             .await.map_err(api_error_from_journal)?;
+        profile.mark("room_wait");
         #[cfg(feature = "bench-execution-timing")]
         let prepare_started = Instant::now();
         let user_id = current_user_id(&headers,&state.auth_policy)?;
@@ -6464,6 +6502,7 @@ async fn submit_order_response(
                 ));
             }
         }
+        profile.mark("guards");
         let mut candidate_rooms = state.rooms.clone();
         let previous_history_len = candidate_rooms
             .execution_history_len(&room_id)
@@ -6481,6 +6520,7 @@ async fn submit_order_response(
                 .book_snapshot_for(&room_id, instrument_id)
                 .ok()
         });
+        profile.mark("candidate");
         let mut gateway = OrderGateway::new(&mut candidate_rooms, first_order_id);
         #[cfg(feature = "bench-execution-timing")]
         bench_execution_timing::ORDER_PREPARE.record(prepare_started);
@@ -6553,6 +6593,7 @@ async fn submit_order_response(
         bench_execution_timing::ORDER_RECEIPT.record(receipt_started);
         #[cfg(feature = "bench-execution-timing")]
         let journal_started = Instant::now();
+        profile.mark("apply");
         journal_new_executions(
             &mut state,
             &candidate_rooms,
@@ -6566,6 +6607,7 @@ async fn submit_order_response(
         bench_execution_timing::ORDER_JOURNAL.record(journal_started);
         #[cfg(feature = "bench-execution-timing")]
         let publish_started = Instant::now();
+        profile.mark("journal");
         order_ids.commit(next_order_id);
         if let Some((_, run)) = settled_run {
             persist_training_progress(&mut state, &run, &[]).await?;
@@ -6575,6 +6617,7 @@ async fn submit_order_response(
         #[cfg(feature = "bench-execution-timing")]
         bench_execution_timing::ORDER_PUBLISH.record(publish_started);
 
+        profile.mark("install");
         Ok(Json(response))
     })
     .await

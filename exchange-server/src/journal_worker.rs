@@ -40,6 +40,7 @@ pub(crate) struct JournalCoordinator {
 struct JournalWorker {
     sender: mpsc::Sender<JournalJob>,
     metrics: Arc<JournalCoordinatorMetrics>,
+    projection_monitor: Option<Arc<crate::journal::QueryProjectionMetrics>>,
 }
 
 #[derive(Default)]
@@ -70,6 +71,13 @@ impl JournalCoordinator {
     pub(crate) async fn benchmark_storage(&self) -> Result<serde_json::Value, JournalError> {
         self.execute_read(|store| Ok(store.benchmark_storage()))
             .await
+    }
+
+    pub(crate) fn projection_metrics_snapshot(&self) -> Option<[u64; 4]> {
+        self.writer
+            .projection_monitor
+            .as_ref()
+            .map(|monitor| monitor.snapshot())
     }
     pub(crate) async fn commit_platform(
         &self,
@@ -164,6 +172,7 @@ impl JournalWorker {
     fn spawn(mut store: Box<dyn JournalStore>, capacity: usize, thread_name: String) -> Self {
         let (sender, mut receiver) = mpsc::channel::<JournalJob>(capacity);
         let metrics = Arc::new(JournalCoordinatorMetrics::default());
+        let projection_monitor = store.projection_monitor();
         thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
@@ -172,7 +181,11 @@ impl JournalWorker {
                 }
             })
             .expect("failed to spawn journal worker");
-        Self { sender, metrics }
+        Self {
+            sender,
+            metrics,
+            projection_monitor,
+        }
     }
 
     fn metrics_snapshot(&self) -> JournalCoordinatorMetricsSnapshot {
@@ -202,13 +215,16 @@ impl JournalWorker {
         self.metrics
             .operations_in_flight
             .fetch_add(1, Ordering::Relaxed);
+        let mut profile = crate::write_profile::Profile::new("journal_job");
         let (result_sender, result_receiver) = oneshot::channel();
         let metrics = Arc::clone(&self.metrics);
         if self
             .sender
             .send(Box::new(move |store| {
+                profile.mark("queue_wait");
                 metrics.worker_active.fetch_add(1, Ordering::Relaxed);
                 let result = operation(store);
+                profile.mark("operation");
                 metrics.worker_active.fetch_sub(1, Ordering::Relaxed);
                 metrics.operations_completed.fetch_add(1, Ordering::Relaxed);
                 metrics.operations_in_flight.fetch_sub(1, Ordering::Relaxed);

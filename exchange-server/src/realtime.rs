@@ -794,7 +794,7 @@ enum DecisionObservation {
     Shared(exchange_core::observation::SharedParticipantObservation),
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "risk-benchmark"))]
 fn compute_decision(
     prior: SharedAgent,
     observation: exchange_core::ParticipantObservation,

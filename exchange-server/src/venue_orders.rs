@@ -18,10 +18,14 @@ pub(super) async fn submit(
     ) {
         return Ok(None);
     }
+    let mut profile = write_profile::Profile::new("venue_order");
+    profile.field("room", room);
+    profile.field("allocates_id", order_action_allocates_id(&request.action));
     let instrument = instrument.or(request.instrument_id.as_deref());
     let Some(owner) = shared.app.venue_order(room, instrument).await else {
         return Ok(None);
     };
+    profile.mark("venue_wait");
     let Some(mut candidate) = owner
         .predecessor
         .fork_venue_order(room, &owner.instrument)
@@ -51,6 +55,7 @@ pub(super) async fn submit(
     let mut ids =
         metadata.reserve_order_ids(u64::from(order_action_allocates_id(&request.action)))?;
     let mut gateway = OrderGateway::new(&mut candidate, ids.start);
+    profile.mark("prepare");
     #[cfg(feature = "bench-execution-timing")]
     bench_execution_timing::ORDER_PREPARE.record(prepare_started);
     #[cfg(feature = "bench-execution-timing")]
@@ -63,6 +68,7 @@ pub(super) async fn submit(
         action: request.action.clone(),
     });
     let next_id = gateway.next_order_id();
+    profile.mark("apply");
     #[cfg(feature = "bench-execution-timing")]
     {
         bench_execution_timing::ORDER_APPLY.record(apply_started);
@@ -70,6 +76,7 @@ pub(super) async fn submit(
     }
 
     let mut app = owner.commit_lock().await;
+    profile.mark("room_commit_wait");
     // Competition deadlines use wall time, so check them again after queuing.
     competition::guard_order(&app, room, &user, request.account_id)?;
     if let Some(key) = key.as_deref()
@@ -112,6 +119,7 @@ pub(super) async fn submit(
     // Replay takes precedence over a speculative error (for example retrying a
     // cancel whose order is already gone). Only now can the candidate fail.
     let mut execution = execution.map_err(|error| api_error_from_room(error.into_room_error()))?;
+    profile.mark("admission");
     #[cfg(feature = "bench-execution-timing")]
     let receipt_started = Instant::now();
     let mut merged = app.rooms.clone();
@@ -146,6 +154,7 @@ pub(super) async fn submit(
     if let Some(step) = step {
         record = record.with_quota(user, step);
     }
+    profile.mark("receipt");
     #[cfg(feature = "bench-execution-timing")]
     bench_execution_timing::ORDER_RECEIPT.record(receipt_started);
     #[cfg(feature = "bench-execution-timing")]
@@ -153,6 +162,7 @@ pub(super) async fn submit(
     journal_new_executions(&mut app, &merged, room, previous_len, record)
         .await
         .map_err(api_error_from_journal)?;
+    profile.mark("journal");
     #[cfg(feature = "bench-execution-timing")]
     bench_execution_timing::ORDER_JOURNAL.record(journal_started);
     #[cfg(feature = "bench-execution-timing")]
@@ -160,6 +170,7 @@ pub(super) async fn submit(
     ids.commit(next_id);
     app.next_order_id = app.next_order_id.max(next_id);
     app.rooms = merged;
+    profile.mark("install");
     #[cfg(feature = "bench-execution-timing")]
     {
         bench_execution_timing::ORDER_PUBLISH.record(publish_started);

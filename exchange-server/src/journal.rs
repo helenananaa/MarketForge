@@ -10,17 +10,25 @@ use std::{
 #[cfg(test)]
 use std::sync::{Arc, Mutex};
 
+use self::pg_cached::{CachedClient as Client, CachedTransaction};
 use exchange_core::{
     ActorExecution, Command, EXTERNAL_ACTIONS_PER_STEP, MarketStatus, RoomBootstrap,
     ScenarioConfig, SimulationRoom, VenueToVenueTransfer,
     model::{AccountId, OrderKind, Side},
     transfer::{VenueTransfer, VenueTransferKind, VenueTransferRejectReason, VenueTransferStatus},
 };
-use postgres::{Client, NoTls, error::SqlState, types::Type};
+use postgres::{NoTls, error::SqlState};
 use serde::{Deserialize, Serialize, de::Error as _};
 use serde_json::Value;
 
 use crate::{ClearingEventSummary, EventSummary, RoomExecutionSummary};
+
+mod pg_cached;
+mod projection;
+mod snapshot_bytes;
+mod stored_mutation;
+pub use projection::QueryProjectionMetrics;
+use stored_mutation::StoredMutation;
 
 const DATABASE_URL_ENV: &str = "MARKETFORGE_DATABASE_URL";
 const RUNTIME_MODE_ENV: &str = "MARKETFORGE_RUNTIME_MODE";
@@ -123,6 +131,16 @@ const MIGRATIONS: &[SchemaMigration] = &[
         name: "competition_platform",
         sql: include_str!("../migrations/0017_competition_platform.sql"),
     },
+    SchemaMigration {
+        version: 18,
+        name: "async_query_projections",
+        sql: include_str!("../migrations/0018_async_query_projections.sql"),
+    },
+    SchemaMigration {
+        version: 19,
+        name: "fast_checkpoint_storage",
+        sql: include_str!("../migrations/0019_fast_checkpoint_storage.sql"),
+    },
 ];
 
 pub const ROOM_MUTATION_SCHEMA_VERSION: u16 = 1;
@@ -168,6 +186,9 @@ pub trait JournalStore: Send {
     #[cfg(feature = "risk-benchmark")]
     fn benchmark_storage(&self) -> serde_json::Value {
         serde_json::Value::Null
+    }
+    fn projection_monitor(&self) -> Option<std::sync::Arc<QueryProjectionMetrics>> {
+        None
     }
     fn load_platform(&mut self) -> Result<PlatformData, JournalError> {
         Ok(PlatformData::default())
@@ -922,6 +943,61 @@ struct JournalMutationRef<'a> {
 // contents unchanged through projection checks and the eventual store write.
 struct ValidatedPendingMutation<'a>(&'a PendingJournalMutation);
 
+const INSERT_ROOM_MUTATION_SQL: &str = "INSERT INTO marketforge_room_mutations \
+    (room_id,command_cursor,schema_version,mutation_kind,payload_json) \
+    VALUES ($1,$2,$3,$4,$5) RETURNING mutation_seq";
+const INSERT_FENCED_ROOM_MUTATION_SQL: &str = "WITH held AS ( \
+    SELECT room_id FROM marketforge_room_writer_leases \
+    WHERE room_id=$1 AND owner_id=$6 AND fencing_token=$7 \
+      AND lease_expires_at>clock_timestamp() FOR UPDATE) \
+    INSERT INTO marketforge_room_mutations \
+    (room_id,command_cursor,schema_version,mutation_kind,payload_json) \
+    SELECT $1,$2,$3,$4,$5 FROM held RETURNING mutation_seq";
+
+struct PreparedRoomMutation<'a> {
+    room_id: &'a str,
+    command_cursor: i64,
+    schema_version: i32,
+    mutation_kind: &'static str,
+    payload: RecoveryJson,
+}
+
+impl<'a> PreparedRoomMutation<'a> {
+    fn new(validated: ValidatedPendingMutation<'a>) -> Result<Self, JournalError> {
+        let mutation = validated.0;
+        Ok(Self {
+            room_id: &mutation.room_id,
+            command_cursor: i64_from_u64(mutation.command_cursor, "command_cursor")?,
+            schema_version: i32::from(ROOM_MUTATION_SCHEMA_VERSION),
+            mutation_kind: mutation.mutation.kind_name(),
+            payload: RecoveryJson::encode(&mutation.mutation)?,
+        })
+    }
+
+    fn params(&self) -> [&(dyn postgres::types::ToSql + Sync); 5] {
+        [
+            &self.room_id,
+            &self.command_cursor,
+            &self.schema_version,
+            &self.mutation_kind,
+            &self.payload,
+        ]
+    }
+}
+
+fn single_row_mutation(
+    mutation: &PendingJournalMutation,
+    executions: &[JournalExecution],
+    transfers: &[JournalTransfer],
+    snapshot: Option<&JournalSnapshot>,
+) -> bool {
+    executions.is_empty()
+        && transfers.is_empty()
+        && snapshot.is_none()
+        && mutation.control_idempotency.is_none()
+        && !matches!(mutation.mutation, RoomMutation::StatusChanged { .. })
+}
+
 fn encode_validated_mutation(
     validated: &ValidatedPendingMutation<'_>,
     mutation_seq: u64,
@@ -1370,7 +1446,11 @@ pub struct InMemoryJournalStore {
     executions: Vec<JournalExecution>,
     // Historical scheduler states contain many JSON values. Keep their exact
     // wire representation rather than thousands of independent allocation trees.
-    mutations: Vec<Vec<u8>>,
+    mutations: Vec<StoredMutation>,
+    // Keep diagnostic classification outside the serialized/compressed data so
+    // heap sampling does not decode the entire retained history under its lock.
+    #[cfg(all(test, feature = "memory-diagnostics"))]
+    mutation_kinds: Vec<&'static str>,
     next_mutation_seq: u64,
     transfers: BTreeMap<(String, u64), VenueTransfer>,
     snapshots: BTreeMap<String, JournalSnapshot>,
@@ -1468,24 +1548,47 @@ impl InMemoryJournalStore {
         #[cfg(all(test, feature = "memory-diagnostics"))]
         let _scope =
             crate::memory_diagnostics::Scope::enter(crate::memory_diagnostics::Origin::Journal);
-        let mut encoded = encode_validated_mutation(&validated, mutation_seq)?;
-        // Bot state records can be retained for the whole memory-journal session.
-        // serde_json grows its buffer geometrically; retain only the exact wire
-        // bytes, without changing records, checkpoint cadence or recovery data.
-        let bot_state = match &mutation.mutation {
-            RoomMutation::SchedulerDelta { delta, .. } => !delta.changes.is_empty(),
-            RoomMutation::SchedulerProgress { state, .. } => !state.agents.is_empty(),
-            _ => false,
-        };
+        let encoded = encode_validated_mutation(&validated, mutation_seq)?;
         #[cfg(all(test, feature = "memory-diagnostics"))]
-        let bot_state = bot_state
-            && !crate::memory_diagnostics::KEEP_SPARE_CAPACITY
-                .load(std::sync::atomic::Ordering::Relaxed);
-        if bot_state {
-            encoded.shrink_to_fit();
-        }
+        let encoded = if crate::memory_diagnostics::uses_raw_storage() {
+            StoredMutation::Raw(encoded.into_boxed_slice())
+        } else {
+            StoredMutation::new(encoded)
+        };
+        #[cfg(not(all(test, feature = "memory-diagnostics")))]
+        let encoded = StoredMutation::new(encoded);
         self.next_mutation_seq = mutation_seq;
         self.mutations.push(encoded);
+        #[cfg(all(test, feature = "memory-diagnostics"))]
+        self.mutation_kinds.push(mutation.mutation.kind_name());
+        if self.next_mutation_seq.is_multiple_of(100) && crate::write_profile::Profile::enabled() {
+            let mut profile = crate::write_profile::Profile::new("memory_retention");
+            profile.field("mutation_count", self.mutations.len());
+            profile.field(
+                "mutation_bytes",
+                self.mutations
+                    .iter()
+                    .map(StoredMutation::json_len)
+                    .sum::<usize>(),
+            );
+            profile.field(
+                "mutation_capacity",
+                self.mutations
+                    .iter()
+                    .map(StoredMutation::len)
+                    .sum::<usize>(),
+            );
+            profile.field("execution_count", self.executions.len());
+            profile.field(
+                "execution_slots_bytes",
+                self.executions.capacity() * std::mem::size_of::<JournalExecution>(),
+            );
+            profile.field("orders", self.projections.orders.len());
+            profile.field("trades", self.projections.trades.len());
+            profile.field("ledger_rows", self.projections.account_ledger.len());
+            profile.field("position_rows", self.projections.position_snapshots.len());
+            profile.field("snapshot_count", self.snapshots.len());
+        }
         if let Some(record) = &mutation.control_idempotency {
             self.control_idempotency
                 .insert(control_idempotency_map_key(record), record.clone());
@@ -1551,9 +1654,18 @@ impl InMemoryJournalStore {
 impl JournalStore for InMemoryJournalStore {
     #[cfg(feature = "risk-benchmark")]
     fn benchmark_storage(&self) -> serde_json::Value {
+        let stored_bytes = self
+            .mutations
+            .iter()
+            .map(StoredMutation::len)
+            .sum::<usize>();
         serde_json::json!({"mutation_count":self.mutations.len(),
-            "mutation_wire_bytes":self.mutations.iter().map(Vec::len).sum::<usize>(),
-            "mutation_capacity_bytes":self.mutations.iter().map(Vec::capacity).sum::<usize>(),
+            "mutation_wire_bytes":self.mutations.iter().map(StoredMutation::json_len).sum::<usize>(),
+            "mutation_stored_bytes":stored_bytes,
+            // Compatibility key for the existing risk benchmark. Boxed slices
+            // have no spare capacity; this now equals retained payload bytes.
+            "mutation_capacity_bytes":stored_bytes,
+            "mutation_storage":"tight raw JSON or lossless LZ4",
             "execution_count":self.executions.len(),"snapshot_count":self.snapshots.len()})
     }
     fn load_platform(&mut self) -> Result<PlatformData, JournalError> {
@@ -1615,7 +1727,7 @@ impl JournalStore for InMemoryJournalStore {
             mutations: self
                 .mutations
                 .iter()
-                .map(|encoded| serde_json::from_slice(encoded).map_err(JournalError::Serialize))
+                .map(StoredMutation::decode)
                 .collect::<Result<Vec<_>, _>>()?,
             snapshots: self.latest_snapshots(),
         })
@@ -2360,23 +2472,21 @@ impl SharedInMemoryJournalStore {
     pub(crate) fn memory_diagnostics(&self) -> serde_json::Value {
         let store = self.lock().unwrap();
         let mut rows = BTreeMap::<&str, (usize, usize, usize)>::new();
-        for encoded in &store.mutations {
-            let prefix = &encoded[..encoded.len().min(512)];
-            let kind = ["scheduler_delta", "scheduler_progress", "state_checkpoint"]
-                .into_iter()
-                .find(|kind| {
-                    let pattern = format!("\"kind\":\"{kind}\"");
-                    prefix
-                        .windows(pattern.len())
-                        .any(|part| part == pattern.as_bytes())
-                })
-                .unwrap_or("other");
+        assert_eq!(store.mutations.len(), store.mutation_kinds.len());
+        for (encoded, kind) in store.mutations.iter().zip(&store.mutation_kinds) {
+            let kind = match *kind {
+                "scheduler_delta" | "scheduler_progress" | "state_checkpoint" => *kind,
+                _ => "other",
+            };
             let row = rows.entry(kind).or_default();
             row.0 += 1;
-            row.1 += encoded.len();
-            row.2 += encoded.capacity();
+            row.1 += encoded.json_len();
+            row.2 += encoded.len();
         }
-        serde_json::json!({"mutations":rows,"mutation_vector_capacity_bytes":store.mutations.capacity()*std::mem::size_of::<Vec<u8>>(),
+        serde_json::json!({"mutations":rows,"mutation_row_definition":["records","logical_json_bytes","stored_payload_bytes"],
+            "mutation_vector_capacity_bytes":store.mutations.capacity()*std::mem::size_of::<StoredMutation>(),
+            "diagnostic_kind_vector_capacity_bytes":store.mutation_kinds.capacity()*std::mem::size_of::<&str>(),
+            "storage_mode":crate::memory_diagnostics::storage_mode(),
             "executions":store.executions.len(),"snapshots":store.snapshots.len()})
     }
 
@@ -2384,8 +2494,14 @@ impl SharedInMemoryJournalStore {
     // is no HTTP route, production switch or change to the retention policy.
     #[cfg(feature = "memory-diagnostics")]
     pub(crate) fn release_mutations_for_memory_probe(&self) {
-        let mutations = std::mem::take(&mut self.lock().unwrap().mutations);
-        drop(mutations);
+        let (mutations, kinds) = {
+            let mut store = self.lock().unwrap();
+            (
+                std::mem::take(&mut store.mutations),
+                std::mem::take(&mut store.mutation_kinds),
+            )
+        };
+        drop((mutations, kinds));
     }
     #[cfg(feature = "memory-diagnostics")]
     pub(crate) fn release_other_journal_for_memory_probe(&self) {
@@ -2768,6 +2884,7 @@ pub struct PostgresJournalStore {
     database_url: String,
     client: Client,
     runtime_lock: PostgresRuntimeLock,
+    projector: Option<projection::Projector>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2783,12 +2900,14 @@ impl PostgresJournalStore {
             database_url: database_url.to_string(),
             client: Client::connect(database_url, NoTls).map_err(JournalError::Postgres)?,
             runtime_lock: PostgresRuntimeLock::None,
+            projector: None,
         })
     }
 
     pub fn connect_migrated(database_url: &str) -> Result<Self, JournalError> {
         let mut store = Self::connect(database_url)?;
         store.ensure_schema_serialized()?;
+        store.projector = Some(projection::Projector::start(database_url.to_string())?);
         Ok(store)
     }
 
@@ -2796,6 +2915,7 @@ impl PostgresJournalStore {
         let mut store = Self::connect(database_url)?;
         store.acquire_shared_runtime_lock()?;
         store.ensure_schema_serialized()?;
+        store.projector = Some(projection::Projector::start(database_url.to_string())?);
         Ok(store)
     }
 
@@ -2811,6 +2931,7 @@ impl PostgresJournalStore {
         let mut store = Self::connect(database_url)?;
         store.acquire_exclusive_runtime_lock(wait)?;
         store.ensure_schema_serialized()?;
+        store.projector = Some(projection::Projector::start(database_url.to_string())?);
         Ok(store)
     }
 
@@ -2892,7 +3013,7 @@ impl PostgresJournalStore {
     }
 
     fn assert_room_write_fence(
-        tx: &mut postgres::Transaction<'_>,
+        tx: &mut CachedTransaction<'_>,
         claim: &RoomLeaseClaim,
     ) -> Result<(), JournalError> {
         validate_room_lease_claim(claim)?;
@@ -2919,82 +3040,60 @@ impl PostgresJournalStore {
         }
     }
 
-    fn insert_execution(
-        tx: &mut postgres::Transaction<'_>,
-        record: &JournalExecution,
+    fn insert_executions(
+        tx: &mut CachedTransaction<'_>,
+        records: &[JournalExecution],
     ) -> Result<(), JournalError> {
-        // These hot projection statements bind the migration schema types.
-        // execute_typed sends Parse/Bind/Execute together; execute(&str) would
-        // first prepare the same SQL again for each command/event/ledger row.
-        validate_execution_idempotency(record)?;
-        let command_seq = i64::try_from(record.command_seq)
-            .map_err(|_| JournalError::SequenceOutOfRange(record.command_seq))?;
-        let clearing_event_count = i32::try_from(record.execution.clearing_event_count)
-            .map_err(|_| JournalError::CountOutOfRange(record.execution.clearing_event_count))?;
-        let account_id = record.account_id.map(|id| id.to_string());
-        let market_time_ms = record
-            .execution
-            .market_time_ms
-            .map(|value| i64_from_u64(value, "market_time_ms"))
-            .transpose()?;
-        let command_json = record.command_json()?;
-        let execution_json = record.execution_json()?;
-
-        tx.execute_typed(
-            r#"
-            INSERT INTO marketforge_executions (
-                room_id,
-                command_seq,
-                participant_id,
-                account_id,
-                command_json,
-                execution_json,
-                accepted,
-                reject_reason,
-                clearing_event_count,
-                market_time_ms,
-                request_user_id,
-                idempotency_key,
-                request_fingerprint
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-            "#,
-            &[
-                (&record.room_id, Type::TEXT),
-                (&command_seq, Type::INT8),
-                (&record.participant_id, Type::TEXT),
-                (&account_id, Type::TEXT),
-                (&command_json, Type::JSONB),
-                (&execution_json, Type::JSONB),
-                (&record.execution.accepted, Type::BOOL),
-                (&record.execution.reject_reason, Type::TEXT),
-                (&clearing_event_count, Type::INT4),
-                (&market_time_ms, Type::INT8),
-                (&record.request_user_id, Type::TEXT),
-                (&record.idempotency_key, Type::TEXT),
-                (&record.request_fingerprint, Type::TEXT),
-            ],
-        )
-        .map_err(JournalError::Postgres)?;
-
-        if let Some(order) = record.command.new_order()
-            && order.order_id >= crate::SYSTEM_CONDITIONAL_ORDER_ID_BASE
-            && (record.participant_id.is_some() || !crate::is_system_exit_command(&record.command))
-        {
-            return Err(JournalError::Recovery(
-                "order uses the reserved system-order range".to_string(),
-            ));
+        if records.is_empty() {
+            return Ok(());
         }
-        Self::insert_projected_execution(tx, record)?;
-        if let Some((user_id, step)) = &record.quota_user_step {
-            Self::consume_external_action(tx, &record.room_id, user_id, *step)?;
+        let mut profile = crate::write_profile::Profile::new("pg_executions");
+        profile.field("count", records.len());
+        projection::validate_and_claim(tx, records)?;
+        profile.mark("validate_claim");
+        let mut rows = Vec::with_capacity(records.len());
+        for record in records {
+            if let Some(order) = record.command.new_order()
+                && order.order_id >= crate::SYSTEM_CONDITIONAL_ORDER_ID_BASE
+                && (record.participant_id.is_some()
+                    || !crate::is_system_exit_command(&record.command))
+            {
+                return Err(JournalError::Recovery(
+                    "order uses the reserved system-order range".into(),
+                ));
+            }
+            rows.push(serde_json::json!({
+                "room_id":record.room_id,"command_seq":i64_from_u64(record.command_seq,"command_seq")?,
+                "participant_id":record.participant_id,"account_id":record.account_id.map(|id|id.to_string()),
+                "command_json":record.command_json()?,"execution_json":record.execution_json()?,
+                "accepted":record.execution.accepted,"reject_reason":record.execution.reject_reason,
+                "clearing_event_count":i32::try_from(record.execution.clearing_event_count).map_err(|_|JournalError::CountOutOfRange(record.execution.clearing_event_count))?,
+                "market_time_ms":record.execution.market_time_ms.map(|v|i64_from_u64(v,"market_time_ms")).transpose()?,
+                "request_user_id":record.request_user_id,"idempotency_key":record.idempotency_key,"request_fingerprint":record.request_fingerprint,
+            }));
         }
-
+        profile.mark("encode");
+        tx.execute(
+            "WITH written AS (INSERT INTO marketforge_executions \
+             (room_id,command_seq,participant_id,account_id,command_json,execution_json,accepted,reject_reason,clearing_event_count,market_time_ms,request_user_id,idempotency_key,request_fingerprint) \
+             SELECT room_id,command_seq,participant_id,account_id,command_json,execution_json,accepted,reject_reason,clearing_event_count,market_time_ms,request_user_id,idempotency_key,request_fingerprint \
+             FROM jsonb_populate_recordset(NULL::marketforge_executions,$1) ORDER BY room_id,command_seq \
+             RETURNING room_id,command_seq) \
+             INSERT INTO marketforge_projection_queue(room_id,command_seq) SELECT room_id,command_seq FROM written",
+            &[&Value::Array(rows)],
+        ).map_err(JournalError::Postgres)?;
+        profile.mark("insert");
+        for record in records {
+            if let Some((user_id, step)) = &record.quota_user_step {
+                Self::consume_external_action(tx, &record.room_id, user_id, *step)?;
+            }
+        }
+        profile.mark("quota");
         Ok(())
     }
 
     fn consume_external_action(
-        tx: &mut postgres::Transaction<'_>,
+        tx: &mut CachedTransaction<'_>,
         room_id: &str,
         user_id: &str,
         step: u64,
@@ -3025,543 +3124,43 @@ impl PostgresJournalStore {
         Ok(())
     }
 
-    fn insert_projected_execution(
-        tx: &mut postgres::Transaction<'_>,
-        record: &JournalExecution,
-    ) -> Result<(), JournalError> {
-        let command_seq = i64_from_u64(record.command_seq, "command_seq")?;
-        let market_time_ms = record
-            .execution
-            .market_time_ms
-            .map(|value| i64_from_u64(value, "market_time_ms"))
-            .transpose()?;
-        let instrument_id = record
-            .execution
-            .instrument_id
-            .as_deref()
-            .unwrap_or("legacy-primary");
-        let mut ignored_rejected_duplicate_order_id = None;
-
-        if let Some(order) = record.command.new_order() {
-            let order_id = i64_from_u64(order.order_id, "order_id")?;
-            let account_id = i64_from_u64(order.account_id, "account_id")?;
-            let original_qty = i64_from_u64(order.qty, "qty")?;
-            let (base_order_type, limit_price_tick) = match order.kind.execution_kind() {
-                OrderKind::Limit { price_tick } => ("limit", Some(price_tick)),
-                OrderKind::Market => ("market", None),
-                OrderKind::PostOnly { price_tick } => ("post_only", Some(price_tick)),
-                OrderKind::ImmediateOrCancel { price_tick } => ("immediate_or_cancel", price_tick),
-                OrderKind::FillOrKill { price_tick } => ("fill_or_kill", price_tick),
-                OrderKind::Protected { .. } | OrderKind::TimedMarket { .. } => {
-                    unreachable!("execution_kind unwraps protection")
-                }
-            };
-            let order_type = if order.reduce_only {
-                format!("reduce_only_{base_order_type}")
-            } else {
-                base_order_type.to_string()
-            };
-            let initial_status = if !record.execution.accepted && record.execution.events.is_empty()
-            {
-                "rejected"
-            } else {
-                "submitted"
-            };
-
-            let inserted = tx
-                .execute_typed(
-                    r#"
-                INSERT INTO marketforge_orders (
-                    room_id,
-                    instrument_id,
-                    order_id,
-                    account_id,
-                    participant_id,
-                    side,
-                    order_type,
-                    limit_price_tick,
-                    original_qty,
-                    status,
-                    remaining_qty,
-                    created_command_seq,
-                    updated_command_seq,
-                    created_market_time_ms,
-                    updated_market_time_ms
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $9, $11, $11, $12, $12)
-                ON CONFLICT (room_id, instrument_id, order_id) DO NOTHING
-                "#,
-                    &[
-                        (&record.room_id, Type::TEXT),
-                        (&instrument_id, Type::TEXT),
-                        (&order_id, Type::INT8),
-                        (&account_id, Type::INT8),
-                        (&record.participant_id, Type::TEXT),
-                        (&side_name(order.side), Type::TEXT),
-                        (&order_type, Type::TEXT),
-                        (&limit_price_tick, Type::INT8),
-                        (&original_qty, Type::INT8),
-                        (&initial_status, Type::TEXT),
-                        (&command_seq, Type::INT8),
-                        (&market_time_ms, Type::INT8),
-                    ],
-                )
-                .map_err(JournalError::Postgres)?;
-            if inserted == 0 {
-                if new_order_did_not_create_order(record, order.order_id) {
-                    ignored_rejected_duplicate_order_id = Some(order.order_id);
-                } else {
-                    return Err(JournalError::ProjectionConflict {
-                        entity: "order",
-                        room_id: record.room_id.clone(),
-                        instrument_id: instrument_id.to_string(),
-                        id: order_id,
-                    });
-                }
-            }
-        }
-
-        for event in &record.execution.events {
-            Self::insert_order_event(tx, record, event)?;
-            if ignored_rejected_duplicate_order_id != event_order_id(event) {
-                Self::apply_order_event_projection(tx, record, event)?;
-            }
-            if let EventSummary::TradePrinted {
-                seq,
-                trade_id,
-                maker_order_id,
-                maker_account_id,
-                taker_order_id,
-                taker_account_id,
-                price_tick,
-                qty,
-                taker_side,
-                ..
-            } = event
-            {
-                let event_seq = i64_from_u64(*seq, "event_seq")?;
-                let trade_id = i64_from_u64(*trade_id, "trade_id")?;
-                let maker_order_id = i64_from_u64(*maker_order_id, "maker_order_id")?;
-                let maker_account_id = i64_from_u64(*maker_account_id, "maker_account_id")?;
-                let taker_order_id = i64_from_u64(*taker_order_id, "taker_order_id")?;
-                let taker_account_id = i64_from_u64(*taker_account_id, "taker_account_id")?;
-                let qty = i64_from_u64(*qty, "qty")?;
-
-                tx.execute_typed(
-                    r#"
-                    INSERT INTO marketforge_trades (
-                        room_id,
-                        instrument_id,
-                        trade_id,
-                        command_seq,
-                        event_seq,
-                        maker_order_id,
-                        maker_account_id,
-                        taker_order_id,
-                        taker_account_id,
-                        price_tick,
-                        qty,
-                        taker_side,
-                        market_time_ms
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-                    "#,
-                    &[
-                        (&record.room_id, Type::TEXT),
-                        (&instrument_id, Type::TEXT),
-                        (&trade_id, Type::INT8),
-                        (&command_seq, Type::INT8),
-                        (&event_seq, Type::INT8),
-                        (&maker_order_id, Type::INT8),
-                        (&maker_account_id, Type::INT8),
-                        (&taker_order_id, Type::INT8),
-                        (&taker_account_id, Type::INT8),
-                        (price_tick, Type::INT8),
-                        (&qty, Type::INT8),
-                        (&side_name(*taker_side), Type::TEXT),
-                        (&market_time_ms, Type::INT8),
-                    ],
-                )
-                .map_err(JournalError::Postgres)?;
-
-                tx.execute_typed(
-                    r#"
-                    INSERT INTO marketforge_market_ticks (
-                        room_id,
-                        instrument_id,
-                        command_seq,
-                        event_seq,
-                        trade_id,
-                        price_tick,
-                        qty,
-                        taker_side,
-                        market_time_ms
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    ON CONFLICT (room_id, command_seq, event_seq)
-                    DO UPDATE SET
-                        trade_id = EXCLUDED.trade_id,
-                        price_tick = EXCLUDED.price_tick,
-                        qty = EXCLUDED.qty,
-                        taker_side = EXCLUDED.taker_side,
-                        market_time_ms = EXCLUDED.market_time_ms
-                    "#,
-                    &[
-                        (&record.room_id, Type::TEXT),
-                        (&instrument_id, Type::TEXT),
-                        (&command_seq, Type::INT8),
-                        (&event_seq, Type::INT8),
-                        (&trade_id, Type::INT8),
-                        (price_tick, Type::INT8),
-                        (&qty, Type::INT8),
-                        (&side_name(*taker_side), Type::TEXT),
-                        (&market_time_ms, Type::INT8),
-                    ],
-                )
-                .map_err(JournalError::Postgres)?;
-            }
-        }
-        Self::insert_clearing_projection(tx, record)?;
-
-        Ok(())
-    }
-
-    fn insert_order_event(
-        tx: &mut postgres::Transaction<'_>,
-        record: &JournalExecution,
-        event: &EventSummary,
-    ) -> Result<(), JournalError> {
-        let command_seq = i64_from_u64(record.command_seq, "command_seq")?;
-        let instrument_id = record
-            .execution
-            .instrument_id
-            .as_deref()
-            .unwrap_or("legacy-primary");
-        let event_seq = i64_from_u64(event_seq(event), "event_seq")?;
-        let order_id = event_order_id(event)
-            .map(|order_id| i64_from_u64(order_id, "order_id"))
-            .transpose()?;
-        let payload_json = serde_json::to_value(event).map_err(JournalError::Serialize)?;
-        let reason = event_reason(event);
-        let price_tick = event_price_tick(event);
-        let qty = event_qty(event)
-            .map(|qty| i64_from_u64(qty, "qty"))
-            .transpose()?;
-        let remaining_qty = event_remaining_qty(event)
-            .map(|qty| i64_from_u64(qty, "remaining_qty"))
-            .transpose()?;
-
-        tx.execute_typed(
-            r#"
-            INSERT INTO marketforge_order_events (
-                room_id,
-                instrument_id,
-                command_seq,
-                event_seq,
-                event_type,
-                order_id,
-                reason,
-                price_tick,
-                qty,
-                remaining_qty,
-                payload_json
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            ON CONFLICT (room_id, command_seq, event_seq)
-            DO UPDATE SET
-                event_type = EXCLUDED.event_type,
-                order_id = EXCLUDED.order_id,
-                reason = EXCLUDED.reason,
-                price_tick = EXCLUDED.price_tick,
-                qty = EXCLUDED.qty,
-                remaining_qty = EXCLUDED.remaining_qty,
-                payload_json = EXCLUDED.payload_json
-            "#,
-            &[
-                (&record.room_id, Type::TEXT),
-                (&instrument_id, Type::TEXT),
-                (&command_seq, Type::INT8),
-                (&event_seq, Type::INT8),
-                (&event_type(event), Type::TEXT),
-                (&order_id, Type::INT8),
-                (&reason, Type::TEXT),
-                (&price_tick, Type::INT8),
-                (&qty, Type::INT8),
-                (&remaining_qty, Type::INT8),
-                (&payload_json, Type::JSONB),
-            ],
-        )
-        .map_err(JournalError::Postgres)?;
-
-        Ok(())
-    }
-
-    fn apply_order_event_projection(
-        tx: &mut postgres::Transaction<'_>,
-        record: &JournalExecution,
-        event: &EventSummary,
-    ) -> Result<(), JournalError> {
-        let Some((order_id, status, remaining_qty, limit_price_tick)) = order_status_update(event)
-        else {
-            return Ok(());
-        };
-
-        let order_id = i64_from_u64(order_id, "order_id")?;
-        let command_seq = i64_from_u64(record.command_seq, "command_seq")?;
-        let market_time_ms = record
-            .execution
-            .market_time_ms
-            .map(|value| i64_from_u64(value, "market_time_ms"))
-            .transpose()?;
-        let instrument_id = record
-            .execution
-            .instrument_id
-            .as_deref()
-            .unwrap_or("legacy-primary");
-        let remaining_qty = remaining_qty
-            .map(|qty| i64_from_u64(qty, "remaining_qty"))
-            .transpose()?;
-
-        tx.execute_typed(
-            r#"
-            UPDATE marketforge_orders
-            SET
-                status = $4,
-                remaining_qty = COALESCE($5, remaining_qty),
-                limit_price_tick = COALESCE($6, limit_price_tick),
-                updated_command_seq = $7,
-                updated_market_time_ms = $8,
-                updated_at = now()
-            WHERE room_id = $1 AND instrument_id = $2 AND order_id = $3
-            "#,
-            &[
-                (&record.room_id, Type::TEXT),
-                (&instrument_id, Type::TEXT),
-                (&order_id, Type::INT8),
-                (&status, Type::TEXT),
-                (&remaining_qty, Type::INT8),
-                (&limit_price_tick, Type::INT8),
-                (&command_seq, Type::INT8),
-                (&market_time_ms, Type::INT8),
-            ],
-        )
-        .map_err(JournalError::Postgres)?;
-
-        Ok(())
-    }
-
-    fn insert_clearing_projection(
-        tx: &mut postgres::Transaction<'_>,
-        record: &JournalExecution,
-    ) -> Result<(), JournalError> {
-        let command_seq = i64_from_u64(record.command_seq, "command_seq")?;
-        let instrument_id = record
-            .execution
-            .instrument_id
-            .as_deref()
-            .unwrap_or("legacy-primary");
-
-        for (index, event) in record.execution.clearing_events.iter().enumerate() {
-            let rows = clearing_ledger_rows(index, event)?;
-            for row in rows {
-                tx.execute_typed(
-                    r#"
-                    INSERT INTO marketforge_account_ledger (
-                        room_id,
-                        instrument_id,
-                        command_seq,
-                        ledger_seq,
-                        market_kind,
-                        account_id,
-                        trade_id,
-                        account_side,
-                        cash_delta,
-                        position_delta,
-                        fee,
-                        realized_pnl,
-                        price_tick,
-                        qty,
-                        notional,
-                        cash_balance,
-                        position_qty,
-                        avg_entry_price_tick,
-                        realized_pnl_total,
-                        unrealized_pnl,
-                        equity,
-                        initial_margin,
-                        maintenance_margin,
-                        portfolio_initial_margin,
-                        portfolio_maintenance_margin,
-                        margin_status,
-                        fees_paid,
-                        payload_json
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
-                            $25, $26, $27, $28)
-                    ON CONFLICT (room_id, command_seq, ledger_seq)
-                    DO UPDATE SET
-                        market_kind = EXCLUDED.market_kind,
-                        account_id = EXCLUDED.account_id,
-                        trade_id = EXCLUDED.trade_id,
-                        account_side = EXCLUDED.account_side,
-                        cash_delta = EXCLUDED.cash_delta,
-                        position_delta = EXCLUDED.position_delta,
-                        fee = EXCLUDED.fee,
-                        realized_pnl = EXCLUDED.realized_pnl,
-                        price_tick = EXCLUDED.price_tick,
-                        qty = EXCLUDED.qty,
-                        notional = EXCLUDED.notional,
-                        cash_balance = EXCLUDED.cash_balance,
-                        position_qty = EXCLUDED.position_qty,
-                        avg_entry_price_tick = EXCLUDED.avg_entry_price_tick,
-                        realized_pnl_total = EXCLUDED.realized_pnl_total,
-                        unrealized_pnl = EXCLUDED.unrealized_pnl,
-                        equity = EXCLUDED.equity,
-                        initial_margin = EXCLUDED.initial_margin,
-                        maintenance_margin = EXCLUDED.maintenance_margin,
-                        portfolio_initial_margin = EXCLUDED.portfolio_initial_margin,
-                        portfolio_maintenance_margin = EXCLUDED.portfolio_maintenance_margin,
-                        margin_status = EXCLUDED.margin_status,
-                        fees_paid = EXCLUDED.fees_paid,
-                        payload_json = EXCLUDED.payload_json
-                    "#,
-                    &[
-                        (&record.room_id, Type::TEXT),
-                        (&instrument_id, Type::TEXT),
-                        (&command_seq, Type::INT8),
-                        (&row.ledger_seq, Type::INT8),
-                        (&row.market_kind, Type::TEXT),
-                        (&row.account_id, Type::INT8),
-                        (&row.trade_id, Type::INT8),
-                        (&row.account_side, Type::TEXT),
-                        (&row.cash_delta, Type::INT8),
-                        (&row.position_delta, Type::INT8),
-                        (&row.fee, Type::INT8),
-                        (&row.realized_pnl, Type::INT8),
-                        (&row.price_tick, Type::INT8),
-                        (&row.qty, Type::INT8),
-                        (&row.notional, Type::INT8),
-                        (&row.cash_balance, Type::INT8),
-                        (&row.position_qty, Type::INT8),
-                        (&row.avg_entry_price_tick, Type::INT8),
-                        (&row.realized_pnl_total, Type::INT8),
-                        (&row.unrealized_pnl, Type::INT8),
-                        (&row.equity, Type::INT8),
-                        (&row.initial_margin, Type::INT8),
-                        (&row.maintenance_margin, Type::INT8),
-                        (&row.portfolio_initial_margin, Type::INT8),
-                        (&row.portfolio_maintenance_margin, Type::INT8),
-                        (&row.margin_status, Type::TEXT),
-                        (&row.fees_paid, Type::INT8),
-                        (&row.payload_json, Type::JSONB),
-                    ],
-                )
-                .map_err(JournalError::Postgres)?;
-
-                tx.execute_typed(
-                    r#"
-                    INSERT INTO marketforge_position_snapshots (
-                        room_id,
-                        instrument_id,
-                        command_seq,
-                        ledger_seq,
-                        market_kind,
-                        account_id,
-                        trade_id,
-                        cash_balance,
-                        position_qty,
-                        avg_entry_price_tick,
-                        realized_pnl,
-                        unrealized_pnl,
-                        equity,
-                        initial_margin,
-                        maintenance_margin,
-                        portfolio_initial_margin,
-                        portfolio_maintenance_margin,
-                        margin_status,
-                        fees_paid,
-                        payload_json
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-                    ON CONFLICT (room_id, command_seq, ledger_seq)
-                    DO UPDATE SET
-                        market_kind = EXCLUDED.market_kind,
-                        account_id = EXCLUDED.account_id,
-                        trade_id = EXCLUDED.trade_id,
-                        cash_balance = EXCLUDED.cash_balance,
-                        position_qty = EXCLUDED.position_qty,
-                        avg_entry_price_tick = EXCLUDED.avg_entry_price_tick,
-                        realized_pnl = EXCLUDED.realized_pnl,
-                        unrealized_pnl = EXCLUDED.unrealized_pnl,
-                        equity = EXCLUDED.equity,
-                        initial_margin = EXCLUDED.initial_margin,
-                        maintenance_margin = EXCLUDED.maintenance_margin,
-                        portfolio_initial_margin = EXCLUDED.portfolio_initial_margin,
-                        portfolio_maintenance_margin = EXCLUDED.portfolio_maintenance_margin,
-                        margin_status = EXCLUDED.margin_status,
-                        fees_paid = EXCLUDED.fees_paid,
-                        payload_json = EXCLUDED.payload_json
-                    "#,
-                    &[
-                        (&record.room_id, Type::TEXT),
-                        (&instrument_id, Type::TEXT),
-                        (&command_seq, Type::INT8),
-                        (&row.ledger_seq, Type::INT8),
-                        (&row.market_kind, Type::TEXT),
-                        (&row.account_id, Type::INT8),
-                        (&row.trade_id, Type::INT8),
-                        (&row.cash_balance, Type::INT8),
-                        (&row.position_qty, Type::INT8),
-                        (&row.avg_entry_price_tick, Type::INT8),
-                        (&row.realized_pnl_total, Type::INT8),
-                        (&row.unrealized_pnl, Type::INT8),
-                        (&row.equity, Type::INT8),
-                        (&row.initial_margin, Type::INT8),
-                        (&row.maintenance_margin, Type::INT8),
-                        (&row.portfolio_initial_margin, Type::INT8),
-                        (&row.portfolio_maintenance_margin, Type::INT8),
-                        (&row.margin_status, Type::TEXT),
-                        (&row.fees_paid, Type::INT8),
-                        (&row.payload_json, Type::JSONB),
-                    ],
-                )
-                .map_err(JournalError::Postgres)?;
-            }
-        }
-
-        Ok(())
-    }
-
     fn insert_snapshot(
-        tx: &mut postgres::Transaction<'_>,
+        tx: &mut CachedTransaction<'_>,
         snapshot: &JournalSnapshot,
     ) -> Result<(), JournalError> {
+        let mut profile = crate::write_profile::Profile::new("pg_snapshot");
+        profile.field("room", &snapshot.room_id);
+        profile.field("command_seq", snapshot.command_seq);
         let command_seq = i64::try_from(snapshot.command_seq)
             .map_err(|_| JournalError::SequenceOutOfRange(snapshot.command_seq))?;
-        let actor_json = serde_json::to_value(&snapshot.actor).map_err(JournalError::Serialize)?;
-
+        let actor_json = RecoveryJson::encode(&snapshot.actor)?;
+        profile.field("json_bytes", actor_json.0.len());
+        profile.mark("encode");
+        let actor_bytes = snapshot_bytes::encode(actor_json.0);
+        profile.field("stored_bytes", actor_bytes.len());
+        profile.mark("compress");
         tx.execute(
             r#"
-            INSERT INTO marketforge_room_snapshots (room_id, command_seq, actor_json)
+            INSERT INTO marketforge_room_snapshots (room_id, command_seq, actor_bytes)
             VALUES ($1, $2, $3)
             ON CONFLICT (room_id, command_seq)
-            DO UPDATE SET actor_json = EXCLUDED.actor_json, created_at = now()
+            DO UPDATE SET actor_json = NULL, actor_bytes = EXCLUDED.actor_bytes, created_at = now()
             "#,
-            &[&snapshot.room_id, &command_seq, &actor_json],
+            &[&snapshot.room_id, &command_seq, &actor_bytes],
         )
         .map_err(JournalError::Postgres)?;
 
+        profile.mark("insert");
         let cursor = snapshot.actor.next_command_seq();
         let updated = tx.execute(
             "INSERT INTO marketforge_recovery_heads(room_id,checkpoint_mutation_seq,checkpoint_command_cursor,snapshot_command_seq,next_order_id) \
              SELECT $1,(SELECT COALESCE(MAX(mutation_seq),0) FROM marketforge_room_mutations WHERE room_id=$1),$2,$3, \
-                    COALESCE((SELECT MAX(order_id)+1 FROM marketforge_orders WHERE room_id=$1 AND order_id<7000000000000000000),1) \
+                    COALESCE((SELECT MAX(order_id)+1 FROM marketforge_order_keys WHERE room_id=$1 AND order_id<7000000000000000000),1) \
              WHERE $2=(SELECT COALESCE(MAX(command_seq)+1,0) FROM marketforge_executions WHERE room_id=$1) \
              ON CONFLICT(room_id) DO UPDATE SET checkpoint_mutation_seq=EXCLUDED.checkpoint_mutation_seq,checkpoint_command_cursor=EXCLUDED.checkpoint_command_cursor,snapshot_command_seq=EXCLUDED.snapshot_command_seq,next_order_id=GREATEST(marketforge_recovery_heads.next_order_id,EXCLUDED.next_order_id)",
             &[&snapshot.room_id, &i64_from_u64(cursor,"command_cursor")?, &command_seq],
         ).map_err(JournalError::Postgres)?;
+        profile.mark("recovery_head");
         if updated != 1 {
             return Err(JournalError::Recovery(
                 "snapshot does not cover the committed command cursor".to_string(),
@@ -3571,43 +3170,60 @@ impl PostgresJournalStore {
     }
 
     fn insert_room_mutation(
-        tx: &mut postgres::Transaction<'_>,
+        tx: &mut CachedTransaction<'_>,
         validated: ValidatedPendingMutation<'_>,
     ) -> Result<u64, JournalError> {
-        let mutation = validated.0;
-        let command_cursor = i64_from_u64(mutation.command_cursor, "command_cursor")?;
-        let schema_version = i32::from(ROOM_MUTATION_SCHEMA_VERSION);
-        let mutation_kind = mutation.mutation.kind_name();
-        let payload_json =
-            serde_json::to_value(&mutation.mutation).map_err(JournalError::Serialize)?;
+        let prepared = PreparedRoomMutation::new(validated)?;
         let row = tx
-            .query_one(
-                r#"
-                INSERT INTO marketforge_room_mutations (
-                    room_id,
-                    command_cursor,
-                    schema_version,
-                    mutation_kind,
-                    payload_json
-                )
-                VALUES ($1, $2, $3, $4, $5)
-                RETURNING mutation_seq
-                "#,
-                &[
-                    &mutation.room_id,
-                    &command_cursor,
-                    &schema_version,
-                    &mutation_kind,
-                    &payload_json,
-                ],
-            )
+            .query_one(INSERT_ROOM_MUTATION_SQL, &prepared.params())
             .map_err(JournalError::Postgres)?;
         let mutation_seq: i64 = row.get("mutation_seq");
         u64::try_from(mutation_seq).map_err(|_| JournalError::InvalidSequence(mutation_seq))
     }
 
+    // A single INSERT is itself a PostgreSQL transaction. query_one/query_opt
+    // drain through ReadyForQuery, including synchronous commit, before success.
+    // Multi-row effects, snapshots, control idempotency and status updates keep
+    // their explicit transaction. The fenced CTE holds the same lease row lock
+    // through the INSERT and commit, without a separate fence-check round trip.
+    fn insert_single_room_mutation(
+        client: &mut Client,
+        validated: ValidatedPendingMutation<'_>,
+        claim: Option<&RoomLeaseClaim>,
+    ) -> Result<(), JournalError> {
+        let prepared = PreparedRoomMutation::new(validated)?;
+        let row = match claim {
+            None => client
+                .query_one(INSERT_ROOM_MUTATION_SQL, &prepared.params())
+                .map_err(JournalError::Postgres)?,
+            Some(claim) => {
+                validate_room_lease_claim(claim)?;
+                let token = i64_from_u64(claim.fencing_token, "fencing_token")?;
+                let base = prepared.params();
+                client
+                    .query_opt(
+                        INSERT_FENCED_ROOM_MUTATION_SQL,
+                        &[
+                            base[0],
+                            base[1],
+                            base[2],
+                            base[3],
+                            base[4],
+                            &claim.owner_id,
+                            &token,
+                        ],
+                    )
+                    .map_err(JournalError::Postgres)?
+                    .ok_or_else(|| room_lease_lost(claim))?
+            }
+        };
+        let sequence: i64 = row.get("mutation_seq");
+        u64::try_from(sequence).map_err(|_| JournalError::InvalidSequence(sequence))?;
+        Ok(())
+    }
+
     fn insert_control_idempotency(
-        tx: &mut postgres::Transaction<'_>,
+        tx: &mut CachedTransaction<'_>,
         record: &ControlIdempotencyRecord,
     ) -> Result<(), JournalError> {
         match tx.execute(
@@ -3632,9 +3248,18 @@ impl PostgresJournalStore {
     }
 
     fn insert_transfer(
-        tx: &mut postgres::Transaction<'_>,
+        tx: &mut CachedTransaction<'_>,
         record: &JournalTransfer,
     ) -> Result<(), JournalError> {
+        let overloaded: bool = tx.query_one(
+            "SELECT EXISTS(SELECT 1 FROM marketforge_transfer_projection_queue WHERE room_id=$1 OFFSET 65535 LIMIT 1)",
+            &[&record.room_id],
+        ).map_err(JournalError::Postgres)?.get(0);
+        if overloaded {
+            return Err(JournalError::Recovery(
+                "transfer query projection backlog limit reached; retry after catch-up".into(),
+            ));
+        }
         let transfer = &record.transfer;
         let transfer_id = i64_from_u64(transfer.transfer_id, "transfer_id")?;
         let event_seq = transfer_event_seq(transfer)?;
@@ -3657,7 +3282,7 @@ impl PostgresJournalStore {
 
         tx.execute(
             r#"
-            INSERT INTO marketforge_transfer_events (
+            WITH written AS (INSERT INTO marketforge_transfer_events (
                 room_id,
                 transfer_id,
                 event_seq,
@@ -3685,59 +3310,14 @@ impl PostgresJournalStore {
                 status = EXCLUDED.status,
                 reject_reason = EXCLUDED.reject_reason,
                 payload_json = EXCLUDED.payload_json
+            RETURNING room_id,transfer_id,event_seq)
+            INSERT INTO marketforge_transfer_projection_queue(room_id,transfer_id,event_seq)
+            SELECT room_id,transfer_id,event_seq FROM written ON CONFLICT DO NOTHING
             "#,
             &[
                 &record.room_id,
                 &transfer_id,
                 &event_seq,
-                &kind,
-                &account_id,
-                &transfer.asset_id,
-                &amount,
-                &requested_at_step,
-                &available_after_step,
-                &completed_at_step,
-                &status,
-                &reject_reason,
-                &payload_json,
-            ],
-        )
-        .map_err(JournalError::Postgres)?;
-
-        tx.execute(
-            r#"
-            INSERT INTO marketforge_transfers (
-                room_id,
-                transfer_id,
-                kind,
-                account_id,
-                asset_id,
-                amount,
-                requested_at_step,
-                available_after_step,
-                completed_at_step,
-                status,
-                reject_reason,
-                payload_json
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            ON CONFLICT (room_id, transfer_id)
-            DO UPDATE SET
-                kind = EXCLUDED.kind,
-                account_id = EXCLUDED.account_id,
-                asset_id = EXCLUDED.asset_id,
-                amount = EXCLUDED.amount,
-                requested_at_step = EXCLUDED.requested_at_step,
-                available_after_step = EXCLUDED.available_after_step,
-                completed_at_step = EXCLUDED.completed_at_step,
-                status = EXCLUDED.status,
-                reject_reason = EXCLUDED.reject_reason,
-                payload_json = EXCLUDED.payload_json,
-                updated_at = now()
-            "#,
-            &[
-                &record.room_id,
-                &transfer_id,
                 &kind,
                 &account_id,
                 &transfer.asset_id,
@@ -3832,9 +3412,7 @@ impl PostgresJournalStore {
                 .map_err(JournalError::Postgres)?;
             }
 
-            for record in &seed_records {
-                Self::insert_execution(&mut tx, record)?;
-            }
+            Self::insert_executions(&mut tx, &seed_records)?;
             if let Some(snapshot) = &initial_snapshot {
                 Self::insert_snapshot(&mut tx, snapshot)?;
                 let mutation_seq = Self::insert_room_mutation(
@@ -3891,7 +3469,7 @@ impl PostgresJournalStore {
 }
 
 pub(crate) fn load_postgres_recovery(
-    client: &mut Client,
+    client: &mut postgres::Client,
     room_id: Option<&str>,
     optimized: bool,
 ) -> Result<JournalRecovery, JournalError> {
@@ -4071,13 +3649,13 @@ pub(super) fn load_postgres_recovery_snapshot(
         client,
         room_id,
         &format!(r#"
-        SELECT DISTINCT ON (room_id) room_id, command_seq, actor_json
+        SELECT DISTINCT ON (room_id) room_id, command_seq, actor_json, actor_bytes
         FROM marketforge_room_snapshots
         WHERE NOT {optimized} OR NOT EXISTS (SELECT 1 FROM marketforge_recovery_heads h WHERE h.room_id=marketforge_room_snapshots.room_id AND h.checkpoint_mutation_seq IS NOT NULL)
         ORDER BY room_id, command_seq DESC
         "#),
         &format!(r#"
-        SELECT DISTINCT ON (room_id) room_id, command_seq, actor_json
+        SELECT DISTINCT ON (room_id) room_id, command_seq, actor_json, actor_bytes
         FROM marketforge_room_snapshots
         WHERE room_id = $1
           AND (NOT {optimized} OR NOT EXISTS (SELECT 1 FROM marketforge_recovery_heads h WHERE h.room_id=marketforge_room_snapshots.room_id AND h.checkpoint_mutation_seq IS NOT NULL))
@@ -4087,7 +3665,7 @@ pub(super) fn load_postgres_recovery_snapshot(
     .into_iter()
     .map(|row| {
         let command_seq: i64 = row.get("command_seq");
-        let actor_json: Value = row.get("actor_json");
+        let actor_json = snapshot_json_from_row(&row)?.ok_or_else(|| JournalError::Recovery("snapshot encoding is missing".into()))?;
         let Some(actor) = deserialize_snapshot_actor(actor_json)? else {
             return Ok(None);
         };
@@ -4112,12 +3690,12 @@ pub(super) fn load_postgres_recovery_snapshot(
     let mut runtime_checkpoints = Vec::new();
     if optimized {
         for row in client.query(
-            "SELECT h.room_id,h.checkpoint_command_cursor,h.checkpoint_mutation_seq,s.actor_json \
+            "SELECT h.room_id,h.checkpoint_command_cursor,h.checkpoint_mutation_seq,s.actor_json,s.actor_bytes \
              FROM marketforge_recovery_heads h LEFT JOIN marketforge_room_snapshots s \
              ON s.room_id=h.room_id AND s.command_seq=h.snapshot_command_seq \
              WHERE h.snapshot_command_seq IS NOT NULL AND ($1::TEXT IS NULL OR h.room_id=$1)", &[&filter],
         ).map_err(JournalError::Postgres)? {
-            let actor_json: Option<Value> = row.get("actor_json");
+            let actor_json = snapshot_json_from_row(&row)?;
             let actor = deserialize_snapshot_actor(actor_json.ok_or_else(|| JournalError::Recovery("recovery-head snapshot is missing".to_string()))?)?
                 .ok_or_else(|| JournalError::Recovery("incompatible recovery-head snapshot".to_string()))?;
             let cursor: i64 = row.get("checkpoint_command_cursor");
@@ -4133,14 +3711,23 @@ pub(super) fn load_postgres_recovery_snapshot(
         }
     }
     let last_market_ticks = client.query(
-        "SELECT DISTINCT ON (room_id,instrument_id) room_id,instrument_id,command_seq,event_seq,market_time_ms,trade_id,price_tick,qty,taker_side \
-         FROM marketforge_market_ticks WHERE ($1::TEXT IS NULL OR room_id=$1) ORDER BY room_id,instrument_id,command_seq DESC,event_seq DESC",
+        "SELECT DISTINCT ON (e.room_id,COALESCE(e.execution_json->>'instrument_id','legacy-primary')) \
+         e.room_id,COALESCE(e.execution_json->>'instrument_id','legacy-primary') AS instrument_id,e.command_seq, \
+         (t.event->>'seq')::BIGINT AS event_seq,e.market_time_ms, \
+         (t.event->>'trade_id')::BIGINT AS trade_id,(t.event->>'price_tick')::BIGINT AS price_tick, \
+         (t.event->>'qty')::BIGINT AS qty,COALESCE(t.event->>'taker_side','Buy') AS taker_side \
+         FROM marketforge_executions e CROSS JOIN LATERAL jsonb_array_elements(e.execution_json->'events') \
+         WITH ORDINALITY AS t(event,ordinal) \
+         WHERE ($1::TEXT IS NULL OR e.room_id=$1) \
+           AND e.execution_json->'events' @> '[{\"type\":\"TradePrinted\"}]'::JSONB \
+           AND t.event->>'type'='TradePrinted' \
+         ORDER BY e.room_id,COALESCE(e.execution_json->>'instrument_id','legacy-primary'),e.command_seq DESC,t.ordinal DESC",
         &[&filter],
     ).map_err(JournalError::Postgres)?.into_iter().map(|row| MarketTickProjection {
         room_id: row.get("room_id"), instrument_id: row.get("instrument_id"),
         command_seq: row.get("command_seq"), event_seq: row.get("event_seq"),
         market_time_ms: row.get("market_time_ms"), trade_id: row.get("trade_id"),
-        price_tick: row.get("price_tick"), qty: row.get("qty"), taker_side: row.get("taker_side"),
+        price_tick: row.get("price_tick"), qty: row.get("qty"), taker_side: row.get::<_,String>("taker_side").to_lowercase(),
     }).collect();
     Ok(JournalRecovery {
         runtime_checkpoints,
@@ -4170,6 +3757,11 @@ fn query_recovery_rows(
 }
 
 impl JournalStore for PostgresJournalStore {
+    fn projection_monitor(&self) -> Option<std::sync::Arc<QueryProjectionMetrics>> {
+        self.projector
+            .as_ref()
+            .map(|projector| projector.metrics.clone())
+    }
     fn load_platform(&mut self) -> Result<PlatformData, JournalError> {
         run_postgres(&mut self.client, |client| {
             let mut tx = client.transaction().map_err(JournalError::Postgres)?;
@@ -4755,20 +4347,23 @@ impl JournalStore for PostgresJournalStore {
         records: &[JournalExecution],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
+        let mut profile = crate::write_profile::Profile::new("pg_append_executions_fenced");
+        profile.field("snapshot", snapshot.is_some());
         validate_fenced_execution_batch(claim, records, snapshot)?;
-        let claim = claim.clone();
-        let records = records.to_vec();
-        let snapshot = snapshot.cloned();
+        profile.mark("validate");
         run_postgres(&mut self.client, move |client| {
             let mut tx = client.transaction().map_err(JournalError::Postgres)?;
-            Self::assert_room_write_fence(&mut tx, &claim)?;
-            for record in &records {
-                Self::insert_execution(&mut tx, record)?;
-            }
-            if let Some(snapshot) = &snapshot {
+            Self::assert_room_write_fence(&mut tx, claim)?;
+            profile.mark("begin_mutation");
+            Self::insert_executions(&mut tx, records)?;
+            profile.mark("executions_transfers");
+            if let Some(snapshot) = snapshot {
                 Self::insert_snapshot(&mut tx, snapshot)?;
             }
-            tx.commit().map_err(JournalError::Postgres)
+            profile.mark("snapshot_control");
+            let result = tx.commit().map_err(JournalError::Postgres);
+            profile.mark("commit");
+            result
         })
     }
 
@@ -4777,17 +4372,21 @@ impl JournalStore for PostgresJournalStore {
         records: &[JournalExecution],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
-        let records = records.to_vec();
-        let snapshot = snapshot.cloned();
+        let mut profile = crate::write_profile::Profile::new("pg_append_executions");
+        profile.field("snapshot", snapshot.is_some());
+        profile.mark("validate");
         run_postgres(&mut self.client, move |client| {
             let mut tx = client.transaction().map_err(JournalError::Postgres)?;
-            for record in &records {
-                Self::insert_execution(&mut tx, record)?;
-            }
-            if let Some(snapshot) = &snapshot {
+            profile.mark("begin_mutation");
+            Self::insert_executions(&mut tx, records)?;
+            profile.mark("executions_transfers");
+            if let Some(snapshot) = snapshot {
                 Self::insert_snapshot(&mut tx, snapshot)?;
             }
-            tx.commit().map_err(JournalError::Postgres)
+            profile.mark("snapshot_control");
+            let result = tx.commit().map_err(JournalError::Postgres);
+            profile.mark("commit");
+            result
         })
     }
 
@@ -4826,6 +4425,8 @@ impl JournalStore for PostgresJournalStore {
         transfer_records: &[JournalTransfer],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
+        let mut profile = crate::write_profile::Profile::new("pg_append_room_mutation");
+        profile.field("snapshot", snapshot.is_some());
         let validated = validate_pending_mutation(mutation)?;
         validate_mutation_execution_records(mutation, execution_records)?;
         for record in transfer_records {
@@ -4857,15 +4458,22 @@ impl JournalStore for PostgresJournalStore {
 
         // run_postgres executes inline on the dedicated journal worker, so its
         // transaction can borrow the coordinator-owned inputs throughout.
+        profile.mark("validate");
+        if single_row_mutation(mutation, execution_records, transfer_records, snapshot) {
+            profile.field("single_row", true);
+            let result = Self::insert_single_room_mutation(&mut self.client, validated, None);
+            profile.mark("insert_commit");
+            return result;
+        }
         run_postgres(&mut self.client, move |client| {
             let mut tx = client.transaction().map_err(JournalError::Postgres)?;
             Self::insert_room_mutation(&mut tx, validated)?;
-            for record in execution_records {
-                Self::insert_execution(&mut tx, record)?;
-            }
+            profile.mark("begin_mutation");
+            Self::insert_executions(&mut tx, execution_records)?;
             for record in transfer_records {
                 Self::insert_transfer(&mut tx, record)?;
             }
+            profile.mark("executions_transfers");
             if let Some(snapshot) = snapshot {
                 Self::insert_snapshot(&mut tx, snapshot)?;
             }
@@ -4883,7 +4491,10 @@ impl JournalStore for PostgresJournalStore {
             if let Some(record) = &mutation.control_idempotency {
                 Self::insert_control_idempotency(&mut tx, record)?;
             }
-            tx.commit().map_err(JournalError::Postgres)
+            profile.mark("snapshot_control");
+            let result = tx.commit().map_err(JournalError::Postgres);
+            profile.mark("commit");
+            result
         })
     }
 
@@ -4895,6 +4506,8 @@ impl JournalStore for PostgresJournalStore {
         transfer_records: &[JournalTransfer],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
+        let mut profile = crate::write_profile::Profile::new("pg_append_room_mutation_fenced");
+        profile.field("snapshot", snapshot.is_some());
         validate_fenced_room_mutation(claim, mutation)?;
         let validated = validate_pending_mutation(mutation)?;
         validate_mutation_execution_records(mutation, execution_records)?;
@@ -4925,16 +4538,24 @@ impl JournalStore for PostgresJournalStore {
             }
         }
 
+        profile.mark("validate");
+        if single_row_mutation(mutation, execution_records, transfer_records, snapshot) {
+            profile.field("single_row", true);
+            let result =
+                Self::insert_single_room_mutation(&mut self.client, validated, Some(claim));
+            profile.mark("insert_commit");
+            return result;
+        }
         run_postgres(&mut self.client, move |client| {
             let mut tx = client.transaction().map_err(JournalError::Postgres)?;
             Self::assert_room_write_fence(&mut tx, claim)?;
             Self::insert_room_mutation(&mut tx, validated)?;
-            for record in execution_records {
-                Self::insert_execution(&mut tx, record)?;
-            }
+            profile.mark("begin_mutation");
+            Self::insert_executions(&mut tx, execution_records)?;
             for record in transfer_records {
                 Self::insert_transfer(&mut tx, record)?;
             }
+            profile.mark("executions_transfers");
             if let Some(snapshot) = snapshot {
                 Self::insert_snapshot(&mut tx, snapshot)?;
             }
@@ -4952,7 +4573,10 @@ impl JournalStore for PostgresJournalStore {
             if let Some(record) = &mutation.control_idempotency {
                 Self::insert_control_idempotency(&mut tx, record)?;
             }
-            tx.commit().map_err(JournalError::Postgres)
+            profile.mark("snapshot_control");
+            let result = tx.commit().map_err(JournalError::Postgres);
+            profile.mark("commit");
+            result
         })
     }
 
@@ -5222,6 +4846,7 @@ impl JournalStore for PostgresJournalStore {
         let limit = bounded_query_limit(limit)?;
         let order_id = optional_i64_account_id(order_id)?;
         run_postgres(&mut self.client, move |client| {
+            projection::wait_for_room(client, &room_id)?;
             client
                 .query(
                     r#"
@@ -5303,6 +4928,7 @@ impl JournalStore for PostgresJournalStore {
         let account_id = optional_i64_account_id(account_id)?;
         let limit = bounded_query_limit(limit)?;
         run_postgres(&mut self.client, move |client| {
+            projection::wait_for_room(client, &room_id)?;
             client
                 .query(
                     r#"
@@ -5379,6 +5005,7 @@ impl JournalStore for PostgresJournalStore {
         let room_id = room_id.to_string();
         let instrument_id = instrument_id.to_string();
         run_postgres(&mut self.client, move |client| {
+            projection::wait_for_room(client, &room_id)?;
             crate::historical_queries::candles(
                 client,
                 &user_id,
@@ -5403,6 +5030,7 @@ impl JournalStore for PostgresJournalStore {
         let instrument_id = instrument_id.map(str::to_string);
         let limit = bounded_query_limit(limit)?;
         run_postgres(&mut self.client, move |client| {
+            projection::wait_for_room(client, &room_id)?;
             client
                 .query(
                     r#"
@@ -5455,6 +5083,7 @@ impl JournalStore for PostgresJournalStore {
         let account_id = optional_i64_account_id(account_id)?;
         let limit = bounded_query_limit(limit)?;
         run_postgres(&mut self.client, move |client| {
+            projection::wait_for_room(client, &room_id)?;
             client
                 .query(
                     r#"
@@ -5551,6 +5180,7 @@ impl JournalStore for PostgresJournalStore {
         let account_id = optional_i64_account_id(account_id)?;
         let limit = bounded_query_limit(limit)?;
         run_postgres(&mut self.client, move |client| {
+            projection::wait_for_room(client, &room_id)?;
             client
                 .query(
                     r#"
@@ -5635,6 +5265,7 @@ impl JournalStore for PostgresJournalStore {
         let account_id = optional_i64_account_id(account_id)?;
         let limit = bounded_query_limit(limit)?;
         run_postgres(&mut self.client, move |client| {
+            projection::wait_for_room(client, &room_id)?;
             client
                 .query(
                     r#"
@@ -6476,7 +6107,7 @@ impl fmt::Display for JournalError {
 
 impl Error for JournalError {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 struct LedgerProjection {
     ledger_seq: i64,
     market_kind: &'static str,
@@ -6579,6 +6210,37 @@ impl serde_json::ser::Formatter for RecoveryJsonFormatter {
         }
         serde_json::ser::CompactFormatter.write_u128(writer, value)
     }
+}
+
+/// Encode a checked JSONB payload once, without an intermediate Value tree.
+/// Uses exactly the same integer range as the existing recovery validation.
+#[derive(Debug)]
+struct RecoveryJson(Vec<u8>);
+impl RecoveryJson {
+    fn encode(value: &impl Serialize) -> Result<Self, JournalError> {
+        let mut bytes = Vec::new();
+        let mut serializer =
+            serde_json::Serializer::with_formatter(&mut bytes, RecoveryJsonFormatter);
+        value
+            .serialize(&mut serializer)
+            .map_err(JournalError::Serialize)?;
+        Ok(Self(bytes))
+    }
+}
+impl postgres::types::ToSql for RecoveryJson {
+    fn to_sql(
+        &self,
+        ty: &postgres::types::Type,
+        out: &mut bytes::BytesMut,
+    ) -> Result<postgres::types::IsNull, Box<dyn Error + Sync + Send>> {
+        if *ty == postgres::types::Type::JSONB {
+            out.extend_from_slice(&[1]);
+        }
+        out.extend_from_slice(&self.0);
+        Ok(postgres::types::IsNull::No)
+    }
+    postgres::types::accepts!(JSON, JSONB);
+    postgres::types::to_sql_checked!();
 }
 
 fn validate_recovery_json(value: &impl Serialize) -> Result<(), JournalError> {
@@ -6723,6 +6385,18 @@ fn validate_mutation_execution_records(
             .ok_or(JournalError::SequenceOutOfRange(record.command_seq))?;
     }
     Ok(())
+}
+
+// Existing JSONB checkpoints and new checked JSON byte checkpoints share
+// exactly the same Value/actor decoding and legacy-actor compatibility path.
+fn snapshot_json_from_row(row: &postgres::Row) -> Result<Option<Value>, JournalError> {
+    let bytes: Option<Vec<u8>> = row.get("actor_bytes");
+    match bytes {
+        Some(bytes) => serde_json::from_slice(&snapshot_bytes::decode(&bytes)?)
+            .map(Some)
+            .map_err(JournalError::Serialize),
+        None => Ok(row.get("actor_json")),
+    }
 }
 
 fn deserialize_snapshot_actor(actor_json: Value) -> Result<Option<SimulationRoom>, JournalError> {
@@ -7689,23 +7363,25 @@ mod tests {
     }
 
     #[test]
-    fn retained_bot_mutations_remove_spare_capacity_and_preserve_wire_bytes() {
+    fn retained_bot_mutations_preserve_wire_bytes_with_compact_storage() {
         for mutation in journal_benchmark_mutations() {
             let mut store = InMemoryJournalStore::new();
             let validated = validate_pending_mutation(&mutation).unwrap();
             let reference = encode_validated_mutation(&validated, 1).unwrap();
             store.store_mutation(validated).unwrap();
-            assert_eq!(store.mutations[0], reference);
-            assert_eq!(store.next_mutation_seq, 1);
-            let decoded: JournalMutation = serde_json::from_slice(&store.mutations[0]).unwrap();
-            assert_eq!(decoded.mutation_seq, 1);
-            match mutation.mutation {
-                RoomMutation::SchedulerDelta { .. } | RoomMutation::SchedulerProgress { .. } => {
-                    assert_eq!(store.mutations[0].capacity(), reference.len());
-                    assert!(reference.capacity() > reference.len());
+            let retained = &store.mutations[0];
+            let decoded_bytes = match retained {
+                StoredMutation::Raw(bytes) => bytes.to_vec(),
+                StoredMutation::Lz4 { json_len, bytes } => {
+                    lz4_flex::block::decompress(bytes, *json_len).unwrap()
                 }
-                _ => assert_eq!(store.mutations[0].capacity(), reference.capacity()),
-            }
+            };
+            assert_eq!(decoded_bytes, reference);
+            assert_eq!(retained.json_len(), reference.len());
+            assert!(retained.len() <= reference.len());
+            assert_eq!(store.next_mutation_seq, 1);
+            let decoded = retained.decode().unwrap();
+            assert_eq!(decoded.mutation_seq, 1);
         }
     }
 
@@ -7803,7 +7479,11 @@ mod tests {
                 REVALIDATE_AND_CLONE_MUTATION.set(false);
                 eprintln!(
                     "journal_case={case} optimized={optimized} seconds={seconds:.6} bytes={}",
-                    store.mutations.iter().map(Vec::len).sum::<usize>()
+                    store
+                        .mutations
+                        .iter()
+                        .map(StoredMutation::len)
+                        .sum::<usize>()
                 );
                 if let Some(reference) = &expected {
                     assert_eq!(&store.mutations, reference);
@@ -7891,6 +7571,586 @@ mod tests {
         SimulationRoom::from_scenario(spot_scenario(room_id))
             .unwrap()
             .room
+    }
+
+    #[test]
+    fn recovery_json_wire_encoding_preserves_integer_boundaries() {
+        use postgres::types::{ToSql, Type};
+        let value = serde_json::json!({"negative":i64::MIN,"positive":u64::MAX,"escaped":"a\n\"b"});
+        let encoded = RecoveryJson::encode(&value).unwrap();
+        for ty in [Type::JSON, Type::JSONB] {
+            let mut bytes = bytes::BytesMut::new();
+            encoded.to_sql_checked(&ty, &mut bytes).unwrap();
+            let payload = if ty == Type::JSONB {
+                assert_eq!(bytes[0], 1);
+                &bytes[1..]
+            } else {
+                &bytes[..]
+            };
+            assert_eq!(serde_json::from_slice::<Value>(payload).unwrap(), value);
+        }
+        assert!(RecoveryJson::encode(&(i128::from(i64::MIN) - 1)).is_err());
+        assert!(RecoveryJson::encode(&(u128::from(u64::MAX) + 1)).is_err());
+    }
+
+    #[test]
+    fn memory_compressed_history_keeps_every_mutation_and_legacy_raw_records() {
+        let mut store = InMemoryJournalStore::new();
+        let mut expected = Vec::new();
+        for mutation in journal_benchmark_mutations().iter().take(4) {
+            let validated = validate_pending_mutation(mutation).unwrap();
+            let bytes = encode_validated_mutation(&validated, expected.len() as u64 + 1).unwrap();
+            expected.push(serde_json::from_slice::<JournalMutation>(&bytes).unwrap());
+            store
+                .append_room_mutation(mutation, &[], &[], None)
+                .unwrap();
+        }
+        assert!(
+            store
+                .mutations
+                .iter()
+                .any(|record| matches!(record, StoredMutation::Lz4 { .. }))
+        );
+        // Recovery can mix the old raw representation with compressed records.
+        store.mutations[0] =
+            StoredMutation::Raw(serde_json::to_vec(&expected[0]).unwrap().into_boxed_slice());
+        let recovered = store.load_recovery().unwrap();
+        assert_eq!(
+            serde_json::to_value(recovered.mutations).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+        assert_eq!(store.next_mutation_seq, 4);
+    }
+
+    #[test]
+    fn postgres_single_mutation_commit_failure_and_locked_fence_when_configured() {
+        let url = match env::var("MARKETFORGE_TEST_DATABASE_URL") {
+            Ok(url) if !url.trim().is_empty() => url,
+            _ if env::var("MARKETFORGE_REQUIRE_POSTGRES_TESTS").as_deref() == Ok("1") => {
+                panic!("PostgreSQL test URL required")
+            }
+            _ => return,
+        };
+        let room = format!(
+            "pg-single-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut store = PostgresJournalStore::connect_migrated(&url).unwrap();
+        let scenario = spot_scenario(&room);
+        let bootstrap = RoomBootstrap {
+            room_id: room.clone(),
+            seed_executions: vec![],
+        };
+        store
+            .create_room("single-owner", &scenario, &bootstrap, &[10], &[], None)
+            .unwrap();
+        let mutation = |cursor| {
+            PendingJournalMutation::new(
+                &room,
+                cursor,
+                RoomMutation::ClockAdvanced {
+                    steps: 1,
+                    completed_transfers: vec![],
+                },
+            )
+        };
+        let mut observer = postgres::Client::connect(&url, NoTls).unwrap();
+        let count = |client: &mut postgres::Client| {
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM marketforge_room_mutations WHERE room_id=$1",
+                    &[&room],
+                )
+                .unwrap()
+                .get::<_, i64>(0)
+        };
+        store
+            .append_room_mutation(&mutation(0), &[], &[], None)
+            .unwrap();
+        assert_eq!(
+            count(&mut observer),
+            1,
+            "success must include commit visible to another connection"
+        );
+        store.client.batch_execute(&format!(
+            "CREATE FUNCTION pg_temp.reject_single() RETURNS TRIGGER LANGUAGE plpgsql AS $$ BEGIN IF NEW.command_cursor=123456 THEN RAISE EXCEPTION 'injected single mutation failure'; END IF; RETURN NEW; END $$; \
+             CREATE TRIGGER reject_single BEFORE INSERT ON marketforge_room_mutations FOR EACH ROW WHEN (NEW.room_id='{room}') EXECUTE FUNCTION pg_temp.reject_single()"
+        )).unwrap();
+        assert!(
+            store
+                .append_room_mutation(&mutation(123456), &[], &[], None)
+                .is_err()
+        );
+        assert_eq!(count(&mut observer), 1);
+        store
+            .append_room_mutation(&mutation(0), &[], &[], None)
+            .unwrap();
+        assert_eq!(
+            count(&mut observer),
+            2,
+            "failed implicit transaction must leave connection usable"
+        );
+        store
+            .client
+            .batch_execute("DROP TRIGGER reject_single ON marketforge_room_mutations")
+            .unwrap();
+        let lease = store
+            .acquire_room_writer_lease(&room, "lease-before", None, Duration::from_secs(60))
+            .unwrap()
+            .unwrap();
+        store
+            .append_room_mutation_fenced(&lease.claim, &mutation(0), &[], &[], None)
+            .unwrap();
+        assert_eq!(count(&mut observer), 3);
+        let application = format!("single-fence-{}", std::process::id());
+        store
+            .client
+            .query_one(
+                "SELECT set_config('application_name',$1,false)",
+                &[&application],
+            )
+            .unwrap();
+        let mut gate = observer.transaction().unwrap();
+        gate.query_one(
+            "SELECT room_id FROM marketforge_room_writer_leases WHERE room_id=$1 FOR UPDATE",
+            &[&room],
+        )
+        .unwrap();
+        let pending = mutation(0);
+        let handle = std::thread::spawn(move || {
+            store.append_room_mutation_fenced(&lease.claim, &pending, &[], &[], None)
+        });
+        let mut monitor = postgres::Client::connect(&url, NoTls).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let blocked: bool = monitor.query_one("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name=$1 AND wait_event_type='Lock')", &[&application]).unwrap().get(0);
+            if blocked {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "fenced INSERT did not wait for its lease lock"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        gate.execute("UPDATE marketforge_room_writer_leases SET owner_id='lease-after',fencing_token=fencing_token+1 WHERE room_id=$1", &[&room]).unwrap();
+        gate.commit().unwrap();
+        assert!(matches!(
+            handle.join().unwrap(),
+            Err(JournalError::RoomLeaseLost { .. })
+        ));
+        assert_eq!(
+            count(&mut observer),
+            3,
+            "lease takeover must prevent the blocked INSERT"
+        );
+        observer
+            .execute("DELETE FROM marketforge_rooms WHERE room_id=$1", &[&room])
+            .unwrap();
+    }
+
+    #[test]
+    fn postgres_cached_statements_preserve_rollback_and_json_when_configured() {
+        let url = match env::var("MARKETFORGE_TEST_DATABASE_URL") {
+            Ok(url) if !url.trim().is_empty() => url,
+            _ if env::var("MARKETFORGE_REQUIRE_POSTGRES_TESTS").as_deref() == Ok("1") => {
+                panic!("PostgreSQL test URL required")
+            }
+            _ => return,
+        };
+        let mut store = PostgresJournalStore::connect_migrated(&url).unwrap();
+        let client = &mut store.client;
+        client
+            .batch_execute(
+                "CREATE TEMP TABLE cached_rollback(id BIGINT PRIMARY KEY, payload JSONB NOT NULL)",
+            )
+            .unwrap();
+        let value = serde_json::json!({"negative":i64::MIN,"positive":u64::MAX,"escaped":"a\n\"b"});
+        let payload = RecoveryJson::encode(&value).unwrap();
+        {
+            let mut tx = client.transaction().unwrap();
+            tx.execute(
+                "INSERT INTO cached_rollback VALUES($1,$2)",
+                &[&1_i64, &payload],
+            )
+            .unwrap();
+            // The transaction rolls back, while its prepared statement survives.
+        }
+        assert_eq!(
+            client
+                .query_one("SELECT COUNT(*) FROM cached_rollback", &[])
+                .unwrap()
+                .get::<_, i64>(0),
+            0
+        );
+        {
+            let mut tx = client.transaction().unwrap();
+            tx.execute(
+                "INSERT INTO cached_rollback VALUES($1,$2)",
+                &[&1_i64, &payload],
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+        for i in 0..150 {
+            let sql = format!("SELECT {i}::INTEGER");
+            assert_eq!(client.query_one(&sql, &[]).unwrap().get::<_, i32>(0), i);
+        }
+        assert_eq!(
+            client
+                .query_one("SELECT payload FROM cached_rollback WHERE id=$1", &[&1_i64])
+                .unwrap()
+                .get::<_, Value>(0),
+            value
+        );
+        let expected = client.query_one("SELECT 'lz4'=ANY(enumvals) FROM pg_settings WHERE name='default_toast_compression'",&[]).unwrap().get::<_,bool>(0);
+        if expected {
+            let compression:String=client.query_one("SELECT attcompression::TEXT FROM pg_attribute WHERE attrelid='marketforge_room_snapshots'::regclass AND attname='actor_json'",&[]).unwrap().get(0);
+            assert_eq!(compression, "l");
+        }
+    }
+
+    // This fixture commits deliberately incomplete projection state and changes
+    // a table constraint. Its restart/projector connections must all use the
+    // same private schema, without exposing those states to parallel tests.
+    struct IsolatedPostgresTestSchema {
+        client: postgres::Client,
+        name: String,
+        url: String,
+    }
+
+    impl IsolatedPostgresTestSchema {
+        fn new(base_url: &str, room: &str) -> Self {
+            let name = format!("mf_{}", room.replace('-', "_"));
+            assert!(name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
+            let mut client = postgres::Client::connect(base_url, NoTls).unwrap();
+            client
+                .batch_execute(&format!("CREATE SCHEMA {name}"))
+                .unwrap();
+            let config: postgres::Config = base_url.parse().unwrap();
+            let options = format!(
+                "{} -csearch_path={name}",
+                config.get_options().unwrap_or_default()
+            );
+            let url = if base_url.starts_with("postgres://")
+                || base_url.starts_with("postgresql://")
+            {
+                let (base, query) = base_url.split_once('?').unwrap_or((base_url, ""));
+                let mut params = query
+                    .split('&')
+                    .filter(|param| !param.is_empty() && param.split('=').next() != Some("options"))
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>();
+                let encoded: String = options.bytes().map(|byte| format!("%{byte:02X}")).collect();
+                params.push(format!("options={encoded}"));
+                format!("{base}?{}", params.join("&"))
+            } else {
+                let escaped = options.replace('\\', "\\\\").replace('\'', "\\'");
+                format!("{base_url} options='{escaped}'")
+            };
+            assert_eq!(
+                url.parse::<postgres::Config>().unwrap().get_options(),
+                Some(options.as_str())
+            );
+            Self { client, name, url }
+        }
+    }
+
+    impl Drop for IsolatedPostgresTestSchema {
+        fn drop(&mut self) {
+            if let Err(error) = self
+                .client
+                .batch_execute(&format!("DROP SCHEMA IF EXISTS {} CASCADE", self.name))
+            {
+                eprintln!("isolated PostgreSQL fixture schema cleanup failed: {error}");
+            }
+        }
+    }
+
+    #[test]
+    fn postgres_async_projections_preserve_durable_commit_and_restart_when_configured() {
+        let url = match env::var("MARKETFORGE_TEST_DATABASE_URL") {
+            Ok(url) if !url.trim().is_empty() => url,
+            _ if env::var("MARKETFORGE_REQUIRE_POSTGRES_TESTS").as_deref() == Ok("1") => {
+                panic!("PostgreSQL test URL required")
+            }
+            _ => return,
+        };
+        let room = format!(
+            "pg-async-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let fixture = IsolatedPostgresTestSchema::new(&url, &room);
+        let url = fixture.url.clone();
+        let mut store = PostgresJournalStore::connect_migrated(&url).unwrap();
+        // Deterministically pause projection, without delaying canonical writes.
+        drop(store.projector.take());
+        let scenario = spot_scenario(&room);
+        let bootstrap = RoomBootstrap {
+            room_id: room.clone(),
+            seed_executions: vec![],
+        };
+        store
+            .create_room("async-owner", &scenario, &bootstrap, &[10], &[], None)
+            .unwrap();
+        let apply_order = |actor: &mut SimulationRoom, order_id, side| {
+            let command = Command::NewOrder(NewOrder {
+                position_side: Default::default(),
+                order_id,
+                account_id: 10,
+                side,
+                kind: OrderKind::Limit { price_tick: 100 },
+                qty: 2,
+                reduce_only: false,
+            });
+            let execution = actor
+                .apply_to_instrument("V-BTC-SPOT", command.clone())
+                .unwrap();
+            JournalExecution::submitted("participant-10".into(), 10, command, execution)
+        };
+        let mut actor = empty_room(&room);
+        let mut first = apply_order(&mut actor, 100, Side::Sell);
+        first.request_user_id = Some("async-owner".into());
+        first.idempotency_key = Some("first".into());
+        first.request_fingerprint = Some("first-fingerprint".into());
+        first.quota_user_step = Some(("async-owner".into(), 0));
+        store.append_execution(&first, None).unwrap();
+        assert_eq!(
+            store
+                .external_action_count("async-owner", &room, 0)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            store
+                .find_idempotent_execution("async-owner", &room, "first")
+                .unwrap()
+                .unwrap()
+                .execution,
+            first.execution
+        );
+        assert_eq!(
+            store
+                .client
+                .query_one(
+                    "SELECT COUNT(*) FROM marketforge_orders WHERE room_id=$1",
+                    &[&room]
+                )
+                .unwrap()
+                .get::<_, i64>(0),
+            0
+        );
+        assert_eq!(store.load_room_recovery(&room).unwrap().executions.len(), 1);
+        // Every committed canonical record must also pass the strict actor
+        // replay used by production all-room recovery, before any checkpoint.
+        crate::recover_rooms(&store.load_full_recovery().unwrap()).unwrap();
+        // Conflict checks remain synchronous while the order query table is empty.
+        let mut conflicting = first.clone();
+        conflicting.command_seq = 1;
+        conflicting.execution.command_seq = 1;
+        conflicting.idempotency_key = Some("conflict".into());
+        assert!(matches!(
+            store.append_execution(&conflicting, None),
+            Err(JournalError::ProjectionConflict {
+                entity: "order",
+                ..
+            })
+        ));
+        assert_eq!(
+            store
+                .external_action_count("async-owner", &room, 0)
+                .unwrap(),
+            1
+        );
+        assert!(
+            store
+                .find_idempotent_execution("async-owner", &room, "conflict")
+                .unwrap()
+                .is_none()
+        );
+        // A query-table failure rolls back the entire batch plus its progress.
+        store.client.batch_execute("ALTER TABLE marketforge_orders ADD CONSTRAINT async_test_failure CHECK(status<>'open') NOT VALID").unwrap();
+        let monitor = QueryProjectionMetrics::default();
+        // The projector advisory lock is database-wide even across schemas.
+        // A parallel worker may briefly own it: retry only the no-work result,
+        // while preserving real SQL errors and every assertion below.
+        let project_pending = |client: &mut Client| {
+            let started = Instant::now();
+            loop {
+                let result = projection::project_batch(client, &monitor);
+                match result {
+                    Ok(0) if started.elapsed() < Duration::from_secs(5) => {
+                        thread::sleep(Duration::from_millis(2));
+                    }
+                    result => return result,
+                }
+            }
+        };
+        assert!(project_pending(&mut store.client).is_err());
+        assert_eq!(
+            store
+                .client
+                .query_one(
+                    "SELECT COUNT(*) FROM marketforge_projection_queue WHERE room_id=$1",
+                    &[&room]
+                )
+                .unwrap()
+                .get::<_, i64>(0),
+            1
+        );
+        assert_eq!(
+            store
+                .client
+                .query_one(
+                    "SELECT COUNT(*) FROM marketforge_orders WHERE room_id=$1",
+                    &[&room]
+                )
+                .unwrap()
+                .get::<_, i64>(0),
+            0
+        );
+        store
+            .client
+            .batch_execute("ALTER TABLE marketforge_orders DROP CONSTRAINT async_test_failure")
+            .unwrap();
+        // Recovery of next IDs must work even with a checkpoint and no projections.
+        store
+            .append_snapshot(&JournalSnapshot {
+                room_id: room.clone(),
+                command_seq: 0,
+                actor: actor.clone(),
+            })
+            .unwrap();
+        assert_eq!(
+            store.load_room_recovery(&room).unwrap().next_order_id,
+            Some(101)
+        );
+        drop(store);
+        let mut restarted = PostgresJournalStore::connect_migrated(&url).unwrap();
+        // Query barrier waits for the restarted worker, preserving visibility.
+        let orders = restarted
+            .query_orders("async-owner", &room, None, None, 100, None)
+            .unwrap();
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].status, "open");
+        assert_eq!(
+            restarted
+                .external_action_count("async-owner", &room, 0)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            restarted
+                .find_idempotent_execution("async-owner", &room, "first")
+                .unwrap()
+                .unwrap()
+                .execution,
+            first.execution
+        );
+        assert_eq!(
+            restarted
+                .client
+                .query_one(
+                    "SELECT COUNT(*) FROM marketforge_projection_queue WHERE room_id=$1",
+                    &[&room]
+                )
+                .unwrap()
+                .get::<_, i64>(0),
+            0
+        );
+        let byte_recovery = restarted.load_room_replay(&room).unwrap();
+        let encoded_before = serde_json::to_value(&byte_recovery.snapshots).unwrap();
+        let is_bytes: bool = restarted.client.query_one(
+            "SELECT actor_bytes IS NOT NULL AND actor_json IS NULL FROM marketforge_room_snapshots WHERE room_id=$1 ORDER BY command_seq DESC LIMIT 1",
+            &[&room],
+        ).unwrap().get(0);
+        assert!(is_bytes);
+        // Current compressed bytes, legacy raw JSON bytes, and legacy JSONB
+        // must all restore exactly the same complete snapshot and cursor.
+        let rows = restarted
+            .client
+            .query(
+                "SELECT command_seq,actor_bytes FROM marketforge_room_snapshots WHERE room_id=$1",
+                &[&room],
+            )
+            .unwrap();
+        for row in rows {
+            let seq: i64 = row.get(0);
+            let bytes: Vec<u8> = row.get(1);
+            let json = snapshot_bytes::decode(&bytes).unwrap().into_owned();
+            restarted.client.execute(
+                "UPDATE marketforge_room_snapshots SET actor_bytes=$3 WHERE room_id=$1 AND command_seq=$2",
+                &[&room,&seq,&json],
+            ).unwrap();
+        }
+        let raw_recovery = restarted.load_room_replay(&room).unwrap();
+        assert_eq!(
+            serde_json::to_value(&raw_recovery.snapshots).unwrap(),
+            encoded_before
+        );
+        assert_eq!(raw_recovery.next_order_id, byte_recovery.next_order_id);
+        restarted.client.execute(
+            "UPDATE marketforge_room_snapshots SET actor_json=convert_from(actor_bytes,'UTF8')::JSONB,actor_bytes=NULL WHERE room_id=$1",
+            &[&room],
+        ).unwrap();
+        let legacy_recovery = restarted.load_room_replay(&room).unwrap();
+        assert_eq!(
+            serde_json::to_value(&legacy_recovery.snapshots).unwrap(),
+            encoded_before
+        );
+        assert_eq!(legacy_recovery.next_order_id, byte_recovery.next_order_id);
+
+        // A queue sequence allocated by an uncommitted room writer must not be
+        // lost after a different room's later-allocated work has been processed.
+        drop(restarted.projector.take());
+        let other = format!("{room}-late");
+        restarted
+            .create_room(
+                "async-owner",
+                &spot_scenario(&other),
+                &RoomBootstrap {
+                    room_id: other.clone(),
+                    seed_executions: vec![],
+                },
+                &[10],
+                &[],
+                None,
+            )
+            .unwrap();
+        let mut other_actor = empty_room(&other);
+        let late = apply_order(&mut other_actor, 101, Side::Buy);
+        let mut late_client = Client::connect(&url, NoTls).unwrap();
+        let mut late_tx = late_client.transaction().unwrap();
+        PostgresJournalStore::insert_executions(&mut late_tx, &[late]).unwrap();
+        let early = apply_order(&mut actor, 102, Side::Buy);
+        restarted.append_execution(&early, None).unwrap();
+        assert_eq!(project_pending(&mut restarted.client).unwrap(), 1);
+        late_tx.commit().unwrap();
+        assert_eq!(project_pending(&mut restarted.client).unwrap(), 1);
+        assert_eq!(
+            restarted
+                .query_orders("async-owner", &other, None, None, 100, None)
+                .unwrap()
+                .len(),
+            1
+        );
+        crate::recover_rooms_for_full_replay(&restarted.load_full_recovery().unwrap()).unwrap();
+        restarted
+            .client
+            .execute("DELETE FROM marketforge_rooms WHERE room_id=$1", &[&other])
+            .unwrap();
+        restarted
+            .client
+            .execute("DELETE FROM marketforge_rooms WHERE room_id=$1", &[&room])
+            .unwrap();
     }
 
     #[test]
@@ -8286,7 +8546,7 @@ mod tests {
         assert!(external_action_quota.contains("marketforge_external_action_counts"));
         assert_eq!(
             MIGRATIONS.last().map(|migration| migration.version),
-            Some(17)
+            Some(19)
         );
     }
 

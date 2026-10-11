@@ -16,14 +16,34 @@ pub(crate) enum Origin {
 }
 thread_local! { static ORIGIN: Cell<usize> = const { Cell::new(Origin::Other as usize) }; }
 
-// Reference mode is accessible only to ignored, isolated test diagnostics.
-pub(crate) static KEEP_SPARE_CAPACITY: std::sync::atomic::AtomicBool =
+// Reference mode is accessible only to ignored, isolated test diagnostics. Both
+// representations are tight; this compares raw JSON against production LZ4 and
+// cannot reuse the historical original-spare-capacity versus shrink comparison.
+static RAW_MUTATION_STORAGE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 pub(crate) fn configure_reference() {
-    KEEP_SPARE_CAPACITY.store(
-        std::env::var("MF_BOT_JOURNAL_CAPACITY").as_deref() == Ok("original"),
-        Ordering::Relaxed,
+    assert!(
+        std::env::var_os("MF_BOT_JOURNAL_CAPACITY").is_none(),
+        "MF_BOT_JOURNAL_CAPACITY is obsolete; use MF_BOT_JOURNAL_STORAGE=raw or compressed"
     );
+    let mode = std::env::var("MF_BOT_JOURNAL_STORAGE").unwrap_or_else(|_| "compressed".into());
+    assert!(
+        matches!(mode.as_str(), "raw" | "compressed"),
+        "invalid journal storage mode"
+    );
+    RAW_MUTATION_STORAGE.store(mode == "raw", Ordering::Relaxed);
+}
+
+pub(crate) fn uses_raw_storage() -> bool {
+    RAW_MUTATION_STORAGE.load(Ordering::Relaxed)
+}
+
+pub(crate) fn storage_mode() -> &'static str {
+    if uses_raw_storage() {
+        "raw"
+    } else {
+        "compressed"
+    }
 }
 
 pub(crate) struct Scope(usize);
@@ -234,10 +254,10 @@ mod probes {
         tokio::time::sleep(Duration::from_millis(100)).await;
         let without_app = snapshot();
         let report = serde_json::json!({"bots":bots,"seconds":seconds,"samples":samples,
-            "original_capacity":super::KEEP_SPARE_CAPACITY.load(std::sync::atomic::Ordering::Relaxed),
+            "storage_mode":super::storage_mode(),
             "journal":journal,"paused":paused,"stopped":stopped,"without_mutations":without_mutations,
             "without_journal":without_journal,"without_app":without_app,
-            "definition":"requested live heap by allocation origin, excludes allocator slack/stacks; header overhead separately counted; owner release only in an isolated stopped test store"});
+            "definition":"requested live heap by allocation origin, excludes allocator slack/stacks; includes test-only kind labels; header overhead separately counted; compares tight raw JSON to production compression; owner release only in an isolated stopped test store"});
         std::fs::write(
             std::env::var("MF_MEMORY_OUTPUT").unwrap(),
             serde_json::to_vec_pretty(&report).unwrap(),

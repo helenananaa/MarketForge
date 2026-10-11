@@ -1,0 +1,5657 @@
+{
+  "final_matrix": {
+    "passed": true,
+    "retained": 22,
+    "excluded": 0,
+    "compiler_samples_retained": 0,
+    "baseline_guard_cases": [
+      "live-12-before-500-memory-60s-try1"
+    ],
+    "fixed_equal": true,
+    "query_tables_equal": true,
+    "fixed": {
+      "postgres": {
+        "before": {
+          "elapsed_seconds": {
+            "median": 2.5086794000008013,
+            "values": [
+              2.4697235000003275,
+              2.547635300001275
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 26.099609375,
+            "values": [
+              26.25390625,
+              25.9453125
+            ]
+          },
+          "service_cpu_seconds": {
+            "median": 1.5,
+            "values": [
+              1.59375,
+              1.40625
+            ]
+          }
+        },
+        "after": {
+          "elapsed_seconds": {
+            "median": 2.3089938000002803,
+            "values": [
+              2.3403018999997585,
+              2.277685700000802
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 25.16015625,
+            "values": [
+              25.4140625,
+              24.90625
+            ]
+          },
+          "service_cpu_seconds": {
+            "median": 1.5078125,
+            "values": [
+              1.609375,
+              1.40625
+            ]
+          }
+        }
+      },
+      "memory": {
+        "before": {
+          "elapsed_seconds": {
+            "median": 0.61551640000107,
+            "values": [
+              0.61551640000107
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 24.07421875,
+            "values": [
+              24.07421875
+            ]
+          },
+          "service_cpu_seconds": {
+            "median": 0.4375,
+            "values": [
+              0.4375
+            ]
+          }
+        },
+        "after": {
+          "elapsed_seconds": {
+            "median": 0.6312754999999015,
+            "values": [
+              0.6312754999999015
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 24.6640625,
+            "values": [
+              24.6640625
+            ]
+          },
+          "service_cpu_seconds": {
+            "median": 0.53125,
+            "values": [
+              0.53125
+            ]
+          }
+        }
+      }
+    },
+    "live": [
+      {
+        "storage": "postgres",
+        "bots": 500,
+        "seconds": 60,
+        "before": {
+          "runs": 2,
+          "labels": [
+            "live-0-before-500-postgres-60s-try1",
+            "live-3-before-500-postgres-60s-try1"
+          ],
+          "errors": [
+            [],
+            []
+          ],
+          "steps_per_second": {
+            "median": 37.96962888019701,
+            "values": [
+              38.7414638995519,
+              37.19779386084212
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 157.935546875,
+            "values": [
+              138.3046875,
+              177.56640625
+            ]
+          },
+          "journal_await_fraction_of_wall": {
+            "median": 0.5106857741197555,
+            "values": [
+              0.5204681393191927,
+              0.5009034089203184
+            ]
+          },
+          "host_cpu_mean": {
+            "median": 16.36222158427742,
+            "values": [
+              16.44276544108887,
+              16.281677727465976
+            ]
+          },
+          "measurement_seconds": {
+            "median": 60.00838930000009,
+            "values": [
+              60.01322009999967,
+              60.00355850000051
+            ]
+          },
+          "place_p95_ms": {
+            "median": 37.706099999923026,
+            "values": [
+              25.933799999620533,
+              49.47840000022552
+            ]
+          },
+          "cancel_p95_ms": {
+            "median": 9.113850000176171,
+            "values": [
+              6.143599999631988,
+              12.084100000720355
+            ]
+          },
+          "view_p95_ms": {
+            "median": 2.074299999549112,
+            "values": [
+              2.019800000198302,
+              2.1287999988999218
+            ]
+          }
+        },
+        "after": {
+          "runs": 2,
+          "labels": [
+            "live-1-after-500-postgres-60s-try1",
+            "live-2-after-500-postgres-60s-try1"
+          ],
+          "errors": [
+            [],
+            []
+          ],
+          "steps_per_second": {
+            "median": 38.18442607039657,
+            "values": [
+              38.09412277524755,
+              38.27472936554558
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 129.4765625,
+            "values": [
+              134.6328125,
+              124.3203125
+            ]
+          },
+          "journal_await_fraction_of_wall": {
+            "median": 0.46799724860160885,
+            "values": [
+              0.44489107812964207,
+              0.4911034190735757
+            ]
+          },
+          "host_cpu_mean": {
+            "median": 15.862025855544214,
+            "values": [
+              15.563869238371696,
+              16.160182472716734
+            ]
+          },
+          "measurement_seconds": {
+            "median": 60.0113723000004,
+            "values": [
+              60.009256900000764,
+              60.01348770000004
+            ]
+          },
+          "place_p95_ms": {
+            "median": 35.646250000354485,
+            "values": [
+              48.97800000071584,
+              22.31449999999313
+            ]
+          },
+          "cancel_p95_ms": {
+            "median": 5.691149999620393,
+            "values": [
+              4.973999999492662,
+              6.408299999748124
+            ]
+          },
+          "view_p95_ms": {
+            "median": 2.1462499998960993,
+            "values": [
+              2.1367999997892184,
+              2.1557000000029802
+            ]
+          }
+        }
+      },
+      {
+        "storage": "postgres",
+        "bots": 1000,
+        "seconds": 60,
+        "before": {
+          "runs": 2,
+          "labels": [
+            "live-5-before-1000-postgres-60s-try1",
+            "live-6-before-1000-postgres-60s-try1"
+          ],
+          "errors": [
+            [],
+            []
+          ],
+          "steps_per_second": {
+            "median": 0.9998431522173767,
+            "values": [
+              0.9997844664647038,
+              0.9999018379700496
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 212.947265625,
+            "values": [
+              213.921875,
+              211.97265625
+            ]
+          },
+          "journal_await_fraction_of_wall": {
+            "median": 0.10767146143384203,
+            "values": [
+              0.10294464052772673,
+              0.11239828233995733
+            ]
+          },
+          "host_cpu_mean": {
+            "median": 8.67282476151945,
+            "values": [
+              8.509949146063304,
+              8.835700376975595
+            ]
+          },
+          "measurement_seconds": {
+            "median": 60.00941255000089,
+            "values": [
+              60.01293480000095,
+              60.00589030000083
+            ]
+          },
+          "place_p95_ms": {
+            "median": 38.57875000085187,
+            "values": [
+              52.55890000080399,
+              24.59860000089975
+            ]
+          },
+          "cancel_p95_ms": {
+            "median": 19.46545000100741,
+            "values": [
+              20.05050000116171,
+              18.880400000853115
+            ]
+          },
+          "view_p95_ms": {
+            "median": 2.983700000186218,
+            "values": [
+              3.011099999639555,
+              2.956300000732881
+            ]
+          }
+        },
+        "after": {
+          "runs": 2,
+          "labels": [
+            "live-4-after-1000-postgres-60s-try1",
+            "live-7-after-1000-postgres-60s-try1"
+          ],
+          "errors": [
+            [],
+            []
+          ],
+          "steps_per_second": {
+            "median": 0.9999105042794403,
+            "values": [
+              0.9999563519052567,
+              0.9998646566536238
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 193.259765625,
+            "values": [
+              177.01171875,
+              209.5078125
+            ]
+          },
+          "journal_await_fraction_of_wall": {
+            "median": 0.10157755282173239,
+            "values": [
+              0.09201000043014948,
+              0.11114510521331532
+            ]
+          },
+          "host_cpu_mean": {
+            "median": 9.02021808015445,
+            "values": [
+              8.899364072663639,
+              9.141072087645263
+            ]
+          },
+          "measurement_seconds": {
+            "median": 60.005370349999794,
+            "values": [
+              60.00261899999896,
+              60.00812170000063
+            ]
+          },
+          "place_p95_ms": {
+            "median": 26.338949999626493,
+            "values": [
+              20.319600000220817,
+              32.35829999903217
+            ]
+          },
+          "cancel_p95_ms": {
+            "median": 20.156250000582077,
+            "values": [
+              21.2773000002926,
+              19.035200000871555
+            ]
+          },
+          "view_p95_ms": {
+            "median": 2.9978000002301997,
+            "values": [
+              3.1025000007502967,
+              2.8930999997101026
+            ]
+          }
+        }
+      },
+      {
+        "storage": "memory",
+        "bots": 500,
+        "seconds": 30,
+        "before": {
+          "runs": 2,
+          "labels": [
+            "live-8-before-500-memory-30s-try1",
+            "live-11-before-500-memory-30s-try1"
+          ],
+          "errors": [
+            [],
+            []
+          ],
+          "steps_per_second": {
+            "median": 39.96461947692943,
+            "values": [
+              39.92983627827307,
+              39.99940267558579
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 1161.986328125,
+            "values": [
+              1161.484375,
+              1162.48828125
+            ]
+          },
+          "journal_await_fraction_of_wall": {
+            "median": 0.10185237886239737,
+            "values": [
+              0.09498418128540538,
+              0.10872057643938934
+            ]
+          },
+          "host_cpu_mean": {
+            "median": 17.155439162263715,
+            "values": [
+              12.377256856978413,
+              21.933621467549017
+            ]
+          },
+          "measurement_seconds": {
+            "median": 30.00153769999997,
+            "values": [
+              30.002627399999255,
+              30.000448000000688
+            ]
+          },
+          "place_p95_ms": {
+            "median": 8.31449999986944,
+            "values": [
+              7.958599999255966,
+              8.670400000482914
+            ]
+          },
+          "cancel_p95_ms": {
+            "median": 8.03280000036466,
+            "values": [
+              11.382100001355866,
+              4.683499999373453
+            ]
+          },
+          "view_p95_ms": {
+            "median": 2.2628500000791973,
+            "values": [
+              1.9676000010804273,
+              2.5580999990779674
+            ]
+          }
+        },
+        "after": {
+          "runs": 2,
+          "labels": [
+            "live-9-after-500-memory-30s-try1",
+            "live-10-after-500-memory-30s-try1"
+          ],
+          "errors": [
+            [],
+            []
+          ],
+          "steps_per_second": {
+            "median": 40.02604289044503,
+            "values": [
+              40.028050297825985,
+              40.024035483064075
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 257.345703125,
+            "values": [
+              292.58984375,
+              222.1015625
+            ]
+          },
+          "journal_await_fraction_of_wall": {
+            "median": 0.1066154446460803,
+            "values": [
+              0.11055170901693215,
+              0.10267918027522845
+            ]
+          },
+          "host_cpu_mean": {
+            "median": 16.166158427656754,
+            "values": [
+              16.015473627308193,
+              16.31684322800531
+            ]
+          },
+          "measurement_seconds": {
+            "median": 30.005464350000693,
+            "values": [
+              30.003959500001656,
+              30.00696919999973
+            ]
+          },
+          "place_p95_ms": {
+            "median": 6.765050000467454,
+            "values": [
+              9.910500000842148,
+              3.6196000000927597
+            ]
+          },
+          "cancel_p95_ms": {
+            "median": 4.23399999999674,
+            "values": [
+              5.146800000147778,
+              3.321199999845703
+            ]
+          },
+          "view_p95_ms": {
+            "median": 2.6779999998325366,
+            "values": [
+              2.5610000011511147,
+              2.7949999985139584
+            ]
+          }
+        }
+      },
+      {
+        "storage": "memory",
+        "bots": 500,
+        "seconds": 60,
+        "before": {
+          "runs": 1,
+          "labels": [
+            "live-12-before-500-memory-60s-try1"
+          ],
+          "errors": [
+            [
+              {
+                "kind": "memory_guard"
+              }
+            ]
+          ],
+          "steps_per_second": {
+            "median": 39.90663010818466,
+            "values": [
+              39.90663010818466
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 2092.53125,
+            "values": [
+              2092.53125
+            ]
+          },
+          "journal_await_fraction_of_wall": {
+            "median": 0.10400341314554597,
+            "values": [
+              0.10400341314554597
+            ]
+          },
+          "host_cpu_mean": {
+            "median": 16.065891276782324,
+            "values": [
+              16.065891276782324
+            ]
+          },
+          "measurement_seconds": {
+            "median": 59.53897870000037,
+            "values": [
+              59.53897870000037
+            ]
+          },
+          "place_p95_ms": {
+            "median": 7.788599999912549,
+            "values": [
+              7.788599999912549
+            ]
+          },
+          "cancel_p95_ms": {
+            "median": 3.6999999992985977,
+            "values": [
+              3.6999999992985977
+            ]
+          },
+          "view_p95_ms": {
+            "median": 2.3508000012952834,
+            "values": [
+              2.3508000012952834
+            ]
+          }
+        },
+        "after": {
+          "runs": 1,
+          "labels": [
+            "live-13-after-500-memory-60s-try1"
+          ],
+          "errors": [
+            []
+          ],
+          "steps_per_second": {
+            "median": 39.72332107025809,
+            "values": [
+              39.72332107025809
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 458.390625,
+            "values": [
+              458.390625
+            ]
+          },
+          "journal_await_fraction_of_wall": {
+            "median": 0.09900434595460343,
+            "values": [
+              0.09900434595460343
+            ]
+          },
+          "host_cpu_mean": {
+            "median": 12.778798501877677,
+            "values": [
+              12.778798501877677
+            ]
+          },
+          "measurement_seconds": {
+            "median": 60.01512299999922,
+            "values": [
+              60.01512299999922
+            ]
+          },
+          "place_p95_ms": {
+            "median": 10.172199999942677,
+            "values": [
+              10.172199999942677
+            ]
+          },
+          "cancel_p95_ms": {
+            "median": 11.155399999552174,
+            "values": [
+              11.155399999552174
+            ]
+          },
+          "view_p95_ms": {
+            "median": 2.045499999439926,
+            "values": [
+              2.045499999439926
+            ]
+          }
+        }
+      },
+      {
+        "storage": "postgres",
+        "bots": 38,
+        "seconds": 60,
+        "before": {
+          "runs": 1,
+          "labels": [
+            "live-14-before-38-postgres-60s-try1"
+          ],
+          "errors": [
+            []
+          ],
+          "steps_per_second": {
+            "median": 0.999999251667228,
+            "values": [
+              0.999999251667228
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 28.4453125,
+            "values": [
+              28.4453125
+            ]
+          },
+          "journal_await_fraction_of_wall": {
+            "median": 0.008709276815891195,
+            "values": [
+              0.008709276815891195
+            ]
+          },
+          "host_cpu_mean": {
+            "median": 5.96875632604383,
+            "values": [
+              5.96875632604383
+            ]
+          },
+          "measurement_seconds": {
+            "median": 60.00004489999992,
+            "values": [
+              60.00004489999992
+            ]
+          },
+          "place_p95_ms": {
+            "median": 12.897700000394252,
+            "values": [
+              12.897700000394252
+            ]
+          },
+          "cancel_p95_ms": {
+            "median": 2.46789999982866,
+            "values": [
+              2.46789999982866
+            ]
+          },
+          "view_p95_ms": {
+            "median": 1.1174000010214513,
+            "values": [
+              1.1174000010214513
+            ]
+          }
+        },
+        "after": {
+          "runs": 1,
+          "labels": [
+            "live-15-after-38-postgres-60s-try1"
+          ],
+          "errors": [
+            []
+          ],
+          "steps_per_second": {
+            "median": 0.9998430313096894,
+            "values": [
+              0.9998430313096894
+            ]
+          },
+          "peak_memory_mib": {
+            "median": 26.9453125,
+            "values": [
+              26.9453125
+            ]
+          },
+          "journal_await_fraction_of_wall": {
+            "median": 0.0071496442201882835,
+            "values": [
+              0.0071496442201882835
+            ]
+          },
+          "host_cpu_mean": {
+            "median": 7.014211338322316,
+            "values": [
+              7.014211338322316
+            ]
+          },
+          "measurement_seconds": {
+            "median": 60.00941960000091,
+            "values": [
+              60.00941960000091
+            ]
+          },
+          "place_p95_ms": {
+            "median": 13.236400000096182,
+            "values": [
+              13.236400000096182
+            ]
+          },
+          "cancel_p95_ms": {
+            "median": 3.073400001085247,
+            "values": [
+              3.073400001085247
+            ]
+          },
+          "view_p95_ms": {
+            "median": 1.1394000011932803,
+            "values": [
+              1.1394000011932803
+            ]
+          }
+        }
+      }
+    ],
+    "binaries": {
+      "before": {
+        "path": "E:\\CodexData\\worktrees\\postgres-write-profile\\MarketForge\\.local\\pg-journal-study\\before.exe",
+        "sha256": "ecc2a88af26038e665c4df89b3cd776039b118a40e806697db0f8d4aa2e1abd8"
+      },
+      "after": {
+        "path": "E:\\CodexData\\worktrees\\postgres-write-profile\\MarketForge\\.local\\pg-journal-study\\after.exe",
+        "sha256": "48dd4d03302457b8fde71f1ea6d79d0ce6ad394685758218273069d505ca4b03"
+      }
+    },
+    "crash_recovery": {
+      "passed": true,
+      "state_equal": true,
+      "database_restarted": true,
+      "server_hard_stopped": true,
+      "projection_blocked_through_recovery": true,
+      "idempotent_retries": 4,
+      "pending_before": 6,
+      "pending_after": 0,
+      "query_counts": {
+        "orders": 6,
+        "trades": 2,
+        "order_events": 16,
+        "account_ledger": 4,
+        "position_snapshots": 4,
+        "transfers": 0
+      },
+      "state_sha256": "ea3d3165d93d66d340f4cac6693d92397d0c92fa2c1015d05a945bfb350c8d91"
+    }
+  },
+  "final_diagnostics": {
+    "diagnostic-0-before-try1": {
+      "pg_snapshot": {
+        "count": 19,
+        "median_ms": 27.212,
+        "sum_ms": 545.9385,
+        "stage_sum_ms": {
+          "encode": 163.9935,
+          "insert": 363.3,
+          "recovery_head": 13.070500000000001
+        },
+        "largest": [
+          {
+            "fields": {
+              "command_seq": 17010,
+              "room": "live-study"
+            },
+            "kind": "pg_snapshot",
+            "stages_ms": {
+              "encode": 14.5891,
+              "insert": 42.920300000000005,
+              "recovery_head": 1.3646
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 59.436099999999996
+          },
+          {
+            "fields": {
+              "command_seq": 13001,
+              "room": "live-study"
+            },
+            "kind": "pg_snapshot",
+            "stages_ms": {
+              "encode": 12.8139,
+              "insert": 31.037200000000002,
+              "recovery_head": 0.8202
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 45.080799999999996
+          },
+          {
+            "fields": {
+              "command_seq": 15012,
+              "room": "live-study"
+            },
+            "kind": "pg_snapshot",
+            "stages_ms": {
+              "encode": 14.387,
+              "insert": 29.356299999999997,
+              "recovery_head": 0.6119
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 44.7276
+          }
+        ]
+      },
+      "pg_executions": {
+        "count": 1164,
+        "median_ms": 2.79075,
+        "sum_ms": 3438.7195,
+        "stage_sum_ms": {
+          "encode": 158.1675,
+          "insert": 1842.1121,
+          "quota": 0.9535,
+          "validate_claim": 1437.2558
+        },
+        "largest": [
+          {
+            "fields": {
+              "count": 63
+            },
+            "kind": "pg_executions",
+            "stages_ms": {
+              "encode": 0.9752,
+              "insert": 7.1316,
+              "quota": 0.0021,
+              "validate_claim": 3.4267999999999996
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 11.536
+          },
+          {
+            "fields": {
+              "count": 64
+            },
+            "kind": "pg_executions",
+            "stages_ms": {
+              "encode": 0.34640000000000004,
+              "insert": 5.5337,
+              "quota": 0.0015,
+              "validate_claim": 3.9985999999999997
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 9.8805
+          },
+          {
+            "fields": {
+              "count": 45
+            },
+            "kind": "pg_executions",
+            "stages_ms": {
+              "encode": 0.5798,
+              "insert": 4.4882,
+              "quota": 0.0015,
+              "validate_claim": 4.472099999999999
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 9.5418
+          }
+        ]
+      },
+      "pg_append_room_mutation": {
+        "count": 1124,
+        "median_ms": 4.629,
+        "sum_ms": 6821.5138,
+        "stage_sum_ms": {
+          "begin_mutation": 1998.5386,
+          "commit": 887.7663,
+          "executions_transfers": 3322.8215,
+          "snapshot_control": 499.3111,
+          "validate": 112.08539999999999
+        },
+        "largest": [
+          {
+            "fields": {
+              "snapshot": true
+            },
+            "kind": "pg_append_room_mutation",
+            "stages_ms": {
+              "begin_mutation": 44.4105,
+              "commit": 3.5991999999999997,
+              "executions_transfers": 8.4852,
+              "snapshot_control": 59.668,
+              "validate": 5.5175
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 121.68130000000001
+          },
+          {
+            "fields": {
+              "snapshot": true
+            },
+            "kind": "pg_append_room_mutation",
+            "stages_ms": {
+              "begin_mutation": 27.1657,
+              "commit": 34.3209,
+              "executions_transfers": 7.5511,
+              "snapshot_control": 38.7056,
+              "validate": 4.247199999999999
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 111.9923
+          },
+          {
+            "fields": {
+              "snapshot": true
+            },
+            "kind": "pg_append_room_mutation",
+            "stages_ms": {
+              "begin_mutation": 26.5985,
+              "commit": 33.6598,
+              "executions_transfers": 4.9641,
+              "snapshot_control": 27.372799999999998,
+              "validate": 4.1047
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 96.7017
+          }
+        ]
+      },
+      "journal_job": {
+        "count": 2144,
+        "median_ms": 1.8222,
+        "sum_ms": 8401.1754,
+        "stage_sum_ms": {
+          "operation": 8354.97,
+          "queue_wait": 37.2414
+        },
+        "largest": [
+          {
+            "fields": {},
+            "kind": "journal_job",
+            "stages_ms": {
+              "operation": 123.7916,
+              "queue_wait": 0.0223
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 123.8217
+          },
+          {
+            "fields": {},
+            "kind": "journal_job",
+            "stages_ms": {
+              "operation": 113.65459999999999,
+              "queue_wait": 0.022
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 113.6865
+          },
+          {
+            "fields": {},
+            "kind": "journal_job",
+            "stages_ms": {
+              "operation": 98.38520000000001,
+              "queue_wait": 0.0157
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 98.4073
+          }
+        ]
+      },
+      "place": {
+        "count": 125,
+        "p95_ms": 17.851599999999998,
+        "slowest": [
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.7857,
+                "authorization": 0.2664,
+                "candidate": 0.0168,
+                "guards": 0.304,
+                "install": 0.023200000000000002,
+                "journal": 2.0195,
+                "room_wait": 93.77340000000001
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 97.3036
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 90.4144,
+                  "queue_wait": 0.0168
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 90.44109999999999
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.1164,
+                  "commit": 0.2385,
+                  "executions_transfers": 1.4031,
+                  "snapshot_control": 0.00019999999999999998,
+                  "validate": 0.0038
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.7625
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.9200000000000002,
+                  "queue_wait": 0.0117
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.935
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.7506999999999999,
+                "authorization": 0.2913,
+                "candidate": 0.012700000000000001,
+                "guards": 0.1862,
+                "install": 0.011,
+                "journal": 1.8918,
+                "room_wait": 48.5402
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 51.7332
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 123.7916,
+                  "queue_wait": 0.0223
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 123.8217
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.1283,
+                  "commit": 0.2205,
+                  "executions_transfers": 1.3149,
+                  "snapshot_control": 0.00019999999999999998,
+                  "validate": 0.0065
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.6713
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.8393000000000002,
+                  "queue_wait": 0.029
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.8711000000000002
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.6578,
+                "authorization": 0.40690000000000004,
+                "candidate": 0.0187,
+                "guards": 0.2752,
+                "install": 0.013900000000000001,
+                "journal": 2.1186,
+                "room_wait": 36.972
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 40.5352
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 34.9425,
+                  "queue_wait": 0.014
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 34.9651
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.1106,
+                  "commit": 0.2368,
+                  "executions_transfers": 1.4834,
+                  "snapshot_control": 0.0006,
+                  "validate": 0.0053
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.8371
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 2.0752,
+                  "queue_wait": 0.0172
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 2.0956
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.5578,
+                "authorization": 0.4139,
+                "candidate": 0.013900000000000001,
+                "guards": 0.3375,
+                "install": 0.0131,
+                "journal": 30.086000000000002,
+                "room_wait": 6.2219
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 37.7404
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {
+                  "command_seq": 8000,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 8.3822,
+                  "insert": 17.851399999999998,
+                  "recovery_head": 0.48950000000000005
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 26.946
+              },
+              {
+                "fields": {
+                  "snapshot": true
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.0704,
+                  "commit": 1.5483,
+                  "executions_transfers": 1.0304,
+                  "snapshot_control": 27.107400000000002,
+                  "validate": 0.0084
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 29.7661
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 30.018199999999997,
+                  "queue_wait": 0.0106
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 30.0353
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 1.2402,
+                "authorization": 0.3862,
+                "candidate": 0.028,
+                "guards": 0.1969,
+                "install": 0.0101,
+                "journal": 20.894,
+                "room_wait": 0.0203
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 22.9553
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {
+                  "command_seq": 3300,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 5.2286,
+                  "insert": 12.0247,
+                  "recovery_head": 0.8044
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 18.2661
+              },
+              {
+                "fields": {
+                  "snapshot": true
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.1074,
+                  "commit": 1.1643000000000001,
+                  "executions_transfers": 0.9235,
+                  "snapshot_control": 18.4386,
+                  "validate": 0.0094
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 20.644099999999998
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 20.8313,
+                  "queue_wait": 0.0102
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 20.848399999999998
+              }
+            ]
+          }
+        ]
+      },
+      "cancel": {
+        "count": 125,
+        "p95_ms": 18.035700000000002,
+        "slowest": [
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 1.1649,
+                "authorization": 0.3975,
+                "candidate": 0.018000000000000002,
+                "guards": 0.3813,
+                "install": 0.0098,
+                "journal": 1.3721,
+                "room_wait": 50.5518
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 53.9658
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 42.416799999999995,
+                  "queue_wait": 0.013699999999999999
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 42.438900000000004
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.0854,
+                  "commit": 0.1966,
+                  "executions_transfers": 0.8419,
+                  "snapshot_control": 0.0003,
+                  "validate": 0.0022
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.1271
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.3001,
+                  "queue_wait": 0.0104
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.3137999999999999
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.8822,
+                "authorization": 0.1893,
+                "candidate": 0.0153,
+                "guards": 0.2131,
+                "install": 0.0153,
+                "journal": 1.721,
+                "room_wait": 19.5764
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 22.6961
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 5.3718,
+                  "queue_wait": 0.0146
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 5.3911999999999995
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.14459999999999998,
+                  "commit": 0.2137,
+                  "executions_transfers": 1.1228,
+                  "snapshot_control": 0.00019999999999999998,
+                  "validate": 0.0021
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.484
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.6436,
+                  "queue_wait": 0.0121
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.6586999999999998
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.5888,
+                "authorization": 0.2339,
+                "candidate": 0.014199999999999999,
+                "guards": 0.2829,
+                "install": 0.007500000000000001,
+                "journal": 1.5768,
+                "room_wait": 19.5436
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 22.2802
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 9.759200000000002,
+                  "queue_wait": 0.015400000000000002
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 9.7795
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.1105,
+                  "commit": 0.1867,
+                  "executions_transfers": 1.0681,
+                  "snapshot_control": 0.00019999999999999998,
+                  "validate": 0.0061
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.3725
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.5423,
+                  "queue_wait": 0.0126
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.5576999999999999
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.46690000000000004,
+                "authorization": 0.32739999999999997,
+                "candidate": 0.0101,
+                "guards": 0.2296,
+                "install": 0.0089,
+                "journal": 1.7628,
+                "room_wait": 17.8044
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 20.688000000000002
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 4.8135,
+                  "queue_wait": 0.0196
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 4.8414
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.0804,
+                  "commit": 0.4247,
+                  "executions_transfers": 1.0092,
+                  "snapshot_control": 9.999999999999999e-05,
+                  "validate": 0.0015999999999999999
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.5192
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.7138,
+                  "queue_wait": 0.010499999999999999
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.7275
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.3821,
+                "authorization": 0.1984,
+                "candidate": 0.0107,
+                "guards": 0.3583,
+                "install": 0.0076,
+                "journal": 1.616,
+                "room_wait": 17.5797
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 20.1878
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 5.339,
+                  "queue_wait": 0.0152
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 5.3583
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.1532,
+                  "commit": 0.2601,
+                  "executions_transfers": 0.9565,
+                  "snapshot_control": 0.00019999999999999998,
+                  "validate": 0.0012
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.3719
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.5254,
+                  "queue_wait": 0.0111
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.539
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "diagnostic-1-after-try1": {
+      "pg_snapshot": {
+        "count": 22,
+        "median_ms": 20.46405,
+        "sum_ms": 483.8874,
+        "stage_sum_ms": {
+          "compress": 118.758,
+          "encode": 209.6178,
+          "insert": 141.6784,
+          "recovery_head": 13.033
+        },
+        "largest": [
+          {
+            "fields": {
+              "command_seq": 18007,
+              "json_bytes": 13355888,
+              "room": "live-study",
+              "stored_bytes": 2020250
+            },
+            "kind": "pg_snapshot",
+            "stages_ms": {
+              "compress": 9.445,
+              "encode": 15.6947,
+              "insert": 14.0128,
+              "recovery_head": 0.3313
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 39.5514
+          },
+          {
+            "fields": {
+              "command_seq": 15023,
+              "json_bytes": 11652536,
+              "room": "live-study",
+              "stored_bytes": 1760320
+            },
+            "kind": "pg_snapshot",
+            "stages_ms": {
+              "compress": 10.1831,
+              "encode": 19.9471,
+              "insert": 8.938,
+              "recovery_head": 0.36019999999999996
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 39.491400000000006
+          },
+          {
+            "fields": {
+              "command_seq": 19000,
+              "json_bytes": 13953434,
+              "room": "live-study",
+              "stored_bytes": 2111198
+            },
+            "kind": "pg_snapshot",
+            "stages_ms": {
+              "compress": 9.9642,
+              "encode": 16.1888,
+              "insert": 10.2994,
+              "recovery_head": 0.356
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 36.8931
+          }
+        ]
+      },
+      "pg_executions": {
+        "count": 1284,
+        "median_ms": 2.5048500000000002,
+        "sum_ms": 3414.7223,
+        "stage_sum_ms": {
+          "encode": 178.5192,
+          "insert": 1708.1695,
+          "quota": 1.8456,
+          "validate_claim": 1525.8535
+        },
+        "largest": [
+          {
+            "fields": {
+              "count": 18
+            },
+            "kind": "pg_executions",
+            "stages_ms": {
+              "encode": 0.2026,
+              "insert": 1.3047,
+              "quota": 0.0011,
+              "validate_claim": 9.8444
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 11.3531
+          },
+          {
+            "fields": {
+              "count": 37
+            },
+            "kind": "pg_executions",
+            "stages_ms": {
+              "encode": 0.5207,
+              "insert": 3.6917999999999997,
+              "quota": 0.0019,
+              "validate_claim": 4.6244
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 8.8391
+          },
+          {
+            "fields": {
+              "count": 44
+            },
+            "kind": "pg_executions",
+            "stages_ms": {
+              "encode": 0.5597,
+              "insert": 5.5109,
+              "quota": 0.0012,
+              "validate_claim": 2.5501
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 8.6223
+          }
+        ]
+      },
+      "pg_append_room_mutation": {
+        "count": 1124,
+        "median_ms": 4.4597999999999995,
+        "sum_ms": 6915.2018,
+        "stage_sum_ms": {
+          "begin_mutation": 2065.3547,
+          "commit": 683.2567,
+          "executions_transfers": 3349.7258,
+          "insert_commit": 265.8465,
+          "snapshot_control": 425.4706,
+          "validate": 124.6234
+        },
+        "largest": [
+          {
+            "fields": {
+              "snapshot": true
+            },
+            "kind": "pg_append_room_mutation",
+            "stages_ms": {
+              "begin_mutation": 28.151,
+              "commit": 48.7495,
+              "executions_transfers": 8.5475,
+              "snapshot_control": 10.2317,
+              "validate": 2.5829999999999997
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 98.26469999999999
+          },
+          {
+            "fields": {
+              "snapshot": true
+            },
+            "kind": "pg_append_room_mutation",
+            "stages_ms": {
+              "begin_mutation": 43.2104,
+              "commit": 2.3901,
+              "executions_transfers": 5.7308,
+              "snapshot_control": 36.1831,
+              "validate": 5.5154000000000005
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 93.0306
+          },
+          {
+            "fields": {
+              "snapshot": true
+            },
+            "kind": "pg_append_room_mutation",
+            "stages_ms": {
+              "begin_mutation": 29.112099999999998,
+              "commit": 2.7590000000000003,
+              "executions_transfers": 8.7686,
+              "snapshot_control": 39.7353,
+              "validate": 5.3806
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 85.7569
+          }
+        ]
+      },
+      "journal_job": {
+        "count": 2150,
+        "median_ms": 2.9149000000000003,
+        "sum_ms": 8346.4892,
+        "stage_sum_ms": {
+          "operation": 8299.0565,
+          "queue_wait": 38.1661
+        },
+        "largest": [
+          {
+            "fields": {},
+            "kind": "journal_job",
+            "stages_ms": {
+              "operation": 108.0202,
+              "queue_wait": 0.0293
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 108.0579
+          },
+          {
+            "fields": {},
+            "kind": "journal_job",
+            "stages_ms": {
+              "operation": 100.3797,
+              "queue_wait": 0.030199999999999998
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 100.4195
+          },
+          {
+            "fields": {},
+            "kind": "journal_job",
+            "stages_ms": {
+              "operation": 94.5094,
+              "queue_wait": 0.0233
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 94.542
+          }
+        ]
+      },
+      "place": {
+        "count": 126,
+        "p95_ms": 15.117099999999999,
+        "slowest": [
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.9136,
+                "authorization": 0.2428,
+                "candidate": 0.0158,
+                "guards": 0.2175,
+                "install": 0.009000000000000001,
+                "journal": 1.6626,
+                "room_wait": 71.6309
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 74.7836
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 54.4658,
+                  "queue_wait": 0.0146
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 54.4878
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.0773,
+                  "commit": 0.1895,
+                  "executions_transfers": 1.2103000000000002,
+                  "snapshot_control": 0.00039999999999999996,
+                  "validate": 0.00039999999999999996
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.4782
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.6287999999999998,
+                  "queue_wait": 0.0101
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.6413
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.786,
+                "authorization": 0.3545,
+                "candidate": 0.016399999999999998,
+                "guards": 0.2384,
+                "install": 0.009000000000000001,
+                "journal": 1.5043000000000002,
+                "room_wait": 60.8377
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 63.7957
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 81.8784,
+                  "queue_wait": 0.013699999999999999
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 81.9025
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.1054,
+                  "commit": 0.2216,
+                  "executions_transfers": 0.8914,
+                  "snapshot_control": 0.00019999999999999998,
+                  "validate": 0.00039999999999999996
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.2196
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.3783999999999998,
+                  "queue_wait": 0.057
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.4383
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.7617,
+                "authorization": 0.2152,
+                "candidate": 0.044199999999999996,
+                "guards": 0.2989,
+                "install": 0.014199999999999999,
+                "journal": 2.0647,
+                "room_wait": 57.956100000000006
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 61.415400000000005
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 58.1804,
+                  "queue_wait": 0.0161
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 58.202799999999996
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.1323,
+                  "commit": 0.1704,
+                  "executions_transfers": 1.5008000000000001,
+                  "snapshot_control": 0.0003,
+                  "validate": 0.0015
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.8055
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.9597,
+                  "queue_wait": 0.0269
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.9916999999999998
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 1.0542,
+                "authorization": 0.20929999999999999,
+                "candidate": 0.014,
+                "guards": 0.2398,
+                "install": 0.0108,
+                "journal": 1.407,
+                "room_wait": 26.621599999999997
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 29.6322
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 46.3127,
+                  "queue_wait": 0.0144
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 46.33410000000001
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.1943,
+                  "commit": 0.2233,
+                  "executions_transfers": 0.7533000000000001,
+                  "snapshot_control": 0.0003,
+                  "validate": 0.0015999999999999999
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.1731999999999998
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.3548,
+                  "queue_wait": 0.0297
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.387
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.9397,
+                "authorization": 0.3841,
+                "candidate": 0.0163,
+                "guards": 0.3247,
+                "install": 0.028399999999999998,
+                "journal": 1.6546,
+                "room_wait": 12.9791
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 16.5083
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 9.0438,
+                  "queue_wait": 0.0153
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 9.064400000000001
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.08990000000000001,
+                  "commit": 0.4535,
+                  "executions_transfers": 0.9028,
+                  "snapshot_control": 0.00019999999999999998,
+                  "validate": 0.0005
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.4476
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.6131,
+                  "queue_wait": 0.0133
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.6295000000000002
+              }
+            ]
+          }
+        ]
+      },
+      "cancel": {
+        "count": 126,
+        "p95_ms": 18.684800000000003,
+        "slowest": [
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.7127,
+                "authorization": 0.20550000000000002,
+                "candidate": 0.016,
+                "guards": 0.1995,
+                "install": 0.0104,
+                "journal": 1.7873999999999999,
+                "room_wait": 83.8283
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 86.7943
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 70.83109999999999,
+                  "queue_wait": 0.024
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 70.86059999999999
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.1098,
+                  "commit": 0.2725,
+                  "executions_transfers": 1.1508,
+                  "snapshot_control": 0.0003,
+                  "validate": 0.00039999999999999996
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.5348
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.7294,
+                  "queue_wait": 0.0083
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.7402
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.36910000000000004,
+                "authorization": 0.1657,
+                "candidate": 0.016,
+                "guards": 0.1546,
+                "install": 0.008199999999999999,
+                "journal": 40.6399,
+                "room_wait": 0.0084
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 41.423899999999996
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {
+                  "command_seq": 19000,
+                  "json_bytes": 13953434,
+                  "room": "live-study",
+                  "stored_bytes": 2111198
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "compress": 9.9642,
+                  "encode": 16.1888,
+                  "insert": 10.2994,
+                  "recovery_head": 0.356
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 36.8931
+              },
+              {
+                "fields": {
+                  "snapshot": true
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.1086,
+                  "commit": 2.6567000000000003,
+                  "executions_transfers": 0.5098,
+                  "snapshot_control": 37.108200000000004,
+                  "validate": 0.0005
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 40.3848
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 40.5786,
+                  "queue_wait": 0.007500000000000001
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 40.591
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.6059,
+                "authorization": 0.1931,
+                "candidate": 0.018099999999999998,
+                "guards": 0.2219,
+                "install": 0.0087,
+                "journal": 14.0133,
+                "room_wait": 12.9029
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 28.0656
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {
+                  "command_seq": 3800,
+                  "json_bytes": 3985123,
+                  "room": "live-study",
+                  "stored_bytes": 579519
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "compress": 3.0684,
+                  "encode": 5.0986,
+                  "insert": 3.2382,
+                  "recovery_head": 0.5256
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 11.932
+              },
+              {
+                "fields": {
+                  "snapshot": true
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.08009999999999999,
+                  "commit": 0.39149999999999996,
+                  "executions_transfers": 1.1441000000000001,
+                  "snapshot_control": 12.1358,
+                  "validate": 0.0012
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 13.753400000000001
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 13.940900000000001,
+                  "queue_wait": 0.022799999999999997
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 13.9707
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.6763,
+                "authorization": 0.2999,
+                "candidate": 0.0178,
+                "guards": 0.2742,
+                "install": 0.0084,
+                "journal": 1.6752,
+                "room_wait": 24.3143
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 27.333099999999998
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 6.1476,
+                  "queue_wait": 0.0223
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 6.1734
+              },
+              {
+                "fields": {
+                  "snapshot": false
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.085,
+                  "commit": 0.1773,
+                  "executions_transfers": 1.155,
+                  "snapshot_control": 0.00019999999999999998,
+                  "validate": 0.0006
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.4186999999999999
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.5991,
+                  "queue_wait": 0.0112
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.6132
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.6099,
+                "authorization": 0.3215,
+                "candidate": 0.1398,
+                "guards": 0.3512,
+                "install": 0.0066,
+                "journal": 6.496700000000001,
+                "room_wait": 16.9043
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 24.897699999999997
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {
+                  "command_seq": 700,
+                  "json_bytes": 1490782,
+                  "room": "live-study",
+                  "stored_bytes": 181471
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "compress": 1.0112,
+                  "encode": 2.0503,
+                  "insert": 1.1720000000000002,
+                  "recovery_head": 0.6244999999999999
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 4.8606
+              },
+              {
+                "fields": {
+                  "snapshot": true
+                },
+                "kind": "pg_append_executions",
+                "stages_ms": {
+                  "begin_mutation": 0.0851,
+                  "commit": 0.4889,
+                  "executions_transfers": 0.6138,
+                  "snapshot_control": 5.056299999999999,
+                  "validate": 0.00039999999999999996
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 6.2452000000000005
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 6.445,
+                  "queue_wait": 0.0086
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 6.457400000000001
+              }
+            ]
+          }
+        ]
+      },
+      "snapshot_lengths": {
+        "json_bytes": [
+          540761,
+          1490782,
+          1895435,
+          2567797,
+          3225812,
+          3985123,
+          4218269,
+          4822638,
+          5623246,
+          6514269,
+          7339408,
+          8124049,
+          8693048,
+          9250295,
+          9851017,
+          10417931,
+          11040554,
+          11652536,
+          12181681,
+          12757132,
+          13355888,
+          13953434
+        ],
+        "stored_bytes": [
+          44104,
+          181471,
+          240444,
+          350532,
+          458988,
+          579519,
+          615675,
+          711265,
+          837142,
+          980524,
+          1114204,
+          1229192,
+          1311657,
+          1393423,
+          1485345,
+          1569754,
+          1667228,
+          1760320,
+          1838717,
+          1927935,
+          2020250,
+          2111198
+        ],
+        "stored_to_json_ratio_median": 0.15065680778405105
+      }
+    },
+    "after-500-memory": {
+      "journal_job": {
+        "count": 16195,
+        "median_ms": 0.1864,
+        "sum_ms": 4748.7651,
+        "stage_sum_ms": {
+          "operation": 4201.339,
+          "queue_wait": 490.3507
+        },
+        "largest": [
+          {
+            "fields": {},
+            "kind": "journal_job",
+            "stages_ms": {
+              "operation": 16.7494,
+              "queue_wait": 0.0236
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 16.7835
+          },
+          {
+            "fields": {},
+            "kind": "journal_job",
+            "stages_ms": {
+              "operation": 16.7078,
+              "queue_wait": 0.019
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 16.7483
+          },
+          {
+            "fields": {},
+            "kind": "journal_job",
+            "stages_ms": {
+              "operation": 15.4979,
+              "queue_wait": 0.0159
+            },
+            "thread": "marketforge-journal-write",
+            "total_ms": 15.5228
+          }
+        ]
+      },
+      "place": {
+        "count": 126,
+        "p95_ms": 9.1927,
+        "slowest": [
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 1.5517,
+                "authorization": 0.0719,
+                "candidate": 0.011399999999999999,
+                "guards": 0.0303,
+                "install": 0.0088,
+                "journal": 0.1262,
+                "room_wait": 32.9568
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 34.8224
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 1.3156,
+                  "queue_wait": 0.011
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 1.3326
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0029000000000000002,
+                  "queue_wait": 0.0088
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.015000000000000001
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0419,
+                  "queue_wait": 0.0146
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0593
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 1.1242999999999999,
+                "authorization": 0.378,
+                "candidate": 0.0158,
+                "guards": 0.1303,
+                "install": 0.008,
+                "journal": 11.6944,
+                "room_wait": 0.07100000000000001
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 13.540999999999999
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0014,
+                  "queue_wait": 0.3568
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.3606
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0007,
+                  "queue_wait": 0.022500000000000003
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0247
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 11.5783,
+                  "queue_wait": 0.013699999999999999
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 11.5998
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.29100000000000004,
+                "authorization": 0.0323,
+                "candidate": 0.0135,
+                "guards": 0.038099999999999995,
+                "install": 0.0056,
+                "journal": 0.0881,
+                "room_wait": 12.0383
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 12.5333
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 2.4673999999999996,
+                  "queue_wait": 0.0297
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 2.5031
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0021,
+                  "queue_wait": 0.010499999999999999
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0158
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.043300000000000005,
+                  "queue_wait": 0.0231
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0711
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 1.0671000000000002,
+                "authorization": 0.025400000000000002,
+                "candidate": 0.0066,
+                "guards": 0.0279,
+                "install": 0.0081,
+                "journal": 0.1357,
+                "room_wait": 10.911999999999999
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 12.227699999999999
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.5171,
+                  "queue_wait": 0.0165
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.5368
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0023,
+                  "queue_wait": 0.0065
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0115
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0443,
+                  "queue_wait": 0.0087
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0554
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": true,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 1.2516,
+                "authorization": 9.4836,
+                "candidate": 0.0211,
+                "guards": 0.13660000000000003,
+                "install": 0.012,
+                "journal": 0.1762,
+                "room_wait": 0.45990000000000003
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 11.6036
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.1973,
+                  "queue_wait": 8.8591
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 9.0588
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0023,
+                  "queue_wait": 0.09770000000000001
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.1034
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.06899999999999999,
+                  "queue_wait": 0.0294
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.1008
+              }
+            ]
+          }
+        ]
+      },
+      "cancel": {
+        "count": 126,
+        "p95_ms": 8.072799999999999,
+        "slowest": [
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 1.321,
+                "authorization": 0.022699999999999998,
+                "candidate": 0.013,
+                "guards": 0.1828,
+                "install": 0.0085,
+                "journal": 0.149,
+                "room_wait": 52.521499999999996
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 54.2445
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 12.469600000000002,
+                  "queue_wait": 0.024
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 12.5025
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0027,
+                  "queue_wait": 0.106
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.1137
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0672,
+                  "queue_wait": 0.0083
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0781
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 1.0529000000000002,
+                "authorization": 0.0426,
+                "candidate": 0.0235,
+                "guards": 0.0686,
+                "install": 0.0088,
+                "journal": 11.801300000000001,
+                "room_wait": 6.0261000000000005
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 19.1328
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 2.3925,
+                  "queue_wait": 0.018199999999999997
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 2.4181
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0021,
+                  "queue_wait": 0.012700000000000001
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0173
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 11.5548,
+                  "queue_wait": 0.0968
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 11.6592
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.3553,
+                "authorization": 0.0129,
+                "candidate": 0.0117,
+                "guards": 0.1249,
+                "install": 0.0068000000000000005,
+                "journal": 0.056799999999999996,
+                "room_wait": 12.162799999999999
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 12.7739
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.49620000000000003,
+                  "queue_wait": 0.013900000000000001
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.5153
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0013,
+                  "queue_wait": 0.0086
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0112
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0165,
+                  "queue_wait": 0.009000000000000001
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0282
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.4325,
+                "authorization": 0.021500000000000002,
+                "candidate": 0.0135,
+                "guards": 0.0436,
+                "install": 0.018000000000000002,
+                "journal": 0.0892,
+                "room_wait": 12.0502
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 12.7494
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 4.1465,
+                  "queue_wait": 0.019
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 4.1720999999999995
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0043,
+                  "queue_wait": 0.015099999999999999
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0281
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0211,
+                  "queue_wait": 0.0088
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0327
+              }
+            ]
+          },
+          {
+            "order": {
+              "fields": {
+                "allocates_id": false,
+                "room": "live-study"
+              },
+              "kind": "order",
+              "stages_ms": {
+                "apply": 0.7565000000000001,
+                "authorization": 0.114,
+                "candidate": 0.0059,
+                "guards": 0.0305,
+                "install": 0.0038,
+                "journal": 11.0625,
+                "room_wait": 0.191
+              },
+              "thread": "tokio-rt-worker",
+              "total_ms": 12.233
+            },
+            "preceding_write_operations": [
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.037200000000000004,
+                  "queue_wait": 0.013900000000000001
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.054
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 0.0005,
+                  "queue_wait": 0.0191
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 0.0216
+              },
+              {
+                "fields": {},
+                "kind": "journal_job",
+                "stages_ms": {
+                  "operation": 10.8843,
+                  "queue_wait": 0.10179999999999999
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 10.9933
+              }
+            ]
+          }
+        ]
+      },
+      "memory_retention_last": {
+        "fields": {
+          "execution_count": 56366,
+          "execution_slots_bytes": 32112640,
+          "ledger_rows": 26590,
+          "mutation_bytes": 1001819711,
+          "mutation_capacity": 67527782,
+          "mutation_count": 15100,
+          "orders": 52892,
+          "position_rows": 26590,
+          "snapshot_count": 1,
+          "trades": 13295
+        },
+        "kind": "memory_retention",
+        "stages_ms": {},
+        "thread": "marketforge-journal-write",
+        "total_ms": 0.0317
+      }
+    }
+  },
+  "final_large_recovery": {
+    "passed": true,
+    "case": "live-4-after-1000-postgres-60s-try1",
+    "bots": 1000,
+    "checkpoint_json_bytes": 12841990,
+    "checkpoint_stored_bytes": 1898948,
+    "clock_matches_live_pause": true,
+    "scheduler_matches_live_pause": true,
+    "all_account_observations_equal_across_restart": true,
+    "server_hard_stopped": true,
+    "database_restarted": true,
+    "state_sha256": "33cc6435a959a302742e4cf8b228ad2b8920730f5b89920073aba8a438c90718"
+  },
+  "initial_stage_preserved": {
+    "matrix": {
+      "passed": true,
+      "retained": 22,
+      "excluded": 0,
+      "compiler_samples_retained": 0,
+      "baseline_guard_cases": [
+        "live-12-before-500-memory-60s-try1"
+      ],
+      "fixed_equal": true,
+      "query_tables_equal": true,
+      "fixed": {
+        "postgres": {
+          "before": {
+            "elapsed_seconds": {
+              "median": 2.350444350000089,
+              "values": [
+                2.3719427000005453,
+                2.3289459999996325
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 26.251953125,
+              "values": [
+                26.34375,
+                26.16015625
+              ]
+            },
+            "service_cpu_seconds": {
+              "median": 1.2109375,
+              "values": [
+                1.125,
+                1.296875
+              ]
+            }
+          },
+          "after": {
+            "elapsed_seconds": {
+              "median": 2.3608283499997924,
+              "values": [
+                2.3500318999995216,
+                2.3716248000000633
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 26.40234375,
+              "values": [
+                26.3984375,
+                26.40625
+              ]
+            },
+            "service_cpu_seconds": {
+              "median": 1.5,
+              "values": [
+                1.453125,
+                1.546875
+              ]
+            }
+          }
+        },
+        "memory": {
+          "before": {
+            "elapsed_seconds": {
+              "median": 0.6283825000000434,
+              "values": [
+                0.6283825000000434
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 24.47265625,
+              "values": [
+                24.47265625
+              ]
+            },
+            "service_cpu_seconds": {
+              "median": 0.40625,
+              "values": [
+                0.40625
+              ]
+            }
+          },
+          "after": {
+            "elapsed_seconds": {
+              "median": 0.6269095999996352,
+              "values": [
+                0.6269095999996352
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 24.2265625,
+              "values": [
+                24.2265625
+              ]
+            },
+            "service_cpu_seconds": {
+              "median": 0.5,
+              "values": [
+                0.5
+              ]
+            }
+          }
+        }
+      },
+      "live": [
+        {
+          "storage": "postgres",
+          "bots": 500,
+          "seconds": 60,
+          "before": {
+            "runs": 2,
+            "labels": [
+              "live-0-before-500-postgres-60s-try1",
+              "live-3-before-500-postgres-60s-try1"
+            ],
+            "errors": [
+              [],
+              []
+            ],
+            "steps_per_second": {
+              "median": 37.153234615674855,
+              "values": [
+                37.66146925837096,
+                36.64499997297875
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 175.138671875,
+              "values": [
+                154.125,
+                196.15234375
+              ]
+            },
+            "journal_await_fraction_of_wall": {
+              "median": 0.47197691291611704,
+              "values": [
+                0.46613133898811737,
+                0.4778224868441167
+              ]
+            },
+            "host_cpu_mean": {
+              "median": 17.083700153320486,
+              "values": [
+                17.84502143187828,
+                16.322378874762688
+              ]
+            },
+            "measurement_seconds": {
+              "median": 60.00823344999981,
+              "values": [
+                60.00828019999972,
+                60.0081866999999
+              ]
+            },
+            "place_p95_ms": {
+              "median": 39.42475000030754,
+              "values": [
+                26.471199999832606,
+                52.378300000782474
+              ]
+            },
+            "cancel_p95_ms": {
+              "median": 17.48200000020006,
+              "values": [
+                8.666700000503624,
+                26.297299999896495
+              ]
+            },
+            "view_p95_ms": {
+              "median": 2.4458499997308536,
+              "values": [
+                2.3915000001579756,
+                2.5001999993037316
+              ]
+            }
+          },
+          "after": {
+            "runs": 2,
+            "labels": [
+              "live-1-after-500-postgres-60s-try1",
+              "live-2-after-500-postgres-60s-try1"
+            ],
+            "errors": [
+              [],
+              []
+            ],
+            "steps_per_second": {
+              "median": 38.26036899055098,
+              "values": [
+                38.695958658571044,
+                37.824779322530915
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 149.57421875,
+              "values": [
+                132.1875,
+                166.9609375
+              ]
+            },
+            "journal_await_fraction_of_wall": {
+              "median": 0.441871200010853,
+              "values": [
+                0.45359372742709797,
+                0.43014867259460804
+              ]
+            },
+            "host_cpu_mean": {
+              "median": 17.04667989849115,
+              "values": [
+                17.046405513718845,
+                17.046954283263453
+              ]
+            },
+            "measurement_seconds": {
+              "median": 60.00991759999988,
+              "values": [
+                60.00626629999988,
+                60.01356889999988
+              ]
+            },
+            "place_p95_ms": {
+              "median": 28.45210000032239,
+              "values": [
+                20.27189999989787,
+                36.63230000074691
+              ]
+            },
+            "cancel_p95_ms": {
+              "median": 7.807400000274356,
+              "values": [
+                4.7805000003791065,
+                10.834300000169605
+              ]
+            },
+            "view_p95_ms": {
+              "median": 2.386850000220875,
+              "values": [
+                2.350700000533834,
+                2.4229999999079155
+              ]
+            }
+          }
+        },
+        {
+          "storage": "postgres",
+          "bots": 1000,
+          "seconds": 60,
+          "before": {
+            "runs": 2,
+            "labels": [
+              "live-5-before-1000-postgres-60s-try1",
+              "live-6-before-1000-postgres-60s-try1"
+            ],
+            "errors": [
+              [],
+              []
+            ],
+            "steps_per_second": {
+              "median": 0.999929318812321,
+              "values": [
+                0.999907348585092,
+                0.99995128903955
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 222.1484375,
+              "values": [
+                232.60546875,
+                211.69140625
+              ]
+            },
+            "journal_await_fraction_of_wall": {
+              "median": 0.10860782565963305,
+              "values": [
+                0.1137905561670669,
+                0.10342509515219919
+              ]
+            },
+            "host_cpu_mean": {
+              "median": 9.232139893244543,
+              "values": [
+                9.13104617087776,
+                9.333233615611329
+              ]
+            },
+            "measurement_seconds": {
+              "median": 60.00424119999934,
+              "values": [
+                60.00555959999929,
+                60.002922799999396
+              ]
+            },
+            "place_p95_ms": {
+              "median": 19.8261000000457,
+              "values": [
+                15.639799999917159,
+                24.01240000017424
+              ]
+            },
+            "cancel_p95_ms": {
+              "median": 24.422449999747187,
+              "values": [
+                23.589200000060373,
+                25.255699999434
+              ]
+            },
+            "view_p95_ms": {
+              "median": 3.1558999999106163,
+              "values": [
+                2.9461000003720983,
+                3.3656999994491343
+              ]
+            }
+          },
+          "after": {
+            "runs": 2,
+            "labels": [
+              "live-4-after-1000-postgres-60s-try1",
+              "live-7-after-1000-postgres-60s-try1"
+            ],
+            "errors": [
+              [],
+              []
+            ],
+            "steps_per_second": {
+              "median": 0.9998700854096825,
+              "values": [
+                0.9999021679054015,
+                0.9998380029139633
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 209.2421875,
+              "values": [
+                215.90625,
+                202.578125
+              ]
+            },
+            "journal_await_fraction_of_wall": {
+              "median": 0.11145417416555906,
+              "values": [
+                0.11942171558031299,
+                0.10348663275080512
+              ]
+            },
+            "host_cpu_mean": {
+              "median": 10.525988827385554,
+              "values": [
+                9.303239274357079,
+                11.748738380414027
+              ]
+            },
+            "measurement_seconds": {
+              "median": 60.007795949999945,
+              "values": [
+                60.00587049999922,
+                60.00972140000067
+              ]
+            },
+            "place_p95_ms": {
+              "median": 27.963049999470968,
+              "values": [
+                23.192899999230576,
+                32.73319999971136
+              ]
+            },
+            "cancel_p95_ms": {
+              "median": 21.33464999997159,
+              "values": [
+                24.126799999976356,
+                18.54249999996682
+              ]
+            },
+            "view_p95_ms": {
+              "median": 3.1985999999051273,
+              "values": [
+                2.989799999340903,
+                3.4074000004693517
+              ]
+            }
+          }
+        },
+        {
+          "storage": "memory",
+          "bots": 500,
+          "seconds": 30,
+          "before": {
+            "runs": 2,
+            "labels": [
+              "live-8-before-500-memory-30s-try1",
+              "live-11-before-500-memory-30s-try1"
+            ],
+            "errors": [
+              [],
+              []
+            ],
+            "steps_per_second": {
+              "median": 39.98876610178746,
+              "values": [
+                39.99572752306633,
+                39.981804680508596
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 1261.974609375,
+              "values": [
+                1270.6875,
+                1253.26171875
+              ]
+            },
+            "journal_await_fraction_of_wall": {
+              "median": 0.10188047104830689,
+              "values": [
+                0.10099061184620578,
+                0.102770330250408
+              ]
+            },
+            "host_cpu_mean": {
+              "median": 13.82555246798109,
+              "values": [
+                13.784786921902136,
+                13.866318014060045
+              ]
+            },
+            "measurement_seconds": {
+              "median": 30.008428699999968,
+              "values": [
+                30.003204700000424,
+                30.01365269999951
+              ]
+            },
+            "place_p95_ms": {
+              "median": 8.804099999906612,
+              "values": [
+                8.963700000094832,
+                8.644499999718391
+              ]
+            },
+            "cancel_p95_ms": {
+              "median": 2.7096499993604084,
+              "values": [
+                2.895199999329634,
+                2.524099999391183
+              ]
+            },
+            "view_p95_ms": {
+              "median": 2.281450000282348,
+              "values": [
+                2.2260000005189795,
+                2.3369000000457163
+              ]
+            }
+          },
+          "after": {
+            "runs": 2,
+            "labels": [
+              "live-9-after-500-memory-30s-try1",
+              "live-10-after-500-memory-30s-try1"
+            ],
+            "errors": [
+              [],
+              []
+            ],
+            "steps_per_second": {
+              "median": 40.024101992409086,
+              "values": [
+                40.031457859532416,
+                40.016746125285756
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 215.271484375,
+              "values": [
+                224.51171875,
+                206.03125
+              ]
+            },
+            "journal_await_fraction_of_wall": {
+              "median": 0.10269564017727195,
+              "values": [
+                0.10294861019094538,
+                0.10244267016359852
+              ]
+            },
+            "host_cpu_mean": {
+              "median": 13.923437039632443,
+              "values": [
+                13.268841401742485,
+                14.578032677522401
+              ]
+            },
+            "measurement_seconds": {
+              "median": 30.0069203500002,
+              "values": [
+                30.001405500000146,
+                30.012435200000255
+              ]
+            },
+            "place_p95_ms": {
+              "median": 6.4910999999483465,
+              "values": [
+                6.088999999519729,
+                6.8932000003769645
+              ]
+            },
+            "cancel_p95_ms": {
+              "median": 2.76609999991706,
+              "values": [
+                2.4616999999125255,
+                3.0704999999215943
+              ]
+            },
+            "view_p95_ms": {
+              "median": 2.404800000022078,
+              "values": [
+                2.191800000218791,
+                2.6177999998253654
+              ]
+            }
+          }
+        },
+        {
+          "storage": "memory",
+          "bots": 500,
+          "seconds": 60,
+          "before": {
+            "runs": 1,
+            "labels": [
+              "live-12-before-500-memory-60s-try1"
+            ],
+            "errors": [
+              [
+                {
+                  "kind": "memory_guard"
+                }
+              ]
+            ],
+            "steps_per_second": {
+              "median": 40.035544040691605,
+              "values": [
+                40.035544040691605
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 2061.08203125,
+              "values": [
+                2061.08203125
+              ]
+            },
+            "journal_await_fraction_of_wall": {
+              "median": 0.10526263503981856,
+              "values": [
+                0.10526263503981856
+              ]
+            },
+            "host_cpu_mean": {
+              "median": 14.263296215118647,
+              "values": [
+                14.263296215118647
+              ]
+            },
+            "measurement_seconds": {
+              "median": 51.579166699999405,
+              "values": [
+                51.579166699999405
+              ]
+            },
+            "place_p95_ms": {
+              "median": 3.3822999994299607,
+              "values": [
+                3.3822999994299607
+              ]
+            },
+            "cancel_p95_ms": {
+              "median": 2.534199999900011,
+              "values": [
+                2.534199999900011
+              ]
+            },
+            "view_p95_ms": {
+              "median": 2.414900000076159,
+              "values": [
+                2.414900000076159
+              ]
+            }
+          },
+          "after": {
+            "runs": 1,
+            "labels": [
+              "live-13-after-500-memory-60s-try1"
+            ],
+            "errors": [
+              []
+            ],
+            "steps_per_second": {
+              "median": 39.98102636147755,
+              "values": [
+                39.98102636147755
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 424.25390625,
+              "values": [
+                424.25390625
+              ]
+            },
+            "journal_await_fraction_of_wall": {
+              "median": 0.11693741918268506,
+              "values": [
+                0.11693741918268506
+              ]
+            },
+            "host_cpu_mean": {
+              "median": 13.909102786838835,
+              "values": [
+                13.909102786838835
+              ]
+            },
+            "measurement_seconds": {
+              "median": 60.003462099999524,
+              "values": [
+                60.003462099999524
+              ]
+            },
+            "place_p95_ms": {
+              "median": 5.6147999994209385,
+              "values": [
+                5.6147999994209385
+              ]
+            },
+            "cancel_p95_ms": {
+              "median": 4.500199999711185,
+              "values": [
+                4.500199999711185
+              ]
+            },
+            "view_p95_ms": {
+              "median": 2.1329000001060194,
+              "values": [
+                2.1329000001060194
+              ]
+            }
+          }
+        },
+        {
+          "storage": "postgres",
+          "bots": 38,
+          "seconds": 60,
+          "before": {
+            "runs": 1,
+            "labels": [
+              "live-14-before-38-postgres-60s-try1"
+            ],
+            "errors": [
+              []
+            ],
+            "steps_per_second": {
+              "median": 0.9998425781188728,
+              "values": [
+                0.9998425781188728
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 28.0703125,
+              "values": [
+                28.0703125
+              ]
+            },
+            "journal_await_fraction_of_wall": {
+              "median": 0.008233686966765949,
+              "values": [
+                0.008233686966765949
+              ]
+            },
+            "host_cpu_mean": {
+              "median": 8.066242668674619,
+              "values": [
+                8.066242668674619
+              ]
+            },
+            "measurement_seconds": {
+              "median": 60.00944680000066,
+              "values": [
+                60.00944680000066
+              ]
+            },
+            "place_p95_ms": {
+              "median": 13.162600000214297,
+              "values": [
+                13.162600000214297
+              ]
+            },
+            "cancel_p95_ms": {
+              "median": 3.1517999996140134,
+              "values": [
+                3.1517999996140134
+              ]
+            },
+            "view_p95_ms": {
+              "median": 1.261099999283033,
+              "values": [
+                1.261099999283033
+              ]
+            }
+          },
+          "after": {
+            "runs": 1,
+            "labels": [
+              "live-15-after-38-postgres-60s-try1"
+            ],
+            "errors": [
+              []
+            ],
+            "steps_per_second": {
+              "median": 0.9998698436095667,
+              "values": [
+                0.9998698436095667
+              ]
+            },
+            "peak_memory_mib": {
+              "median": 27.21875,
+              "values": [
+                27.21875
+              ]
+            },
+            "journal_await_fraction_of_wall": {
+              "median": 0.008371060311175835,
+              "values": [
+                0.008371060311175835
+              ]
+            },
+            "host_cpu_mean": {
+              "median": 6.801770091641222,
+              "values": [
+                6.801770091641222
+              ]
+            },
+            "measurement_seconds": {
+              "median": 60.00781039999947,
+              "values": [
+                60.00781039999947
+              ]
+            },
+            "place_p95_ms": {
+              "median": 12.87780000075145,
+              "values": [
+                12.87780000075145
+              ]
+            },
+            "cancel_p95_ms": {
+              "median": 2.4713000002520857,
+              "values": [
+                2.4713000002520857
+              ]
+            },
+            "view_p95_ms": {
+              "median": 1.0881999996854574,
+              "values": [
+                1.0881999996854574
+              ]
+            }
+          }
+        }
+      ],
+      "binaries": {
+        "before": {
+          "path": "E:\\CodexData\\worktrees\\postgres-write-profile\\MarketForge\\.local\\pg-journal-study\\before.exe",
+          "sha256": "ecc2a88af26038e665c4df89b3cd776039b118a40e806697db0f8d4aa2e1abd8"
+        },
+        "after": {
+          "path": "E:\\CodexData\\worktrees\\postgres-write-profile\\MarketForge\\.local\\pg-journal-study\\after.exe",
+          "sha256": "d0197db8762bfc6cebdd88d1e8e348ca1b1261b7a9bea5cd50a18525df38de2e"
+        }
+      },
+      "crash_recovery": {
+        "passed": true,
+        "state_equal": true,
+        "database_restarted": true,
+        "server_hard_stopped": true,
+        "projection_blocked_through_recovery": true,
+        "idempotent_retries": 4,
+        "pending_before": 6,
+        "pending_after": 0,
+        "query_counts": {
+          "orders": 6,
+          "trades": 2,
+          "order_events": 16,
+          "account_ledger": 4,
+          "position_snapshots": 4,
+          "transfers": 0
+        },
+        "state_sha256": "ea3d3165d93d66d340f4cac6693d92397d0c92fa2c1015d05a945bfb350c8d91"
+      }
+    },
+    "1000_followup": {
+      "retained_new_repeats": 4,
+      "excluded": 0,
+      "initial_matrix_preserved": true,
+      "diagnostic_cases": {
+        "before": {
+          "place": {
+            "count_above_10ms": 56,
+            "slowest": [
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.8667,
+                  "authorization": 0.3215,
+                  "candidate": 0.0293,
+                  "guards": 0.2713,
+                  "install": 0.0096,
+                  "journal": 0.983,
+                  "room_wait": 106.9914
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 109.52040000000001
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.7755000000000001,
+                  "authorization": 0.26289999999999997,
+                  "candidate": 0.0211,
+                  "guards": 0.2282,
+                  "install": 0.0099,
+                  "journal": 0.784,
+                  "room_wait": 84.50009999999999
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 86.63289999999999
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.6884,
+                  "authorization": 0.25989999999999996,
+                  "candidate": 0.0257,
+                  "guards": 0.3011,
+                  "install": 0.01,
+                  "journal": 0.8812,
+                  "room_wait": 81.7825
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 83.9881
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.6135999999999999,
+                  "authorization": 0.2523,
+                  "candidate": 0.0166,
+                  "guards": 0.2455,
+                  "install": 0.012,
+                  "journal": 0.7919999999999999,
+                  "room_wait": 80.4222
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 82.40820000000001
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.4129,
+                  "authorization": 0.262,
+                  "candidate": 0.0108,
+                  "guards": 0.23729999999999998,
+                  "install": 0.0208,
+                  "journal": 40.741,
+                  "room_wait": 5.229
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 47.054
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.9742999999999999,
+                  "authorization": 0.619,
+                  "candidate": 0.0158,
+                  "guards": 0.3484,
+                  "install": 0.0096,
+                  "journal": 0.9235,
+                  "room_wait": 42.000299999999996
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 44.9786
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.9144,
+                  "authorization": 0.2586,
+                  "candidate": 0.0339,
+                  "guards": 0.2042,
+                  "install": 0.0112,
+                  "journal": 40.6087,
+                  "room_wait": 0.0168
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 42.1428
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.7822,
+                  "authorization": 0.26380000000000003,
+                  "candidate": 0.0101,
+                  "guards": 0.17789999999999997,
+                  "install": 0.010499999999999999,
+                  "journal": 24.6934,
+                  "room_wait": 6.9394
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 33.005399999999995
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.8455,
+                  "authorization": 0.368,
+                  "candidate": 0.0131,
+                  "guards": 0.2532,
+                  "install": 0.0097,
+                  "journal": 0.8358,
+                  "room_wait": 17.8585
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 20.2841
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 1.5228,
+                  "authorization": 6.7663,
+                  "candidate": 0.1121,
+                  "guards": 4.6565,
+                  "install": 0.0184,
+                  "journal": 3.2313,
+                  "room_wait": 0.1283
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 16.497899999999998
+              }
+            ],
+            "stage_sum_ms": {
+              "apply": 43.3899,
+              "authorization": 24.5564,
+              "candidate": 1.4616,
+              "guards": 15.9307,
+              "install": 1.0846,
+              "journal": 540.8534999999999,
+              "room_wait": 503.3938
+            }
+          },
+          "cancel": {
+            "count_above_10ms": 24,
+            "slowest": [
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.6518,
+                  "authorization": 0.1803,
+                  "candidate": 0.0196,
+                  "guards": 0.2557,
+                  "install": 0.012700000000000001,
+                  "journal": 0.7488,
+                  "room_wait": 38.5474
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 40.4719
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.6497,
+                  "authorization": 0.19090000000000001,
+                  "candidate": 0.015400000000000002,
+                  "guards": 0.1373,
+                  "install": 0.009000000000000001,
+                  "journal": 38.660399999999996,
+                  "room_wait": 0.0146
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 39.7632
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.7049,
+                  "authorization": 0.1917,
+                  "candidate": 0.011399999999999999,
+                  "guards": 0.1706,
+                  "install": 0.0081,
+                  "journal": 24.6546,
+                  "room_wait": 0.011300000000000001
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 25.8106
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.5565,
+                  "authorization": 0.2037,
+                  "candidate": 0.037700000000000004,
+                  "guards": 0.2197,
+                  "install": 0.0074,
+                  "journal": 0.6421,
+                  "room_wait": 23.6067
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 25.3169
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.6674,
+                  "authorization": 0.2018,
+                  "candidate": 0.0166,
+                  "guards": 0.2414,
+                  "install": 0.011300000000000001,
+                  "journal": 0.7736999999999999,
+                  "room_wait": 19.1956
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 21.1985
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.7175,
+                  "authorization": 0.283,
+                  "candidate": 0.0152,
+                  "guards": 0.2519,
+                  "install": 0.0101,
+                  "journal": 0.6764,
+                  "room_wait": 17.054
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 19.0857
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.8536,
+                  "authorization": 0.28350000000000003,
+                  "candidate": 0.0176,
+                  "guards": 0.23709999999999998,
+                  "install": 0.010499999999999999,
+                  "journal": 0.7515999999999999,
+                  "room_wait": 16.500999999999998
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 18.7395
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.5378,
+                  "authorization": 0.2379,
+                  "candidate": 0.0195,
+                  "guards": 0.38630000000000003,
+                  "install": 0.0092,
+                  "journal": 1.1245999999999998,
+                  "room_wait": 15.798699999999998
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 18.2209
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.4816,
+                  "authorization": 0.16090000000000002,
+                  "candidate": 0.013,
+                  "guards": 0.1583,
+                  "install": 0.0065,
+                  "journal": 0.694,
+                  "room_wait": 16.2085
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 17.7684
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.5952999999999999,
+                  "authorization": 0.20379999999999998,
+                  "candidate": 0.028900000000000002,
+                  "guards": 0.36479999999999996,
+                  "install": 0.0109,
+                  "journal": 1.0417,
+                  "room_wait": 14.4849
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 16.7817
+              }
+            ],
+            "stage_sum_ms": {
+              "apply": 13.1662,
+              "authorization": 10.1324,
+              "candidate": 0.3993,
+              "guards": 5.8815,
+              "install": 0.2276,
+              "journal": 79.7983,
+              "room_wait": 322.5253
+            }
+          },
+          "pg_snapshot": {
+            "count_above_10ms": 23,
+            "slowest": [
+              {
+                "fields": {
+                  "command_seq": 17016,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 15.517100000000001,
+                  "insert": 40.9972,
+                  "recovery_head": 0.6615
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 57.5612
+              },
+              {
+                "fields": {
+                  "command_seq": 18025,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 17.7788,
+                  "insert": 36.3761,
+                  "recovery_head": 0.766
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 55.373
+              },
+              {
+                "fields": {
+                  "command_seq": 16020,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 15.7801,
+                  "insert": 35.5385,
+                  "recovery_head": 0.9839
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 52.765600000000006
+              },
+              {
+                "fields": {
+                  "command_seq": 15010,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 14.1904,
+                  "insert": 30.6652,
+                  "recovery_head": 0.5091
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 45.7207
+              },
+              {
+                "fields": {
+                  "command_seq": 14023,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 13.910300000000001,
+                  "insert": 27.6143,
+                  "recovery_head": 0.602
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 42.4575
+              },
+              {
+                "fields": {
+                  "command_seq": 13003,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 13.5847,
+                  "insert": 26.5986,
+                  "recovery_head": 0.6859000000000001
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 41.2221
+              },
+              {
+                "fields": {
+                  "command_seq": 11013,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 12.7396,
+                  "insert": 26.4486,
+                  "recovery_head": 0.5675
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 40.1199
+              },
+              {
+                "fields": {
+                  "command_seq": 12014,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 12.524000000000001,
+                  "insert": 24.6144,
+                  "recovery_head": 0.5072
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 37.9601
+              },
+              {
+                "fields": {
+                  "command_seq": 9030,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 11.789000000000001,
+                  "insert": 25.1029,
+                  "recovery_head": 0.6114
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 37.8364
+              },
+              {
+                "fields": {
+                  "command_seq": 10300,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 11.8434,
+                  "insert": 24.5719,
+                  "recovery_head": 0.5756
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 37.2939
+              }
+            ],
+            "stage_sum_ms": {
+              "encode": 236.0394,
+              "insert": 524.9888,
+              "recovery_head": 17.9092
+            }
+          },
+          "single_mutation": {
+            "count_above_10ms": 0,
+            "slowest": [],
+            "stage_sum_ms": {}
+          }
+        },
+        "after": {
+          "place": {
+            "count_above_10ms": 64,
+            "slowest": [
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.7117,
+                  "authorization": 0.3075,
+                  "candidate": 0.024,
+                  "guards": 0.1769,
+                  "install": 0.011,
+                  "journal": 49.9402,
+                  "room_wait": 0.0161
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 51.2894
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.47390000000000004,
+                  "authorization": 0.2384,
+                  "candidate": 0.0133,
+                  "guards": 0.2788,
+                  "install": 0.0073,
+                  "journal": 0.8765999999999999,
+                  "room_wait": 19.594299999999997
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 21.5402
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.38539999999999996,
+                  "authorization": 0.42069999999999996,
+                  "candidate": 0.0106,
+                  "guards": 0.1924,
+                  "install": 0.0083,
+                  "journal": 0.7012,
+                  "room_wait": 16.5626
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 18.314500000000002
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 1.1601000000000001,
+                  "authorization": 0.45489999999999997,
+                  "candidate": 0.0163,
+                  "guards": 0.2842,
+                  "install": 0.02,
+                  "journal": 1.7706,
+                  "room_wait": 14.1861
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 17.986700000000003
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.3733,
+                  "authorization": 0.2323,
+                  "candidate": 0.0106,
+                  "guards": 0.1864,
+                  "install": 0.0084,
+                  "journal": 1.4324999999999999,
+                  "room_wait": 14.466700000000001
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 16.7576
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.6909000000000001,
+                  "authorization": 0.2856,
+                  "candidate": 0.0162,
+                  "guards": 0.2165,
+                  "install": 0.0115,
+                  "journal": 0.8069999999999999,
+                  "room_wait": 12.494
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 14.5817
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 1.3959000000000001,
+                  "authorization": 0.6295,
+                  "candidate": 0.0429,
+                  "guards": 0.4078,
+                  "install": 0.0322,
+                  "journal": 11.8697,
+                  "room_wait": 0.028399999999999998
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 14.5174
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 1.9482,
+                  "authorization": 6.3263,
+                  "candidate": 0.683,
+                  "guards": 3.3552999999999997,
+                  "install": 0.0144,
+                  "journal": 1.9619,
+                  "room_wait": 0.0258
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 14.3436
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 1.3651,
+                  "authorization": 0.35790000000000005,
+                  "candidate": 0.0499,
+                  "guards": 0.382,
+                  "install": 0.022600000000000002,
+                  "journal": 11.411100000000001,
+                  "room_wait": 0.0309
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 13.7017
+              },
+              {
+                "fields": {
+                  "allocates_id": true,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.6262000000000001,
+                  "authorization": 0.34400000000000003,
+                  "candidate": 0.0109,
+                  "guards": 0.17909999999999998,
+                  "install": 0.0103,
+                  "journal": 0.8532000000000001,
+                  "room_wait": 11.613800000000001
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 13.6884
+              }
+            ],
+            "stage_sum_ms": {
+              "apply": 51.9661,
+              "authorization": 28.7467,
+              "candidate": 2.2954,
+              "guards": 17.1064,
+              "install": 1.3514,
+              "journal": 568.8027,
+              "room_wait": 175.3665
+            }
+          },
+          "cancel": {
+            "count_above_10ms": 25,
+            "slowest": [
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.4671,
+                  "authorization": 0.24669999999999997,
+                  "candidate": 0.0089,
+                  "guards": 0.27280000000000004,
+                  "install": 0.0098,
+                  "journal": 55.1594,
+                  "room_wait": 4.794600000000001
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 61.013400000000004
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.7917,
+                  "authorization": 0.31629999999999997,
+                  "candidate": 0.0196,
+                  "guards": 0.496,
+                  "install": 0.0194,
+                  "journal": 1.2071,
+                  "room_wait": 52.5263
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 55.5211
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.8651000000000001,
+                  "authorization": 0.4486,
+                  "candidate": 0.0185,
+                  "guards": 0.4148,
+                  "install": 0.0095,
+                  "journal": 0.9458,
+                  "room_wait": 21.267500000000002
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 24.0398
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.6235,
+                  "authorization": 0.1831,
+                  "candidate": 0.0123,
+                  "guards": 0.2656,
+                  "install": 0.0062,
+                  "journal": 0.8096,
+                  "room_wait": 21.2572
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 23.2207
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.7888,
+                  "authorization": 0.24000000000000002,
+                  "candidate": 0.0122,
+                  "guards": 0.2229,
+                  "install": 0.0072,
+                  "journal": 0.63,
+                  "room_wait": 20.2198
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 22.1955
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.3642,
+                  "authorization": 0.1517,
+                  "candidate": 0.009300000000000001,
+                  "guards": 0.18100000000000002,
+                  "install": 0.0108,
+                  "journal": 0.6249,
+                  "room_wait": 19.7359
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 21.1144
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.6286,
+                  "authorization": 0.2392,
+                  "candidate": 0.0172,
+                  "guards": 0.24509999999999998,
+                  "install": 0.0121,
+                  "journal": 0.7703,
+                  "room_wait": 18.6508
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 20.6937
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.9108999999999999,
+                  "authorization": 0.3856,
+                  "candidate": 0.6203,
+                  "guards": 0.33149999999999996,
+                  "install": 0.0099,
+                  "journal": 1.4134,
+                  "room_wait": 16.6247
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 20.3446
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.5992000000000001,
+                  "authorization": 0.2261,
+                  "candidate": 0.0163,
+                  "guards": 0.2257,
+                  "install": 0.01,
+                  "journal": 0.7623000000000001,
+                  "room_wait": 17.4069
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 19.2897
+              },
+              {
+                "fields": {
+                  "allocates_id": false,
+                  "room": "live-study"
+                },
+                "kind": "order",
+                "stages_ms": {
+                  "apply": 0.6947,
+                  "authorization": 0.3208,
+                  "candidate": 0.0149,
+                  "guards": 0.313,
+                  "install": 0.011300000000000001,
+                  "journal": 0.8867,
+                  "room_wait": 16.4879
+                },
+                "thread": "tokio-rt-worker",
+                "total_ms": 18.8056
+              }
+            ],
+            "stage_sum_ms": {
+              "apply": 16.163,
+              "authorization": 6.3595999999999995,
+              "candidate": 0.9813999999999999,
+              "guards": 6.5272,
+              "install": 0.252,
+              "journal": 76.2226,
+              "room_wait": 401.7171
+            }
+          },
+          "pg_snapshot": {
+            "count_above_10ms": 23,
+            "slowest": [
+              {
+                "fields": {
+                  "command_seq": 20002,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 19.726,
+                  "insert": 63.1046,
+                  "recovery_head": 1.1126
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 85.0275
+              },
+              {
+                "fields": {
+                  "command_seq": 21010,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 20.4357,
+                  "insert": 43.216699999999996,
+                  "recovery_head": 1.1873
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 65.7873
+              },
+              {
+                "fields": {
+                  "command_seq": 19005,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 19.735699999999998,
+                  "insert": 38.0661,
+                  "recovery_head": 1.1155
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 59.795300000000005
+              },
+              {
+                "fields": {
+                  "command_seq": 18009,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 18.0199,
+                  "insert": 36.039300000000004,
+                  "recovery_head": 1.0861
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 55.877900000000004
+              },
+              {
+                "fields": {
+                  "command_seq": 17016,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 17.8007,
+                  "insert": 35.794399999999996,
+                  "recovery_head": 1.1148
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 55.4699
+              },
+              {
+                "fields": {
+                  "command_seq": 16036,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 16.9028,
+                  "insert": 33.9254,
+                  "recovery_head": 1.0394
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 52.538599999999995
+              },
+              {
+                "fields": {
+                  "command_seq": 14006,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 16.0899,
+                  "insert": 34.450599999999994,
+                  "recovery_head": 1.0573
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 52.3556
+              },
+              {
+                "fields": {
+                  "command_seq": 12025,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 16.6141,
+                  "insert": 33.6881,
+                  "recovery_head": 0.9367
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 52.0062
+              },
+              {
+                "fields": {
+                  "command_seq": 15031,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 17.0139,
+                  "insert": 32.4542,
+                  "recovery_head": 1.045
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 51.4164
+              },
+              {
+                "fields": {
+                  "command_seq": 14900,
+                  "room": "live-study"
+                },
+                "kind": "pg_snapshot",
+                "stages_ms": {
+                  "encode": 16.819899999999997,
+                  "insert": 32.3792,
+                  "recovery_head": 1.2751
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 51.401799999999994
+              }
+            ],
+            "stage_sum_ms": {
+              "encode": 308.546,
+              "insert": 637.4082999999999,
+              "recovery_head": 25.5526
+            }
+          },
+          "single_mutation": {
+            "count_above_10ms": 14,
+            "slowest": [
+              {
+                "fields": {
+                  "single_row": true,
+                  "snapshot": false
+                },
+                "kind": "pg_append_room_mutation",
+                "stages_ms": {
+                  "insert_commit": 17.0931,
+                  "validate": 0.3483
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 17.4435
+              },
+              {
+                "fields": {
+                  "single_row": true,
+                  "snapshot": false
+                },
+                "kind": "pg_append_room_mutation",
+                "stages_ms": {
+                  "insert_commit": 10.3712,
+                  "validate": 0.0049
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 10.3781
+              },
+              {
+                "fields": {
+                  "single_row": true,
+                  "snapshot": false
+                },
+                "kind": "pg_append_room_mutation",
+                "stages_ms": {
+                  "insert_commit": 10.3295,
+                  "validate": 0.0068000000000000005
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 10.337900000000001
+              },
+              {
+                "fields": {
+                  "single_row": true,
+                  "snapshot": false
+                },
+                "kind": "pg_append_room_mutation",
+                "stages_ms": {
+                  "insert_commit": 10.2632,
+                  "validate": 0.0118
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 10.2763
+              },
+              {
+                "fields": {
+                  "single_row": true,
+                  "snapshot": false
+                },
+                "kind": "pg_append_room_mutation",
+                "stages_ms": {
+                  "insert_commit": 10.2667,
+                  "validate": 0.0047
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 10.2732
+              },
+              {
+                "fields": {
+                  "single_row": true,
+                  "snapshot": false
+                },
+                "kind": "pg_append_room_mutation",
+                "stages_ms": {
+                  "insert_commit": 10.1557,
+                  "validate": 0.0079
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 10.1647
+              },
+              {
+                "fields": {
+                  "single_row": true,
+                  "snapshot": false
+                },
+                "kind": "pg_append_room_mutation",
+                "stages_ms": {
+                  "insert_commit": 10.141,
+                  "validate": 0.0122
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 10.154200000000001
+              },
+              {
+                "fields": {
+                  "single_row": true,
+                  "snapshot": false
+                },
+                "kind": "pg_append_room_mutation",
+                "stages_ms": {
+                  "insert_commit": 10.1444,
+                  "validate": 0.0046
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 10.1503
+              },
+              {
+                "fields": {
+                  "single_row": true,
+                  "snapshot": false
+                },
+                "kind": "pg_append_room_mutation",
+                "stages_ms": {
+                  "insert_commit": 10.1128,
+                  "validate": 0.0042
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 10.118
+              },
+              {
+                "fields": {
+                  "single_row": true,
+                  "snapshot": false
+                },
+                "kind": "pg_append_room_mutation",
+                "stages_ms": {
+                  "insert_commit": 10.0582,
+                  "validate": 0.0045000000000000005
+                },
+                "thread": "marketforge-journal-write",
+                "total_ms": 10.0669
+              }
+            ],
+            "stage_sum_ms": {
+              "insert_commit": 149.0274,
+              "validate": 0.4445
+            }
+          }
+        }
+      },
+      "before": {
+        "labels": [
+          "live-5-before-1000-postgres-60s-try1",
+          "live-6-before-1000-postgres-60s-try1",
+          "repeat-1-before-try1",
+          "repeat-2-before-try1"
+        ],
+        "steps_per_second": {
+          "values": [
+            0.999907348585092,
+            0.99995128903955,
+            0.999753197593136,
+            0.9998044465819488
+          ],
+          "median": 0.9998558975835203
+        },
+        "peak_memory_mib": {
+          "values": [
+            232.60546875,
+            211.69140625,
+            212.2890625,
+            208.14453125
+          ],
+          "median": 211.990234375
+        },
+        "journal_await_fraction_of_wall": {
+          "values": [
+            0.1137905561670669,
+            0.10342509515219919,
+            0.11838627476958999,
+            0.09548810665540541
+          ],
+          "median": 0.10860782565963305
+        },
+        "place_p95_ms": {
+          "values": [
+            15.639799999917159,
+            24.01240000017424,
+            14.694600000439095,
+            13.763599999947473
+          ],
+          "median": 15.167200000178127
+        },
+        "cancel_p95_ms": {
+          "values": [
+            23.589200000060373,
+            25.255699999434,
+            20.22839999972348,
+            19.425200000114273
+          ],
+          "median": 21.908799999891926
+        },
+        "view_p95_ms": {
+          "values": [
+            2.9461000003720983,
+            3.3656999994491343,
+            2.868599999601429,
+            2.5759000000107335
+          ],
+          "median": 2.9073499999867636
+        }
+      },
+      "after": {
+        "labels": [
+          "live-4-after-1000-postgres-60s-try1",
+          "live-7-after-1000-postgres-60s-try1",
+          "repeat-0-after-try1",
+          "repeat-3-after-try1"
+        ],
+        "steps_per_second": {
+          "values": [
+            0.9999021679054015,
+            0.9998380029139633,
+            0.9997411137061366,
+            0.999737767117457
+          ],
+          "median": 0.99978955831005
+        },
+        "peak_memory_mib": {
+          "values": [
+            215.90625,
+            202.578125,
+            209.87109375,
+            233.90625
+          ],
+          "median": 212.888671875
+        },
+        "journal_await_fraction_of_wall": {
+          "values": [
+            0.11942171558031299,
+            0.10348663275080512,
+            0.12473991484991671,
+            0.11896759460165685
+          ],
+          "median": 0.11919465509098492
+        },
+        "place_p95_ms": {
+          "values": [
+            23.192899999230576,
+            32.73319999971136,
+            18.26119999986986,
+            29.632000000674452
+          ],
+          "median": 26.412449999952514
+        },
+        "cancel_p95_ms": {
+          "values": [
+            24.126799999976356,
+            18.54249999996682,
+            18.608699999276723,
+            17.65590000013617
+          ],
+          "median": 18.575599999621772
+        },
+        "view_p95_ms": {
+          "values": [
+            2.989799999340903,
+            3.4074000004693517,
+            2.752200000031735,
+            2.9550999997809413
+          ],
+          "median": 2.972449999560922
+        }
+      }
+    },
+    "ablation": {
+      "passed": true,
+      "retained": 6,
+      "excluded": 0,
+      "compiler_samples_retained": 0,
+      "groups": [
+        {
+          "bots": 1000,
+          "without-fastpath": {
+            "labels": [
+              "ablation-1000-1-without-fastpath-try1",
+              "ablation-1000-2-without-fastpath-try1"
+            ],
+            "journal_await_fraction_of_wall": {
+              "values": [
+                0.11151873390095939,
+                0.11992022941280993
+              ],
+              "median": 0.11571948165688466
+            },
+            "peak_memory_mib": {
+              "values": [
+                219.1640625,
+                241.4375
+              ],
+              "median": 230.30078125
+            },
+            "steps_per_second": {
+              "values": [
+                0.999815615670525,
+                0.9999948250267566
+              ],
+              "median": 0.9999052203486408
+            },
+            "place_p95_ms": {
+              "values": [
+                21.467299999130773,
+                17.946699999811244
+              ],
+              "median": 19.70699999947101
+            },
+            "cancel_p95_ms": {
+              "values": [
+                18.217099999674247,
+                20.196999999825493
+              ],
+              "median": 19.20704999974987
+            },
+            "view_p95_ms": {
+              "values": [
+                2.6247999994666316,
+                2.7110999999422347
+              ],
+              "median": 2.667949999704433
+            }
+          },
+          "after": {
+            "labels": [
+              "ablation-1000-0-after-try1",
+              "ablation-1000-3-after-try1"
+            ],
+            "journal_await_fraction_of_wall": {
+              "values": [
+                0.13491498472529215,
+                0.11167034747547659
+              ],
+              "median": 0.12329266610038436
+            },
+            "peak_memory_mib": {
+              "values": [
+                242.42578125,
+                235.140625
+              ],
+              "median": 238.783203125
+            },
+            "steps_per_second": {
+              "values": [
+                0.9999292300087667,
+                0.9999865451810513
+              ],
+              "median": 0.999957887594909
+            },
+            "place_p95_ms": {
+              "values": [
+                26.990200000000186,
+                13.647199999468285
+              ],
+              "median": 20.318699999734235
+            },
+            "cancel_p95_ms": {
+              "values": [
+                23.74720000079833,
+                20.417200001247693
+              ],
+              "median": 22.08220000102301
+            },
+            "view_p95_ms": {
+              "values": [
+                2.661200000147801,
+                2.7109999991807854
+              ],
+              "median": 2.686099999664293
+            }
+          }
+        },
+        {
+          "bots": 500,
+          "without-fastpath": {
+            "labels": [
+              "ablation-500-0-without-fastpath-try1"
+            ],
+            "journal_await_fraction_of_wall": {
+              "values": [
+                0.4806970661512586
+              ],
+              "median": 0.4806970661512586
+            },
+            "peak_memory_mib": {
+              "values": [
+                187.00390625
+              ],
+              "median": 187.00390625
+            },
+            "steps_per_second": {
+              "values": [
+                37.90835071177052
+              ],
+              "median": 37.90835071177052
+            },
+            "place_p95_ms": {
+              "values": [
+                21.348199999920325
+              ],
+              "median": 21.348199999920325
+            },
+            "cancel_p95_ms": {
+              "values": [
+                10.88040000104229
+              ],
+              "median": 10.88040000104229
+            },
+            "view_p95_ms": {
+              "values": [
+                1.8737999998847954
+              ],
+              "median": 1.8737999998847954
+            }
+          },
+          "after": {
+            "labels": [
+              "ablation-500-1-after-try1"
+            ],
+            "journal_await_fraction_of_wall": {
+              "values": [
+                0.4620607234138962
+              ],
+              "median": 0.4620607234138962
+            },
+            "peak_memory_mib": {
+              "values": [
+                189.515625
+              ],
+              "median": 189.515625
+            },
+            "steps_per_second": {
+              "values": [
+                37.82726621810389
+              ],
+              "median": 37.82726621810389
+            },
+            "place_p95_ms": {
+              "values": [
+                53.79709999942861
+              ],
+              "median": 53.79709999942861
+            },
+            "cancel_p95_ms": {
+              "values": [
+                6.100500000684406
+              ],
+              "median": 6.100500000684406
+            },
+            "view_p95_ms": {
+              "values": [
+                1.888400000098045
+              ],
+              "median": 1.888400000098045
+            }
+          }
+        }
+      ]
+    },
+    "ablation_build": {
+      "ablation": "single_row_mutation always false; all other frozen inputs identical",
+      "compiled_inputs": {
+        "exchange-server/src/journal.rs": "1b65e51c9e83e57d5557eba0445cde23ce64ad16f2e60d2c5d5cdb2f8cbab4df",
+        "exchange-server/src/write_profile.rs": "65739cf8a6856150c41ca3f6e935b3f7acd247f45a855443de9770b483249dd7",
+        "exchange-server/src/journal/projection.rs": "da4f2a9996e04409fc68ff0d9bfee34d468c9c5977e455032fd6da81c43bb00e",
+        "Cargo.lock": "2e9fe248f963ce32cafcfeae7a282d4858f9767e3d40f24d6e0ebbdc609b9cef",
+        "exchange-server/Cargo.toml": "c1ff6f3d626931688e5162455fcfd743a6ca723aa02fe9b13ec0e7c992ef6f28",
+        "exchange-server/src/journal/stored_mutation.rs": "ab57db19a69d2a0ca04b95d45f1a2e84560b720d4e7de98afb8cdf7d8ec3edd4"
+      },
+      "quiet_before_build": true,
+      "sha256": "d84d977eceeb0b011b16fc84d8a96655b7e007340ca374948530b266841de34d",
+      "source_restored_after_build": true
+    },
+    "large_recovery": {
+      "passed": true,
+      "case": "live-4-after-1000-postgres-60s-try1",
+      "bots": 1000,
+      "checkpoint_json_bytes": 16110534,
+      "clock_matches_live_pause": true,
+      "scheduler_matches_live_pause": true,
+      "all_account_observations_equal_across_restart": true,
+      "server_hard_stopped": true,
+      "database_restarted": true,
+      "state_sha256": "09b63934532a2f593d7e1a760ecaec04fa6a5c037ded93a828cca712660692fa"
+    },
+    "diagnostics": {
+      "before": {
+        "pg_append_room_mutation": {
+          "count": 11445,
+          "sum_ms": 31257.7565,
+          "median_ms": 1.4655,
+          "stage_sum_ms": {
+            "begin_mutation": 14472.0321,
+            "commit": 4196.3906,
+            "executions_transfers": 10316.5521,
+            "snapshot_control": 1675.9025,
+            "validate": 587.395
+          }
+        },
+        "pg_append_executions": {
+          "count": 252,
+          "sum_ms": 847.2181,
+          "median_ms": 2.3016,
+          "stage_sum_ms": {
+            "begin_mutation": 29.046,
+            "commit": 155.3306,
+            "executions_transfers": 500.8094,
+            "snapshot_control": 161.16740000000001,
+            "validate": 0.6353
+          }
+        },
+        "pg_snapshot": {
+          "count": 50,
+          "sum_ms": 1827.6548,
+          "median_ms": 40.129400000000004,
+          "stage_sum_ms": {
+            "encode": 530.3438,
+            "insert": 1241.9336,
+            "recovery_head": 39.1526
+          }
+        },
+        "journal_job": {
+          "count": 12471,
+          "sum_ms": 35884.8826,
+          "median_ms": 1.7157,
+          "stage_sum_ms": {
+            "operation": 35630.9486,
+            "queue_wait": 196.9401
+          }
+        },
+        "single_row": {
+          "count": 0,
+          "sum_ms": 0,
+          "median_ms": null
+        }
+      },
+      "after": {
+        "pg_append_room_mutation": {
+          "count": 9623,
+          "sum_ms": 27455.9862,
+          "median_ms": 1.5471000000000001,
+          "stage_sum_ms": {
+            "begin_mutation": 2767.575,
+            "commit": 820.6446,
+            "executions_transfers": 6060.8571,
+            "insert_commit": 15406.146,
+            "snapshot_control": 1645.5005,
+            "validate": 742.3544
+          }
+        },
+        "pg_append_executions": {
+          "count": 250,
+          "sum_ms": 972.5435,
+          "median_ms": 2.6693499999999997,
+          "stage_sum_ms": {
+            "begin_mutation": 51.7784,
+            "commit": 112.0942,
+            "executions_transfers": 562.0454,
+            "snapshot_control": 246.1609,
+            "validate": 0.2248
+          }
+        },
+        "pg_snapshot": {
+          "count": 44,
+          "sum_ms": 1892.959,
+          "median_ms": 42.981049999999996,
+          "stage_sum_ms": {
+            "encode": 559.5229,
+            "insert": 1272.7503,
+            "recovery_head": 46.553
+          }
+        },
+        "journal_job": {
+          "count": 10645,
+          "sum_ms": 32684.3166,
+          "median_ms": 1.7765000000000002,
+          "stage_sum_ms": {
+            "operation": 32368.4027,
+            "queue_wait": 239.1968
+          }
+        },
+        "single_row": {
+          "count": 8569,
+          "sum_ms": 15910.07,
+          "median_ms": 1.4630999999999998
+        }
+      },
+      "memory": [
+        {
+          "path": ".local\\pg-journal-study\\diagnostic\\before-500-memory\\server.log",
+          "last": {
+            "fields": {
+              "execution_count": 38826,
+              "execution_slots_bytes": 30965760,
+              "ledger_rows": 9572,
+              "mutation_bytes": 1100851043,
+              "mutation_capacity": 1980116480,
+              "mutation_count": 16600,
+              "orders": 37665,
+              "position_rows": 9572,
+              "snapshot_count": 1,
+              "trades": 4786
+            },
+            "kind": "memory_retention",
+            "stages_ms": {},
+            "thread": "marketforge-journal-write",
+            "total_ms": 0.030800000000000004
+          }
+        },
+        {
+          "path": ".local\\pg-journal-study\\pilot\\after-500-memory\\server.log",
+          "last": {
+            "fields": {
+              "execution_count": 34803,
+              "execution_slots_bytes": 37273600,
+              "ledger_rows": 9459,
+              "mutation_bytes": 1037316135,
+              "mutation_capacity": 69426459,
+              "mutation_count": 15800,
+              "orders": 33550,
+              "position_rows": 9459,
+              "snapshot_count": 1,
+              "trades": 4729
+            },
+            "kind": "memory_retention",
+            "stages_ms": {},
+            "thread": "marketforge-journal-write",
+            "total_ms": 0.0436
+          }
+        }
+      ]
+    },
+    "compiled_input_sha256": {
+      "exchange-server/src/journal.rs": "20d2d6325905eed3a286afd514b86b56c06a16c8338208195ecde4700fad2e4a",
+      "exchange-server/src/write_profile.rs": "65739cf8a6856150c41ca3f6e935b3f7acd247f45a855443de9770b483249dd7",
+      "exchange-server/src/journal/projection.rs": "da4f2a9996e04409fc68ff0d9bfee34d468c9c5977e455032fd6da81c43bb00e",
+      "Cargo.lock": "2e9fe248f963ce32cafcfeae7a282d4858f9767e3d40f24d6e0ebbdc609b9cef",
+      "exchange-server/Cargo.toml": "c1ff6f3d626931688e5162455fcfd743a6ca723aa02fe9b13ec0e7c992ef6f28",
+      "exchange-server/src/journal/stored_mutation.rs": "ab57db19a69d2a0ca04b95d45f1a2e84560b720d4e7de98afb8cdf7d8ec3edd4"
+    },
+    "tests": {
+      "workspace_passed": 548,
+      "workspace_ignored": 12,
+      "strict_clippy_passed": true,
+      "postgres_selected_passed": 9,
+      "known_fixture_teardown_timer_panic": true
+    },
+    "qualification": {
+      "memory_guard_improved_with_full_history": true,
+      "postgres_500_latency_improved": true,
+      "postgres_1000_place_tail_accepted": false,
+      "postgres_1000_place_tail_causal_driver_proven": false,
+      "unbounded_history_memory_limit_eliminated": false,
+      "committed": false,
+      "deployed": false
+    },
+    "raw_evidence_root": "E:\\CodexData\\worktrees\\postgres-write-profile\\MarketForge\\.local\\pg-journal-study"
+  },
+  "compiled_input_sha256": {
+    "exchange-server/src/journal.rs": "0b4658ef063e19e9f38721e9ef2ef8786ac9036f39a0353c8582cc7c91c68ef0",
+    "exchange-server/src/write_profile.rs": "65739cf8a6856150c41ca3f6e935b3f7acd247f45a855443de9770b483249dd7",
+    "exchange-server/src/journal/projection.rs": "da4f2a9996e04409fc68ff0d9bfee34d468c9c5977e455032fd6da81c43bb00e",
+    "Cargo.lock": "2e9fe248f963ce32cafcfeae7a282d4858f9767e3d40f24d6e0ebbdc609b9cef",
+    "exchange-server/Cargo.toml": "c1ff6f3d626931688e5162455fcfd743a6ca723aa02fe9b13ec0e7c992ef6f28",
+    "exchange-server/src/journal/stored_mutation.rs": "ab57db19a69d2a0ca04b95d45f1a2e84560b720d4e7de98afb8cdf7d8ec3edd4",
+    "exchange-server/src/journal/snapshot_bytes.rs": "4f57de5f952e5fc643e351ea0f93ebd13d357a741de0daa66c38886a7a67722d"
+  },
+  "verification": {
+    "frozen_compiled_inputs_equal": true,
+    "unrelated_compiled_inputs_unchanged": true,
+    "format_check_passed": true,
+    "diff_check_passed": true,
+    "after_sha256": "48dd4d03302457b8fde71f1ea6d79d0ce6ad394685758218273069d505ca4b03",
+    "private_postmaster_pid_files": []
+  },
+  "tests": {
+    "workspace_passed": 550,
+    "workspace_ignored": 12,
+    "postgres_selected_passed": 9,
+    "strict_clippy_passed": true,
+    "initial_stage2_python_path_fixture_failures_retained": 4,
+    "known_postgres_fixture_teardown_timer_panic_retained": true
+  },
+  "qualification": {
+    "durability_idempotency_recovery_verified": true,
+    "memory_60s_guard_passed": true,
+    "performance_fully_closed": false,
+    "remaining_tail_wait_path": "shared FIFO room execution lane and synchronous checkpoint validation/serialization/commit",
+    "old_binaries_read_new_compressed_snapshots": false,
+    "committed": false,
+    "deployed": false
+  },
+  "performance_run_count": 54,
+  "final_stage_diagnostic_run_count": 3,
+  "raw_evidence_root": "E:\\CodexData\\worktrees\\postgres-write-profile\\MarketForge\\.local\\pg-journal-study"
+}
