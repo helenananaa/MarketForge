@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::{
     actor::{AccountSnapshot, MarketStatus},
@@ -140,5 +141,83 @@ impl ParticipantObservation {
         let mut clock = SimulationClock::new(1_000);
         clock.set_position(self.step, self.market_time_ms);
         clock
+    }
+}
+
+/// One frozen public market view shared by native traders, plus strictly private
+/// account inputs. This is an in-process delivery type; the wire protocol stays
+/// ParticipantObservation. No writable strategy state is shared.
+#[derive(Clone, Debug)]
+pub struct SharedParticipantObservation {
+    pub public: Arc<ParticipantObservation>,
+    pub own_account: Option<AccountSnapshot>,
+    pub own_orders: Vec<Order>,
+    pub position_protections: Vec<crate::PositionProtection>,
+    pub risk: Option<crate::position_protection::PositionRisk>,
+    pub bot_market_data: Option<BotMarketData>,
+    pub related_markets: Vec<SharedParticipantObservation>,
+}
+
+impl SharedParticipantObservation {
+    pub fn to_owned_observation(&self) -> ParticipantObservation {
+        let mut view = (*self.public).clone();
+        view.own_account = self.own_account.clone();
+        view.own_orders = self.own_orders.clone();
+        view.position_protections = self.position_protections.clone();
+        view.risk = self.risk.clone();
+        view.bot_market_data = self.bot_market_data.clone();
+        view.related_markets = self
+            .related_markets
+            .iter()
+            .map(Self::to_owned_observation)
+            .collect();
+        view
+    }
+
+    pub fn view(&self) -> ParticipantObservationView<'_> {
+        let mut view = ParticipantObservationView::from(&*self.public);
+        view.own_account = &self.own_account;
+        view.own_orders = &self.own_orders;
+        view.bot_market_data = &self.bot_market_data;
+        view.related_markets = self.related_markets.iter().map(Self::view).collect();
+        view
+    }
+}
+
+/// Borrowed decision inputs. Native strategies read the same values in the same
+/// order as the owned protocol; public book/trade/event vectors are never copied.
+pub struct ParticipantObservationView<'a> {
+    pub instrument_id: &'a str,
+    pub venue_id: &'a str,
+    pub status: MarketStatus,
+    pub step: u64,
+    pub market_time_ms: u64,
+    pub book: &'a BookSnapshot,
+    pub public_trades: &'a [Trade],
+    pub market_events: &'a [crate::market_events::MarketEvent],
+    pub perp_price: &'a Option<crate::PerpPriceSnapshot>,
+    pub own_account: &'a Option<AccountSnapshot>,
+    pub own_orders: &'a [Order],
+    pub bot_market_data: &'a Option<BotMarketData>,
+    pub related_markets: Vec<ParticipantObservationView<'a>>,
+}
+
+impl<'a> From<&'a ParticipantObservation> for ParticipantObservationView<'a> {
+    fn from(view: &'a ParticipantObservation) -> Self {
+        Self {
+            instrument_id: &view.instrument_id,
+            venue_id: &view.venue_id,
+            status: view.status,
+            step: view.step,
+            market_time_ms: view.market_time_ms,
+            book: &view.book,
+            public_trades: &view.public_trades,
+            market_events: &view.market_events,
+            perp_price: &view.perp_price,
+            own_account: &view.own_account,
+            own_orders: &view.own_orders,
+            bot_market_data: &view.bot_market_data,
+            related_markets: view.related_markets.iter().map(Self::from).collect(),
+        }
     }
 }

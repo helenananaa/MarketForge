@@ -196,6 +196,12 @@ pub trait ScheduledBot: Send {
         &mut self,
         observation: &ParticipantObservation,
     ) -> Result<Vec<OrderAction>, BotError>;
+    fn decide_shared(
+        &mut self,
+        observation: &crate::observation::SharedParticipantObservation,
+    ) -> Result<Vec<OrderAction>, BotError> {
+        self.decide(&observation.to_owned_observation())
+    }
     fn snapshot(&self) -> PersistedAgentKindState;
     fn execution_feedback(&mut self, _action: &OrderAction, _execution: &crate::GatewayExecution) {}
 }
@@ -341,6 +347,11 @@ pub trait BotFactory: Send + Sync {
     fn supports_instance_reuse(&self) -> bool {
         false
     }
+    /// Only short, trusted native decisions opt in. External/process factories
+    /// retain their own task so a slow plugin cannot hold a native batch.
+    fn supports_native_batching(&self) -> bool {
+        false
+    }
     /// Metadata only: must not execute plugin code or perform IO.
     fn market_data_request(
         &self,
@@ -417,6 +428,12 @@ impl BotRegistry {
         self.factories
             .get(template.bot_id())
             .is_some_and(|factory| factory.supports_instance_reuse())
+    }
+
+    pub fn supports_native_batching(&self, template: &AgentTemplate) -> bool {
+        self.factories
+            .get(template.bot_id())
+            .is_some_and(|factory| factory.supports_native_batching())
     }
 
     /// Identity check only; never calls factory/plugin code in the writer lane.
@@ -625,6 +642,7 @@ mod tests {
             assert!(registry.supports_instance_reuse(&template));
             let mut saved = template.initial_state();
             let mut hot = registry.create(&template, &saved).unwrap();
+            let mut shared_bot = registry.create(&template, &saved).unwrap();
             for _ in 0..32 {
                 rooms.advance_clock(&room, 1).unwrap();
                 let mut observation = rooms
@@ -644,6 +662,36 @@ mod tests {
                     .unwrap();
                 let mut restored = registry.create(&template, &saved).unwrap();
                 let actions = hot.decide(&observation).unwrap();
+                let frozen = rooms.clone().into_native_observation_wave(room.clone());
+                let mut batch = frozen.batch();
+                let shared_view = batch
+                    .shared_bot_observation(
+                        instrument,
+                        20,
+                        registry.market_data_request(&template).unwrap(),
+                        &registry.related_instruments(&template).unwrap(),
+                    )
+                    .unwrap();
+                assert_eq!(
+                    shared_view.to_owned_observation(),
+                    observation,
+                    "{} delivery",
+                    descriptor.id
+                );
+                let other = batch
+                    .shared_bot_observation(instrument, 21, None, &[])
+                    .unwrap();
+                assert!(std::sync::Arc::ptr_eq(&shared_view.public, &other.public));
+                assert!(shared_view.public.own_account.is_none());
+                assert!(shared_view.public.own_orders.is_empty());
+                assert!(shared_view.public.risk.is_none());
+                assert!(shared_view.public.position_protections.is_empty());
+                assert_eq!(
+                    shared_bot.decide_shared(&shared_view).unwrap(),
+                    actions,
+                    "{} shared actions",
+                    descriptor.id
+                );
                 assert_eq!(
                     actions,
                     restored.decide(&observation).unwrap(),
@@ -652,6 +700,12 @@ mod tests {
                 );
                 saved = restored.snapshot();
                 assert_eq!(hot.snapshot(), saved, "{}", descriptor.id);
+                assert_eq!(
+                    shared_bot.snapshot(),
+                    saved,
+                    "{} shared state",
+                    descriptor.id
+                );
                 actions_seen += actions.len();
                 let mut gateway = crate::OrderGateway::new(&mut rooms, next_order_id);
                 for action in actions {

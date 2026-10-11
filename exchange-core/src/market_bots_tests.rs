@@ -76,9 +76,52 @@ fn view(time: u64, mid: i64, position: i128) -> ParticipantObservation {
 
 fn bot(id: &str, params: serde_json::Value) -> Box<dyn ScheduledBot> {
     let template = template(id, params);
-    BotRegistry::with_builtins()
-        .create(&template, &template.initial_state())
-        .unwrap()
+    let registry = BotRegistry::with_builtins();
+    Box::new(DeliveryParity {
+        owned: registry
+            .create(&template, &template.initial_state())
+            .unwrap(),
+        shared: registry
+            .create(&template, &template.initial_state())
+            .unwrap(),
+    })
+}
+
+// Every existing behavior assertion also checks the shared delivery path. These
+// fixtures include pre-decision TTL expiry, risk exits and partial-fill feedback.
+struct DeliveryParity {
+    owned: Box<dyn ScheduledBot>,
+    shared: Box<dyn ScheduledBot>,
+}
+impl ScheduledBot for DeliveryParity {
+    fn decide(&mut self, view: &ParticipantObservation) -> Result<Vec<OrderAction>, BotError> {
+        fn share(mut view: ParticipantObservation) -> SharedParticipantObservation {
+            SharedParticipantObservation {
+                own_account: view.own_account.take(),
+                own_orders: std::mem::take(&mut view.own_orders),
+                position_protections: std::mem::take(&mut view.position_protections),
+                risk: view.risk.take(),
+                bot_market_data: view.bot_market_data.take(),
+                related_markets: std::mem::take(&mut view.related_markets)
+                    .into_iter()
+                    .map(share)
+                    .collect(),
+                public: std::sync::Arc::new(view),
+            }
+        }
+        let result = self.owned.decide(view);
+        let other = self.shared.decide_shared(&share(view.clone()));
+        assert_eq!(
+            result.as_ref().map_err(|e| e.to_string()),
+            other.as_ref().map_err(|e| e.to_string())
+        );
+        assert_eq!(self.owned.snapshot(), self.shared.snapshot());
+        result
+    }
+    fn snapshot(&self) -> PersistedAgentKindState {
+        assert_eq!(self.owned.snapshot(), self.shared.snapshot());
+        self.owned.snapshot()
+    }
 }
 
 fn state(bot: &dyn ScheduledBot) -> State {
@@ -201,7 +244,11 @@ fn maker_skews_quotes_to_target_and_counts_resting_exposure() {
             qty: 10
         }
     );
-    let mut budget = Budget::new(&view(1000, 100, 98), &Config::default()).unwrap();
+    let mut budget = Budget::new(
+        &ParticipantObservationView::from(&view(1000, 100, 98)),
+        &Config::default(),
+    )
+    .unwrap();
     budget.buy_open = 1;
     assert_eq!(budget.allocate(Side::Buy, 100, 10), 1);
     assert_eq!(budget.allocate(Side::Buy, 100, 10), 0);
@@ -262,7 +309,11 @@ fn noise_expires_orders_without_spending_reserved_cash_or_shorting_spot() {
     };
     a.available_cash = 100;
     a.reserved_cash = 9900;
-    let mut budget = Budget::new(&observation, &Config::default()).unwrap();
+    let mut budget = Budget::new(
+        &ParticipantObservationView::from(&observation),
+        &Config::default(),
+    )
+    .unwrap();
     assert_eq!(budget.allocate(Side::Buy, 100, 2), 0); // reserve estimated fee
     assert_eq!(budget.allocate(Side::Sell, 100, 2), 0);
 }
@@ -447,7 +498,11 @@ fn unhealthy_perpetual_only_reduces_and_healthy_capital_is_not_assumed_leveraged
             qty: 2
         }]
     );
-    let mut budget = Budget::new(&observation, &Config::default()).unwrap();
+    let mut budget = Budget::new(
+        &ParticipantObservationView::from(&observation),
+        &Config::default(),
+    )
+    .unwrap();
     assert_eq!(budget.allocate(Side::Buy, 100, 10), 0);
     assert_eq!(budget.allocate(Side::Sell, 100, 10), 5);
     assert_eq!(budget.allocate(Side::Sell, 100, 10), 0);

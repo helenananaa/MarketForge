@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::{
     account::{Money, VenueAccountSnapshot},
@@ -141,6 +142,17 @@ impl RoomManager {
             room_id,
             public: BTreeMap::new(),
             history: BTreeMap::new(),
+            shared_public: None,
+        }
+    }
+
+    /// Own a frozen market version. The public cache cannot be reused against a
+    /// different room version; native worker batches share only these inputs.
+    pub fn into_native_observation_wave(self, room_id: String) -> NativeObservationWave {
+        NativeObservationWave {
+            rooms: self,
+            room_id,
+            public: Mutex::default(),
         }
     }
 
@@ -1565,6 +1577,25 @@ pub struct RoomObservationBatch<'a> {
     room_id: &'a str,
     public: BTreeMap<String, crate::ParticipantObservation>,
     history: BTreeMap<String, ObservationHistory>,
+    shared_public: Option<&'a Mutex<PublicObservationCache>>,
+}
+
+type PublicObservationCell =
+    Arc<OnceLock<Result<Arc<crate::ParticipantObservation>, RoomManagerError>>>;
+type PublicObservationCache = BTreeMap<String, PublicObservationCell>;
+
+pub struct NativeObservationWave {
+    rooms: RoomManager,
+    room_id: String,
+    public: Mutex<PublicObservationCache>,
+}
+
+impl NativeObservationWave {
+    pub fn batch(&self) -> RoomObservationBatch<'_> {
+        let mut batch = self.rooms.observation_batch(&self.room_id);
+        batch.shared_public = Some(&self.public);
+        batch
+    }
 }
 
 /// The immutable room borrow is the cache validity boundary. Keep extra
@@ -1686,97 +1717,178 @@ impl RoomObservationBatch<'_> {
         related: &[String],
     ) -> Result<crate::ParticipantObservation, RoomManagerError> {
         let mut view = self.participant(instrument_id, account_id)?;
-        if let Some(request) = request {
-            if request.validate().is_err() {
-                return Err(RoomManagerError::Candle(
-                    crate::CandleError::InvalidInterval,
-                ));
-            }
-            if !self.history.contains_key(instrument_id) {
-                let (receipts, complete) =
-                    self.rooms.bot_trade_history(self.room_id, instrument_id)?;
-                self.history.insert(
-                    instrument_id.to_string(),
-                    ObservationHistory::new(receipts, complete),
-                );
-            }
-            let history = self
-                .history
-                .get_mut(instrument_id)
-                .expect("inserted history");
-            if !history.candles.contains_key(&request.interval_ms) {
-                let timed = history
-                    .receipts
-                    .iter()
-                    .map(|receipt| {
-                        crate::TimedTrade::from_trade(receipt.market_time_ms, &receipt.trade)
-                    })
-                    .collect::<Vec<_>>();
-                let mut candles =
-                    crate::aggregate_candles(&timed, request.interval_ms, view.market_time_ms)
-                        .map_err(RoomManagerError::Candle)?;
-                candles.retain(|bar| bar.is_final);
-                history.candles.insert(request.interval_ms, candles);
-            }
-            let candles = &history.candles[&request.interval_ms];
-            let own = history.accounts.get(&account_id);
-            let external_volume_qty = history
-                .volume
-                .map(|volume| volume - own.map_or(0, |own| own.volume))
-                .unwrap_or_else(|| {
-                    // Preserve the original saturating filtered sum even if
-                    // the total quantity cannot be represented in u128.
-                    history
-                        .receipts
-                        .iter()
-                        .filter(|receipt| {
-                            receipt.trade.maker_account_id != account_id
-                                && receipt.trade.taker_account_id != account_id
-                        })
-                        .fold(0u128, |n, receipt| {
-                            n.saturating_add(u128::from(receipt.trade.qty))
-                        })
-                })
-                .to_string();
-            let indices = own.map_or(&[][..], |own| own.receipt_indices.as_slice());
-            let mut own_fills = Vec::new();
-            let mut fill_details = Vec::new();
-            for &index in &indices[indices.len().saturating_sub(4096)..] {
-                let receipt = &history.receipts[index];
-                let trade = &receipt.trade;
-                let buyer = if trade.taker_side == crate::Side::Buy {
-                    trade.taker_account_id
-                } else {
-                    trade.maker_account_id
-                };
-                fill_details.push(crate::observation::BotFillDetail {
-                    trade_id: trade.trade_id,
-                    market_time_ms: receipt.market_time_ms,
-                    fee_paid: if account_id == buyer {
-                        receipt.buyer_fee
-                    } else {
-                        receipt.seller_fee
-                    },
-                });
-                own_fills.push(trade.clone());
-            }
-            let truncated =
-                !history.complete || candles.len() > request.max_bars || indices.len() > 4096;
-            view.bot_market_data = Some(crate::BotMarketData {
-                streams: vec![],
-                account_events: vec![],
-                conditional_orders: vec![],
-                interval_ms: request.interval_ms,
-                external_volume_qty,
-                candles: candles[candles.len().saturating_sub(request.max_bars)..].to_vec(),
-                own_fills,
-                fill_details,
-                truncated,
-            });
-        }
+        view.bot_market_data =
+            self.market_data(instrument_id, account_id, request, view.market_time_ms)?;
         for instrument in related {
             if instrument != instrument_id {
                 view.related_markets.push(self.bot_observation(
+                    instrument,
+                    account_id,
+                    request,
+                    &[],
+                )?);
+            }
+        }
+        Ok(view)
+    }
+
+    fn market_data(
+        &mut self,
+        instrument_id: &str,
+        account_id: AccountId,
+        request: Option<crate::bots::BotMarketDataRequest>,
+        market_time_ms: u64,
+    ) -> Result<Option<crate::BotMarketData>, RoomManagerError> {
+        let Some(request) = request else {
+            return Ok(None);
+        };
+        if request.validate().is_err() {
+            return Err(RoomManagerError::Candle(
+                crate::CandleError::InvalidInterval,
+            ));
+        }
+        if !self.history.contains_key(instrument_id) {
+            let (receipts, complete) = self.rooms.bot_trade_history(self.room_id, instrument_id)?;
+            self.history.insert(
+                instrument_id.to_string(),
+                ObservationHistory::new(receipts, complete),
+            );
+        }
+        let history = self
+            .history
+            .get_mut(instrument_id)
+            .expect("inserted history");
+        if !history.candles.contains_key(&request.interval_ms) {
+            let timed = history
+                .receipts
+                .iter()
+                .map(|receipt| {
+                    crate::TimedTrade::from_trade(receipt.market_time_ms, &receipt.trade)
+                })
+                .collect::<Vec<_>>();
+            let mut candles = crate::aggregate_candles(&timed, request.interval_ms, market_time_ms)
+                .map_err(RoomManagerError::Candle)?;
+            candles.retain(|bar| bar.is_final);
+            history.candles.insert(request.interval_ms, candles);
+        }
+        let candles = &history.candles[&request.interval_ms];
+        let own = history.accounts.get(&account_id);
+        let external_volume_qty = history
+            .volume
+            .map(|volume| volume - own.map_or(0, |own| own.volume))
+            .unwrap_or_else(|| {
+                // Preserve the original saturating filtered sum even if
+                // the total quantity cannot be represented in u128.
+                history
+                    .receipts
+                    .iter()
+                    .filter(|receipt| {
+                        receipt.trade.maker_account_id != account_id
+                            && receipt.trade.taker_account_id != account_id
+                    })
+                    .fold(0u128, |n, receipt| {
+                        n.saturating_add(u128::from(receipt.trade.qty))
+                    })
+            })
+            .to_string();
+        let indices = own.map_or(&[][..], |own| own.receipt_indices.as_slice());
+        let mut own_fills = Vec::new();
+        let mut fill_details = Vec::new();
+        for &index in &indices[indices.len().saturating_sub(4096)..] {
+            let receipt = &history.receipts[index];
+            let trade = &receipt.trade;
+            let buyer = if trade.taker_side == crate::Side::Buy {
+                trade.taker_account_id
+            } else {
+                trade.maker_account_id
+            };
+            fill_details.push(crate::observation::BotFillDetail {
+                trade_id: trade.trade_id,
+                market_time_ms: receipt.market_time_ms,
+                fee_paid: if account_id == buyer {
+                    receipt.buyer_fee
+                } else {
+                    receipt.seller_fee
+                },
+            });
+            own_fills.push(trade.clone());
+        }
+        let truncated =
+            !history.complete || candles.len() > request.max_bars || indices.len() > 4096;
+        Ok(Some(crate::BotMarketData {
+            streams: vec![],
+            account_events: vec![],
+            conditional_orders: vec![],
+            interval_ms: request.interval_ms,
+            external_volume_qty,
+            candles: candles[candles.len().saturating_sub(request.max_bars)..].to_vec(),
+            own_fills,
+            fill_details,
+            truncated,
+        }))
+    }
+
+    pub fn shared_bot_observation(
+        &mut self,
+        instrument_id: &str,
+        account_id: AccountId,
+        request: Option<crate::bots::BotMarketDataRequest>,
+        related: &[String],
+    ) -> Result<crate::observation::SharedParticipantObservation, RoomManagerError> {
+        // The cell is installed under a tiny directory lock; expensive public
+        // construction happens outside it and once for the entire frozen wave.
+        let cell = self
+            .shared_public
+            .expect("shared delivery requires a frozen native wave")
+            .lock()
+            .unwrap()
+            .entry(instrument_id.to_owned())
+            .or_default()
+            .clone();
+        let public = cell
+            .get_or_init(|| {
+                let mut public =
+                    self.rooms
+                        .participant_observation(self.room_id, instrument_id, account_id)?;
+                public.own_account = None;
+                public.own_orders.clear();
+                public.position_protections.clear();
+                public.risk = None;
+                Ok(Arc::new(public))
+            })
+            .clone()?;
+        let room = self.rooms.simulation_room(self.room_id)?;
+        let venue = room.venue_id_for_instrument(instrument_id).unwrap();
+        let exchange = room
+            .exchange(&venue)
+            .map_err(RoomManagerError::Simulation)?;
+        let mut view = crate::observation::SharedParticipantObservation {
+            own_account: self
+                .rooms
+                .account_snapshot_for(self.room_id, instrument_id, account_id)?
+                .filter(|a| match a {
+                    crate::AccountSnapshot::Spot(a) => a.account_id == account_id,
+                    crate::AccountSnapshot::Perp(a) => a.account_id == account_id,
+                }),
+            own_orders: self.rooms.resting_orders_for_account(
+                self.room_id,
+                instrument_id,
+                account_id,
+            )?,
+            position_protections: exchange.position_protections(instrument_id, account_id),
+            risk: exchange.position_risk(instrument_id, account_id),
+            bot_market_data: self.market_data(
+                instrument_id,
+                account_id,
+                request,
+                public.market_time_ms,
+            )?,
+            public,
+            related_markets: vec![],
+        };
+        for instrument in related {
+            if instrument != instrument_id {
+                view.related_markets.push(self.shared_bot_observation(
                     instrument,
                     account_id,
                     request,
@@ -2602,6 +2714,72 @@ mod tests {
                 .unwrap()
         );
         assert!(!batch.history["V-BTC-SPOT"].complete);
+    }
+
+    #[test]
+    fn native_wave_shares_only_public_inputs_and_freezes_fill_feedback() {
+        let mut manager = restored_history_room();
+        let request = crate::bots::BotMarketDataRequest {
+            interval_ms: 1000,
+            max_bars: 2,
+        };
+        let frozen = Arc::new(
+            manager
+                .clone()
+                .into_native_observation_wave("cached-history".into()),
+        );
+        let accounts = [10, 20, 30, 999, 10];
+        let views: Vec<_> = std::thread::scope(|scope| {
+            let jobs: Vec<_> = accounts
+                .iter()
+                .map(|&account| {
+                    let frozen = frozen.clone();
+                    scope.spawn(move || {
+                        frozen
+                            .batch()
+                            .shared_bot_observation("V-BTC-SPOT", account, Some(request), &[])
+                            .unwrap()
+                    })
+                })
+                .collect();
+            jobs.into_iter().map(|job| job.join().unwrap()).collect()
+        });
+        for (&account, view) in accounts.iter().zip(&views) {
+            assert!(Arc::ptr_eq(&view.public, &views[0].public));
+            assert_eq!(
+                view.to_owned_observation(),
+                manager
+                    .bot_observation("cached-history", "V-BTC-SPOT", account, Some(request))
+                    .unwrap()
+            );
+            assert!(view.public.own_account.is_none());
+            assert!(view.public.own_orders.is_empty());
+            assert!(view.public.bot_market_data.is_none());
+            assert!(view.public.related_markets.is_empty());
+        }
+        manager
+            .apply("cached-history", limit(3, 20, Side::Buy, 100, 1))
+            .unwrap();
+        let old = frozen
+            .batch()
+            .shared_bot_observation("V-BTC-SPOT", 20, Some(request), &[])
+            .unwrap();
+        assert_eq!(old.to_owned_observation(), views[1].to_owned_observation());
+        let next = manager
+            .clone()
+            .into_native_observation_wave("cached-history".into());
+        let current = next
+            .batch()
+            .shared_bot_observation("V-BTC-SPOT", 20, Some(request), &[])
+            .unwrap();
+        assert!(!Arc::ptr_eq(&old.public, &current.public));
+        assert_eq!(
+            current.to_owned_observation(),
+            manager
+                .bot_observation("cached-history", "V-BTC-SPOT", 20, Some(request))
+                .unwrap()
+        );
+        assert_ne!(old.to_owned_observation(), current.to_owned_observation());
     }
 
     #[test]

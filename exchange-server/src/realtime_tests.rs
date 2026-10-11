@@ -13,6 +13,7 @@ struct Gate {
     wake: Condvar,
     created: AtomicUsize,
     reuse: AtomicBool,
+    native: AtomicBool,
 }
 
 impl Gate {
@@ -41,6 +42,9 @@ struct Bot {
 }
 
 impl BotFactory for Factory {
+    fn supports_native_batching(&self) -> bool {
+        self.gate.native.load(Ordering::Relaxed)
+    }
     fn supports_instance_reuse(&self) -> bool {
         self.gate.reuse.load(Ordering::Relaxed)
     }
@@ -375,7 +379,8 @@ async fn concurrent_room_orders_keep_unique_ids_and_recover_exactly() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn realtime_large_wave_yields_between_bounded_durable_batches() {
-    let (shared, _, mut store) = setup("bounded").await;
+    let (shared, gate, mut store) = setup("bounded").await;
+    gate.native.store(true, Ordering::Relaxed);
     let mut names: Vec<_> = (0..200).map(|i| format!("fast-{i}")).collect();
     names.sort();
     let ids: Vec<_> = names.iter().map(String::as_str).collect();
@@ -499,7 +504,8 @@ async fn realtime_slow_bot_does_not_block_clock_other_bot_http_or_other_room() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn realtime_bot_error_and_panic_are_isolated_and_market_keeps_ticking() {
-    let (shared, _, _) = setup("errors").await;
+    let (shared, gate, _) = setup("errors").await;
+    gate.native.store(true, Ordering::Relaxed);
     start(&shared, "errors", &["fail", "panic", "fast"], 10).await;
     eventually(&shared, |app| {
         let status = agent_status_for_room(app, "errors");

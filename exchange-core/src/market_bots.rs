@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use crate::observation::{ParticipantObservationView, SharedParticipantObservation};
+
 use crate::{
     AccountSnapshot, AgentTemplate, BotDescriptor, BotError, BotFactory, BotParameter, BotRegistry,
     MarketStatus, OrderAction, ParameterType, ParticipantObservation, PerpMarginStatus,
@@ -313,6 +315,9 @@ pub(crate) fn register_market_bots(registry: &mut BotRegistry) {
 }
 
 impl BotFactory for Factory {
+    fn supports_native_batching(&self) -> bool {
+        true
+    }
     fn supports_instance_reuse(&self) -> bool {
         true
     }
@@ -467,7 +472,7 @@ struct Budget {
 }
 
 impl Budget {
-    fn new(view: &ParticipantObservation, config: &Config) -> Option<Self> {
+    fn new(view: &ParticipantObservationView<'_>, config: &Config) -> Option<Self> {
         let (position, cash, spot_available, reduce_only) = match view.own_account.as_ref()? {
             AccountSnapshot::Spot(a) => (
                 a.position_qty,
@@ -569,7 +574,7 @@ impl Budget {
 impl MarketBot {
     fn protected_taker(
         &self,
-        view: &ParticipantObservation,
+        view: &ParticipantObservationView<'_>,
         budget: &mut Budget,
         side: Side,
         mid: i64,
@@ -626,7 +631,7 @@ impl MarketBot {
         }]
     }
 
-    fn event_fair(&mut self, view: &ParticipantObservation, mid: i64) -> i64 {
+    fn event_fair(&mut self, view: &ParticipantObservationView<'_>, mid: i64) -> i64 {
         let mut impact = 0i128;
         for event in view.market_events.iter().take(256) {
             if view.market_time_ms
@@ -658,7 +663,7 @@ impl MarketBot {
 
     fn event(
         &mut self,
-        view: &ParticipantObservation,
+        view: &ParticipantObservationView<'_>,
         budget: &mut Budget,
         mid: i64,
     ) -> Vec<OrderAction> {
@@ -687,7 +692,7 @@ impl MarketBot {
     /// on timeout; the perp leg always reconciles to the acquired spot quantity.
     fn arbitrage(
         &mut self,
-        view: &ParticipantObservation,
+        view: &ParticipantObservationView<'_>,
         budget: &mut Budget,
     ) -> Result<Vec<OrderAction>, BotError> {
         let peer = view
@@ -735,12 +740,13 @@ impl MarketBot {
             pa.margin_status,
             PerpMarginStatus::Flat | PerpMarginStatus::Healthy
         ) && price.status == crate::PriceLinkStatus::Live;
-        let mid = |v: &ParticipantObservation| match (v.book.bids.first(), v.book.asks.first()) {
-            (Some(b), Some(a)) => b.price_tick + (a.price_tick - b.price_tick) / 2,
-            (Some(b), None) => b.price_tick,
-            (None, Some(a)) => a.price_tick,
-            _ => self.config.fallback_price_tick,
-        };
+        let mid =
+            |v: &ParticipantObservationView<'_>| match (v.book.bids.first(), v.book.asks.first()) {
+                (Some(b), Some(a)) => b.price_tick + (a.price_tick - b.price_tick) / 2,
+                (Some(b), None) => b.price_tick,
+                (None, Some(a)) => a.price_tick,
+                _ => self.config.fallback_price_tick,
+            };
         if self.config.leg == "Perp" {
             if residual < 0 {
                 budget.reduce_only = true;
@@ -863,7 +869,7 @@ impl MarketBot {
         x % modulo.max(1)
     }
 
-    fn cancel_orders(&self, view: &ParticipantObservation) -> Vec<OrderAction> {
+    fn cancel_orders(&self, view: &ParticipantObservationView<'_>) -> Vec<OrderAction> {
         view.own_orders
             .iter()
             .take(64)
@@ -875,7 +881,7 @@ impl MarketBot {
 
     fn taker(
         &self,
-        view: &ParticipantObservation,
+        view: &ParticipantObservationView<'_>,
         budget: &mut Budget,
         side: Side,
         limit: i64,
@@ -914,7 +920,7 @@ impl MarketBot {
 
     fn noise(
         &mut self,
-        view: &ParticipantObservation,
+        view: &ParticipantObservationView<'_>,
         budget: &mut Budget,
         mid: i64,
     ) -> Vec<OrderAction> {
@@ -961,7 +967,7 @@ impl MarketBot {
 
     fn maker(
         &mut self,
-        view: &ParticipantObservation,
+        view: &ParticipantObservationView<'_>,
         budget: &mut Budget,
         mid: i64,
     ) -> Vec<OrderAction> {
@@ -1109,13 +1115,13 @@ impl MarketBot {
         actions
     }
 
-    fn update_maker_flow(&mut self, view: &ParticipantObservation) {
+    fn update_maker_flow(&mut self, view: &ParticipantObservationView<'_>) {
         if self.config.toxic_flow_threshold_ppm == 0 {
             return;
         }
         let mut buys = 0u128;
         let mut sells = 0u128;
-        for trade in &view.public_trades {
+        for trade in view.public_trades {
             if self
                 .state
                 .last_flow_trade_id
@@ -1147,7 +1153,7 @@ impl MarketBot {
 
     fn perp_target(
         &mut self,
-        view: &ParticipantObservation,
+        view: &ParticipantObservationView<'_>,
         budget: &mut Budget,
         mid: i64,
         wanted: i128,
@@ -1197,7 +1203,7 @@ impl MarketBot {
 
     fn funding(
         &mut self,
-        view: &ParticipantObservation,
+        view: &ParticipantObservationView<'_>,
         budget: &mut Budget,
         mid: i64,
     ) -> Vec<OrderAction> {
@@ -1257,7 +1263,7 @@ impl MarketBot {
 
     fn leveraged_trend(
         &mut self,
-        view: &ParticipantObservation,
+        view: &ParticipantObservationView<'_>,
         budget: &mut Budget,
         mid: i64,
     ) -> Vec<OrderAction> {
@@ -1274,7 +1280,11 @@ impl MarketBot {
         self.perp_target(view, budget, mid, target)
     }
 
-    fn value(&self, view: &ParticipantObservation, budget: &mut Budget) -> Vec<OrderAction> {
+    fn value(
+        &self,
+        view: &ParticipantObservationView<'_>,
+        budget: &mut Budget,
+    ) -> Vec<OrderAction> {
         let shift = if view.market_time_ms
             >= self
                 .config
@@ -1309,7 +1319,7 @@ impl MarketBot {
 
     fn trend(
         &self,
-        view: &ParticipantObservation,
+        view: &ParticipantObservationView<'_>,
         budget: &mut Budget,
         mid: i64,
     ) -> Vec<OrderAction> {
@@ -1343,7 +1353,7 @@ impl MarketBot {
 
     fn execution(
         &mut self,
-        view: &ParticipantObservation,
+        view: &ParticipantObservationView<'_>,
         budget: &mut Budget,
         mid: i64,
     ) -> Vec<OrderAction> {
@@ -1443,8 +1453,11 @@ impl MarketBot {
     }
 }
 
-impl ScheduledBot for MarketBot {
-    fn decide(&mut self, view: &ParticipantObservation) -> Result<Vec<OrderAction>, BotError> {
+impl MarketBot {
+    fn decide_view(
+        &mut self,
+        view: &ParticipantObservationView<'_>,
+    ) -> Result<Vec<OrderAction>, BotError> {
         if view.status != MarketStatus::Running
             || self.state.last_observation == Some((view.step, view.market_time_ms))
         {
@@ -1540,7 +1553,7 @@ impl ScheduledBot for MarketBot {
         if self.plugin.plugin_id == "BasisArbitrageTrader" {
             return self.arbitrage(view, &mut budget);
         }
-        if self.state.risk.evaluate(
+        if self.state.risk.evaluate_view(
             &self.config.risk,
             view,
             book_mid,
@@ -1693,7 +1706,18 @@ impl ScheduledBot for MarketBot {
             crossing
         })
     }
+}
 
+impl ScheduledBot for MarketBot {
+    fn decide(&mut self, view: &ParticipantObservation) -> Result<Vec<OrderAction>, BotError> {
+        self.decide_view(&ParticipantObservationView::from(view))
+    }
+    fn decide_shared(
+        &mut self,
+        view: &SharedParticipantObservation,
+    ) -> Result<Vec<OrderAction>, BotError> {
+        self.decide_view(&view.view())
+    }
     fn snapshot(&self) -> PersistedAgentKindState {
         PersistedAgentKindState::Plugin {
             plugin_id: self.plugin.plugin_id.clone(),

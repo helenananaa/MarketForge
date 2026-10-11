@@ -48,6 +48,21 @@ impl BotRiskState {
         mid: i64,
         vol: i64,
     ) -> bool {
+        self.evaluate_view(
+            c,
+            &crate::observation::ParticipantObservationView::from(v),
+            mid,
+            vol,
+        )
+    }
+
+    pub fn evaluate_view(
+        &mut self,
+        c: &BotRiskConfig,
+        v: &crate::observation::ParticipantObservationView<'_>,
+        mid: i64,
+        vol: i64,
+    ) -> bool {
         let Some(account) = &v.own_account else {
             return false;
         };

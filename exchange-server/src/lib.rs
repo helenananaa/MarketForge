@@ -23,6 +23,8 @@ pub mod bot_plugins;
 mod competition;
 mod historical_queries;
 pub mod journal;
+#[cfg(all(test, feature = "memory-diagnostics"))]
+mod memory_diagnostics;
 pub mod platform;
 mod realtime;
 #[cfg(test)]

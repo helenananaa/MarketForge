@@ -11,6 +11,7 @@ pub(super) mod risk_benchmark;
 // Bound writer-lane occupancy without dropping decisions or splitting a bot's
 // atomic action set. Ready results beyond this batch stay in the JoinSet.
 const MAX_READY_DECISIONS: usize = 64;
+const NATIVE_DECISIONS_PER_TASK: usize = 32;
 
 #[derive(Clone, Default)]
 pub(super) struct Control {
@@ -102,6 +103,7 @@ impl CachedBot {
 }
 
 type ComputedDecision = Result<(Decision, Option<CachedBot>), String>;
+type DecisionResult = (String, u64, ComputedDecision);
 
 // Exact state comparisons remain mandatory; this narrows candidates by id
 // instead of comparing every full template/state for every completed bot.
@@ -443,6 +445,7 @@ fn apply_decision(
 enum Wake<T> {
     Poll,
     Clock,
+    Ready,
     Decision(Option<Result<T, tokio::task::JoinError>>),
 }
 
@@ -451,18 +454,21 @@ async fn next_wake<T: Send + 'static>(
     stop_poll: &mut tokio::time::Interval,
     decisions: &mut tokio::task::JoinSet<T>,
     prefer_clock: bool,
+    has_ready: bool,
 ) -> Wake<T> {
     if prefer_clock {
         tokio::select! {
             biased;
             _ = stop_poll.tick() => Wake::Poll,
             _ = ticks.tick() => Wake::Clock,
+            _ = async {}, if has_ready => Wake::Ready,
             completed = decisions.join_next(), if !decisions.is_empty() => Wake::Decision(completed),
         }
     } else {
         tokio::select! {
             biased;
             _ = stop_poll.tick() => Wake::Poll,
+            _ = async {}, if has_ready => Wake::Ready,
             completed = decisions.join_next(), if !decisions.is_empty() => Wake::Decision(completed),
             _ = ticks.tick() => Wake::Clock,
         }
@@ -482,7 +488,8 @@ pub(super) async fn run(
     // No replay storm after a busy writer lane; bot computation never changes cadence.
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut stop_poll = tokio::time::interval(Duration::from_millis(25));
-    let mut decisions = tokio::task::JoinSet::<(String, u64, ComputedDecision)>::new();
+    let mut decisions = tokio::task::JoinSet::<Vec<DecisionResult>>::new();
+    let mut completed_results = VecDeque::new();
     let mut in_flight = BTreeSet::new();
     let mut failed = BTreeSet::new();
     let mut instances = BTreeMap::<String, CachedBot>::new();
@@ -492,21 +499,39 @@ pub(super) async fn run(
         if control.stop.load(Ordering::Acquire) || !shared.lifecycle.is_accepting_durable_writes() {
             return Ok(());
         }
-        match next_wake(&mut ticks, &mut stop_poll, &mut decisions, prefer_clock).await {
-            Wake::Poll => {}
+        let wake = next_wake(
+            &mut ticks,
+            &mut stop_poll,
+            &mut decisions,
+            prefer_clock,
+            !completed_results.is_empty(),
+        )
+        .await;
+        let wake = match wake {
             Wake::Decision(completed) => {
+                completed_results.extend(completed.unwrap().map_err(|e| e.to_string())?);
+                Wake::Ready
+            }
+            other => other,
+        };
+        match wake {
+            Wake::Poll => {}
+            Wake::Decision(_) => unreachable!(),
+            Wake::Ready => {
                 prefer_clock = true;
-                let mut ready = vec![completed.unwrap()];
-                while ready.len() < MAX_READY_DECISIONS {
+                while completed_results.len() < MAX_READY_DECISIONS {
                     let Some(completed) = decisions.try_join_next() else {
                         break;
                     };
-                    ready.push(completed);
+                    completed_results.extend(completed.map_err(|e| e.to_string())?);
                 }
+                let ready: Vec<_> = completed_results
+                    .drain(..completed_results.len().min(MAX_READY_DECISIONS))
+                    .collect();
                 let mut wave = Vec::new();
                 let current_epoch = control.epoch.load(Ordering::Acquire);
                 for completed in ready {
-                    let (id, epoch, result) = completed.map_err(|e| e.to_string())?;
+                    let (id, epoch, result) = completed;
                     in_flight.remove(&id);
                     if control.stop.load(Ordering::Acquire) || epoch != current_epoch {
                         continue;
@@ -636,41 +661,93 @@ pub(super) async fn run(
                         .collect();
                     (app.rooms.clone(), app.bot_registry.clone(), agents, epoch)
                 };
-                // Observations and plugin data requests use one frozen market
-                // version without retaining the exchange execution lane.
-                let mut observations = rooms.observation_batch(&room_id);
-                let mut inputs = Vec::with_capacity(agents.len());
+                let frozen = Arc::new(rooms.into_native_observation_wave(room_id.clone()));
+                let mut native = Vec::new();
                 for (prior, cached, valid) in agents {
-                    let cached = cached.filter(|_| valid);
+                    let id = prior.template.participant_id().to_string();
+                    in_flight.insert(id);
+                    let input = (prior, cached.filter(|_| valid));
+                    if registry.supports_native_batching(&input.0.template) {
+                        native.push(input);
+                        if native.len() == NATIVE_DECISIONS_PER_TASK {
+                            spawn_decision_batch(
+                                &mut decisions,
+                                frozen.clone(),
+                                registry.clone(),
+                                std::mem::take(&mut native),
+                                epoch,
+                                true,
+                            );
+                        }
+                    } else {
+                        spawn_decision_batch(
+                            &mut decisions,
+                            frozen.clone(),
+                            registry.clone(),
+                            vec![input],
+                            epoch,
+                            false,
+                        );
+                    }
+                }
+                if !native.is_empty() {
+                    spawn_decision_batch(&mut decisions, frozen, registry, native, epoch, true);
+                }
+            }
+        }
+    }
+}
+
+fn spawn_decision_batch(
+    decisions: &mut tokio::task::JoinSet<Vec<DecisionResult>>,
+    frozen: Arc<exchange_core::room::NativeObservationWave>,
+    registry: exchange_core::BotRegistry,
+    inputs: Vec<(SharedAgent, Option<CachedBot>)>,
+    epoch: u64,
+    native: bool,
+) {
+    // Observation construction, metadata hooks, strategy calls and destructors
+    // all run outside both the room lane and the clock's async task.
+    decisions.spawn_blocking(move || {
+        let mut observations = frozen.batch();
+        inputs
+            .into_iter()
+            .map(|(prior, cached)| {
+                let id = prior.template.participant_id().to_string();
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    #[cfg(all(test, feature = "memory-diagnostics"))]
+                    let delivery_scope = crate::memory_diagnostics::Scope::enter(
+                        crate::memory_diagnostics::Origin::Delivery,
+                    );
                     let request = match &cached {
-                        Some(cached) => Ok(cached.request.clone()),
-                        None => registry
-                            .market_data_request(&prior.template)
-                            .and_then(|history| {
-                                registry
-                                    .related_instruments(&prior.template)
-                                    .map(|related| {
-                                        registry.additional_intervals(&prior.template).map(
-                                            |intervals| {
-                                                Arc::new(ObservationRequest {
-                                                    history,
-                                                    related,
-                                                    intervals,
-                                                    account_events: registry
-                                                        .account_events(&prior.template),
-                                                })
-                                            },
-                                        )
-                                    })
-                                    .and_then(|v| v)
-                            })
-                            .map_err(|e| e.to_string()),
+                        Some(cached) => cached.request.clone(),
+                        None => Arc::new(ObservationRequest {
+                            history: registry
+                                .market_data_request(&prior.template)
+                                .map_err(|e| e.to_string())?,
+                            related: registry
+                                .related_instruments(&prior.template)
+                                .map_err(|e| e.to_string())?,
+                            intervals: registry
+                                .additional_intervals(&prior.template)
+                                .map_err(|e| e.to_string())?,
+                            account_events: registry.account_events(&prior.template),
+                        }),
                     };
-                    let observation = prior
-                        .requires_instrument()
-                        .map_err(|e| format!("{e:?}"))
-                        .and_then(|instrument| {
-                            let request = request.as_ref().map_err(Clone::clone)?;
+                    let instrument = prior.requires_instrument().map_err(|e| format!("{e:?}"))?;
+                    let observation =
+                        if native && request.intervals.is_empty() && !request.account_events {
+                            DecisionObservation::Shared(
+                                observations
+                                    .shared_bot_observation(
+                                        instrument,
+                                        prior.config().account_id,
+                                        request.history,
+                                        &request.related,
+                                    )
+                                    .map_err(|e| format!("{e:?}"))?,
+                            )
+                        } else {
                             let mut view = observations
                                 .bot_observation(
                                     instrument,
@@ -689,27 +766,35 @@ pub(super) async fn run(
                                     prior.config().account_id,
                                 )
                                 .map_err(|e| format!("{e:?}"))?;
-                            Ok(view)
-                        });
-                    inputs.push((prior, observation, registry.clone(), cached, request));
-                }
-                for (prior, observation, registry, cached, request) in inputs {
-                    let id = prior.template.participant_id().to_string();
-                    in_flight.insert(id.clone());
-                    // Construction, decisions, snapshots, and destructors stay outside AppState.
-                    decisions.spawn_blocking(move || {
-                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            compute_decision(prior, observation?, registry, cached, request?, epoch)
-                        }))
-                        .unwrap_or_else(|_| Err("bot panicked".to_string()));
-                        (id, epoch, result)
-                    });
-                }
-            }
-        }
-    }
+                            DecisionObservation::Owned(view)
+                        };
+                    #[cfg(all(test, feature = "memory-diagnostics"))]
+                    drop(delivery_scope);
+                    compute_decision_input(
+                        prior,
+                        observation,
+                        registry.clone(),
+                        cached,
+                        request,
+                        epoch,
+                    )
+                }))
+                .unwrap_or_else(|_| Err("bot panicked".to_string()));
+                (id, epoch, result)
+            })
+            .collect()
+    });
 }
 
+// This value is consumed on the blocking worker's stack, never queued. Boxing
+// would add an allocation to every decision solely to shrink a short-lived enum.
+#[allow(clippy::large_enum_variant)]
+enum DecisionObservation {
+    Owned(exchange_core::ParticipantObservation),
+    Shared(exchange_core::observation::SharedParticipantObservation),
+}
+
+#[cfg(test)]
 fn compute_decision(
     prior: SharedAgent,
     observation: exchange_core::ParticipantObservation,
@@ -718,6 +803,26 @@ fn compute_decision(
     request: Arc<ObservationRequest>,
     epoch: u64,
 ) -> ComputedDecision {
+    compute_decision_input(
+        prior,
+        DecisionObservation::Owned(observation),
+        registry,
+        cached,
+        request,
+        epoch,
+    )
+}
+
+fn compute_decision_input(
+    prior: SharedAgent,
+    observation: DecisionObservation,
+    registry: exchange_core::BotRegistry,
+    cached: Option<CachedBot>,
+    request: Arc<ObservationRequest>,
+    epoch: u64,
+) -> ComputedDecision {
+    #[cfg(all(test, feature = "memory-diagnostics"))]
+    let _scope = crate::memory_diagnostics::Scope::enter(crate::memory_diagnostics::Origin::Bot);
     let reusable = cached.is_some() || registry.supports_instance_reuse(&prior.template);
     let mut bot = match cached {
         Some(cached) => cached.bot,
@@ -725,7 +830,11 @@ fn compute_decision(
             .create(&prior.template, &prior.kind_state)
             .map_err(|e| e.to_string())?,
     };
-    let actions = bot.decide(&observation).map_err(|e| e.to_string())?;
+    let actions = match observation {
+        DecisionObservation::Owned(view) => bot.decide(&view),
+        DecisionObservation::Shared(view) => bot.decide_shared(&view),
+    }
+    .map_err(|e| e.to_string())?;
     if actions.len() > exchange_core::MAX_BOT_ACTIONS {
         return Err("bot exceeded action limit".to_string());
     }
@@ -755,6 +864,10 @@ fn compute_decision(
         cached,
     ))
 }
+
+#[cfg(test)]
+#[path = "native_delivery_benchmark.rs"]
+mod delivery_benchmark;
 
 #[cfg(test)]
 mod index_tests {
@@ -831,6 +944,34 @@ mod index_tests {
     }
 
     #[tokio::test]
+    async fn queued_packet_results_and_due_clock_alternate() {
+        for prefer_clock in [true, false] {
+            let mut tasks = tokio::task::JoinSet::<u8>::new();
+            let mut clock = tokio::time::interval(Duration::from_secs(3600));
+            let mut stop_poll = tokio::time::interval(Duration::from_secs(3600));
+            stop_poll.tick().await;
+            match next_wake(&mut clock, &mut stop_poll, &mut tasks, prefer_clock, true).await {
+                Wake::Clock => assert!(prefer_clock),
+                Wake::Ready => assert!(!prefer_clock),
+                _ => panic!("buffered results and clock were ready"),
+            }
+            match next_wake(
+                &mut clock,
+                &mut stop_poll,
+                &mut tasks,
+                !prefer_clock,
+                prefer_clock,
+            )
+            .await
+            {
+                Wake::Clock => assert!(!prefer_clock),
+                Wake::Ready => assert!(prefer_clock),
+                _ => panic!("other source must not be starved"),
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn ready_clock_and_ready_results_each_receive_their_turn() {
         for prefer_clock in [true, false] {
             let mut tasks = tokio::task::JoinSet::new();
@@ -843,13 +984,13 @@ mod index_tests {
             let mut clock = tokio::time::interval(Duration::from_secs(3600));
             let mut stop_poll = tokio::time::interval(Duration::from_secs(3600));
             stop_poll.tick().await;
-            match next_wake(&mut clock, &mut stop_poll, &mut tasks, prefer_clock).await {
+            match next_wake(&mut clock, &mut stop_poll, &mut tasks, prefer_clock, false).await {
                 Wake::Clock => assert!(prefer_clock),
                 Wake::Decision(Some(Ok(7))) => assert!(!prefer_clock),
                 _ => panic!("both sources were ready"),
             }
             // The other ready source must win on the next iteration.
-            match next_wake(&mut clock, &mut stop_poll, &mut tasks, !prefer_clock).await {
+            match next_wake(&mut clock, &mut stop_poll, &mut tasks, !prefer_clock, false).await {
                 Wake::Clock => assert!(!prefer_clock),
                 Wake::Decision(Some(Ok(7))) => assert!(prefer_clock),
                 _ => panic!("other source must not be starved"),

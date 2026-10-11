@@ -326,11 +326,11 @@ fn leverage_budget_has_explicit_cap_and_legacy_budget_remains_unleveraged() {
         fee_buffer_ppm: 0,
         ..Config::default()
     };
-    let mut budget = Budget::new(&observation, &config).unwrap();
+    let mut budget = Budget::new(&ParticipantObservationView::from(&observation), &config).unwrap();
     assert_eq!(budget.allocate(Side::Buy, 100, 100), 50);
     assert_eq!(budget.allocate(Side::Buy, 100, 100), 0);
     let mut legacy = Budget::new(
-        &observation,
+        &ParticipantObservationView::from(&observation),
         &Config {
             fee_buffer_ppm: 0,
             ..Config::default()

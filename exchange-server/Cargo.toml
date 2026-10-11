@@ -10,6 +10,8 @@ repository.workspace = true
 risk-benchmark = []
 # Diagnostic counters for isolated load runs; absent from ordinary builds.
 bench-execution-timing = []
+# Allocation attribution is confined to the ignored library diagnostics.
+memory-diagnostics = []
 
 [[example]]
 name = "benchmark_margin_progress"

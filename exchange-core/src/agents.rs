@@ -168,6 +168,9 @@ macro_rules! builtin_bot {
             }
         }
         impl crate::bots::BotFactory for $factory {
+            fn supports_native_batching(&self) -> bool {
+                true
+            }
             fn supports_instance_reuse(&self) -> bool {
                 true
             }

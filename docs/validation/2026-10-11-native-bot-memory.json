@@ -1,0 +1,2207 @@
+{
+  "scope": "native bot memory follow-up, codex/native-bot-delivery, uncommitted",
+  "head": "07c98ba761448b9161b97a8d66f22167c60da267",
+  "baseline": "B1: prior native delivery candidate, not the original owned-dispatch B0",
+  "before_binary_sha256": "ba05ea7d5b9b85419e76e87390b17ee5d55e43e72591ad145e09ee1cdd21ebb0",
+  "after_binary_sha256": "ed976938ef1249b988b15c0379b4be4d387fb0bd06bab0aaae1f52e83cb9bcd2",
+  "diagnostics_binary_sha256": "4797ea812def4153d692e1454d2b9ece767637ebd5bea5350040ffecf95c4a46",
+  "ownership": [
+    {
+      "case": "profile-before-01",
+      "original_capacity": true,
+      "final_step": 1163,
+      "paused_mib": 1047.8124828338623,
+      "workers_after_pause_mib": 4.924932479858398,
+      "mutations_mib": 922.6180791854858,
+      "other_journal_mib": 79.73169040679932,
+      "app_mib": 40.39898109436035,
+      "journal_retained_fraction": 0.9566117850413264,
+      "running_bot_origin_mib": 12.157525062561035,
+      "running_delivery_origin_mib": 0.09161758422851562,
+      "journal": {
+        "executions": 29232,
+        "mutation_vector_capacity_bytes": 196608,
+        "mutations": {
+          "other": [
+            1,
+            152,
+            256
+          ],
+          "scheduler_delta": [
+            6800,
+            375053939,
+            736552960
+          ],
+          "scheduler_progress": [
+            110,
+            181297282,
+            229638144
+          ],
+          "state_checkpoint": [
+            1,
+            540967,
+            1048576
+          ]
+        },
+        "snapshots": 1
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 5,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14410301,
+              "delivery": 96068,
+              "journal": 70372352,
+              "other": 53642903
+            },
+            "requested_live_bytes": 138521591,
+            "requested_peak_bytes": 150955444,
+            "tracker_header_live_bytes": 4249960
+          },
+          "journal": {
+            "executions": 8581,
+            "mutation_vector_capacity_bytes": 24576,
+            "mutations": {
+              "scheduler_delta": [
+                523,
+                22440337,
+                38890496
+              ],
+              "scheduler_progress": [
+                15,
+                23884881,
+                30408704
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 185
+        },
+        {
+          "elapsed_seconds": 10,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14456243,
+              "delivery": 96068,
+              "journal": 152149504,
+              "other": 92799612
+            },
+            "requested_live_bytes": 259500742,
+            "requested_peak_bytes": 276779309,
+            "tracker_header_live_bytes": 6554808
+          },
+          "journal": {
+            "executions": 20014,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1027,
+                43557613,
+                80797184
+              ],
+              "scheduler_progress": [
+                34,
+                55305610,
+                70254592
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 373
+        },
+        {
+          "elapsed_seconds": 15,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 12118761,
+              "delivery": 96068,
+              "journal": 261035520,
+              "other": 127540976
+            },
+            "requested_live_bytes": 400791345,
+            "requested_peak_bytes": 415402160,
+            "tracker_header_live_bytes": 8012944
+          },
+          "journal": {
+            "executions": 28626,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1757,
+                79462687,
+                151934464
+              ],
+              "scheduler_progress": [
+                52,
+                85097927,
+                108003328
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 565
+        },
+        {
+          "elapsed_seconds": 20,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14321979,
+              "delivery": 96068,
+              "journal": 483614208,
+              "other": 127577738
+            },
+            "requested_live_bytes": 625610013,
+            "requested_peak_bytes": 634084615,
+            "tracker_header_live_bytes": 8247448
+          },
+          "journal": {
+            "executions": 28811,
+            "mutation_vector_capacity_bytes": 98304,
+            "mutations": {
+              "scheduler_delta": [
+                3362,
+                172842216,
+                336715264
+              ],
+              "scheduler_progress": [
+                70,
+                114942996,
+                145752064
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 765
+        },
+        {
+          "elapsed_seconds": 25,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 13692582,
+              "delivery": 96068,
+              "journal": 721445888,
+              "other": 127869605
+            },
+            "requested_live_bytes": 863104163,
+            "requested_peak_bytes": 872174943,
+            "tracker_header_live_bytes": 8234800
+          },
+          "journal": {
+            "executions": 29045,
+            "mutation_vector_capacity_bytes": 196608,
+            "mutations": {
+              "scheduler_delta": [
+                5050,
+                271781759,
+                532505600
+              ],
+              "scheduler_progress": [
+                90,
+                148104215,
+                187695104
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 963
+        },
+        {
+          "elapsed_seconds": 30,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 12748089,
+              "delivery": 96068,
+              "journal": 967305216,
+              "other": 128101412
+            },
+            "requested_live_bytes": 1108250805,
+            "requested_peak_bytes": 1120311249,
+            "tracker_header_live_bytes": 8188144
+          },
+          "journal": {
+            "executions": 29232,
+            "mutation_vector_capacity_bytes": 196608,
+            "mutations": {
+              "scheduler_delta": [
+                6799,
+                374987648,
+                736421888
+              ],
+              "scheduler_progress": [
+                110,
+                181297282,
+                229638144
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 1163
+        }
+      ]
+    },
+    {
+      "case": "profile-before-02",
+      "original_capacity": true,
+      "final_step": 1155,
+      "paused_mib": 1237.1466999053955,
+      "workers_after_pause_mib": 2.1552906036376953,
+      "mutations_mib": 1144.7713994979858,
+      "other_journal_mib": 56.901551246643066,
+      "app_mib": 33.17967128753662,
+      "journal_retained_fraction": 0.97132615787321,
+      "running_bot_origin_mib": 13.345938682556152,
+      "running_delivery_origin_mib": 0.09161758422851562,
+      "journal": {
+        "executions": 20532,
+        "mutation_vector_capacity_bytes": 393216,
+        "mutations": {
+          "other": [
+            1,
+            152,
+            256
+          ],
+          "scheduler_delta": [
+            8464,
+            485952428,
+            954620928
+          ],
+          "scheduler_progress": [
+            117,
+            193063783,
+            244318208
+          ],
+          "state_checkpoint": [
+            1,
+            540967,
+            1048576
+          ]
+        },
+        "snapshots": 1
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 5,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14079902,
+              "delivery": 96068,
+              "journal": 68497920,
+              "other": 58822788
+            },
+            "requested_live_bytes": 141496698,
+            "requested_peak_bytes": 154289495,
+            "tracker_header_live_bytes": 4624000
+          },
+          "journal": {
+            "executions": 8954,
+            "mutation_vector_capacity_bytes": 24576,
+            "mutations": {
+              "scheduler_delta": [
+                502,
+                21834006,
+                37016064
+              ],
+              "scheduler_progress": [
+                15,
+                23862990,
+                30408704
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 171
+        },
+        {
+          "elapsed_seconds": 10,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 13062601,
+              "delivery": 96068,
+              "journal": 208077824,
+              "other": 82266072
+            },
+            "requested_live_bytes": 303502543,
+            "requested_peak_bytes": 310684793,
+            "tracker_header_live_bytes": 6060288
+          },
+          "journal": {
+            "executions": 17794,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1431,
+                71257499,
+                134628352
+              ],
+              "scheduler_progress": [
+                35,
+                57034157,
+                72351744
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 358
+        },
+        {
+          "elapsed_seconds": 15,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 11477857,
+              "delivery": 96068,
+              "journal": 440354816,
+              "other": 96565852
+            },
+            "requested_live_bytes": 548494613,
+            "requested_peak_bytes": 562431113,
+            "tracker_header_live_bytes": 6296360
+          },
+          "journal": {
+            "executions": 20522,
+            "mutation_vector_capacity_bytes": 98304,
+            "mutations": {
+              "scheduler_delta": [
+                3044,
+                165440121,
+                320718848
+              ],
+              "scheduler_progress": [
+                57,
+                93546080,
+                118489088
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 555
+        },
+        {
+          "elapsed_seconds": 20,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 12422247,
+              "delivery": 96068,
+              "journal": 700076032,
+              "other": 96576904
+            },
+            "requested_live_bytes": 809171209,
+            "requested_peak_bytes": 814696123,
+            "tracker_header_live_bytes": 6396288
+          },
+          "journal": {
+            "executions": 20525,
+            "mutation_vector_capacity_bytes": 196608,
+            "mutations": {
+              "scheduler_delta": [
+                4900,
+                275450817,
+                538398720
+              ],
+              "scheduler_progress": [
+                77,
+                126709293,
+                160432128
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 755
+        },
+        {
+          "elapsed_seconds": 25,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 11477989,
+              "delivery": 96068,
+              "journal": 960616448,
+              "other": 96292931
+            },
+            "requested_live_bytes": 1068483456,
+            "requested_peak_bytes": 1077628917,
+            "tracker_header_live_bytes": 6311496
+          },
+          "journal": {
+            "executions": 20528,
+            "mutation_vector_capacity_bytes": 196608,
+            "mutations": {
+              "scheduler_delta": [
+                6747,
+                384866285,
+                754898944
+              ],
+              "scheduler_progress": [
+                98,
+                161530664,
+                204472320
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 956
+        },
+        {
+          "elapsed_seconds": 30,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 13994231,
+              "delivery": 96068,
+              "journal": 1200249856,
+              "other": 96611115
+            },
+            "requested_live_bytes": 1310951249,
+            "requested_peak_bytes": 1314752462,
+            "tracker_header_live_bytes": 6568072
+          },
+          "journal": {
+            "executions": 20532,
+            "mutation_vector_capacity_bytes": 393216,
+            "mutations": {
+              "scheduler_delta": [
+                8463,
+                485886099,
+                954489856
+              ],
+              "scheduler_progress": [
+                117,
+                193063783,
+                244318208
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 1155
+        }
+      ]
+    },
+    {
+      "case": "01-original",
+      "original_capacity": true,
+      "final_step": 1088,
+      "paused_mib": 677.2920923233032,
+      "workers_after_pause_mib": 2.146357536315918,
+      "mutations_mib": 469.56632137298584,
+      "other_journal_mib": 138.0888547897339,
+      "app_mib": 67.35177230834961,
+      "journal_retained_fraction": 0.8971833320514504,
+      "running_bot_origin_mib": 13.379344940185547,
+      "running_delivery_origin_mib": 0.09161758422851562,
+      "journal": {
+        "executions": 52164,
+        "mutation_vector_capacity_bytes": 98304,
+        "mutations": {
+          "other": [
+            1,
+            152,
+            256
+          ],
+          "scheduler_delta": [
+            3313,
+            149599401,
+            288855040
+          ],
+          "scheduler_progress": [
+            97,
+            160185970,
+            202375168
+          ],
+          "state_checkpoint": [
+            1,
+            540967,
+            1048576
+          ]
+        },
+        "snapshots": 1
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 5,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14419791,
+              "delivery": 96068,
+              "journal": 55364096,
+              "other": 61788749
+            },
+            "requested_live_bytes": 131668724,
+            "requested_peak_bytes": 141792299,
+            "tracker_header_live_bytes": 4831848
+          },
+          "journal": {
+            "executions": 7731,
+            "mutation_vector_capacity_bytes": 12288,
+            "mutations": {
+              "scheduler_delta": [
+                434,
+                17065520,
+                28088832
+              ],
+              "scheduler_progress": [
+                13,
+                20558788,
+                26214400
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 176
+        },
+        {
+          "elapsed_seconds": 10,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14446564,
+              "delivery": 96068,
+              "journal": 113917440,
+              "other": 96049218
+            },
+            "requested_live_bytes": 224509310,
+            "requested_peak_bytes": 234413618,
+            "tracker_header_live_bytes": 6634928
+          },
+          "journal": {
+            "executions": 14754,
+            "mutation_vector_capacity_bytes": 24576,
+            "mutations": {
+              "scheduler_delta": [
+                834,
+                32859849,
+                59366912
+              ],
+              "scheduler_progress": [
+                26,
+                42075060,
+                53477376
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 343
+        },
+        {
+          "elapsed_seconds": 15,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14132753,
+              "delivery": 96068,
+              "journal": 187307008,
+              "other": 125463678
+            },
+            "requested_live_bytes": 326999527,
+            "requested_peak_bytes": 335746978,
+            "tracker_header_live_bytes": 8417064
+          },
+          "journal": {
+            "executions": 23930,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1324,
+                53090375,
+                99177472
+              ],
+              "scheduler_progress": [
+                42,
+                68670508,
+                87031808
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 533
+        },
+        {
+          "elapsed_seconds": 20,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14171436,
+              "delivery": 96068,
+              "journal": 265385984,
+              "other": 163923093
+            },
+            "requested_live_bytes": 443576601,
+            "requested_peak_bytes": 456193611,
+            "tracker_header_live_bytes": 10268176
+          },
+          "journal": {
+            "executions": 33209,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1825,
+                74653876,
+                141604864
+              ],
+              "scheduler_progress": [
+                59,
+                96935692,
+                122683392
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 714
+        },
+        {
+          "elapsed_seconds": 25,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14081318,
+              "delivery": 96068,
+              "journal": 344958464,
+              "other": 201246859
+            },
+            "requested_live_bytes": 560382729,
+            "requested_peak_bytes": 576242653,
+            "tracker_header_live_bytes": 12224440
+          },
+          "journal": {
+            "executions": 43534,
+            "mutation_vector_capacity_bytes": 98304,
+            "mutations": {
+              "scheduler_delta": [
+                2326,
+                95889339,
+                183379456
+              ],
+              "scheduler_progress": [
+                77,
+                126865500,
+                160432128
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 900
+        },
+        {
+          "elapsed_seconds": 30,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14029260,
+              "delivery": 96068,
+              "journal": 492246016,
+              "other": 217490763
+            },
+            "requested_live_bytes": 723860055,
+            "requested_peak_bytes": 736243238,
+            "tracker_header_live_bytes": 13592616
+          },
+          "journal": {
+            "executions": 52129,
+            "mutation_vector_capacity_bytes": 98304,
+            "mutations": {
+              "scheduler_delta": [
+                3312,
+                149532541,
+                288723968
+              ],
+              "scheduler_progress": [
+                97,
+                160185970,
+                202375168
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 1088
+        }
+      ]
+    },
+    {
+      "case": "02-tight",
+      "original_capacity": false,
+      "final_step": 1142,
+      "paused_mib": 717.9173221588135,
+      "workers_after_pause_mib": 1.445709228515625,
+      "mutations_mib": 616.8927955627441,
+      "other_journal_mib": 62.09458637237549,
+      "app_mib": 37.345444679260254,
+      "journal_retained_fraction": 0.9457737833840956,
+      "running_bot_origin_mib": 13.66209602355957,
+      "running_delivery_origin_mib": 0.09161758422851562,
+      "journal": {
+        "executions": 22785,
+        "mutation_vector_capacity_bytes": 196608,
+        "mutations": {
+          "other": [
+            1,
+            152,
+            256
+          ],
+          "scheduler_delta": [
+            8027,
+            457592314,
+            457638425
+          ],
+          "scheduler_progress": [
+            114,
+            187976484,
+            187976484
+          ],
+          "state_checkpoint": [
+            1,
+            540967,
+            1048576
+          ]
+        },
+        "snapshots": 1
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 5,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 13755106,
+              "delivery": 96068,
+              "journal": 48072223,
+              "other": 58423538
+            },
+            "requested_live_bytes": 120346187,
+            "requested_peak_bytes": 136404894,
+            "tracker_header_live_bytes": 4459128
+          },
+          "journal": {
+            "executions": 9115,
+            "mutation_vector_capacity_bytes": 24576,
+            "mutations": {
+              "scheduler_delta": [
+                498,
+                21462763,
+                21470506
+              ],
+              "scheduler_progress": [
+                16,
+                25528565,
+                25528565
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 173
+        },
+        {
+          "elapsed_seconds": 10,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14449112,
+              "delivery": 96068,
+              "journal": 93759599,
+              "other": 99864995
+            },
+            "requested_live_bytes": 208169794,
+            "requested_peak_bytes": 222101461,
+            "tracker_header_live_bytes": 6777136
+          },
+          "journal": {
+            "executions": 18330,
+            "mutation_vector_capacity_bytes": 24576,
+            "mutations": {
+              "scheduler_delta": [
+                980,
+                42352850,
+                42367740
+              ],
+              "scheduler_progress": [
+                31,
+                50318707,
+                50318707
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 343
+        },
+        {
+          "elapsed_seconds": 15,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 13381772,
+              "delivery": 96068,
+              "journal": 221647310,
+              "other": 105460200
+            },
+            "requested_live_bytes": 340585370,
+            "requested_peak_bytes": 354695869,
+            "tracker_header_live_bytes": 7271504
+          },
+          "journal": {
+            "executions": 22044,
+            "mutation_vector_capacity_bytes": 98304,
+            "mutations": {
+              "scheduler_delta": [
+                2552,
+                133682827,
+                133705477
+              ],
+              "scheduler_progress": [
+                53,
+                86794953,
+                86794953
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 541
+        },
+        {
+          "elapsed_seconds": 20,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 12437029,
+              "delivery": 96068,
+              "journal": 364140842,
+              "other": 105764162
+            },
+            "requested_live_bytes": 482438121,
+            "requested_peak_bytes": 494211453,
+            "tracker_header_live_bytes": 7232456
+          },
+          "journal": {
+            "executions": 22284,
+            "mutation_vector_capacity_bytes": 196608,
+            "mutations": {
+              "scheduler_delta": [
+                4397,
+                242905192,
+                242935722
+              ],
+              "scheduler_progress": [
+                73,
+                119959936,
+                119959936
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 741
+        },
+        {
+          "elapsed_seconds": 25,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 11493359,
+              "delivery": 96068,
+              "journal": 504152039,
+              "other": 105819200
+            },
+            "requested_live_bytes": 621560686,
+            "requested_peak_bytes": 631918311,
+            "tracker_header_live_bytes": 7179688
+          },
+          "journal": {
+            "executions": 22537,
+            "mutation_vector_capacity_bytes": 196608,
+            "mutations": {
+              "scheduler_delta": [
+                6206,
+                349743546,
+                349781956
+              ],
+              "scheduler_progress": [
+                93,
+                153124899,
+                153124899
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 941
+        },
+        {
+          "elapsed_seconds": 30,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14325746,
+              "delivery": 96068,
+              "journal": 646793726,
+              "other": 106423537
+            },
+            "requested_live_bytes": 767639097,
+            "requested_peak_bytes": 778137243,
+            "tracker_header_live_bytes": 7498112
+          },
+          "journal": {
+            "executions": 22784,
+            "mutation_vector_capacity_bytes": 196608,
+            "mutations": {
+              "scheduler_delta": [
+                8026,
+                457525947,
+                457572058
+              ],
+              "scheduler_progress": [
+                114,
+                187976484,
+                187976484
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 1142
+        }
+      ]
+    },
+    {
+      "case": "03-tight",
+      "original_capacity": false,
+      "final_step": 1125,
+      "paused_mib": 747.8514633178711,
+      "workers_after_pause_mib": 2.8282594680786133,
+      "mutations_mib": 644.0099849700928,
+      "other_journal_mib": 62.44034671783447,
+      "app_mib": 38.434085845947266,
+      "journal_retained_fraction": 0.9446399002199365,
+      "running_bot_origin_mib": 13.034533500671387,
+      "running_delivery_origin_mib": 0.09161758422851562,
+      "journal": {
+        "executions": 28232,
+        "mutation_vector_capacity_bytes": 393216,
+        "mutations": {
+          "other": [
+            1,
+            152,
+            256
+          ],
+          "scheduler_delta": [
+            8249,
+            470817110,
+            470862422
+          ],
+          "scheduler_progress": [
+            123,
+            202990313,
+            202990313
+          ],
+          "state_checkpoint": [
+            1,
+            540967,
+            1048576
+          ]
+        },
+        "snapshots": 1
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 5,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14344132,
+              "delivery": 96068,
+              "journal": 47907576,
+              "other": 56409912
+            },
+            "requested_live_bytes": 118757708,
+            "requested_peak_bytes": 136015383,
+            "tracker_header_live_bytes": 4578952
+          },
+          "journal": {
+            "executions": 9011,
+            "mutation_vector_capacity_bytes": 24576,
+            "mutations": {
+              "scheduler_delta": [
+                497,
+                21304980,
+                21312774
+              ],
+              "scheduler_progress": [
+                16,
+                25521650,
+                25521650
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 173
+        },
+        {
+          "elapsed_seconds": 10,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 13747644,
+              "delivery": 96068,
+              "journal": 127127920,
+              "other": 99382840
+            },
+            "requested_live_bytes": 240354492,
+            "requested_peak_bytes": 251415368,
+            "tracker_header_live_bytes": 6561048
+          },
+          "journal": {
+            "executions": 22582,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1287,
+                62335572,
+                62350568
+              ],
+              "scheduler_progress": [
+                39,
+                63679624,
+                63679624
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 350
+        },
+        {
+          "elapsed_seconds": 15,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 13353196,
+              "delivery": 96068,
+              "journal": 245876004,
+              "other": 107810171
+            },
+            "requested_live_bytes": 367135459,
+            "requested_peak_bytes": 374713823,
+            "tracker_header_live_bytes": 7306776
+          },
+          "journal": {
+            "executions": 28152,
+            "mutation_vector_capacity_bytes": 98304,
+            "mutations": {
+              "scheduler_delta": [
+                2718,
+                144548844,
+                144571120
+              ],
+              "scheduler_progress": [
+                61,
+                100158004,
+                100158004
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 537
+        },
+        {
+          "elapsed_seconds": 20,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 11464844,
+              "delivery": 96068,
+              "journal": 389956116,
+              "other": 108099876
+            },
+            "requested_live_bytes": 509616924,
+            "requested_peak_bytes": 523296074,
+            "tracker_header_live_bytes": 7170144
+          },
+          "journal": {
+            "executions": 28178,
+            "mutation_vector_capacity_bytes": 196608,
+            "mutations": {
+              "scheduler_delta": [
+                4572,
+                253700803,
+                253730799
+              ],
+              "scheduler_progress": [
+                82,
+                134980133,
+                134980133
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 732
+        },
+        {
+          "elapsed_seconds": 25,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 10520613,
+              "delivery": 96068,
+              "journal": 533712395,
+              "other": 107848621
+            },
+            "requested_live_bytes": 652177717,
+            "requested_peak_bytes": 668480392,
+            "tracker_header_live_bytes": 7087904
+          },
+          "journal": {
+            "executions": 28208,
+            "mutation_vector_capacity_bytes": 196608,
+            "mutations": {
+              "scheduler_delta": [
+                6418,
+                362627339,
+                362664935
+              ],
+              "scheduler_progress": [
+                103,
+                169802276,
+                169802276
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 926
+        },
+        {
+          "elapsed_seconds": 30,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 13667699,
+              "delivery": 96068,
+              "journal": 675228162,
+              "other": 107922893
+            },
+            "requested_live_bytes": 796914842,
+            "requested_peak_bytes": 806472100,
+            "tracker_header_live_bytes": 7390384
+          },
+          "journal": {
+            "executions": 28232,
+            "mutation_vector_capacity_bytes": 393216,
+            "mutations": {
+              "scheduler_delta": [
+                8248,
+                470750745,
+                470796057
+              ],
+              "scheduler_progress": [
+                123,
+                202990313,
+                202990313
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 1125
+        }
+      ]
+    },
+    {
+      "case": "04-original",
+      "original_capacity": true,
+      "final_step": 1053,
+      "paused_mib": 579.591157913208,
+      "workers_after_pause_mib": 0.7532014846801758,
+      "mutations_mib": 398.81583309173584,
+      "other_journal_mib": 123.61734867095947,
+      "app_mib": 56.26611042022705,
+      "journal_retained_fraction": 0.9013822495907159,
+      "running_bot_origin_mib": 13.73358154296875,
+      "running_delivery_origin_mib": 0.09161758422851562,
+      "journal": {
+        "executions": 40672,
+        "mutation_vector_capacity_bytes": 98304,
+        "mutations": {
+          "other": [
+            1,
+            152,
+            256
+          ],
+          "scheduler_delta": [
+            2970,
+            128973161,
+            248222208
+          ],
+          "scheduler_progress": [
+            81,
+            133635723,
+            168820736
+          ],
+          "state_checkpoint": [
+            1,
+            540967,
+            1048576
+          ]
+        },
+        "snapshots": 1
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 5,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 13825331,
+              "delivery": 96068,
+              "journal": 65076224,
+              "other": 54673164
+            },
+            "requested_live_bytes": 133670807,
+            "requested_peak_bytes": 144554671,
+            "tracker_header_live_bytes": 4406560
+          },
+          "journal": {
+            "executions": 8360,
+            "mutation_vector_capacity_bytes": 12288,
+            "mutations": {
+              "scheduler_delta": [
+                485,
+                20962906,
+                35703808
+              ],
+              "scheduler_progress": [
+                14,
+                22234353,
+                28311552
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 168
+        },
+        {
+          "elapsed_seconds": 10,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14061044,
+              "delivery": 96068,
+              "journal": 138703360,
+              "other": 85048064
+            },
+            "requested_live_bytes": 237907835,
+            "requested_peak_bytes": 253877140,
+            "tracker_header_live_bytes": 6134008
+          },
+          "journal": {
+            "executions": 16072,
+            "mutation_vector_capacity_bytes": 24576,
+            "mutations": {
+              "scheduler_delta": [
+                969,
+                42366725,
+                77861376
+              ],
+              "scheduler_progress": [
+                29,
+                47158268,
+                59768832
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 336
+        },
+        {
+          "elapsed_seconds": 15,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 13473667,
+              "delivery": 96068,
+              "journal": 212081664,
+              "other": 112643155
+            },
+            "requested_live_bytes": 338294574,
+            "requested_peak_bytes": 351424040,
+            "tracker_header_live_bytes": 7525632
+          },
+          "journal": {
+            "executions": 22383,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1469,
+                64723351,
+                121854976
+              ],
+              "scheduler_progress": [
+                43,
+                70438505,
+                89128960
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 504
+        },
+        {
+          "elapsed_seconds": 20,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14445576,
+              "delivery": 96068,
+              "journal": 282954752,
+              "other": 140934621
+            },
+            "requested_live_bytes": 438431037,
+            "requested_peak_bytes": 448626120,
+            "tracker_header_live_bytes": 9147656
+          },
+          "journal": {
+            "executions": 29678,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1985,
+                86892721,
+                165465088
+              ],
+              "scheduler_progress": [
+                56,
+                92056908,
+                116391936
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 692
+        },
+        {
+          "elapsed_seconds": 25,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14446540,
+              "delivery": 96068,
+              "journal": 355972608,
+              "other": 155809287
+            },
+            "requested_live_bytes": 526324523,
+            "requested_peak_bytes": 536219377,
+            "tracker_header_live_bytes": 10453152
+          },
+          "journal": {
+            "executions": 35510,
+            "mutation_vector_capacity_bytes": 98304,
+            "mutations": {
+              "scheduler_delta": [
+                2514,
+                110125487,
+                211170816
+              ],
+              "scheduler_progress": [
+                69,
+                113675772,
+                143654912
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 878
+        },
+        {
+          "elapsed_seconds": 30,
+          "heap": {
+            "origin_live_bytes": {
+              "bot": 14400704,
+              "delivery": 96068,
+              "journal": 418189312,
+              "other": 190775430
+            },
+            "requested_live_bytes": 623461534,
+            "requested_peak_bytes": 634106408,
+            "tracker_header_live_bytes": 11605832
+          },
+          "journal": {
+            "executions": 40672,
+            "mutation_vector_capacity_bytes": 98304,
+            "mutations": {
+              "scheduler_delta": [
+                2969,
+                128972688,
+                248221696
+              ],
+              "scheduler_progress": [
+                81,
+                133635723,
+                168820736
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "step": 1053
+        }
+      ]
+    }
+  ],
+  "fixed": {
+    "workload": "fixed",
+    "cases": [
+      {
+        "capacity": "original",
+        "report": {
+          "actions": 20409,
+          "bots": 1000,
+          "decisions": 64000,
+          "delivery_ms": 1347.0565000000001,
+          "dispatches": 2048,
+          "elapsed_ms": 18018.3365,
+          "empty": 43952,
+          "mode": "native",
+          "receipt_sha256": "e16c444ca79b5375c4b3b02e3799dc245d6fae0ac92f6e8f280dde2233da0f6a",
+          "steps": 64
+        },
+        "memory": {
+          "definition": "fixed-work requested heap before final state/execution receipt serialization",
+          "heap_before_receipt": {
+            "origin_live_bytes": {
+              "bot": 9428041,
+              "delivery": 96068,
+              "journal": 178798080,
+              "other": 134500282
+            },
+            "requested_live_bytes": 322822491,
+            "requested_peak_bytes": 343848474,
+            "tracker_header_live_bytes": 7860488
+          },
+          "journal": {
+            "executions": 20412,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1060,
+                64105604,
+                117931520
+              ],
+              "scheduler_progress": [
+                29,
+                47054621,
+                59768832
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "original_capacity": true
+        }
+      },
+      {
+        "capacity": "tight",
+        "report": {
+          "actions": 20409,
+          "bots": 1000,
+          "decisions": 64000,
+          "delivery_ms": 1254.3392000000003,
+          "dispatches": 2048,
+          "elapsed_ms": 16040.3813,
+          "empty": 43952,
+          "mode": "native",
+          "receipt_sha256": "e16c444ca79b5375c4b3b02e3799dc245d6fae0ac92f6e8f280dde2233da0f6a",
+          "steps": 64
+        },
+        "memory": {
+          "definition": "fixed-work requested heap before final state/execution receipt serialization",
+          "heap_before_receipt": {
+            "origin_live_bytes": {
+              "bot": 9428041,
+              "delivery": 96068,
+              "journal": 112261344,
+              "other": 134500282
+            },
+            "requested_live_bytes": 256285755,
+            "requested_peak_bytes": 279656062,
+            "tracker_header_live_bytes": 7860488
+          },
+          "journal": {
+            "executions": 20412,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1060,
+                64105604,
+                64108995
+              ],
+              "scheduler_progress": [
+                29,
+                47054621,
+                47054621
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "original_capacity": false
+        }
+      },
+      {
+        "capacity": "tight",
+        "report": {
+          "actions": 20409,
+          "bots": 1000,
+          "decisions": 64000,
+          "delivery_ms": 1217.7013000000004,
+          "dispatches": 2048,
+          "elapsed_ms": 15766.8913,
+          "empty": 43952,
+          "mode": "native",
+          "receipt_sha256": "e16c444ca79b5375c4b3b02e3799dc245d6fae0ac92f6e8f280dde2233da0f6a",
+          "steps": 64
+        },
+        "memory": {
+          "definition": "fixed-work requested heap before final state/execution receipt serialization",
+          "heap_before_receipt": {
+            "origin_live_bytes": {
+              "bot": 9428041,
+              "delivery": 96068,
+              "journal": 112261344,
+              "other": 134500418
+            },
+            "requested_live_bytes": 256285891,
+            "requested_peak_bytes": 279655038,
+            "tracker_header_live_bytes": 7860512
+          },
+          "journal": {
+            "executions": 20412,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1060,
+                64105604,
+                64108995
+              ],
+              "scheduler_progress": [
+                29,
+                47054621,
+                47054621
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "original_capacity": false
+        }
+      },
+      {
+        "capacity": "original",
+        "report": {
+          "actions": 20409,
+          "bots": 1000,
+          "decisions": 64000,
+          "delivery_ms": 1128.2505999999998,
+          "dispatches": 2048,
+          "elapsed_ms": 14094.1848,
+          "empty": 43952,
+          "mode": "native",
+          "receipt_sha256": "e16c444ca79b5375c4b3b02e3799dc245d6fae0ac92f6e8f280dde2233da0f6a",
+          "steps": 64
+        },
+        "memory": {
+          "definition": "fixed-work requested heap before final state/execution receipt serialization",
+          "heap_before_receipt": {
+            "origin_live_bytes": {
+              "bot": 9428041,
+              "delivery": 96068,
+              "journal": 178798080,
+              "other": 134499258
+            },
+            "requested_live_bytes": 322821467,
+            "requested_peak_bytes": 343848610,
+            "tracker_header_live_bytes": 7860504
+          },
+          "journal": {
+            "executions": 20412,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1060,
+                64105604,
+                117931520
+              ],
+              "scheduler_progress": [
+                29,
+                47054621,
+                59768832
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "original_capacity": true
+        }
+      },
+      {
+        "capacity": "original",
+        "report": {
+          "actions": 20409,
+          "bots": 1000,
+          "decisions": 64000,
+          "delivery_ms": 1224.7312,
+          "dispatches": 2048,
+          "elapsed_ms": 14139.0107,
+          "empty": 43952,
+          "mode": "native",
+          "receipt_sha256": "e16c444ca79b5375c4b3b02e3799dc245d6fae0ac92f6e8f280dde2233da0f6a",
+          "steps": 64
+        },
+        "memory": {
+          "definition": "fixed-work requested heap before final state/execution receipt serialization",
+          "heap_before_receipt": {
+            "origin_live_bytes": {
+              "bot": 9428041,
+              "delivery": 96068,
+              "journal": 178798080,
+              "other": 134500282
+            },
+            "requested_live_bytes": 322822491,
+            "requested_peak_bytes": 343849634,
+            "tracker_header_live_bytes": 7860488
+          },
+          "journal": {
+            "executions": 20412,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1060,
+                64105604,
+                117931520
+              ],
+              "scheduler_progress": [
+                29,
+                47054621,
+                59768832
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "original_capacity": true
+        }
+      },
+      {
+        "capacity": "tight",
+        "report": {
+          "actions": 20409,
+          "bots": 1000,
+          "decisions": 64000,
+          "delivery_ms": 1209.7122999999997,
+          "dispatches": 2048,
+          "elapsed_ms": 15206.196800000002,
+          "empty": 43952,
+          "mode": "native",
+          "receipt_sha256": "e16c444ca79b5375c4b3b02e3799dc245d6fae0ac92f6e8f280dde2233da0f6a",
+          "steps": 64
+        },
+        "memory": {
+          "definition": "fixed-work requested heap before final state/execution receipt serialization",
+          "heap_before_receipt": {
+            "origin_live_bytes": {
+              "bot": 9428041,
+              "delivery": 96068,
+              "journal": 112261344,
+              "other": 134498986
+            },
+            "requested_live_bytes": 256284459,
+            "requested_peak_bytes": 279655926,
+            "tracker_header_live_bytes": 7860456
+          },
+          "journal": {
+            "executions": 20412,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1060,
+                64105604,
+                64108995
+              ],
+              "scheduler_progress": [
+                29,
+                47054621,
+                47054621
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "original_capacity": false
+        }
+      },
+      {
+        "capacity": "tight",
+        "report": {
+          "actions": 20409,
+          "bots": 1000,
+          "decisions": 64000,
+          "delivery_ms": 1575.5577,
+          "dispatches": 2048,
+          "elapsed_ms": 23042.5072,
+          "empty": 43952,
+          "mode": "native",
+          "receipt_sha256": "e16c444ca79b5375c4b3b02e3799dc245d6fae0ac92f6e8f280dde2233da0f6a",
+          "steps": 64
+        },
+        "memory": {
+          "definition": "fixed-work requested heap before final state/execution receipt serialization",
+          "heap_before_receipt": {
+            "origin_live_bytes": {
+              "bot": 9428041,
+              "delivery": 96068,
+              "journal": 112261344,
+              "other": 134500418
+            },
+            "requested_live_bytes": 256285891,
+            "requested_peak_bytes": 279655038,
+            "tracker_header_live_bytes": 7860512
+          },
+          "journal": {
+            "executions": 20412,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1060,
+                64105604,
+                64108995
+              ],
+              "scheduler_progress": [
+                29,
+                47054621,
+                47054621
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "original_capacity": false
+        }
+      },
+      {
+        "capacity": "original",
+        "report": {
+          "actions": 20409,
+          "bots": 1000,
+          "decisions": 64000,
+          "delivery_ms": 1382.4646,
+          "dispatches": 2048,
+          "elapsed_ms": 18541.0347,
+          "empty": 43952,
+          "mode": "native",
+          "receipt_sha256": "e16c444ca79b5375c4b3b02e3799dc245d6fae0ac92f6e8f280dde2233da0f6a",
+          "steps": 64
+        },
+        "memory": {
+          "definition": "fixed-work requested heap before final state/execution receipt serialization",
+          "heap_before_receipt": {
+            "origin_live_bytes": {
+              "bot": 9428041,
+              "delivery": 96068,
+              "journal": 178798080,
+              "other": 134500418
+            },
+            "requested_live_bytes": 322822627,
+            "requested_peak_bytes": 343849770,
+            "tracker_header_live_bytes": 7860512
+          },
+          "journal": {
+            "executions": 20412,
+            "mutation_vector_capacity_bytes": 49152,
+            "mutations": {
+              "scheduler_delta": [
+                1060,
+                64105604,
+                117931520
+              ],
+              "scheduler_progress": [
+                29,
+                47054621,
+                59768832
+              ],
+              "state_checkpoint": [
+                1,
+                540967,
+                1048576
+              ]
+            },
+            "snapshots": 1
+          },
+          "original_capacity": true
+        }
+      }
+    ],
+    "medians": {
+      "original": {
+        "heap_mib": 307.8675184249878,
+        "elapsed_ms": 16078.673600000002,
+        "delivery_ms": 1285.89385
+      },
+      "tight": {
+        "heap_mib": 244.41320705413818,
+        "elapsed_ms": 15903.636299999998,
+        "delivery_ms": 1236.0202500000005
+      }
+    },
+    "test_binary_sha256": "4797ea812def4153d692e1454d2b9ece767637ebd5bea5350040ffecf95c4a46",
+    "recipe_sha256": "b8a793856936feda4b2823612eb138e1f4b21021611a49cbb27ca0ec9021f019",
+    "qualification": "requested live heap excludes allocator slack, stacks and diagnostic headers; test tracer affects timing; fixed heap excludes receipt serialization; concurrent live trajectories differ"
+  },
+  "fixed_bot_buffer_mib": {
+    "original": 169.46826171875,
+    "tight": 106.01388549804688
+  },
+  "live_cases": [
+    {
+      "case": "01-before",
+      "mode": "before",
+      "steps_per_second": 35.43531775873453,
+      "cpu_cores": 1.0918965198448518,
+      "peak_mib": 779.49609375,
+      "place_p95_ms": 39.89050000018324,
+      "cancel_p95_ms": 40.586500000244996,
+      "errors": [],
+      "bot_errors": {},
+      "active_bots": 1000,
+      "observation_freshness": {
+        "definition": "paused final durable snapshot; simulation time lag, not wall-clock latency",
+        "bots_with_observation": 1000,
+        "bots_without_observation": 0,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 7000,
+          "p95_ms": 9000,
+          "max_ms": 10000
+        },
+        "future_observations": 0
+      },
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": false,
+        "configured_40_steps_per_second": false
+      },
+      "final_step": 1229,
+      "journal_operations_completed": 4364.0,
+      "binary_sha256": "ba05ea7d5b9b85419e76e87390b17ee5d55e43e72591ad145e09ee1cdd21ebb0",
+      "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37"
+    },
+    {
+      "case": "02-after",
+      "mode": "after",
+      "steps_per_second": 36.32021596891499,
+      "cpu_cores": 1.093580776619883,
+      "peak_mib": 695.98828125,
+      "place_p95_ms": 37.062800000057905,
+      "cancel_p95_ms": 43.486500000653905,
+      "errors": [],
+      "bot_errors": {},
+      "active_bots": 1000,
+      "observation_freshness": {
+        "definition": "paused final durable snapshot; simulation time lag, not wall-clock latency",
+        "bots_with_observation": 1000,
+        "bots_without_observation": 0,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 8000,
+          "p95_ms": 10000,
+          "max_ms": 11000
+        },
+        "future_observations": 0
+      },
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": false,
+        "configured_40_steps_per_second": false
+      },
+      "final_step": 1277,
+      "journal_operations_completed": 4702.0,
+      "binary_sha256": "ed976938ef1249b988b15c0379b4be4d387fb0bd06bab0aaae1f52e83cb9bcd2",
+      "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37"
+    },
+    {
+      "case": "03-after",
+      "mode": "after",
+      "steps_per_second": 38.89369471576632,
+      "cpu_cores": 1.3027331271808662,
+      "peak_mib": 1266.77734375,
+      "place_p95_ms": 33.63549999994575,
+      "cancel_p95_ms": 31.21129999999539,
+      "errors": [],
+      "bot_errors": {},
+      "active_bots": 1000,
+      "observation_freshness": {
+        "definition": "paused final durable snapshot; simulation time lag, not wall-clock latency",
+        "bots_with_observation": 1000,
+        "bots_without_observation": 0,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 2000,
+          "p95_ms": 4000,
+          "max_ms": 4000
+        },
+        "future_observations": 0
+      },
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": true
+      },
+      "final_step": 1356,
+      "journal_operations_completed": 13029.0,
+      "binary_sha256": "ed976938ef1249b988b15c0379b4be4d387fb0bd06bab0aaae1f52e83cb9bcd2",
+      "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37"
+    },
+    {
+      "case": "04-before",
+      "mode": "before",
+      "steps_per_second": 38.75636798917115,
+      "cpu_cores": 1.3630390383834166,
+      "peak_mib": 1709.65234375,
+      "place_p95_ms": 30.27269999984128,
+      "cancel_p95_ms": 36.969499999941036,
+      "errors": [],
+      "bot_errors": {},
+      "active_bots": 1000,
+      "observation_freshness": {
+        "definition": "paused final durable snapshot; simulation time lag, not wall-clock latency",
+        "bots_with_observation": 1000,
+        "bots_without_observation": 0,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 1000,
+          "p95_ms": 1000,
+          "max_ms": 1000
+        },
+        "future_observations": 0
+      },
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": true
+      },
+      "final_step": 1352,
+      "journal_operations_completed": 12555.0,
+      "binary_sha256": "ba05ea7d5b9b85419e76e87390b17ee5d55e43e72591ad145e09ee1cdd21ebb0",
+      "recipe_sha256": "6942cf0a82c6b94434a75a1f4e50bfcf9104803c3fe06bdd75dc7501a9fbba37"
+    }
+  ],
+  "live_medians": {
+    "before": {
+      "steps_per_second": 37.09584287395284,
+      "cpu_cores": 1.2274677791141342,
+      "peak_mib": 1244.57421875,
+      "place_p95_ms": 35.08160000001226,
+      "cancel_p95_ms": 38.778000000093016,
+      "journal_operations_completed": 8459.5
+    },
+    "after": {
+      "steps_per_second": 37.606955342340655,
+      "cpu_cores": 1.1981569519003745,
+      "peak_mib": 981.3828125,
+      "place_p95_ms": 35.34915000000183,
+      "cancel_p95_ms": 37.34890000032465,
+      "journal_operations_completed": 8865.5
+    }
+  },
+  "validation": {
+    "core_passed": 315,
+    "core_ignored": 11,
+    "server_passed": 218,
+    "server_ignored": 3,
+    "server_test_features": [
+      "memory-diagnostics"
+    ],
+    "clippy": "passed",
+    "fmt": "passed",
+    "workspace_all_targets_check": "passed",
+    "postgres_live": "unconfigured"
+  },
+  "qualifications": [
+    "requested heap excludes allocator slack, stacks and tracker headers",
+    "allocation origins are not retention ownership; stopped isolated owner release supplies ownership evidence",
+    "fixed workload samples precede final receipt construction and serialization",
+    "diagnostic allocator affects timing; production live binaries have no allocator instrumentation",
+    "live concurrent trajectories and journal operation counts differ; two runs per production version",
+    "record retention and every-100-revisions checkpoint cadence remain unchanged"
+  ]
+}

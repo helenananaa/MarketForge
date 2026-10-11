@@ -1465,7 +1465,25 @@ impl InMemoryJournalStore {
             .next_mutation_seq
             .checked_add(1)
             .ok_or(JournalError::SequenceOutOfRange(u64::MAX))?;
-        let encoded = encode_validated_mutation(&validated, mutation_seq)?;
+        #[cfg(all(test, feature = "memory-diagnostics"))]
+        let _scope =
+            crate::memory_diagnostics::Scope::enter(crate::memory_diagnostics::Origin::Journal);
+        let mut encoded = encode_validated_mutation(&validated, mutation_seq)?;
+        // Bot state records can be retained for the whole memory-journal session.
+        // serde_json grows its buffer geometrically; retain only the exact wire
+        // bytes, without changing records, checkpoint cadence or recovery data.
+        let bot_state = match &mutation.mutation {
+            RoomMutation::SchedulerDelta { delta, .. } => !delta.changes.is_empty(),
+            RoomMutation::SchedulerProgress { state, .. } => !state.agents.is_empty(),
+            _ => false,
+        };
+        #[cfg(all(test, feature = "memory-diagnostics"))]
+        let bot_state = bot_state
+            && !crate::memory_diagnostics::KEEP_SPARE_CAPACITY
+                .load(std::sync::atomic::Ordering::Relaxed);
+        if bot_state {
+            encoded.shrink_to_fit();
+        }
         self.next_mutation_seq = mutation_seq;
         self.mutations.push(encoded);
         if let Some(record) = &mutation.control_idempotency {
@@ -2338,6 +2356,42 @@ pub(crate) struct SharedInMemoryJournalStore {
 
 #[cfg(test)]
 impl SharedInMemoryJournalStore {
+    #[cfg(feature = "memory-diagnostics")]
+    pub(crate) fn memory_diagnostics(&self) -> serde_json::Value {
+        let store = self.lock().unwrap();
+        let mut rows = BTreeMap::<&str, (usize, usize, usize)>::new();
+        for encoded in &store.mutations {
+            let prefix = &encoded[..encoded.len().min(512)];
+            let kind = ["scheduler_delta", "scheduler_progress", "state_checkpoint"]
+                .into_iter()
+                .find(|kind| {
+                    let pattern = format!("\"kind\":\"{kind}\"");
+                    prefix
+                        .windows(pattern.len())
+                        .any(|part| part == pattern.as_bytes())
+                })
+                .unwrap_or("other");
+            let row = rows.entry(kind).or_default();
+            row.0 += 1;
+            row.1 += encoded.len();
+            row.2 += encoded.capacity();
+        }
+        serde_json::json!({"mutations":rows,"mutation_vector_capacity_bytes":store.mutations.capacity()*std::mem::size_of::<Vec<u8>>(),
+            "executions":store.executions.len(),"snapshots":store.snapshots.len()})
+    }
+
+    // Destructive probes are available only in the isolated ignored test. There
+    // is no HTTP route, production switch or change to the retention policy.
+    #[cfg(feature = "memory-diagnostics")]
+    pub(crate) fn release_mutations_for_memory_probe(&self) {
+        let mutations = std::mem::take(&mut self.lock().unwrap().mutations);
+        drop(mutations);
+    }
+    #[cfg(feature = "memory-diagnostics")]
+    pub(crate) fn release_other_journal_for_memory_probe(&self) {
+        let store = std::mem::take(&mut *self.lock().unwrap());
+        drop(store);
+    }
     pub(crate) fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(InMemoryJournalStore::new())),
@@ -7632,6 +7686,27 @@ mod tests {
                 },
             ),
         ]
+    }
+
+    #[test]
+    fn retained_bot_mutations_remove_spare_capacity_and_preserve_wire_bytes() {
+        for mutation in journal_benchmark_mutations() {
+            let mut store = InMemoryJournalStore::new();
+            let validated = validate_pending_mutation(&mutation).unwrap();
+            let reference = encode_validated_mutation(&validated, 1).unwrap();
+            store.store_mutation(validated).unwrap();
+            assert_eq!(store.mutations[0], reference);
+            assert_eq!(store.next_mutation_seq, 1);
+            let decoded: JournalMutation = serde_json::from_slice(&store.mutations[0]).unwrap();
+            assert_eq!(decoded.mutation_seq, 1);
+            match mutation.mutation {
+                RoomMutation::SchedulerDelta { .. } | RoomMutation::SchedulerProgress { .. } => {
+                    assert_eq!(store.mutations[0].capacity(), reference.len());
+                    assert!(reference.capacity() > reference.len());
+                }
+                _ => assert_eq!(store.mutations[0].capacity(), reference.capacity()),
+            }
+        }
     }
 
     #[test]
