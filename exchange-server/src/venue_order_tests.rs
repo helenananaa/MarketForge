@@ -107,6 +107,347 @@ fn venue_merge_preserves_other_commits_and_matches_serial_replay() {
 }
 
 #[test]
+fn venue_perp_sparse_risk_merge_and_restore_match_serial_execution() {
+    const ROOM: &str = "venue-perp-risk";
+
+    fn request(instrument: &str, account_id: u64, action: OrderAction) -> GatewayRequest {
+        GatewayRequest {
+            participant_id: "human".into(),
+            room_id: ROOM.into(),
+            instrument_id: Some(instrument.into()),
+            account_id,
+            action,
+        }
+    }
+
+    fn canonical_room(rooms: &RoomManager) -> serde_json::Value {
+        fn normalize(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Object(fields) => {
+                    for (key, value) in fields {
+                        if key == "seen_order_ids" {
+                            value.as_array_mut().unwrap().sort_by_key(|id| id.as_u64());
+                        } else {
+                            normalize(value);
+                        }
+                    }
+                }
+                serde_json::Value::Array(values) => values.iter_mut().for_each(normalize),
+                _ => {}
+            }
+        }
+        let mut value = serde_json::to_value(rooms.simulation_room(ROOM).unwrap()).unwrap();
+        normalize(&mut value);
+        value
+    }
+
+    fn assert_same(actual: &RoomManager, expected: &RoomManager) {
+        assert_eq!(canonical_room(actual), canonical_room(expected));
+        assert_eq!(
+            actual.execution_history(ROOM).unwrap(),
+            expected.execution_history(ROOM).unwrap()
+        );
+        assert_eq!(actual.pending_liquidation_count(ROOM).unwrap(), 0);
+        assert_eq!(expected.pending_liquidation_count(ROOM).unwrap(), 0);
+    }
+
+    fn assert_accepted(execution: &ActorExecution) {
+        let ActorExecutionResult::Accepted(MarketExecution::Perp(execution)) = &execution.result
+        else {
+            panic!("expected a perpetual execution: {execution:?}")
+        };
+        assert!(
+            execution.events.iter().all(|record| !matches!(
+                record.event,
+                Event::OrderRejected { .. }
+                    | Event::RiskRejected { .. }
+                    | Event::CancelRejected { .. }
+                    | Event::AmendRejected { .. }
+            )),
+            "unexpected business rejection: {execution:?}"
+        );
+    }
+
+    fn restore(rooms: &RoomManager) -> RoomManager {
+        let simulation: exchange_core::SimulationRoom = serde_json::from_value(
+            serde_json::to_value(rooms.simulation_room(ROOM).unwrap()).unwrap(),
+        )
+        .unwrap();
+        let mut restored = RoomManager::new();
+        restored
+            .restore_simulation_room(simulation, rooms.execution_history(ROOM).unwrap().to_vec())
+            .unwrap();
+        assert_same(&restored, rooms);
+        restored
+    }
+
+    let market = |venue: &str, instrument: &str| {
+        serde_json::json!({"Perp": {
+            "instrument": {"instrument_id": instrument, "venue_id": venue,
+                "symbol": instrument, "base_asset": instrument, "quote_asset": "QUOTE",
+                "tick_size": 1, "lot_size": 1},
+            "clearing": {"maker_fee_ppm": 0, "taker_fee_ppm": 0, "leverage": 10},
+            "risk": {}, "initial_mark_price_tick": 100
+        }})
+    };
+    let accounts: Vec<_> = (1..=128)
+        .map(|account_id| {
+            serde_json::json!({"Basic": {"account_id": account_id, "cash_balance": 100_000}})
+        })
+        .collect();
+    let config: ScenarioConfig = serde_json::from_value(serde_json::json!({
+        "room_id": ROOM, "market": market("A", "A-0"),
+        "extra_markets": [market("A", "A-1"), market("B", "B-0")],
+        "accounts": accounts, "seed_orders": []
+    }))
+    .unwrap();
+    let mut partitioned = RoomManager::new();
+    partitioned.create_room(config).unwrap();
+    for (index, instrument) in ["A-0", "A-1", "B-0"].into_iter().enumerate() {
+        for (offset, account_id, side, price_tick, qty) in [
+            (0, 10, exchange_core::Side::Sell, 100, 2),
+            (1, 20, exchange_core::Side::Buy, 100, 2),
+            (2, 10, exchange_core::Side::Sell, 105, 4),
+        ] {
+            let receipt = OrderGateway::new(&mut partitioned, 100 + index as u64 * 10 + offset)
+                .submit_action(request(
+                    instrument,
+                    account_id,
+                    OrderAction::PlaceLimit {
+                        side,
+                        price_tick,
+                        qty,
+                    },
+                ))
+                .unwrap();
+            assert_accepted(&receipt.execution);
+        }
+        let AccountSnapshots::Perp(accounts) =
+            partitioned.account_snapshots_for(ROOM, instrument).unwrap()
+        else {
+            unreachable!()
+        };
+        assert_eq!(accounts.len(), 128);
+        assert_eq!(
+            accounts
+                .iter()
+                .filter(|account| account.position_qty != 0)
+                .count(),
+            2
+        );
+    }
+    let peer_order = OrderGateway::new(&mut partitioned, 200)
+        .submit_action(request(
+            "A-1",
+            21,
+            OrderAction::PlaceLimit {
+                side: exchange_core::Side::Buy,
+                price_tick: 90,
+                qty: 3,
+            },
+        ))
+        .unwrap();
+    assert_accepted(&peer_order.execution);
+    // Finish the initial full synchronization, then repeat the same mark with
+    // only two position holders among 128 accounts. A-1 also exercises shared
+    // quote collateral and an unrelated reservation inside venue A.
+    for _ in 0..2 {
+        for instrument in ["A-0", "A-1", "B-0"] {
+            partitioned
+                .apply_to_instrument(
+                    ROOM,
+                    instrument,
+                    Command::SetMarkPrice(SetMarkPrice { price_tick: 100 }),
+                )
+                .unwrap();
+        }
+    }
+    let mut serial = partitioned.clone();
+    let mut cold_serial = restore(&partitioned);
+    for phase in 0..5 {
+        let predecessor = partitioned.clone();
+        let predecessor_state = canonical_room(&predecessor);
+        let mut prepared = Vec::new();
+        for (index, instrument) in ["A-0", "B-0"].into_iter().enumerate() {
+            let resting_id = 1002 + index as u64;
+            let action = match phase {
+                0 => OrderAction::PlaceLimit {
+                    side: exchange_core::Side::Buy,
+                    price_tick: 105,
+                    qty: 1,
+                },
+                1 => OrderAction::PlaceLimit {
+                    side: exchange_core::Side::Buy,
+                    price_tick: 90,
+                    qty: 3,
+                },
+                2 => OrderAction::Amend {
+                    order_id: resting_id,
+                    price_tick: Some(89),
+                    qty: Some(2),
+                },
+                3 => OrderAction::Cancel {
+                    order_id: resting_id,
+                },
+                _ => OrderAction::PlaceLimit {
+                    side: exchange_core::Side::Buy,
+                    price_tick: 105,
+                    qty: 3,
+                },
+            };
+            let mut candidate = partitioned
+                .fork_venue_order(ROOM, instrument)
+                .unwrap()
+                .unwrap();
+            let receipt = OrderGateway::new(&mut candidate, 1000 + phase * 2 + index as u64)
+                .submit_action(request(instrument, 20, action))
+                .unwrap();
+            assert_accepted(&receipt.execution);
+            prepared.push((instrument, candidate, receipt));
+        }
+        // Both candidates used one immutable predecessor, but B commits first.
+        // Compare after each installation, including real partial/final fills,
+        // resting margin, amendment and cancellation in the other venue.
+        for (instrument, candidate, mut receipt) in prepared.into_iter().rev() {
+            assert!(
+                partitioned
+                    .merge_venue_order(&predecessor, candidate, &mut receipt.execution)
+                    .unwrap()
+            );
+            let expected = serial
+                .apply_to_instrument(ROOM, instrument, receipt.command.clone())
+                .unwrap();
+            assert_eq!(receipt.execution, expected);
+            assert_same(&partitioned, &serial);
+            // Deserialization removes the derived risk baseline. Reconcile the
+            // same command from cold state to catch stale COW risk inputs too.
+            cold_serial = restore(&cold_serial);
+            assert_eq!(
+                cold_serial
+                    .apply_to_instrument(ROOM, instrument, receipt.command)
+                    .unwrap(),
+                expected
+            );
+            assert_same(&partitioned, &cold_serial);
+            assert_eq!(canonical_room(&predecessor), predecessor_state);
+        }
+        for instrument in ["A-0", "B-0"] {
+            let book = partitioned.book_snapshot_for(ROOM, instrument).unwrap();
+            match phase {
+                0 => assert_eq!(book.asks[0].qty, 3),
+                1 | 2 => {
+                    assert_eq!(book.bids.len(), 1);
+                    assert_eq!(book.bids[0].price_tick, if phase == 1 { 90 } else { 89 });
+                    assert_eq!(book.bids[0].qty, if phase == 1 { 3 } else { 2 });
+                }
+                3 => assert!(book.bids.is_empty()),
+                _ => assert!(book.asks.is_empty()),
+            }
+        }
+        // Price changes and same-price retries expose missed position/order
+        // invalidation after a partitioned candidate has been installed.
+        for price_tick in [101 + phase as i64, 101 + phase as i64] {
+            for instrument in ["A-0", "A-1", "B-0"] {
+                let command = Command::SetMarkPrice(SetMarkPrice { price_tick });
+                let actual = partitioned
+                    .apply_to_instrument(ROOM, instrument, command.clone())
+                    .unwrap();
+                assert_eq!(
+                    serial
+                        .apply_to_instrument(ROOM, instrument, command.clone())
+                        .unwrap(),
+                    actual
+                );
+                cold_serial = restore(&cold_serial);
+                assert_eq!(
+                    cold_serial
+                        .apply_to_instrument(ROOM, instrument, command)
+                        .unwrap(),
+                    actual
+                );
+                assert_same(&partitioned, &serial);
+                assert_same(&partitioned, &cold_serial);
+            }
+        }
+        if phase == 2 {
+            // Resume candidate preparation after an actual serialized restore,
+            // carrying both live positions and the amended resting orders.
+            partitioned = restore(&partitioned);
+            serial = restore(&serial);
+        }
+    }
+    let mut restored = restore(&partitioned);
+    assert_same(&restored, &serial);
+    for instrument in ["A-0", "B-0"] {
+        let Some(exchange_core::AccountSnapshot::Perp(account)) =
+            restored.account_snapshot_for(ROOM, instrument, 20).unwrap()
+        else {
+            unreachable!()
+        };
+        assert_eq!(account.position_qty, 6);
+        assert_eq!(account.avg_entry_price_tick, 103);
+        assert_eq!(account.initial_margin, 61);
+        // Both books are empty, but reserved_margin also includes the current
+        // mark top-up: six contracts at mark 105 require 63, while the rounded
+        // average entry of 103 supplies initial margin 61. The remaining two
+        // units are position collateral, not an uncancelled order reservation.
+        assert_eq!(account.reserved_margin, 2);
+        let book = restored.book_snapshot_for(ROOM, instrument).unwrap();
+        assert!(book.bids.is_empty());
+        assert!(book.asks.is_empty());
+        for account_id in [10, 20] {
+            assert!(
+                restored
+                    .resting_orders_for_account(ROOM, instrument, account_id)
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+    }
+    // A lower mark makes the 61 units of initial margin sufficient. Keep the
+    // zero-reservation invariant by actually releasing the position top-up,
+    // then repeat the mark to check that the clean sparse baseline stays valid.
+    for _ in 0..2 {
+        for instrument in ["A-0", "B-0"] {
+            let command = Command::SetMarkPrice(SetMarkPrice { price_tick: 100 });
+            let actual = restored
+                .apply_to_instrument(ROOM, instrument, command.clone())
+                .unwrap();
+            assert_eq!(
+                serial
+                    .apply_to_instrument(ROOM, instrument, command.clone())
+                    .unwrap(),
+                actual
+            );
+            cold_serial = restore(&cold_serial);
+            assert_eq!(
+                cold_serial
+                    .apply_to_instrument(ROOM, instrument, command)
+                    .unwrap(),
+                actual
+            );
+            assert_same(&restored, &serial);
+            assert_same(&restored, &cold_serial);
+        }
+    }
+    let final_restored = restore(&restored);
+    assert_same(&final_restored, &serial);
+    assert_same(&final_restored, &cold_serial);
+    for instrument in ["A-0", "B-0"] {
+        let Some(exchange_core::AccountSnapshot::Perp(account)) = final_restored
+            .account_snapshot_for(ROOM, instrument, 20)
+            .unwrap()
+        else {
+            unreachable!()
+        };
+        assert_eq!(account.position_qty, 6);
+        assert_eq!(account.avg_entry_price_tick, 103);
+        assert_eq!(account.initial_margin, 61);
+        assert_eq!(account.reserved_margin, 0);
+    }
+}
+
+#[test]
 fn stale_collateral_and_multi_execution_candidates_cannot_merge() {
     let mut original = RoomManager::new();
     original.create_room(scenario()).unwrap();

@@ -1,0 +1,290 @@
+{
+  "date": "2026-10-11",
+  "base_main": "f951b65dc834faf61d720039c2280c8a85bb99e0",
+  "shared_dependency_commit": "c5e3c0a3227ce80629bc3b972e2bac427ca773bb",
+  "integration_branch": "codex/performance-integration",
+  "picked_source_commits": {
+    "incremental_margin_risk": "83ba5588be771860a75970ece9c984d45b6464d2",
+    "room_lock_load": "dafd6d6f92ee3243eed0d7b6080bca3c200c7866"
+  },
+  "validation": {
+    "fmt": {
+      "log": "E:\\projects\\MarketForge\\.local\\worktree-integration-20261011\\fmt.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "clippy-all-features": {
+      "log": "E:\\projects\\MarketForge\\.local\\worktree-integration-20261011\\clippy-all-features.log",
+      "sha256": "f5acf20e413d6b21304fa87264da51bdd65721197ac6cbf051db769173574640"
+    },
+    "workspace-all-features": {
+      "log": "E:\\projects\\MarketForge\\.local\\worktree-integration-20261011\\workspace-all-features.log",
+      "sha256": "2d550a4d69c5cfbb0a093a555a75a077b31d0bb3b3946d1582ef5347b471a731",
+      "passed": 570,
+      "failed": 0,
+      "ignored": 14,
+      "required_real_postgres": true
+    },
+    "default-check": {
+      "log": "E:\\projects\\MarketForge\\.local\\worktree-integration-20261011\\default-check.log",
+      "sha256": "acfe38de8effaf7401af7d56b75ec9176f2f6156bb18ad785570996f16ff15bf"
+    },
+    "server-build": {
+      "log": "E:\\projects\\MarketForge\\.local\\worktree-integration-20261011\\server-build.log",
+      "sha256": "23eb9cd5632e96b101a88a89349902f3233a171d03211bc7c2649354d303dc82"
+    },
+    "python-suite": {
+      "log": "E:\\projects\\MarketForge\\.local\\worktree-integration-20261011\\python-suite.log",
+      "sha256": "c38543f6fde62e8ed7179fbdb4e9f4eb93c7ea440d670e751a820048ebf921f3",
+      "tests": 203,
+      "passed": 196,
+      "skipped": 7,
+      "pine_required": true,
+      "integrated_server": true,
+      "required_real_postgres": true,
+      "rerun_after_unrelated_transport_failure": true,
+      "plugin_directory": "E:\\projects\\MarketForge\\bot-plugins",
+      "reused_existing_database": "marketforge_integration_verified"
+    },
+    "native-delivery-equivalence": {
+      "log": "E:\\projects\\MarketForge\\.local\\worktree-integration-20261011\\native-delivery-equivalence.log",
+      "sha256": "012a693fba00954955f43ffaf4cad1ea1c3cb0effdd143723170577f7c0aabf2"
+    },
+    "journal-storage-equivalence": {
+      "log": "E:\\projects\\MarketForge\\.local\\worktree-integration-20261011\\journal-storage-equivalence.log",
+      "sha256": "a05b973b8a751702aba28e18702693577604116c96b3fef752e223448f3930eb"
+    }
+  },
+  "fixed_workload_probes": {
+    "native-delivery-equivalence": {
+      "cases": 4,
+      "bots": 96,
+      "steps": 4,
+      "decisions_per_case": 384,
+      "actions_per_case": 124,
+      "empty_decisions_per_case": 296,
+      "receipt_sha256": "46b0d41ee3f1dabd222afd8df1c5caf13dc5d61d93f79db5d2923efe030b095e",
+      "recipe_sha256": "9f2c32fdd838764a827d6707d633d57d04969d9868fcda98778298f87b99a1a5",
+      "summary_sha256": "52ca306675f87df60abeed3515fb542341bf0bf44186d86d33c50e5fe16f16b8",
+      "test_binary_sha256": "882346ceac1ba8eea2d5139dc4dd85e28214d7ee31809eaac319b4e90f4aa49a",
+      "performance_qualification": false,
+      "scope": "Debug diagnostic binary; fixed business state/action equivalence only"
+    },
+    "journal-storage-equivalence": {
+      "cases": 4,
+      "bots": 96,
+      "steps": 4,
+      "decisions_per_case": 384,
+      "actions_per_case": 124,
+      "empty_decisions_per_case": 296,
+      "receipt_sha256": "46b0d41ee3f1dabd222afd8df1c5caf13dc5d61d93f79db5d2923efe030b095e",
+      "recipe_sha256": "9f2c32fdd838764a827d6707d633d57d04969d9868fcda98778298f87b99a1a5",
+      "summary_sha256": "43aea778c7b6c4ed9f528cb70e672878fbfe5c4cdf6d7c6d1276ca51ecb2fc23",
+      "test_binary_sha256": "882346ceac1ba8eea2d5139dc4dd85e28214d7ee31809eaac319b4e90f4aa49a",
+      "performance_qualification": false,
+      "scope": "Debug diagnostic binary; fixed business state/action equivalence only"
+    }
+  },
+  "source_sha256": {
+    "Cargo.lock": "2e9fe248f963ce32cafcfeae7a282d4858f9767e3d40f24d6e0ebbdc609b9cef",
+    "exchange-core/examples/benchmark_margin_risk.rs": "7077693d5ccd170435a654061bb1572700f85d68816a145faa1294b139822db9",
+    "exchange-core/examples/benchmark_margin_view.rs": "ecf1f6d49363aaafd6594f357a94e33e662a6c9faffd65f808d77c5d6bdd8eae",
+    "exchange-core/src/account.rs": "35f692d0a46edd72cfd67afeb72c8161e49e34127cab27f35275736c6d8d7f23",
+    "exchange-core/src/actor.rs": "ce43c5f5b15a57fbf6288a54adc7d996b9c008fd98803457d6a89b03277392db",
+    "exchange-core/src/agents.rs": "2f01f9b3c26306ea4fa266de6de8370cc459dc7245ebf09a03dea89e5e5948be",
+    "exchange-core/src/bot_risk.rs": "b4538a7aa7ee390b1760c6e7504b0d762b642c38f7d7ff72e391cefcafa1d527",
+    "exchange-core/src/bots.rs": "0a58d0dc79b11e1466260b36c6f9bc5958a2a0e4f59282b3321b183264e0c8b0",
+    "exchange-core/src/conditional_orders_actor.rs": "86d6a55c23fabc12b879935be28cff0b668bfac1c728caa00bf0edcb288a31cd",
+    "exchange-core/src/gateway.rs": "ac844ed205c036039af23ae89c49e7df30f640a1a01ec5518b4dcfdd0346f06b",
+    "exchange-core/src/incremental_risk_tests.rs": "be45e6659aec43270bee4dbaeb3d97ababbbc0b26eff5222e80ca475c8d97f91",
+    "exchange-core/src/lib.rs": "3f5682cf713b4f6229aceaed908a31cb2bab10b23d74c657d49052fc9d260a7b",
+    "exchange-core/src/market_behaviors_tests.rs": "42a9a8b398b713826dfcf541a7e6c19c95dddeb64ab865518ed39c5822cfcc98",
+    "exchange-core/src/market_bots.rs": "dd54e8ae210ab78efb8ffc5be233d0b3dc51dd192b0a46d945e9258b1781aeb3",
+    "exchange-core/src/market_bots_tests.rs": "a643880880681c579cfa217c91576ccca91f57e82ec784615d79cbc8e9ec1a75",
+    "exchange-core/src/market_microstructure_tests.rs": "3493a4184d1e8003d5b65834b2a0df7e366a54733f4f446b587b0252bffdbf43",
+    "exchange-core/src/observation.rs": "c22c06a043f7640bde2bdd7d108c81f0971fdeaf9af59defcc48f0636af62b17",
+    "exchange-core/src/order_protection_tests.rs": "4ea6d999505e881b6e3e7f07b823ed8b1ba234b90ffdff8d17caa9dc3a384b4e",
+    "exchange-core/src/perp.rs": "d236c296cf5a10332c338bd586d4793cfaae99b8bd7ddf95bd657256c49e7272",
+    "exchange-core/src/perp_incremental_tests.rs": "aadc55ea185c2fedb26fb00f510aeede51ea0ca0e5b41e13d0fd5d0776039952",
+    "exchange-core/src/risk_scope.rs": "ac3dd50bc092e090925cda83894004ce0fda2dc17481ce9e4d14a65a49e36bde",
+    "exchange-core/src/room.rs": "6625be7cef1dab6b996fca9c2b6ea123a56a01c443c0c23fe4d19405f9f28ba0",
+    "exchange-core/src/room_incremental_risk_tests.rs": "8710263cbd485520c9c8f4a59720bcee97e4707db5ebb84011eddc2bd9633ad9",
+    "exchange-core/src/scheduler.rs": "5df8498687bcd9784f33bea5cf64dd86e1a3e09b9996388a3f6fa4ef41099dbc",
+    "exchange-core/src/simulation.rs": "91269ec733f30b01dc85d945d93008eada2d12e95c57c3bf2c7648cb3d4d7685",
+    "exchange-core/src/trading.rs": "102aa5161ef177ea6eba6860cffcecbd3fd768738f6001bee7b976526cc35653",
+    "exchange-server/Cargo.toml": "a0abe8ab138d9efa96e8328fc1be64a9238fd53667c9b2363830005e06c59a98",
+    "exchange-server/examples/benchmark_margin_progress.rs": "304d4d23b163809a0d19c4af227102fa5dadf6c3683d86db5d483470de0d706d",
+    "exchange-server/examples/benchmark_room_http.rs": "3af23f8039823db8c7f6395f422a4468b2745eb5309cdb19f76718f956f2e24a",
+    "exchange-server/migrations/0018_async_query_projections.sql": "958b496bd70930e7a47b0d2d76f0619d274aefc0c7460161b0b901072f921872",
+    "exchange-server/migrations/0019_fast_checkpoint_storage.sql": "b67a0771ab1c3471c58bb213c1ce7ebe074b66e727a92d65f27d2d567016813f",
+    "exchange-server/src/bench_execution_timing.rs": "e7455bf93b6e7c048170e37381daa2d05b69ac4491a7a5377c8722c3dae9a052",
+    "exchange-server/src/bot_history.rs": "475cbc8b9505bede5ca495846107cf8a5071f8c305ad3b5802171f258ea3241a",
+    "exchange-server/src/bot_plugins.rs": "d6faeb2d95846496e1a87875d0c621644beab53ed9b9d3a47e28fa10fe759ba5",
+    "exchange-server/src/journal.rs": "6e23eed1e2fbb9df730d3805d7b067aa36076256a5006e8af43b2932fdb6331d",
+    "exchange-server/src/journal/pg_cached.rs": "81620904fc09568a8f035b74dab728be851c2cf5b59deb15aa487446f62014de",
+    "exchange-server/src/journal/projection.rs": "30a556773908d93acc3c2d0c212849a4a4b668dcfe4b67b2e4b562a8fd4607c9",
+    "exchange-server/src/journal/snapshot_bytes.rs": "4f57de5f952e5fc643e351ea0f93ebd13d357a741de0daa66c38886a7a67722d",
+    "exchange-server/src/journal/stored_mutation.rs": "ab57db19a69d2a0ca04b95d45f1a2e84560b720d4e7de98afb8cdf7d8ec3edd4",
+    "exchange-server/src/journal_worker.rs": "3f80697f71794291bab053e531c8d04e167b0b73cda9af2805e3cdcdc4532c2c",
+    "exchange-server/src/lib.rs": "09953982b254dd89de68ec1b5736b61ded0a25c50ba5620cc011760ce369dc6d",
+    "exchange-server/src/memory_diagnostics.rs": "709f4dc8efc03f9db6cdb4dc36a1f093a3edbb570705aa35fa9d98c6f38077cc",
+    "exchange-server/src/native_delivery_benchmark.rs": "6c0459ec4e093276d4c3bed93e787228b1c690c12be2b1bbee3daea7064b6eab",
+    "exchange-server/src/realtime.rs": "95ab7a405a00fb4bd6552b481088568af4616f6bf499c67b3268a747828c0c15",
+    "exchange-server/src/realtime_tests.rs": "506b101295e32adf43947c9416f3ce8ed8466e5258aa3be8c786ef2a4923abe7",
+    "exchange-server/src/risk_benchmark.rs": "a55dc21e3fe56d8536779010cde2f944694aa4ee458048cc168e3f2c0065c55f",
+    "exchange-server/src/risk_benchmark_realtime.rs": "5e84dc674e62b53d7fd8e14688fc34e2b16daa9719fc69eaa1cc90b999ff7f39",
+    "exchange-server/src/room_runtime.rs": "0a5b006c3ad970493f352e3f8ea6d54d4eb001470829c8f7ac4423a25ec2d22f",
+    "exchange-server/src/venue_order_tests.rs": "3d76c9c871b898d1c61aa899e4044e48738e232ea49c318ac0c94029d4ac9faa",
+    "exchange-server/src/venue_orders.rs": "8bee595821e040bf9f1f15c85d874a2f1174e91bae5b4b8e6e3caeb381571656",
+    "exchange-server/src/write_profile.rs": "65739cf8a6856150c41ca3f6e935b3f7acd247f45a855443de9770b483249dd7",
+    "scripts/benchmark_margin_progress.py": "ef556ef06b641c97b7a9ab34a071e5e7e4e693bd28f1746039be0ba45ea77dfa",
+    "scripts/benchmark_margin_risk.py": "be987311f0fb0cab1f8791c71cb8419aaba2437a5c22ac140f73696f632fd0e1",
+    "scripts/benchmark_margin_view.py": "13e21457512d11c355f5d194176cd00f9c750e5ec8d114fc234fb65af15e7dba",
+    "scripts/benchmark_native_bot_memory.py": "5734470ea3ffefe66192f747a2e7b94a091aabfdeb8c4d765c929821c44a19a2",
+    "scripts/benchmark_native_delivery.py": "0c88d92567007e1fdf6036d2a7b3750a0882ccbc32d6200ea57804fabae54331",
+    "scripts/benchmark_room_contention.py": "2ae3f5aa180e82c124d1ac0ac49b3f3cb5a4d557dee654ac8bec81aaa221e3c2",
+    "scripts/compare_room_contention.py": "b8f19c2de6a9de180df00b4dfea5703b00173f112e013bf47ec5b2c23d01b1ef",
+    "scripts/probe_room_head_of_line.py": "dce3366ac4c2a5a75fc1d0b74ee86af004fb28afd2d038b56706e39b06014836",
+    "scripts/summarize_room_contention.py": "570e0edb77f3de95511f9078c1a1dcfa7af67b8a6f7def0c87ebf53196d68dd2",
+    "scripts/summarize_room_optimization.py": "0865fd72f2f214378ce6b0a5355e67d5d81e5a9b4e1b6744f9401fe477617615"
+  },
+  "original_worktree_preservation": {
+    "native": {
+      "path": "E:\\CodexData\\worktrees\\native-bot-delivery\\MarketForge",
+      "head": "07c98ba761448b9161b97a8d66f22167c60da267",
+      "files": 21,
+      "source_unchanged": true,
+      "manifest_sha256": "e2985237e80259054f2832cea01d94c3e78d028a370fa14448f14b1273f42c0e",
+      "patch_sha256": "3b2cd251a67f7ceadd5a239ebdb0ba228b646b415f01b2ffa1cfd37b029183a4"
+    },
+    "pg": {
+      "path": "E:\\CodexData\\worktrees\\postgres-write-profile\\MarketForge",
+      "head": "71b58e9f9de3a9aede2521af9729d844d8913ace",
+      "files": 18,
+      "source_unchanged": true,
+      "manifest_sha256": "06f807a460a2438ab069fd9bb96a1f9d8d73208fa62a93dc3dacd766c4a476f4",
+      "patch_sha256": "9a1004909cb1627299cdc9ea471430eeac9168cdcf36d687156827070b69a6fe"
+    }
+  },
+  "unrelated_main_wip": {
+    "paths": 21,
+    "byte_identical": true,
+    "remain_uncommitted": true,
+    "files": [
+      {
+        "path": "bot-plugins/pine-strategy/bot.json",
+        "sha256": "f56a5441197bd74380b2c4415e1d428da3d54fcc61eda4ce3d6f4c0263476680"
+      },
+      {
+        "path": "bot-plugins/pine-strategy/bot.py",
+        "sha256": "5528b18b2677a2eb4a5469342e7616170b10d828d04aa5cd0c46c4e30cac19ad"
+      },
+      {
+        "path": "docs/BOT_PLUGINS.md",
+        "sha256": "8463a29436fcb973d34f941e9b64453d438e76b3af7c8e979347f6a9474fe216"
+      },
+      {
+        "path": "docs/PINE_BOTS.md",
+        "sha256": "76587da6da189155cf369edbabb6859ccf007315eeb8ba79e99570bbcbb8ae8f"
+      },
+      {
+        "path": "python/tests/test_pine_bot.py",
+        "sha256": "20842a522737361c74cb47c9fdada7af0dbb332239d1c51bbc08d7173fe21159"
+      },
+      {
+        "path": "scripts/background_market.py",
+        "sha256": "e2b912dfd5c997b0b4849d37bd32b93fd38fd070f0ce88725453f820892755ff"
+      },
+      {
+        "path": "bot-plugins/pine-strategy/broker.py",
+        "sha256": "c3173997095c039e4afedd9118fe55c55793b3411d4fa40420ef0a08579c5f97"
+      },
+      {
+        "path": "bot-plugins/pine-strategy/scripts/basis.pine",
+        "sha256": "cce058c8e9ce040d4d771029b61ac7e334abb502b64972b7f4ef070454ae5b90"
+      },
+      {
+        "path": "bot-plugins/pine-strategy/scripts/limit.pine",
+        "sha256": "da2d01e9c5789f96b8aab5e724fb45d77c31e9860356fcc9c7a81bcbaa25a301"
+      },
+      {
+        "path": "bot-plugins/pine-strategy/scripts/perp.pine",
+        "sha256": "ec941ad46aaf184057b26b36bcb0dce249eecf13228a99192f04e2ee743c9b4f"
+      },
+      {
+        "path": "docs/STRATEGY_SOURCE_LIBRARY.md",
+        "sha256": "685d996379d325773683edf98c5188cdcb4e4bf10d3abe87e876c2688db8c7c9"
+      },
+      {
+        "path": "docs/validation/2026-10-10-pine-broker.md",
+        "sha256": "79392a66c5d6800900c9f73310ae594288dbda278a85199e3079ac17d2d4f31c"
+      },
+      {
+        "path": "docs/validation/2026-10-10-strategy-research-results.json",
+        "sha256": "a97c7fd89dc300430c85450343ab5a8743a182f38ce7ef674092d3408c9a2b4c"
+      },
+      {
+        "path": "docs/validation/2026-10-10-strategy-research.md",
+        "sha256": "db53bf35f6375d392894059de5e954de27fbcc929c2320e58843325c05653a2e"
+      },
+      {
+        "path": "python/tests/test_pine_broker.py",
+        "sha256": "960b91eb307e2dbfa04f53c2e6eca691edf3428b7de95c91b3e905c24d794864"
+      },
+      {
+        "path": "python/tests/test_pine_broker_http.py",
+        "sha256": "0b39a537f79c52fbab769ed16ea647cbac9de00b265302a0d0cbf2d7a8990da5"
+      },
+      {
+        "path": "scripts/archive_strategy_documents.py",
+        "sha256": "b0347309267c1579f018fd1a0a08e64cc33f9b6a71707cdec9e47a63744a270b"
+      },
+      {
+        "path": "scripts/archive_strategy_sources.py",
+        "sha256": "c1184623c82e3bb9dd9749fc9e205ee058eb5c739eb5a8755c1bda12a9764628"
+      },
+      {
+        "path": "scripts/build_strategy_catalog.py",
+        "sha256": "159015c8a3a6ab17921bf4c857a4df942b2d56524580e4413435ecfb66c92324"
+      },
+      {
+        "path": "scripts/research_strategy_boundaries.py",
+        "sha256": "f71a823ade91ebc3619db1468acfdddfbe0c6c93a6304dfe5644a801cdd90385"
+      },
+      {
+        "path": "scripts/research_strategy_compat.py",
+        "sha256": "20fcf1824236d4ec1beda5af9166ed537ebe92fc3db45f42ec555a8206a9eccc"
+      }
+    ]
+  },
+  "first_pass_failures": {
+    "feature_compile": "risk-benchmark called compute_decision behind cfg(test); adapter now also gated for risk-benchmark",
+    "perp_fixture": "reserved margin includes mark-price collateral top-up: exact 2 retained, lower-mark path then verifies exact 0",
+    "postgres_fixture": "async projection test used incomplete synthetic receipts and shared DDL; isolated schema and real actor receipts preserve strict recovery",
+    "receipt_sha256": "0a7c072f6122ec504a4bfc849e80dac967ebd8d066629894f4b63f0df4f66b77",
+    "python_transport": {
+      "test": "test_agent_external.ExternalTests.test_scoped_auth_rotation_and_operator_separation",
+      "error": "Windows ConnectionAbortedError 10053 on a rejected request to a Python-only fake HTTP fixture",
+      "source_modified": false,
+      "focused_retry_passed": true,
+      "final_suite_passed": true,
+      "root_cause_verified": false,
+      "first_failure_log_sha256": "bbb3a11c4a8986b94aa88b80cbc465308c7926d1424d5559891418078b90b7a8",
+      "focused_retry_log_sha256": "fd16611c666de54e36450805bab8da9ee9d4439c88820e77d696b26b3d9ca5db"
+    },
+    "python_repeated_database": {
+      "test": "test_batch_runner.LiveBatchTests.setUpClass",
+      "error": "Missing plugin-directory configuration while recovering durable plugin agents from an earlier suite run",
+      "repair": "Set MARKETFORGE_BOT_PLUGIN_DIR for the validation process; preserve same database and strict registry checks",
+      "production_and_test_source_modified": false,
+      "failure_log_sha256": "ab641cd4a313755e9a5b245c4f78ca5ccf762234df980731bb3c5da04175f7d7",
+      "server_failure_log_sha256": "8a454248c3bdd1e6e2ded52993975e797228a894fecad1329e7aa64750887b25"
+    }
+  },
+  "limits": [
+    "No new complete performance matrix or 1000-bot 40-step/s capacity qualification",
+    "No comprehensive simultaneous native packet / venue HTTP / blocked projector recovery matrix",
+    "New actor_bytes checkpoints (raw JSON or LZ4) require compatible readers; old binaries cannot directly recover checkpoints with actor_json=NULL"
+  ],
+  "deployment": false,
+  "push": false
+}
