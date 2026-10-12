@@ -1,0 +1,958 @@
+{
+  "manifest": {
+    "started_utc": "2026-10-12T04:17:18.889204+00:00",
+    "baseline_commit": "68fcc73d01f7dbecdfa434d29cf4daf64f01a958",
+    "binaries": {
+      "before": {
+        "path": "E:\\projects\\MarketForge\\.local\\transaction-entry-optimization\\before.exe",
+        "sha256": "bdc9d73c1bd5fee657f7ee0056b0fb0f64dc31f30a1088395f3a7575c5c6ac59"
+      },
+      "after": {
+        "path": "E:\\projects\\MarketForge\\.local\\transaction-entry-optimization\\after.exe",
+        "sha256": "35c9dbf636079ff6ee92eca5dd6d22dab92fad5c5df40db4b8c1aac80c794e6e"
+      }
+    },
+    "driver_sha256": "6e0229f4c8c7523e5951fb8a840b402e625ebc4b93c19f88bf78f17bc4cc8d60",
+    "host": {
+      "platform": "Windows-11-10.0.26200-SP0",
+      "logical_cpus": 32
+    },
+    "sequence": [
+      "before",
+      "after",
+      "after",
+      "before",
+      "before",
+      "after",
+      "after",
+      "before"
+    ]
+  },
+  "exact_state_and_receipts_equal": true,
+  "comparisons": [
+    {
+      "accounts": 3,
+      "markets": 1,
+      "workload": "liquidation",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 16.5,
+            "min": 11.8,
+            "max": 23.6
+          },
+          "p95_us": {
+            "median": 20.45,
+            "min": 12.3,
+            "max": 29.8
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 17.1,
+            "min": 11.5,
+            "max": 25.0
+          },
+          "p95_us": {
+            "median": 19.95,
+            "min": 13.200000000000001,
+            "max": 34.8
+          },
+          "run_samples": 8
+        },
+        "speedup": 0.9649122807017543
+      },
+      "state_receipt_sha256": "b00358fac4db12e13d120cf46564d0f241c1f529144859981ec61361fe44eafe"
+    },
+    {
+      "accounts": 3,
+      "markets": 1,
+      "workload": "withdrawal_accepted",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 6.35,
+            "min": 5.3,
+            "max": 12.4
+          },
+          "p95_us": {
+            "median": 7.5,
+            "min": 5.5,
+            "max": 16.7
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 6.45,
+            "min": 5.1000000000000005,
+            "max": 7.8
+          },
+          "p95_us": {
+            "median": 7.399999999999999,
+            "min": 5.2,
+            "max": 12.0
+          },
+          "run_samples": 8
+        },
+        "speedup": 0.9844961240310077
+      },
+      "state_receipt_sha256": "5c54b5b4b952bdcc0dddbdd71242c7350ff1fa02d59799b8db2603159f748b22"
+    },
+    {
+      "accounts": 3,
+      "markets": 1,
+      "workload": "withdrawal_rejected",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 1.7,
+            "min": 1.5,
+            "max": 2.0999999999999996
+          },
+          "p95_us": {
+            "median": 1.9499999999999997,
+            "min": 1.5999999999999999,
+            "max": 2.3
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 1.5,
+            "min": 1.3,
+            "max": 1.7999999999999998
+          },
+          "p95_us": {
+            "median": 1.65,
+            "min": 1.4,
+            "max": 7.199999999999999
+          },
+          "run_samples": 8
+        },
+        "speedup": 1.1333333333333333
+      },
+      "state_receipt_sha256": "0c5237add0e419e346ebbf0e6f0230b39107919abd3f588982389956f831fa83"
+    },
+    {
+      "accounts": 3,
+      "markets": 4,
+      "workload": "liquidation",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 33.0,
+            "min": 23.6,
+            "max": 45.800000000000004
+          },
+          "p95_us": {
+            "median": 41.95,
+            "min": 24.4,
+            "max": 61.199999999999996
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 32.45,
+            "min": 22.900000000000002,
+            "max": 46.699999999999996
+          },
+          "p95_us": {
+            "median": 52.0,
+            "min": 23.7,
+            "max": 59.3
+          },
+          "run_samples": 8
+        },
+        "speedup": 1.0169491525423728
+      },
+      "state_receipt_sha256": "89ae71c73646f29d5a8b0b7065b5cf3bf5b06fae197f775d852457d63a3bc80f"
+    },
+    {
+      "accounts": 3,
+      "markets": 4,
+      "workload": "withdrawal_accepted",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 18.85,
+            "min": 14.0,
+            "max": 29.3
+          },
+          "p95_us": {
+            "median": 24.85,
+            "min": 14.3,
+            "max": 35.800000000000004
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 19.0,
+            "min": 12.9,
+            "max": 29.7
+          },
+          "p95_us": {
+            "median": 21.15,
+            "min": 13.299999999999999,
+            "max": 64.6
+          },
+          "run_samples": 8
+        },
+        "speedup": 0.9921052631578948
+      },
+      "state_receipt_sha256": "5d90babdb8fe75b23541be0b38f7837662c3cff2b1a4093e7dc8c21982f03652"
+    },
+    {
+      "accounts": 3,
+      "markets": 4,
+      "workload": "withdrawal_rejected",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 4.300000000000001,
+            "min": 4.199999999999999,
+            "max": 5.0
+          },
+          "p95_us": {
+            "median": 4.5,
+            "min": 4.4,
+            "max": 9.3
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 3.7,
+            "min": 3.4,
+            "max": 4.0
+          },
+          "p95_us": {
+            "median": 4.1499999999999995,
+            "min": 3.5,
+            "max": 4.8
+          },
+          "run_samples": 8
+        },
+        "speedup": 1.1621621621621623
+      },
+      "state_receipt_sha256": "5dad678915f07540deb7d5ed2b8ae2e80767d9834801c850ef7b18d95b530026"
+    },
+    {
+      "accounts": 100,
+      "markets": 1,
+      "workload": "liquidation",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 22.5,
+            "min": 22.0,
+            "max": 23.099999999999998
+          },
+          "p95_us": {
+            "median": 34.1,
+            "min": 22.7,
+            "max": 54.2
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 14.95,
+            "min": 14.399999999999999,
+            "max": 16.099999999999998
+          },
+          "p95_us": {
+            "median": 16.2,
+            "min": 14.9,
+            "max": 30.0
+          },
+          "run_samples": 8
+        },
+        "speedup": 1.5050167224080269
+      },
+      "state_receipt_sha256": "31fe31053b9dd4e07f2456393a5cffacc961be0d1fffa1e68d9d8be668b84877"
+    },
+    {
+      "accounts": 100,
+      "markets": 1,
+      "workload": "withdrawal_accepted",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 9.65,
+            "min": 9.3,
+            "max": 10.0
+          },
+          "p95_us": {
+            "median": 10.299999999999999,
+            "min": 9.6,
+            "max": 10.6
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 5.699999999999999,
+            "min": 5.5,
+            "max": 6.1
+          },
+          "p95_us": {
+            "median": 6.3,
+            "min": 5.9,
+            "max": 7.1
+          },
+          "run_samples": 8
+        },
+        "speedup": 1.6929824561403513
+      },
+      "state_receipt_sha256": "af368deb198d45440b839d7ce6e5731e434e78913b55a1501ea7a7f54ad3c506"
+    },
+    {
+      "accounts": 100,
+      "markets": 1,
+      "workload": "withdrawal_rejected",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 5.4,
+            "min": 5.1000000000000005,
+            "max": 5.6
+          },
+          "p95_us": {
+            "median": 6.35,
+            "min": 5.6,
+            "max": 6.8
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 1.7,
+            "min": 1.4,
+            "max": 1.9
+          },
+          "p95_us": {
+            "median": 1.7999999999999998,
+            "min": 1.5999999999999999,
+            "max": 2.0
+          },
+          "run_samples": 8
+        },
+        "speedup": 3.1764705882352944
+      },
+      "state_receipt_sha256": "20b3b668842a0465d733f9342eeb2a1a80dd525a2c0216454524ec1df1e4f682"
+    },
+    {
+      "accounts": 100,
+      "markets": 4,
+      "workload": "liquidation",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 65.25,
+            "min": 62.9,
+            "max": 65.8
+          },
+          "p95_us": {
+            "median": 71.65,
+            "min": 66.5,
+            "max": 82.89999999999999
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 33.3,
+            "min": 32.5,
+            "max": 34.8
+          },
+          "p95_us": {
+            "median": 37.849999999999994,
+            "min": 35.3,
+            "max": 48.6
+          },
+          "run_samples": 8
+        },
+        "speedup": 1.9594594594594597
+      },
+      "state_receipt_sha256": "ce4d81f2b1ce3dd9d6fbb0c55b6b3fb5cd0855adb177a107da2bc7c1ce2b6918"
+    },
+    {
+      "accounts": 100,
+      "markets": 4,
+      "workload": "withdrawal_accepted",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 28.949999999999996,
+            "min": 28.3,
+            "max": 29.9
+          },
+          "p95_us": {
+            "median": 30.4,
+            "min": 29.0,
+            "max": 46.1
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 14.299999999999999,
+            "min": 14.0,
+            "max": 15.2
+          },
+          "p95_us": {
+            "median": 14.95,
+            "min": 14.3,
+            "max": 15.6
+          },
+          "run_samples": 8
+        },
+        "speedup": 2.024475524475524
+      },
+      "state_receipt_sha256": "28f6d722de94df1d7b780f1e9c61872df89bcd4d1d9601a031bdba638644ccc0"
+    },
+    {
+      "accounts": 100,
+      "markets": 4,
+      "workload": "withdrawal_rejected",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 18.4,
+            "min": 17.6,
+            "max": 18.9
+          },
+          "p95_us": {
+            "median": 18.85,
+            "min": 18.2,
+            "max": 19.9
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 3.8,
+            "min": 3.7,
+            "max": 4.0
+          },
+          "p95_us": {
+            "median": 4.05,
+            "min": 3.9,
+            "max": 5.1000000000000005
+          },
+          "run_samples": 8
+        },
+        "speedup": 4.842105263157895
+      },
+      "state_receipt_sha256": "a8fb09b5f684d176554430dab522c0838231c5c3c5c5a614550d5f4bf7174756"
+    },
+    {
+      "accounts": 1000,
+      "markets": 1,
+      "workload": "liquidation",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 90.4,
+            "min": 86.19999999999999,
+            "max": 91.7
+          },
+          "p95_us": {
+            "median": 97.94999999999999,
+            "min": 90.60000000000001,
+            "max": 108.6
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 18.099999999999998,
+            "min": 17.0,
+            "max": 18.5
+          },
+          "p95_us": {
+            "median": 19.85,
+            "min": 17.8,
+            "max": 23.8
+          },
+          "run_samples": 8
+        },
+        "speedup": 4.9944751381215475
+      },
+      "state_receipt_sha256": "a9f4df62884071749503dff1a5a14b7312b87a37776269095887bd35ee026934"
+    },
+    {
+      "accounts": 1000,
+      "markets": 1,
+      "workload": "withdrawal_accepted",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 50.1,
+            "min": 48.699999999999996,
+            "max": 50.699999999999996
+          },
+          "p95_us": {
+            "median": 53.150000000000006,
+            "min": 51.6,
+            "max": 70.5
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 6.85,
+            "min": 6.5,
+            "max": 7.199999999999999
+          },
+          "p95_us": {
+            "median": 7.1,
+            "min": 6.7,
+            "max": 7.6
+          },
+          "run_samples": 8
+        },
+        "speedup": 7.313868613138687
+      },
+      "state_receipt_sha256": "1f44744e9990996853c76a6dafe2f97b80121e7dd7976058906a481618fcf55f"
+    },
+    {
+      "accounts": 1000,
+      "markets": 1,
+      "workload": "withdrawal_rejected",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 45.45,
+            "min": 43.800000000000004,
+            "max": 47.3
+          },
+          "p95_us": {
+            "median": 47.3,
+            "min": 47.2,
+            "max": 59.4
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 1.5,
+            "min": 1.4,
+            "max": 1.9
+          },
+          "p95_us": {
+            "median": 1.5999999999999999,
+            "min": 1.5,
+            "max": 2.0999999999999996
+          },
+          "run_samples": 8
+        },
+        "speedup": 30.3
+      },
+      "state_receipt_sha256": "36aebc4f9eaa8718e5a1cc09e05f8572292225fdc390948ee342cc3a73f4c43f"
+    },
+    {
+      "accounts": 1000,
+      "markets": 4,
+      "workload": "liquidation",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 376.85,
+            "min": 375.70000000000005,
+            "max": 395.40000000000003
+          },
+          "p95_us": {
+            "median": 434.25,
+            "min": 398.5,
+            "max": 615.6999999999999
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 42.449999999999996,
+            "min": 40.800000000000004,
+            "max": 50.4
+          },
+          "p95_us": {
+            "median": 46.75,
+            "min": 43.0,
+            "max": 64.6
+          },
+          "run_samples": 8
+        },
+        "speedup": 8.877502944640755
+      },
+      "state_receipt_sha256": "57fdaaff842c5fc4310edc10011ea37044989a90f6c62e1580a3442ba331cbe6"
+    },
+    {
+      "accounts": 1000,
+      "markets": 4,
+      "workload": "withdrawal_accepted",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 201.45,
+            "min": 195.4,
+            "max": 206.70000000000002
+          },
+          "p95_us": {
+            "median": 222.14999999999998,
+            "min": 204.7,
+            "max": 260.7
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 17.35,
+            "min": 17.200000000000003,
+            "max": 18.2
+          },
+          "p95_us": {
+            "median": 20.599999999999998,
+            "min": 19.599999999999998,
+            "max": 28.900000000000002
+          },
+          "run_samples": 8
+        },
+        "speedup": 11.610951008645532
+      },
+      "state_receipt_sha256": "bb035ca2a9b319773d2bcbff341bfee3e0b73ca35b1340fa2e133cad84c3d625"
+    },
+    {
+      "accounts": 1000,
+      "markets": 4,
+      "workload": "withdrawal_rejected",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 181.35,
+            "min": 174.4,
+            "max": 188.1
+          },
+          "p95_us": {
+            "median": 196.05,
+            "min": 181.8,
+            "max": 215.60000000000002
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 4.05,
+            "min": 3.9,
+            "max": 4.300000000000001
+          },
+          "p95_us": {
+            "median": 4.300000000000001,
+            "min": 4.0,
+            "max": 5.4
+          },
+          "run_samples": 8
+        },
+        "speedup": 44.77777777777778
+      },
+      "state_receipt_sha256": "aadc6adf681f5a98d0d44fb66be3032415dd3b3af6334a3ea10aea031d97faf8"
+    },
+    {
+      "accounts": 10000,
+      "markets": 1,
+      "workload": "liquidation",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 1127.85,
+            "min": 1094.8,
+            "max": 1311.0
+          },
+          "p95_us": {
+            "median": 1391.0,
+            "min": 1323.5,
+            "max": 1586.8
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 20.400000000000002,
+            "min": 19.5,
+            "max": 20.7
+          },
+          "p95_us": {
+            "median": 22.9,
+            "min": 20.9,
+            "max": 28.2
+          },
+          "run_samples": 8
+        },
+        "speedup": 55.28676470588234
+      },
+      "state_receipt_sha256": "be5c817a94fe2f3a192c1612fabdb86accfbe2d7a5e9ee61526ba8459cba5e75"
+    },
+    {
+      "accounts": 10000,
+      "markets": 1,
+      "workload": "withdrawal_accepted",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 946.2,
+            "min": 914.6,
+            "max": 964.8000000000001
+          },
+          "p95_us": {
+            "median": 1056.15,
+            "min": 1006.8,
+            "max": 1136.1
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 8.1,
+            "min": 7.5,
+            "max": 8.2
+          },
+          "p95_us": {
+            "median": 10.200000000000001,
+            "min": 8.3,
+            "max": 12.0
+          },
+          "run_samples": 8
+        },
+        "speedup": 116.81481481481482
+      },
+      "state_receipt_sha256": "4e13d6167347fec5a2125768e3cf90d6f8429913684cb169ab655dca0e13e9e9"
+    },
+    {
+      "accounts": 10000,
+      "markets": 1,
+      "workload": "withdrawal_rejected",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 922.4499999999999,
+            "min": 897.5,
+            "max": 1123.1
+          },
+          "p95_us": {
+            "median": 1104.55,
+            "min": 960.1,
+            "max": 1338.0
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 1.5999999999999999,
+            "min": 1.5,
+            "max": 1.7
+          },
+          "p95_us": {
+            "median": 1.75,
+            "min": 1.5999999999999999,
+            "max": 2.4
+          },
+          "run_samples": 8
+        },
+        "speedup": 576.53125
+      },
+      "state_receipt_sha256": "5a494b2fa2ccc7623e75cd22044f217e83a8e7b6e355f48ad6b22c9b081a2021"
+    },
+    {
+      "accounts": 10000,
+      "markets": 4,
+      "workload": "liquidation",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 7637.25,
+            "min": 7372.799999999999,
+            "max": 8305.3
+          },
+          "p95_us": {
+            "median": 8926.95,
+            "min": 8264.9,
+            "max": 10624.800000000001
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 51.0,
+            "min": 49.5,
+            "max": 53.1
+          },
+          "p95_us": {
+            "median": 57.7,
+            "min": 53.8,
+            "max": 108.3
+          },
+          "run_samples": 8
+        },
+        "speedup": 149.75
+      },
+      "state_receipt_sha256": "a060627eec23f1a5e8a17fc8b60a5359fe6d95aa9f13352bee7e4052584975c7"
+    },
+    {
+      "accounts": 10000,
+      "markets": 4,
+      "workload": "withdrawal_accepted",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 4352.75,
+            "min": 4037.2999999999997,
+            "max": 4928.400000000001
+          },
+          "p95_us": {
+            "median": 4972.0,
+            "min": 4397.400000000001,
+            "max": 5585.4
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 21.55,
+            "min": 20.9,
+            "max": 22.7
+          },
+          "p95_us": {
+            "median": 25.1,
+            "min": 22.6,
+            "max": 25.599999999999998
+          },
+          "run_samples": 8
+        },
+        "speedup": 201.98375870069606
+      },
+      "state_receipt_sha256": "e275ae7987bb05fbd68179205fe7be36ac8cf53479bab698fdc44f0217523c91"
+    },
+    {
+      "accounts": 10000,
+      "markets": 4,
+      "workload": "withdrawal_rejected",
+      "timings": {
+        "before": {
+          "median_us": {
+            "median": 4198.35,
+            "min": 3968.5,
+            "max": 4305.4
+          },
+          "p95_us": {
+            "median": 4680.5,
+            "min": 4524.8,
+            "max": 4888.5
+          },
+          "run_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 4.300000000000001,
+            "min": 4.199999999999999,
+            "max": 6.3
+          },
+          "p95_us": {
+            "median": 4.75,
+            "min": 4.4,
+            "max": 15.5
+          },
+          "run_samples": 8
+        },
+        "speedup": 976.360465116279
+      },
+      "state_receipt_sha256": "5eae25025623a6dde9ae1a90ce40d35747c1f3e0146d1dc3df193e98604a08f7"
+    }
+  ],
+  "limits": [
+    "Fixed core public API work, not HTTP/PG/bot capacity or long-run qualification.",
+    "3 warmups + 30 measured independent fixture clones per case, forward/reverse population order.",
+    "External fixture clones, assertions and final full actor/receipt hashing excluded from timings.",
+    "Statistics are medians of per-case medians/P95s, not pooled latency percentiles.",
+    "Accepted withdrawal means non-rejected submission, not delayed completion latency."
+  ],
+  "source_sha256": {
+    "exchange-core/src/actor.rs": "f895ca3d560db5f9cbcb73014eafd4baea1d8c91e6bda93d47a42f115fd75002",
+    "exchange-core/src/transaction_entry_tests.rs": "bee7b3ba9902fc2096b87cf2a22cb0d46be9d51205bba4c37ea328c8e33dc9f2",
+    "exchange-core/examples/benchmark_transaction_entries.rs": "6e0229f4c8c7523e5951fb8a840b402e625ebc4b93c19f88bf78f17bc4cc8d60",
+    "scripts/benchmark_transaction_entries.py": "617cd672ca11a8b53dd13503c236246c5fd4e683a84a5048a3edbbd798a45cd3"
+  },
+  "build_manifest": {
+    "baseline_commit": "68fcc73d01f7dbecdfa434d29cf4daf64f01a958",
+    "driver_sha256": "6e0229f4c8c7523e5951fb8a840b402e625ebc4b93c19f88bf78f17bc4cc8d60",
+    "original_cargo_lock_sha256": "509bab300fde081a5e114ffe8ddf0c53baf43102ce52db652fcecad291e9b6bf",
+    "before": {
+      "binary_sha256": "bdc9d73c1bd5fee657f7ee0056b0fb0f64dc31f30a1088395f3a7575c5c6ac59",
+      "path": "E:\\projects\\MarketForge\\.local\\transaction-entry-optimization\\before.exe"
+    },
+    "after": {
+      "binary_sha256": "35c9dbf636079ff6ee92eca5dd6d22dab92fad5c5df40db4b8c1aac80c794e6e",
+      "path": "E:\\projects\\MarketForge\\.local\\transaction-entry-optimization\\after.exe"
+    }
+  },
+  "baseline_dependencies_equal": true,
+  "validation": {
+    "workspace_all_features_required_postgres": {
+      "passed": 620,
+      "failed": 0,
+      "ignored": 15,
+      "log": "E:\\projects\\MarketForge\\.local\\transaction-entry-optimization\\workspace-postgres.log",
+      "sha256": "c16295f8100fc03cfac7b1379a052887714cf7860678a144930e049579dfec8d"
+    },
+    "new_transaction_entry_regressions": {
+      "passed": 6,
+      "log_sha256": "761ad5797d1ec4efd3f0728a3f615a45d869e38eaeea96fb23f026275c776ace"
+    },
+    "clippy_all_targets_all_features_warnings_denied": {
+      "passed": true,
+      "log_sha256": "85cb30b435789b7c88ebe1fd4a295ef289fa5b5aad42702e28b5ffb029e78577"
+    },
+    "cargo_fmt_and_included_tests_rustfmt_checks": true,
+    "git_diff_check": true,
+    "postgres": {
+      "task_only_loopback_port": 55442,
+      "fresh_database": true,
+      "fsync": "on",
+      "synchronous_commit": "on",
+      "full_page_writes": "on",
+      "task_cluster_stopped": true
+    }
+  },
+  "raw_run_sha256": {
+    "00-before.json": "05081d07b5a4d885f51febec7dfd3d8bd6dd591ca0c27115d2855cbea88690b0",
+    "00-before.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "01-after.json": "ac68bd5f2edbde6e7b14fd7299167f5893307800ce2ec58eac05093e6d0acbdd",
+    "01-after.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "02-after.json": "dc8bfa6d6c6c6759fdcd7845552a5f395a879bab5d0db33d8dd5eb57a95120ac",
+    "02-after.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "03-before.json": "4b215c603935b32e97f068d20c3ae7809df579dc70b4b5d1837613192a3ed233",
+    "03-before.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "04-before.json": "4c8d68dbec3d4439270230579162b40cd5e0fd8cf3e61c9132bda6108976ca2e",
+    "04-before.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "05-after.json": "f9f1db7d668cafad32396733e0e2bd4b3b183713b74063d901d2bd86b774abdd",
+    "05-after.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "06-after.json": "8f83f8577ec487e54d81b0adf5bf9ca3095afcec2c16d53b565cb10237ad5519",
+    "06-after.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "07-before.json": "9172ddb4c29a347a4e429f4a1bd8bdf0fa78326c869eaef581a10991983591e3",
+    "07-before.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "implementation": {
+    "withdrawal": "Query only the selected account in each relevant market; preserve ordered net PnL, loss buffer, checked arithmetic, transfer policy and reservation rules.",
+    "liquidation": "Known internal engine mutation uses direct selected-market access; native account/reservation records and pending-liquidation membership diff determine scope. Opaque public access still invalidates fully.",
+    "rollback_recovery": "Candidate state still installs only after reconciliation/clearing succeeds; command-sequence behavior unchanged. Unknown/deserialized/opaque inputs retain full reconciliation; no new persisted cache or schema."
+  },
+  "boundaries": [
+    "MarketForge changes only; unrelated staged strategy-library blobs preserved.",
+    "Validation preceded the scoped commit; no push, deployment or user-database modification.",
+    "Three-account one-market liquidation median 16.50 -> 17.10 us; observed +0.60 us with overlapping run ranges.",
+    "Three-account accepted withdrawals show +0.10/+0.15 us at 1/4 markets; overlapping ranges retained.",
+    "Only controlled core API latency measured; no HTTP/bot/DB throughput, long-run RSS or production capacity qualification."
+  ]
+}

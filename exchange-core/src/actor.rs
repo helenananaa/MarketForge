@@ -887,6 +887,10 @@ impl ExchangeActor {
         asset_id: &str,
         amount: Money,
     ) -> Option<VenueTransferRejectReason> {
+        #[cfg(test)]
+        if tests::FULL_TRANSACTION_ENTRY_REFERENCE.get() {
+            return tests::withdrawal_reject_reason_reference(self, account_id, asset_id, amount);
+        }
         if amount <= 0 {
             return None;
         }
@@ -896,13 +900,7 @@ impl ExchangeActor {
             if market.config().instrument().quote_asset != asset_id {
                 continue;
             }
-            let AccountSnapshots::Perp(accounts) = market.account_snapshots() else {
-                continue;
-            };
-            let Some(account) = accounts
-                .into_iter()
-                .find(|account| account.account_id == account_id)
-            else {
+            let Some(AccountSnapshot::Perp(account)) = market.account_snapshot(account_id) else {
                 continue;
             };
             net_unrealized_pnl = match net_unrealized_pnl.checked_add(account.unrealized_pnl) {
@@ -1566,8 +1564,17 @@ impl ExchangeActor {
         if let Err(error) = staged.sync_market_accounts_from_venue(instrument_id) {
             return Ok(self.clearing_rejection(instrument_id, command_seq, error));
         }
+        #[cfg(test)]
+        if tests::FULL_TRANSACTION_ENTRY_REFERENCE.get() {
+            staged.market_mut(instrument_id)?;
+        }
+        // This internal operation records account/reservation changes in the
+        // engine; pending-liquidation membership is diffed by margin sync.
+        // Keep opaque public mutation's full invalidation out of this path.
         let mut execution = staged
-            .market_mut(instrument_id)?
+            .markets
+            .get_mut(instrument_id)
+            .expect("instrument existence checked before staging liquidation")
             .liquidate_account(account_id, order_id);
         execution.command_seq = command_seq;
         execution.instrument_id = instrument_id.to_string();
@@ -3656,7 +3663,9 @@ include!("conditional_orders_actor.rs");
 mod tests {
     include!("incremental_risk_tests.rs");
     include!("account_scope_tests.rs");
+    include!("transaction_entry_tests.rs");
     thread_local! {
+        pub(super) static FULL_TRANSACTION_ENTRY_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
         pub(super) static SPOT_SCOPE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
         pub(super) static VENUE_SCOPE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
         pub(super) static FULL_ACCOUNT_SCOPE_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
