@@ -81,6 +81,32 @@ impl<T: Clone> History<T> {
 }
 
 impl<T> History<T> {
+    /// Exact append proof: shared sealed chunks need no element traversal;
+    /// detached/recovered chunks and the short old tail are compared fully.
+    pub(crate) fn extends(&self, previous: &Self) -> bool
+    where
+        T: PartialEq,
+    {
+        if self.len < previous.len {
+            return false;
+        }
+        for (index, chunk) in previous.chunks.iter().enumerate() {
+            if !self
+                .chunks
+                .get(index)
+                .is_some_and(|next| Arc::ptr_eq(chunk, next) || chunk.0 == next.0)
+            {
+                return false;
+            }
+        }
+        let offset = previous.len - previous.tail.len();
+        previous
+            .tail
+            .iter()
+            .enumerate()
+            .all(|(i, value)| self.at(offset + i) == Some(value))
+    }
+
     /// Indexed immutable reads without flattening shared history chunks.
     pub(crate) fn at(&self, index: usize) -> Option<&T> {
         if index >= self.len {
@@ -170,6 +196,28 @@ impl<'de, T: Deserialize<'de> + Clone> Deserialize<'de> for History<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn append_proof_checks_changed_prefixes_across_sealed_and_tail_boundaries() {
+        for length in [0, 1, 31, 32, 33, 64, 65, 1000] {
+            let mut previous = History::default();
+            previous.extend(0..length);
+            let mut next = previous.clone();
+            next.extend(length..length + 70);
+            assert!(next.extends(&previous));
+            let mut values: Vec<_> = next.iter().copied().collect();
+            let restored: History<usize> =
+                serde_json::from_value(serde_json::json!(values)).unwrap();
+            assert!(restored.extends(&previous));
+            if length > 0 {
+                values[0] = 99999;
+                let corrected: History<usize> =
+                    serde_json::from_value(serde_json::json!(values)).unwrap();
+                assert!(!corrected.extends(&previous));
+                assert!(!History::<usize>::default().extends(&previous));
+            }
+        }
+    }
     #[test]
     fn appending_to_long_forks_copies_a_small_tail_and_keeps_old_exports() {
         use std::sync::atomic::{AtomicUsize, Ordering};

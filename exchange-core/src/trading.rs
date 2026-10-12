@@ -29,6 +29,41 @@ pub struct SpotTradingEngine {
 }
 
 impl SpotTradingEngine {
+    pub(crate) fn bot_changed_accounts(
+        &self,
+        previous: &Self,
+    ) -> Option<std::collections::BTreeSet<AccountId>> {
+        if !self.clearing_events.extends(&previous.clearing_events) {
+            return None;
+        }
+        let mut changed = self
+            .changed_balance_accounts(&previous.balance_state())
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        for record in self.log.appended_commands(&previous.log)? {
+            let owner = match &record.command {
+                Command::NewOrder(order) => Some(order.account_id),
+                Command::CancelOrder(order) => previous
+                    .book
+                    .order_owner(order.order_id)
+                    .or_else(|| self.book.order_owner(order.order_id)),
+                Command::AmendOrder(order) => previous
+                    .book
+                    .order_owner(order.order_id)
+                    .or_else(|| self.book.order_owner(order.order_id)),
+                _ => return None,
+            };
+            changed.extend(owner);
+        }
+        for record in self.log.appended_events(&previous.log) {
+            if let Event::TradePrinted(trade) = &record.event {
+                changed.insert(trade.maker_account_id);
+                changed.insert(trade.taker_account_id);
+            }
+        }
+        Some(changed)
+    }
+
     pub(crate) fn balance_state(&self) -> crate::spot::SpotBalanceState {
         self.accounts.balance_state()
     }

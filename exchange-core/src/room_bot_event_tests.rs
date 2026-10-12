@@ -27,6 +27,44 @@ fn event_stamp_for(
 }
 
 #[test]
+fn indexed_spot_wakes_cover_exact_event_changes_and_reject_corrected_history() {
+    let mut rooms = RoomManager::new();
+    rooms.create_room(spot_scenario("event-filter")).unwrap();
+    let request = crate::bots::BotMarketDataRequest { interval_ms: 10000, max_bars: 512 };
+    for round in 0..24 {
+        let previous = rooms.clone();
+        let command = if round % 3 == 0 {
+            limit(100 + round, 20, Side::Buy, 90, 1)
+        } else if round % 3 == 1 {
+            Command::AmendOrder(crate::model::AmendOrder { order_id: 99 + round, price_tick: Some(89), qty: None })
+        } else {
+            Command::CancelOrder(CancelOrder { order_id: 98 + round })
+        };
+        rooms.apply("event-filter", command).unwrap();
+        let changed = rooms.spot_bot_changed_accounts(&previous, "event-filter", "V-BTC-SPOT").unwrap();
+        for account in [10,20,999] {
+            if !changed.contains(&account) {
+                assert_eq!(event_stamp_for(&previous,account,request,&[]), event_stamp_for(&rooms,account,request,&[]));
+            }
+        }
+        assert!(!changed.contains(&999));
+    }
+    let previous = rooms.clone();
+    rooms.apply("event-filter", limit(500,20,Side::Buy,100,1)).unwrap();
+    let changed = rooms.spot_bot_changed_accounts(&previous,"event-filter","V-BTC-SPOT").unwrap();
+    assert!(changed.contains(&10) && changed.contains(&20), "maker and taker are both woken");
+    let previous = rooms.clone();
+    let (receipts, _) = rooms.bot_trade_history("event-filter","V-BTC-SPOT").unwrap();
+    rooms.restore_bot_history("event-filter",receipts.clone(),false);
+    assert!(rooms.spot_bot_changed_accounts(&previous,"event-filter","V-BTC-SPOT").is_none());
+    let previous = rooms.clone();
+    let mut corrected = receipts;
+    corrected[0].buyer_fee = Some(9);
+    rooms.restore_bot_history("event-filter",corrected,true);
+    assert!(rooms.spot_bot_changed_accounts(&previous,"event-filter","V-BTC-SPOT").is_none());
+}
+
+#[test]
 fn event_stamp_cache_matches_uncached_inputs_and_is_scoped_to_frozen_wave() {
     let mut manager = RoomManager::new();
     manager.create_room(spot_scenario("event-filter")).unwrap();

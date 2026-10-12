@@ -57,6 +57,56 @@ pub struct RoomManager {
 }
 
 impl RoomManager {
+    /// Proves which spot accounts can have changed event inputs since an
+    /// immutable committed predecessor. None means the caller must screen all.
+    /// Restored/corrected histories never qualify through a tail/count shortcut.
+    pub fn spot_bot_changed_accounts(
+        &self,
+        previous: &Self,
+        room: &str,
+        instrument: &str,
+    ) -> Option<BTreeSet<AccountId>> {
+        fn same_arc<T>(a: Option<&Arc<T>>, b: Option<&Arc<T>>) -> bool {
+            match (a, b) {
+                (None, None) => true,
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                _ => false,
+            }
+        }
+        if !same_arc(
+            self.restored_bot_accounts.get(room),
+            previous.restored_bot_accounts.get(room),
+        ) {
+            return None;
+        }
+        match (
+            self.restored_bot_history.get(room),
+            previous.restored_bot_history.get(room),
+        ) {
+            (None, None) => {}
+            (Some((a, ac)), Some((b, bc))) if ac == bc && Arc::ptr_eq(a, b) => {}
+            _ => return None,
+        }
+        match (self.executions.get(room), previous.executions.get(room)) {
+            (Some(after), Some(before)) if after.extends(before) => {}
+            (Some(_), None) | (None, None) => {}
+            _ => return None,
+        }
+        let after = self.simulation_room(room).ok()?;
+        let before = previous.simulation_room(room).ok()?;
+        if after.clock().market_time_ms() < before.clock().market_time_ms() {
+            return None;
+        }
+        let venue = after.venue_id_for_instrument(instrument)?;
+        if before.venue_id_for_instrument(instrument)? != venue {
+            return None;
+        }
+        after
+            .exchange(&venue)
+            .ok()?
+            .spot_bot_changed_accounts(before.exchange(&venue).ok()?, instrument)
+    }
+
     /// Authoritative clearing snapshots, restricted to the caller's account.
     pub fn bot_account_events(
         &self,

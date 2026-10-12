@@ -10257,6 +10257,10 @@ async fn commit_scheduler_transaction(
             Candidate::Patch(delta) => {
                 // This exact predecessor was validated before the durable
                 // append; the writer lock has remained held throughout it.
+                let publication = (
+                    delta.base_revision,
+                    delta.changes.iter().map(|c| c.index).collect(),
+                );
                 delta
                     .apply_owned(
                         state
@@ -10265,6 +10269,7 @@ async fn commit_scheduler_transaction(
                             .expect("locked live predecessor"),
                     )
                     .expect("validated patch cannot fail after the durable append");
+                state.dispatch_patch_applied(publication.0, publication.1);
             }
         }
         Ok(Json(response))
@@ -10308,6 +10313,10 @@ async fn commit_bot_state_only(
     #[cfg(feature = "bench-execution-timing")]
     let mutation_timer = crate::bench_execution_timing::Timer::start(
         &crate::bench_execution_timing::SCHEDULER_MUTATION_BUILD,
+    );
+    let publication = (
+        delta.base_revision,
+        delta.changes.iter().map(|c| c.index).collect(),
     );
     let progress = if delta.state.revision.is_multiple_of(100) {
         #[cfg(feature = "bench-execution-timing")]
@@ -10360,7 +10369,9 @@ async fn commit_bot_state_only(
         RoomMutation::SchedulerProgress { state, .. } => *current = state,
         _ => unreachable!("state-only work prepared a scheduler mutation"),
     }
-    Ok(return_state.then(|| current.clone()))
+    let response = return_state.then(|| current.clone());
+    state.dispatch_patch_applied(publication.0, publication.1);
+    Ok(response)
 }
 
 fn execution_participant_id(

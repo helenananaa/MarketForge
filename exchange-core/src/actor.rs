@@ -124,6 +124,31 @@ pub struct ExchangeActor {
 }
 
 impl ExchangeActor {
+    /// Conservative eligibility for the indexed spot bar/account wake path.
+    /// Perpetual risk, configuration and protection changes use full screening.
+    pub(crate) fn spot_bot_changed_accounts(
+        &self,
+        previous: &Self,
+        instrument: &str,
+    ) -> Option<BTreeSet<AccountId>> {
+        if self.config != previous.config
+            || self.status() != previous.status()
+            || !self.conditional_orders.ptr_eq(&previous.conditional_orders)
+            || !self
+                .position_protections
+                .ptr_eq(&previous.position_protections)
+        {
+            return None;
+        }
+        let (MarketEngine::Spot(after), MarketEngine::Spot(before)) = (
+            &self.markets.get(instrument)?.engine,
+            &previous.markets.get(instrument)?.engine,
+        ) else {
+            return None;
+        };
+        after.bot_changed_accounts(before)
+    }
+
     fn margin_state(&self) -> BTreeMap<InstrumentId, crate::perp::PerpMarginState> {
         self.markets
             .iter()

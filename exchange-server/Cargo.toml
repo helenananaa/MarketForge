@@ -33,6 +33,7 @@ num-traits = { version = "0.2", optional = true }
 argon2 = "0.5.3"
 bytes = "1"
 getrandom = "0.3.4"
+im = "15.1.0"
 lz4_flex = { version = "0.14", default-features = false, features = ["std", "safe-encode", "safe-decode", "checked-decode"] }
 sha2 = "0.10"
 axum = { version = "0.8", features = ["ws"] }

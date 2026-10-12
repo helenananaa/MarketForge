@@ -22,7 +22,7 @@ struct RoomRuntime {
     state: Arc<AsyncMutex<Option<AppState>>>,
     coordination: Arc<RwLock<()>>,
     venues: std::sync::RwLock<BTreeMap<String, Arc<AsyncMutex<()>>>>,
-    published: std::sync::RwLock<Arc<RoomManager>>,
+    published: std::sync::RwLock<PublishedRoom>,
     summary: std::sync::RwLock<RoomSummary>,
 }
 
@@ -110,6 +110,7 @@ pub(super) struct RoomGuard {
     _directory: Arc<OwnedRwLockReadGuard<Directory>>,
     changed: bool,
     market_changed: bool,
+    dispatch_patch: Option<(u64, Vec<usize>)>,
     #[cfg(feature = "bench-execution-timing")]
     timing_started: Instant,
 }
@@ -118,6 +119,63 @@ pub(super) struct MetadataGuard(OwnedRwLockReadGuard<Directory>);
 
 pub(super) struct RoomReadState {
     pub(super) rooms: Arc<RoomManager>,
+}
+
+/// Market and scheduler predecessors are published together, only after durable
+/// installation. Readers never acquire the writer lane or see candidate state.
+#[derive(Clone)]
+pub(super) struct PublishedRoom {
+    pub(super) rooms: Arc<RoomManager>,
+    pub(super) dispatch: Option<Arc<DispatchState>>,
+}
+
+pub(super) struct DispatchState {
+    pub(super) roster: Arc<()>,
+    pub(super) revision: u64,
+    pub(super) bots_enabled: bool,
+    // Persistent vector nodes share immutable agents. Updating one slot must
+    // not deep-copy the neighboring bots in the same vector chunk.
+    pub(super) agents: im::Vector<Arc<exchange_core::PersistedAgent>>,
+    pub(super) registry: exchange_core::BotRegistry,
+}
+
+impl DispatchState {
+    fn publish(
+        app: &AppState,
+        previous: Option<&Arc<Self>>,
+        patch: Option<&(u64, Vec<usize>)>,
+    ) -> Option<Arc<Self>> {
+        let scheduler = app.schedulers.values().next()?;
+        if let Some(previous) = previous
+            && previous.revision == scheduler.revision
+            && previous.bots_enabled == scheduler.bots_enabled
+        {
+            return Some(previous.clone());
+        }
+        let (agents, roster) = match (previous, patch) {
+            (Some(previous), Some((base, indices)))
+                if previous.revision == *base
+                    && previous.agents.len() == scheduler.agents.len() =>
+            {
+                let mut agents = previous.agents.clone();
+                for &index in indices {
+                    agents.set(index, Arc::new(scheduler.agents[index].clone()));
+                }
+                (agents, previous.roster.clone())
+            }
+            _ => (
+                scheduler.agents.iter().cloned().map(Arc::new).collect(),
+                Arc::new(()),
+            ),
+        };
+        Some(Arc::new(Self {
+            roster,
+            revision: scheduler.revision,
+            bots_enabled: scheduler.bots_enabled,
+            agents,
+            registry: app.bot_registry.clone(),
+        }))
+    }
 }
 
 /// Venue FIFO protects shared collateral while computation is outside the
@@ -150,6 +208,7 @@ impl VenueOrderGuard {
             _directory: self.directory.clone(),
             changed: false,
             market_changed: false,
+            dispatch_patch: None,
             #[cfg(feature = "bench-execution-timing")]
             timing_started: Instant::now(),
         })
@@ -192,6 +251,7 @@ impl StateStore {
                     _directory: directory,
                     changed: false,
                     market_changed: false,
+                    dispatch_patch: None,
                     #[cfg(feature = "bench-execution-timing")]
                     timing_started: Instant::now(),
                 }),
@@ -219,7 +279,7 @@ impl StateStore {
         if runtime.summary.read().unwrap().has_training {
             return None;
         }
-        let snapshot = runtime.published.read().unwrap().clone();
+        let snapshot = runtime.published.read().unwrap().rooms.clone();
         let simulation = snapshot.simulation_room(room).ok()?;
         if simulation.venue_ids().len() < 2 {
             return None;
@@ -239,7 +299,7 @@ impl StateStore {
         bench_execution_timing::VENUE_WAIT.record(started);
         // Take the snapshot after acquiring the venue lane, so its accounts and
         // books include the preceding venue transaction's committed result.
-        let predecessor = runtime.published.read().unwrap().clone();
+        let predecessor = runtime.published.read().unwrap().rooms.clone();
         Some(VenueOrderGuard {
             runtime,
             _venue: venue_guard,
@@ -280,7 +340,7 @@ impl StateStore {
         directory
             .rooms
             .iter()
-            .filter(|(id, room)| room.published.read().unwrap().status(id).is_ok())
+            .filter(|(id, room)| room.published.read().unwrap().rooms.status(id).is_ok())
             .map(|(id, _)| id.clone())
             .collect()
     }
@@ -290,9 +350,17 @@ impl StateStore {
         let rooms = directory
             .rooms
             .get(room)
-            .map(|runtime| runtime.published.read().unwrap().clone())
+            .map(|runtime| runtime.published.read().unwrap().rooms.clone())
             .unwrap_or_else(|| Arc::new(RoomManager::new()));
         RoomReadState { rooms }
+    }
+
+    pub(super) async fn read_dispatch(&self, room: &str) -> Option<PublishedRoom> {
+        let directory = self.directory.read().await;
+        directory
+            .rooms
+            .get(room)
+            .map(|runtime| runtime.published.read().unwrap().clone())
     }
 
     pub(super) async fn lock_room(&self, room: &str) -> StateGuard {
@@ -315,6 +383,7 @@ impl StateStore {
                 _directory: Arc::new(directory),
                 changed: false,
                 market_changed: false,
+                dispatch_patch: None,
                 #[cfg(feature = "bench-execution-timing")]
                 timing_started: Instant::now(),
             });
@@ -373,7 +442,10 @@ impl Directory {
         self.rooms.retain(|id, _| ids.contains(id));
         for id in ids {
             let app = self.global.extract_room(&id);
-            let snapshot = Arc::new(app.rooms.clone());
+            let snapshot = PublishedRoom {
+                rooms: Arc::new(app.rooms.clone()),
+                dispatch: DispatchState::publish(&app, None, None),
+            };
             let summary = RoomSummary::from_app(&app);
             let venues = app
                 .rooms
@@ -576,10 +648,11 @@ impl StateGuard {
     /// Read the current immutable market under the same room lock as scheduler
     /// selection. Scheduler-only writes keep this identity; every market write
     /// publishes a new identity. Unpublished writes must use their own snapshot.
+    #[cfg(test)]
     pub(super) fn market_snapshot(&self) -> Arc<RoomManager> {
         match self {
             Self::Room(guard) if !guard.market_changed => {
-                guard.runtime.published.read().unwrap().clone()
+                guard.runtime.published.read().unwrap().rooms.clone()
             }
             _ => Arc::new(self.rooms.clone()),
         }
@@ -597,6 +670,14 @@ impl StateGuard {
                 guard.changed = true;
                 guard.state.as_mut().unwrap().schedulers.get_mut(room)
             }
+        }
+    }
+
+    /// The caller records the exact patch only after its durable installation.
+    /// Unknown/full scheduler changes rebuild the derived view instead.
+    pub(super) fn dispatch_patch_applied(&mut self, base: u64, indices: Vec<usize>) {
+        if let Self::Room(guard) = self {
+            guard.dispatch_patch = Some((base, indices));
         }
     }
 }
@@ -618,12 +699,21 @@ impl Drop for RoomGuard {
                 "platform updates must use the administrative barrier"
             );
             let summary = RoomSummary::from_app(app);
-            if self.market_changed {
-                let next = Arc::new(app.rooms.clone());
-                let previous =
-                    std::mem::replace(&mut *self.runtime.published.write().unwrap(), next);
-                drop(previous);
-            }
+            let previous = self.runtime.published.read().unwrap().clone();
+            let next = PublishedRoom {
+                rooms: if self.market_changed {
+                    Arc::new(app.rooms.clone())
+                } else {
+                    previous.rooms
+                },
+                dispatch: DispatchState::publish(
+                    app,
+                    previous.dispatch.as_ref(),
+                    self.dispatch_patch.as_ref(),
+                ),
+            };
+            let previous = std::mem::replace(&mut *self.runtime.published.write().unwrap(), next);
+            drop(previous);
             *self.runtime.summary.write().unwrap() = summary;
         }
         #[cfg(feature = "bench-execution-timing")]
@@ -653,12 +743,43 @@ mod tests {
             ),
         );
         let store = StateStore::new(app);
+        let initial_dispatch = store.read_dispatch(&room).await.unwrap().dispatch.unwrap();
         let original = store.lock_room(&room).await.market_snapshot();
         {
             let mut guard = store.lock_room(&room).await;
-            guard.scheduler_mut(&room).unwrap().revision += 1;
+            let scheduler = guard.scheduler_mut(&room).unwrap();
+            let base = scheduler.revision;
+            scheduler.revision += 1;
+            scheduler.agents[0].unfinished_actions = vec![OrderAction::Cancel { order_id: 987 }];
+            guard.dispatch_patch_applied(base, vec![0]);
+            let pending = store.read_dispatch(&room).await.unwrap();
+            assert!(Arc::ptr_eq(
+                &initial_dispatch,
+                pending.dispatch.as_ref().unwrap()
+            ));
+            assert!(Arc::ptr_eq(&original, &pending.rooms));
             assert!(Arc::ptr_eq(&original, &guard.market_snapshot()));
         }
+        let updated = store.read_dispatch(&room).await.unwrap().dispatch.unwrap();
+        assert!(Arc::ptr_eq(&initial_dispatch.roster, &updated.roster));
+        assert_eq!(updated.revision, initial_dispatch.revision + 1);
+        assert!(initial_dispatch.agents[0].unfinished_actions.is_empty());
+        assert_eq!(
+            updated.agents[0].unfinished_actions,
+            vec![OrderAction::Cancel { order_id: 987 }]
+        );
+        assert_eq!(
+            updated.agents.iter().skip(1).collect::<Vec<_>>(),
+            initial_dispatch.agents.iter().skip(1).collect::<Vec<_>>()
+        );
+        assert!(
+            updated
+                .agents
+                .iter()
+                .zip(initial_dispatch.agents.iter())
+                .skip(1)
+                .all(|(after, before)| Arc::ptr_eq(after, before))
+        );
         assert!(Arc::ptr_eq(
             &original,
             &store.lock_room(&room).await.market_snapshot()

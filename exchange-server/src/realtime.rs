@@ -3,13 +3,15 @@
 use super::*;
 use crate::scheduler_delta::{AgentDelta, SchedulerDelta};
 use exchange_core::{BotError, BotExecutionPolicy, PersistedAgent, SchedulerPhase, SchedulerState};
+mod wake_index;
+use wake_index::WakeIndex;
 
 #[cfg(feature = "risk-benchmark")]
 #[path = "risk_benchmark_realtime.rs"]
 pub(super) mod risk_benchmark;
 
 // Bound writer-lane occupancy without dropping decisions or splitting a bot's
-// atomic action set. Ready results beyond this batch stay in the JoinSet.
+// atomic action set. Excess results stay queued; external refill is bounded.
 const MAX_READY_DECISIONS: usize = 64;
 const NATIVE_DECISIONS_PER_TASK: usize = 32;
 
@@ -452,6 +454,7 @@ enum Wake<T> {
     Clock,
     Ready,
     Decision(Option<Result<T, tokio::task::JoinError>>),
+    Committed(CommitCompletion),
 }
 
 async fn next_wake<T: Send + 'static>(
@@ -495,6 +498,9 @@ pub(super) async fn run(
     let mut stop_poll = tokio::time::interval(Duration::from_millis(25));
     let mut decisions = tokio::task::JoinSet::<Vec<DecisionResult>>::new();
     let mut completed_results = VecDeque::new();
+    let mut ready_decisions = VecDeque::new();
+    let mut writer = tokio::task::JoinSet::<Result<CommitCompletion, String>>::new();
+    let mut clock_due = false;
     let mut in_flight = BTreeSet::new();
     let mut failed = BTreeSet::new();
     let mut instances = BTreeMap::<String, CachedBot>::new();
@@ -503,6 +509,7 @@ pub(super) async fn run(
     let mut dispatch_offset = 0usize;
     let mut pending_external = ExternalQueue::new(cache_epoch);
     let mut external_observations = ObservationWaveCache::default();
+    let mut wake_index = WakeIndex::default();
     static EXTERNAL_PERMITS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> =
         std::sync::OnceLock::new();
     let external_permits = EXTERNAL_PERMITS
@@ -512,14 +519,20 @@ pub(super) async fn run(
         if control.stop.load(Ordering::Acquire) || !shared.lifecycle.is_accepting_durable_writes() {
             return Ok(());
         }
-        let wake = next_wake(
-            &mut ticks,
-            &mut stop_poll,
-            &mut decisions,
-            prefer_clock,
-            !completed_results.is_empty(),
-        )
-        .await;
+        let wake = if clock_due && writer.is_empty() && (prefer_clock || ready_decisions.is_empty())
+        {
+            clock_due = false;
+            Wake::Clock
+        } else {
+            tokio::select! {
+                biased;
+                completed = writer.join_next(), if !writer.is_empty() => {
+                    Wake::Committed(completed.unwrap().map_err(|e| e.to_string())??)
+                }
+                wake = next_wake(&mut ticks, &mut stop_poll, &mut decisions, prefer_clock,
+                    !completed_results.is_empty()) => wake,
+            }
+        };
         let wake = match wake {
             Wake::Decision(completed) => {
                 completed_results.extend(completed.unwrap().map_err(|e| e.to_string())?);
@@ -545,7 +558,9 @@ pub(super) async fn run(
                 let current_epoch = control.epoch.load(Ordering::Acquire);
                 for completed in ready {
                     let (id, epoch, result, skipped, screened) = completed;
-                    in_flight.remove(&id);
+                    if skipped || screened.is_some() || result.is_err() || epoch != current_epoch {
+                        in_flight.remove(&id);
+                    }
                     if control.stop.load(Ordering::Acquire) || epoch != current_epoch {
                         continue;
                     }
@@ -560,7 +575,7 @@ pub(super) async fn run(
                                 }
                             } else {
                                 if let Some(cached) = cached {
-                                    instances.insert(id, cached);
+                                    instances.insert(id.clone(), cached);
                                 }
                                 if !skipped {
                                     wave.push(decision);
@@ -575,246 +590,324 @@ pub(super) async fn run(
                         }
                     }
                 }
-                if !wave.is_empty() {
-                    let result = commit_realtime_work(
-                        shared.clone(),
-                        room_id.clone(),
-                        Work::Bots {
-                            control: control.clone(),
-                            epoch: current_epoch,
-                            decisions: wave.clone(),
-                        },
-                    )
-                    .await;
-                    #[cfg(feature = "bench-execution-timing")]
-                    if result.is_ok() {
-                        for decision in &wave {
-                            if let exchange_core::PersistedAgentKindState::Plugin {
-                                plugin_id,
-                                data,
-                                ..
-                            } = decision.next.as_ref()
-                                && plugin_id == "pine.strategy"
-                            {
-                                let time = data
-                                    .get("_host_observation")
-                                    .and_then(|v| v.get(1))
-                                    .and_then(serde_json::Value::as_u64)
-                                    .unwrap_or(0);
-                                crate::bench_execution_timing::trace(
-                                    "commit_return",
-                                    decision.prior.template.participant_id(),
-                                    time,
-                                    0,
-                                );
-                            }
-                        }
-                    }
-                    if let Err((status, body)) = result {
-                        if status != StatusCode::BAD_REQUEST {
-                            return Err(body.0.error);
-                        }
-                        // No part of the failed wave was committed. Retrying its members
-                        // preserves each bot's atomicity and existing error isolation.
-                        for decision in wave {
-                            let id = decision.prior.template.participant_id().to_string();
-                            let result = commit_realtime_work(
-                                shared.clone(),
-                                room_id.clone(),
-                                Work::Bot {
-                                    control: control.clone(),
-                                    epoch: current_epoch,
-                                    decision: Box::new(decision),
-                                },
-                            )
-                            .await;
-                            if let Err((status, body)) = result {
-                                if status != StatusCode::BAD_REQUEST {
-                                    return Err(body.0.error);
-                                }
-                                let error = body.0.error;
-                                failed.insert(id.clone());
-                                shared.lifecycle.record_agent_error();
-                                *last_error.lock().unwrap() = Some(format!("bot {id}: {error}"));
-                                bot_errors.lock().unwrap().insert(id, error);
-                            }
-                        }
-                    }
-                }
+                ready_decisions.extend(wave.into_iter().map(|decision| (current_epoch, decision)));
             }
             Wake::Clock => {
-                prefer_clock = false;
-                let status = {
-                    let app = shared.app.lock_room(&room_id).await;
-                    app.rooms
-                        .status(&room_id)
-                        .map_err(|error| format!("{error:?}"))?
-                };
-                match status {
-                    MarketStatus::Closed => return Ok(()),
-                    MarketStatus::Paused => {
-                        *lifecycle.lock().unwrap() = AgentWorkerLifecycle::Paused;
-                        continue;
-                    }
-                    MarketStatus::Running => {}
-                }
-                *lifecycle.lock().unwrap() = AgentWorkerLifecycle::Running;
-                commit_realtime_work(
-                    shared.clone(),
-                    room_id.clone(),
-                    Work::Clock(control.clone()),
-                )
-                .await
-                .map_err(|(_, body)| body.0.error)?;
-                let epoch_now = control.epoch.load(Ordering::Acquire);
-                if cache_epoch != epoch_now {
-                    instances.clear(); // Destructors also stay outside the writer lane.
-                    cache_epoch = epoch_now;
-                }
-                let (rooms, registry, agents, screening, epoch) = {
-                    let app = shared.app.lock_room(&room_id).await;
-                    if control.stop.load(Ordering::Acquire)
-                        || app.rooms.status(&room_id).map_err(|e| format!("{e:?}"))?
-                            != MarketStatus::Running
-                    {
-                        continue;
-                    }
-                    let scheduler = app
-                        .schedulers
-                        .get(&room_id)
-                        .ok_or_else(|| format!("room {room_id} has no scheduler state"))?;
-                    let epoch = control.epoch.load(Ordering::Acquire);
-                    let mut candidates: Vec<_> = scheduler
-                        .agents
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, agent)| {
-                            scheduler.bots_enabled
-                                && !in_flight.contains(agent.template.participant_id())
-                                && !failed.contains(agent.template.participant_id())
-                        })
-                        .collect();
-                    if !candidates.is_empty() {
-                        let count = candidates.len();
-                        candidates.rotate_left(dispatch_offset % count);
-                        dispatch_offset = dispatch_offset.wrapping_add(16);
-                    }
-                    pending_external.reset_epoch(epoch);
-                    let mut screening = Vec::new();
-                    let agents: Vec<_> = candidates
-                        .into_iter()
-                        .filter_map(|(index, agent)| {
-                            if !app.bot_registry.supports_native_batching(&agent.template) {
-                                let id = agent.template.participant_id();
-                                if pending_external.queued.contains(id) {
-                                    return None;
-                                }
-                                let screen = instances.get(id).is_some_and(|cached| {
-                                    cached.matches(epoch, agent, &app.bot_registry)
-                                        && cached.request.event_filter.is_some()
-                                        && cached.event_stamp.is_some()
-                                });
-                                if screen {
-                                    let cached = instances.remove(id).unwrap();
-                                    screening.push((index, cached.expected.clone(), cached));
-                                    return None;
-                                }
-                                pending_external.push(index, id.to_owned());
-                                return None;
-                            }
-                            let cached = instances.remove(agent.template.participant_id());
-                            let valid = cached
-                                .as_ref()
-                                .is_some_and(|c| c.matches(epoch, agent, &app.bot_registry));
-                            let prior = if valid {
-                                cached.as_ref().unwrap().expected.clone()
-                            } else {
-                                agent.clone().into()
-                            };
-                            // Return stale instances too: do not drop plugin objects under the lock.
-                            Some((prior, cached, valid))
-                        })
-                        .collect();
-                    (
-                        app.market_snapshot(),
-                        app.bot_registry.clone(),
-                        agents,
-                        screening,
-                        epoch,
-                    )
-                };
-                let frozen = if screening.is_empty() {
-                    // Native-only waves retain their original snapshot lifetime.
-                    Arc::new(
-                        rooms
-                            .as_ref()
-                            .clone()
-                            .into_native_observation_wave(room_id.clone()),
-                    )
+                if !writer.is_empty() {
+                    clock_due = true;
                 } else {
-                    external_observations.get(rooms, &room_id)
-                };
-                let mut screening_batch = Vec::new();
-                for item in screening {
-                    in_flight.insert(item.1.template.participant_id().to_owned());
-                    screening_batch.push(item);
-                    if screening_batch.len() == NATIVE_DECISIONS_PER_TASK {
+                    prefer_clock = false;
+                    let published = shared.app.read_room(&room_id).await;
+                    match published
+                        .rooms
+                        .status(&room_id)
+                        .map_err(|e| format!("{e:?}"))?
+                    {
+                        MarketStatus::Closed => return Ok(()),
+                        MarketStatus::Paused => {
+                            *lifecycle.lock().unwrap() = AgentWorkerLifecycle::Paused;
+                            continue;
+                        }
+                        MarketStatus::Running => {}
+                    }
+                    *lifecycle.lock().unwrap() = AgentWorkerLifecycle::Running;
+                    let (shared, room, control) =
+                        (shared.clone(), room_id.clone(), control.clone());
+                    writer.spawn(async move {
+                        commit_realtime_work(shared, room, Work::Clock(control))
+                            .await
+                            .map_err(|(_, body)| body.0.error)?;
+                        Ok(CommitCompletion {
+                            clock: true,
+                            ids: Vec::new(),
+                            errors: Vec::new(),
+                        })
+                    });
+                }
+            }
+            Wake::Committed(completed) => {
+                for id in completed.ids {
+                    in_flight.remove(&id);
+                    wake_index.committed(&id);
+                }
+                for (id, error) in completed.errors {
+                    failed.insert(id.clone());
+                    shared.lifecycle.record_agent_error();
+                    *last_error.lock().unwrap() = Some(format!("bot {id}: {error}"));
+                    bot_errors.lock().unwrap().insert(id, error);
+                }
+                if completed.clock {
+                    let epoch_now = control.epoch.load(Ordering::Acquire);
+                    if cache_epoch != epoch_now {
+                        instances.clear(); // Destructors also stay outside the writer lane.
+                        cache_epoch = epoch_now;
+                    }
+                    let (rooms, registry, agents, screening, epoch) = {
+                        let app = shared
+                            .app
+                            .read_dispatch(&room_id)
+                            .await
+                            .ok_or_else(|| format!("room {room_id} has no published state"))?;
+                        if control.stop.load(Ordering::Acquire)
+                            || app.rooms.status(&room_id).map_err(|e| format!("{e:?}"))?
+                                != MarketStatus::Running
+                        {
+                            continue;
+                        }
+                        let scheduler = app
+                            .dispatch
+                            .as_ref()
+                            .ok_or_else(|| format!("room {room_id} has no scheduler state"))?;
+                        let registry = &scheduler.registry;
+                        let epoch = control.epoch.load(Ordering::Acquire);
+                        wake_index.refresh(&app.rooms, &room_id, scheduler, epoch)?;
+                        let mut candidates: Vec<_> = wake_index
+                            .candidates()
+                            .into_iter()
+                            .filter_map(|index| {
+                                scheduler.agents.get(index).map(|agent| (index, agent))
+                            })
+                            .filter(|(_, agent)| {
+                                scheduler.bots_enabled
+                                    && !in_flight.contains(agent.template.participant_id())
+                                    && !failed.contains(agent.template.participant_id())
+                            })
+                            .collect();
+                        if !candidates.is_empty() {
+                            let count = candidates.len();
+                            candidates.rotate_left(dispatch_offset % count);
+                            dispatch_offset = dispatch_offset.wrapping_add(16);
+                        }
+                        pending_external.reset_epoch(epoch);
+                        let mut screening = Vec::new();
+                        let agents: Vec<_> = candidates
+                            .into_iter()
+                            .filter_map(|(index, agent)| {
+                                if !registry.supports_native_batching(&agent.template) {
+                                    let id = agent.template.participant_id();
+                                    if pending_external.queued.contains(id) {
+                                        return None;
+                                    }
+                                    wake_index.consumed(index, &agent.kind_state);
+                                    let screen = instances.get(id).is_some_and(|cached| {
+                                        cached.matches(epoch, agent, registry)
+                                            && cached.request.event_filter.is_some()
+                                            && cached.event_stamp.is_some()
+                                    });
+                                    if screen {
+                                        let cached = instances.remove(id).unwrap();
+                                        screening.push((index, cached.expected.clone(), cached));
+                                        return None;
+                                    }
+                                    pending_external.push(index, id.to_owned());
+                                    return None;
+                                }
+                                let cached = instances.remove(agent.template.participant_id());
+                                let valid = cached
+                                    .as_ref()
+                                    .is_some_and(|c| c.matches(epoch, agent, registry));
+                                let prior = if valid {
+                                    cached.as_ref().unwrap().expected.clone()
+                                } else {
+                                    agent.as_ref().clone().into()
+                                };
+                                // Return stale instances too: do not drop plugin objects under the lock.
+                                Some((prior, cached, valid))
+                            })
+                            .collect();
+                        (app.rooms, registry.clone(), agents, screening, epoch)
+                    };
+                    let frozen = if screening.is_empty() {
+                        // Native-only waves retain their original snapshot lifetime.
+                        Arc::new(
+                            rooms
+                                .as_ref()
+                                .clone()
+                                .into_native_observation_wave(room_id.clone()),
+                        )
+                    } else {
+                        external_observations.get(rooms, &room_id)
+                    };
+                    let mut screening_batch = Vec::new();
+                    for item in screening {
+                        in_flight.insert(item.1.template.participant_id().to_owned());
+                        screening_batch.push(item);
+                        if screening_batch.len() == NATIVE_DECISIONS_PER_TASK {
+                            spawn_event_screening(
+                                &mut decisions,
+                                frozen.clone(),
+                                epoch,
+                                std::mem::take(&mut screening_batch),
+                            );
+                        }
+                    }
+                    if !screening_batch.is_empty() {
                         spawn_event_screening(
                             &mut decisions,
                             frozen.clone(),
                             epoch,
-                            std::mem::take(&mut screening_batch),
+                            screening_batch,
                         );
                     }
-                }
-                if !screening_batch.is_empty() {
-                    spawn_event_screening(&mut decisions, frozen.clone(), epoch, screening_batch);
-                }
-                let mut native = Vec::new();
-                for (prior, cached, valid) in agents {
-                    let id = prior.template.participant_id().to_string();
-                    let input = (prior, cached.filter(|_| valid));
-                    in_flight.insert(id);
-                    native.push(input);
-                    if native.len() == NATIVE_DECISIONS_PER_TASK {
+                    let mut native = Vec::new();
+                    for (prior, cached, valid) in agents {
+                        let id = prior.template.participant_id().to_string();
+                        let input = (prior, cached.filter(|_| valid));
+                        in_flight.insert(id);
+                        native.push(input);
+                        if native.len() == NATIVE_DECISIONS_PER_TASK {
+                            spawn_decision_batch(
+                                &mut decisions,
+                                frozen.clone(),
+                                registry.clone(),
+                                std::mem::take(&mut native),
+                                epoch,
+                                true,
+                                None,
+                            );
+                        }
+                    }
+                    if !native.is_empty() {
                         spawn_decision_batch(
                             &mut decisions,
-                            frozen.clone(),
-                            registry.clone(),
-                            std::mem::take(&mut native),
+                            frozen,
+                            registry,
+                            native,
                             epoch,
                             true,
                             None,
                         );
                     }
                 }
-                if !native.is_empty() {
-                    spawn_decision_batch(
-                        &mut decisions,
-                        frozen,
-                        registry,
-                        native,
-                        epoch,
-                        true,
-                        None,
-                    );
-                }
             }
         }
-        dispatch_external_pending(
-            &shared,
-            &room_id,
-            &control,
-            &external_permits,
-            &mut pending_external,
-            &mut decisions,
-            &mut in_flight,
-            &failed,
-            &mut instances,
-            &mut external_observations,
-        )
-        .await?;
+        // Bound completed-but-uncommitted work while keeping independent
+        // calculations active during the single ordered writer transaction.
+        if writer.is_empty() && !ready_decisions.is_empty() && !(clock_due && prefer_clock) {
+            let current_epoch = control.epoch.load(Ordering::Acquire);
+            let wave: Vec<_> = ready_decisions
+                .drain(..ready_decisions.len().min(MAX_READY_DECISIONS))
+                .filter_map(|(epoch, decision)| {
+                    if epoch == current_epoch {
+                        Some(decision)
+                    } else {
+                        in_flight.remove(decision.prior.template.participant_id());
+                        None
+                    }
+                })
+                .collect();
+            if !wave.is_empty() {
+                writer.spawn(commit_wave(
+                    shared.clone(),
+                    room_id.clone(),
+                    control.clone(),
+                    current_epoch,
+                    wave,
+                ));
+            }
+            prefer_clock = true;
+        }
+        if ready_decisions.len() < MAX_READY_DECISIONS * 4 {
+            dispatch_external_pending(
+                &shared,
+                &room_id,
+                &control,
+                &external_permits,
+                &mut pending_external,
+                &mut decisions,
+                &mut in_flight,
+                &failed,
+                &mut instances,
+                &mut external_observations,
+            )
+            .await?;
+        }
     }
+}
+
+struct CommitCompletion {
+    clock: bool,
+    ids: Vec<String>,
+    errors: Vec<(String, String)>,
+}
+
+async fn commit_wave(
+    shared: SharedState,
+    room_id: RoomId,
+    control: Control,
+    current_epoch: u64,
+    wave: Vec<Decision>,
+) -> Result<CommitCompletion, String> {
+    let ids = wave
+        .iter()
+        .map(|d| d.prior.template.participant_id().to_owned())
+        .collect();
+    let mut errors = Vec::new();
+    let result = commit_realtime_work(
+        shared.clone(),
+        room_id.clone(),
+        Work::Bots {
+            control: control.clone(),
+            epoch: current_epoch,
+            decisions: wave.clone(),
+        },
+    )
+    .await;
+    #[cfg(feature = "bench-execution-timing")]
+    if result.is_ok() {
+        for decision in &wave {
+            if let exchange_core::PersistedAgentKindState::Plugin {
+                plugin_id, data, ..
+            } = decision.next.as_ref()
+                && plugin_id == "pine.strategy"
+            {
+                let time = data
+                    .get("_host_observation")
+                    .and_then(|v| v.get(1))
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0);
+                crate::bench_execution_timing::trace(
+                    "commit_return",
+                    decision.prior.template.participant_id(),
+                    time,
+                    0,
+                );
+            }
+        }
+    }
+    if let Err((status, body)) = result {
+        if status != StatusCode::BAD_REQUEST {
+            return Err(body.0.error);
+        }
+        // No part of the failed wave was committed. Retrying its members
+        // preserves each bot's atomicity and existing error isolation.
+        for decision in wave {
+            let id = decision.prior.template.participant_id().to_string();
+            let result = commit_realtime_work(
+                shared.clone(),
+                room_id.clone(),
+                Work::Bot {
+                    control: control.clone(),
+                    epoch: current_epoch,
+                    decision: Box::new(decision),
+                },
+            )
+            .await;
+            if let Err((status, body)) = result {
+                if status != StatusCode::BAD_REQUEST {
+                    return Err(body.0.error);
+                }
+                let error = body.0.error;
+                errors.push((id.clone(), error.clone()));
+            }
+        }
+    }
+
+    Ok(CommitCompletion {
+        clock: false,
+        ids,
+        errors,
+    })
 }
 
 fn spawn_event_screening(
@@ -966,7 +1059,10 @@ async fn dispatch_external_pending(
         return Ok(());
     }
     let (rooms, registry, inputs, epoch) = {
-        let app = shared.app.lock_room(room_id).await;
+        let Some(app) = shared.app.read_dispatch(room_id).await else {
+            pending.clear();
+            return Ok(());
+        };
         let epoch = control.epoch.load(Ordering::Acquire);
         if control.stop.load(Ordering::Acquire)
             || pending.epoch != epoch
@@ -976,9 +1072,10 @@ async fn dispatch_external_pending(
             return Ok(());
         }
         let scheduler = app
-            .schedulers
-            .get(room_id)
+            .dispatch
+            .as_ref()
             .ok_or_else(|| format!("room {room_id} has no scheduler state"))?;
+        let registry = &scheduler.registry;
         let mut inputs = Vec::new();
         while !pending.items.is_empty() {
             // Reserve BEFORE copying any durable transcript. Completed tasks
@@ -1014,11 +1111,11 @@ async fn dispatch_external_pending(
             let cached = instances.remove(&id);
             let valid = cached
                 .as_ref()
-                .is_some_and(|c| c.matches(epoch, agent, &app.bot_registry));
+                .is_some_and(|c| c.matches(epoch, agent, registry));
             let prior = if valid {
                 cached.as_ref().unwrap().expected.clone()
             } else {
-                agent.clone().into()
+                agent.as_ref().clone().into()
             };
             #[cfg(feature = "bench-execution-timing")]
             drop(copy_timer);
@@ -1028,12 +1125,7 @@ async fn dispatch_external_pending(
         if inputs.is_empty() {
             return Ok(());
         }
-        (
-            app.market_snapshot(),
-            app.bot_registry.clone(),
-            inputs,
-            epoch,
-        )
+        (app.rooms.clone(), registry.clone(), inputs, epoch)
     };
     let frozen = observations.get(rooms, room_id);
     for (id, prior, cached, valid, permit) in inputs {
@@ -1541,6 +1633,131 @@ mod index_tests {
             cached = returned;
             assert_eq!(calls.load(Ordering::SeqCst), expected_calls);
         }
+    }
+
+    #[test]
+    fn indexed_wakes_keep_busy_accounts_dirty_and_track_deadlines_and_bar_groups() {
+        let value: serde_json::Value =
+            serde_json::from_str(include_str!("../../scripts/fixtures/f6_batch_spec.json"))
+                .unwrap();
+        let mut rooms = RoomManager::new();
+        rooms
+            .create_room(serde_json::from_value(value["scenario"].clone()).unwrap())
+            .unwrap();
+        let mut registry = exchange_core::BotRegistry::default();
+        registry
+            .register(EventFactory {
+                descriptor: exchange_core::BotDescriptor {
+                    id: "event.test".into(),
+                    name: "Event".into(),
+                    version: "1".into(),
+                    protocol_version: "bot.v1".into(),
+                    state_version: 1,
+                    runtime: "test".into(),
+                    parameters: BTreeMap::new(),
+                },
+                calls: Arc::new(AtomicUsize::new(0)),
+            })
+            .unwrap();
+        let agents: im::Vector<_> = [20, 999]
+            .into_iter()
+            .map(|account| {
+                PersistedAgent::from_template(exchange_core::AgentTemplate::Plugin(
+                    exchange_core::BotConfig {
+                        participant: exchange_core::ParticipantConfig {
+                            participant_id: format!("event-{account}"),
+                            room_id: "f6-batch".into(),
+                            account_id: account,
+                            instrument_id: Some("V-BTC-SPOT".into()),
+                            kind: exchange_core::ParticipantKind::RuleAgent,
+                        },
+                        plugin_id: "event.test".into(),
+                        plugin_version: "1".into(),
+                        config_version: 1,
+                        state_version: 1,
+                        seed: 1,
+                        config: serde_json::json!({}),
+                    },
+                ))
+            })
+            .map(Arc::new)
+            .collect();
+        let mut scheduler = crate::room_runtime::DispatchState {
+            roster: Arc::new(()),
+            revision: 0,
+            bots_enabled: true,
+            agents,
+            registry,
+        };
+        let mut index = WakeIndex::default();
+        index
+            .refresh(&Arc::new(rooms.clone()), "f6-batch", &scheduler, 7)
+            .unwrap();
+        assert_eq!(index.candidates(), BTreeSet::from([0, 1]));
+        for i in 0..2 {
+            index.consumed(i, &scheduler.agents[i].kind_state);
+        }
+        rooms.advance_clock("f6-batch", 1).unwrap();
+        index
+            .refresh(&Arc::new(rooms.clone()), "f6-batch", &scheduler, 7)
+            .unwrap();
+        assert!(index.candidates().is_empty());
+        rooms
+            .apply(
+                "f6-batch",
+                Command::NewOrder(exchange_core::NewOrder {
+                    order_id: 777,
+                    account_id: 20,
+                    side: exchange_core::Side::Buy,
+                    qty: 1,
+                    kind: exchange_core::OrderKind::Limit { price_tick: 90 },
+                    position_side: exchange_core::PositionSide::Both,
+                    reduce_only: false,
+                }),
+            )
+            .unwrap();
+        index
+            .refresh(&Arc::new(rooms.clone()), "f6-batch", &scheduler, 7)
+            .unwrap();
+        assert_eq!(index.candidates(), BTreeSet::from([0]));
+        rooms.advance_clock("f6-batch", 1).unwrap();
+        index
+            .refresh(&Arc::new(rooms.clone()), "f6-batch", &scheduler, 7)
+            .unwrap();
+        assert_eq!(
+            index.candidates(),
+            BTreeSet::from([0]),
+            "an in-flight account must retain its wake"
+        );
+        let mut state = scheduler.agents[0].kind_state.clone();
+        if let exchange_core::PersistedAgentKindState::Plugin { data, .. } = &mut state {
+            *data = serde_json::json!({"_next_wake_ms":3000}).into();
+        }
+        index.consumed(0, &state);
+        assert!(index.candidates().is_empty());
+        rooms.advance_clock("f6-batch", 1).unwrap();
+        index
+            .refresh(&Arc::new(rooms.clone()), "f6-batch", &scheduler, 7)
+            .unwrap();
+        assert_eq!(index.candidates(), BTreeSet::from([0]));
+        index.consumed(0, &scheduler.agents[0].kind_state);
+        rooms.advance_clock("f6-batch", 7).unwrap();
+        index
+            .refresh(&Arc::new(rooms.clone()), "f6-batch", &scheduler, 7)
+            .unwrap();
+        assert_eq!(index.candidates(), BTreeSet::from([0, 1]));
+        for i in 0..2 {
+            index.consumed(i, &scheduler.agents[i].kind_state);
+        }
+        scheduler.roster = Arc::new(());
+        index
+            .refresh(&Arc::new(rooms.clone()), "f6-batch", &scheduler, 7)
+            .unwrap();
+        assert_eq!(
+            index.candidates(),
+            BTreeSet::from([0, 1]),
+            "roster replacement resets all subscriptions"
+        );
     }
     #[test]
     fn cached_runtime_requires_exact_committed_state_epoch_and_factory_identity() {

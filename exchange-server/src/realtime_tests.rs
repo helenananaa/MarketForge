@@ -14,6 +14,7 @@ struct Gate {
     created: AtomicUsize,
     reuse: AtomicBool,
     native: AtomicBool,
+    decided: Mutex<BTreeMap<String, usize>>,
 }
 
 impl Gate {
@@ -67,6 +68,13 @@ impl BotFactory for Factory {
 
 impl ScheduledBot for Bot {
     fn decide(&mut self, _: &ParticipantObservation) -> Result<Vec<OrderAction>, BotError> {
+        *self
+            .gate
+            .decided
+            .lock()
+            .unwrap()
+            .entry(self.id.clone())
+            .or_default() += 1;
         if self.id == "slow" {
             self.gate.entered.fetch_add(1, Ordering::SeqCst);
             self.gate.started.notify_one();
@@ -94,6 +102,8 @@ impl ScheduledBot for Bot {
         self.state.clone()
     }
 }
+
+include!("realtime_pipeline_tests.rs");
 
 fn template(room: &str, id: &str) -> AgentTemplate {
     AgentTemplate::Plugin(BotConfig {

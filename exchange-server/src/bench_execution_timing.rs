@@ -81,6 +81,7 @@ pub(crate) static BOT_BLOCKING_WAIT: Counter = Counter::new();
 pub(crate) static BOT_TURN: Counter = Counter::new();
 pub(crate) static BOT_OBSERVATION: Counter = Counter::new();
 pub(crate) static BOT_EVENT_PREFILTER: Counter = Counter::new();
+pub(crate) static BOT_EVENT_INDEX: Counter = Counter::new();
 pub(crate) static BOT_EVENT_SKIP: Counter = Counter::new();
 pub(crate) static BOT_TRIGGER: Counter = Counter::new();
 pub(crate) static BOT_EVALUATE: Counter = Counter::new();
@@ -166,6 +167,7 @@ pub(crate) fn append_metrics(body: &mut String) {
         ("bot_wave_build", &BOT_WAVE_BUILD),
         ("bot_wave_reuse", &BOT_WAVE_REUSE),
         ("bot_event_prefilter", &BOT_EVENT_PREFILTER),
+        ("bot_event_index", &BOT_EVENT_INDEX),
         ("bot_event_skip", &BOT_EVENT_SKIP),
         ("bot_trigger", &BOT_TRIGGER),
         ("bot_evaluate", &BOT_EVALUATE),

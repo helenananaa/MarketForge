@@ -96,6 +96,21 @@ impl EventLog {
         &self.commands
     }
 
+    pub(crate) fn appended_commands<'a>(
+        &'a self,
+        previous: &Self,
+    ) -> Option<impl Iterator<Item = &'a CommandRecord>> {
+        (self.commands.extends(&previous.commands) && self.events.extends(&previous.events))
+            .then(|| self.commands.iter_from(previous.commands.len()))
+    }
+
+    pub(crate) fn appended_events<'a>(
+        &'a self,
+        previous: &Self,
+    ) -> impl Iterator<Item = &'a EventRecord> {
+        self.events.iter_from(previous.events.len())
+    }
+
     pub fn events(&self) -> &[EventRecord] {
         &self.events
     }
