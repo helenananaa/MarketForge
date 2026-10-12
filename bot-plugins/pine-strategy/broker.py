@@ -596,7 +596,21 @@ def hedge(state, views, primary, config):
     return submit_order(state, peer, config, "_hedge", side, abs(residual), reduce=reduce), True
 
 
-def decide(request, load_source, compile_program, digest, evaluate_external=None, profile=None):
+def decision_state(value, borrow_history):
+    if not borrow_history:
+        return copy.deepcopy(value)
+    # Only the synchronous worker consumer may borrow old transcript rows until
+    # it serializes this response. These fields are read-only or append-only:
+    # copy their containers, and keep all mutable broker/feedback state owned.
+    histories = {"bars", "accounts", "providers", "evaluations"}
+    state = copy.deepcopy({key: item for key, item in value.items() if key not in histories})
+    for key in histories & value.keys():
+        state[key] = value[key].copy()
+    return state
+
+
+def decide(request, load_source, compile_program, digest, evaluate_external=None, profile=None,
+           borrow_history=False, encoded_response=None):
     if request["protocol_version"] != "bot.v1" or request["plugin_id"] != "pine.strategy" or request["plugin_version"] not in ("1.0.0", "2.0.0") or request["state_version"] != 1:
         raise ValueError("unsupported Pine bot identity")
     config, observation = copy.deepcopy(request["config"]), request["observation"]
@@ -604,7 +618,7 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
     source = load_source(config["script"])
     identity = digest({"source": source, "config": config, "participant": request["participant"]})
     copy_started = time.perf_counter() if profile is not None else 0
-    state = copy.deepcopy(request["state"] or {})
+    state = decision_state(request["state"] or {}, borrow_history)
     if profile is not None: profile["state_copy_ms"] = (time.perf_counter() - copy_started) * 1000
     if state and (state.get("identity") != identity or state.get("broker_schema") != 2):
         raise ValueError("Pine source/config/account changed; create a new instance")
@@ -700,8 +714,14 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
         if state["_next_wake_ms"] <= observation["market_time_ms"]:
             state["_next_wake_ms"] = observation["market_time_ms"] + 1000
     encode_started = time.perf_counter() if profile is not None else 0
-    if len(actions) > 64 or len(json.dumps(response, allow_nan=False).encode()) > 1048576:
+    if len(actions) > 64:
         raise ValueError("Pine decision exceeds bot action/state limits")
+    encoded = json.dumps(response, allow_nan=False)
+    # json.dumps uses ensure_ascii=True, so characters equal UTF-8 bytes.
+    if len(encoded) > 1048576:
+        raise ValueError("Pine decision exceeds bot action/state limits")
+    if encoded_response is not None:
+        encoded_response.append(encoded)
     if profile is not None: profile["validate_response_ms"] = (time.perf_counter() - encode_started) * 1000
     return response
 

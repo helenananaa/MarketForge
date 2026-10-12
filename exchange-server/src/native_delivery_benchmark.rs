@@ -145,6 +145,7 @@ async fn fixed_native_delivery_workload() {
                         0,
                         compute_decision(prior, view, registry, cached, request, 0),
                         false,
+                        None,
                     )]
                 });
                 dispatches += 1;
@@ -152,7 +153,7 @@ async fn fixed_native_delivery_workload() {
         }
         let mut computed = BTreeMap::new();
         while let Some(packet) = jobs.join_next().await {
-            for (id, _, result, skipped) in packet.unwrap() {
+            for (id, _, result, skipped, _) in packet.unwrap() {
                 assert!(!skipped);
                 let (decision, cached) = result.unwrap();
                 if let Some(cached) = cached {

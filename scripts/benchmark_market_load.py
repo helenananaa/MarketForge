@@ -108,6 +108,8 @@ def run_case(args,count):
     env={k:v for k,v in os.environ.items() if not k.startswith(("MARKETFORGE_","PG"))}
     env.update(MARKETFORGE_BIND_ADDR=url.removeprefix("http://"),MARKETFORGE_CORS_ORIGINS="http://127.0.0.1:15281",
                PATH=str(Path(sys.executable).parent)+os.pathsep+env["PATH"])
+    if getattr(args, "write_profile", False):
+        env.update(MARKETFORGE_WRITE_PROFILE="1", MARKETFORGE_WRITE_PROFILE_MIN_MS="0")
     # No auth is configured in the isolated process, matching the web's local
     # development flow. It binds loopback and uses a fresh working directory.
     stop=threading.Event();samples=[];latencies={"view":[],"place":[],"cancel":[]};errors=[];resources=[]
@@ -227,6 +229,7 @@ def main():
     parser.add_argument("--staggered",action="store_true")
     parser.add_argument("--recipe-template",type=Path,help="freeze a baseline 38-bot recipe for comparable engine measurements")
     parser.add_argument("--browser-wait",type=float,default=0)
+    parser.add_argument("--write-profile",action="store_true",help="record per-order authorization, admission and execution spans in server.log")
     args=parser.parse_args()
     if not 25<=args.interval_ms<=1000:parser.error("interval must be 25..1000ms")
     if not 5<=args.seconds<=120 or not 0<=args.warmup<=30:parser.error("bounded 5..120s measurement and 0..30s warmup required")

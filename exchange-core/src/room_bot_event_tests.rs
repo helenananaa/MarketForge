@@ -27,6 +27,55 @@ fn event_stamp_for(
 }
 
 #[test]
+fn event_stamp_cache_matches_uncached_inputs_and_is_scoped_to_frozen_wave() {
+    let mut manager = RoomManager::new();
+    manager.create_room(spot_scenario("event-filter")).unwrap();
+    manager.apply("event-filter", limit(2, 20, Side::Buy, 100, 1)).unwrap();
+    let wave = manager.clone().into_native_observation_wave("event-filter".into());
+    for account in [20, 999] {
+        for max_bars in [1, 512] {
+            for interval_ms in [None, Some(1000)] {
+                for private in [false, true] {
+                    for events in [false, true] {
+                        for closed_bars in [false, true] {
+                            for intervals in [&[][..], &[5000][..]] {
+                                let request = Some(crate::bots::BotMarketDataRequest { interval_ms: 10000, max_bars });
+                                let filter = crate::bots::BotEventFilter { closed_bars, account: private, interval_ms };
+                                let expected = wave.batch().compute_bot_event_stamp("V-BTC-SPOT", account, request, &[], intervals, events, filter).unwrap();
+                                for _ in 0..2 {
+                                    assert_eq!(wave.batch().bot_event_stamp("V-BTC-SPOT", account, request, &[], intervals, events, filter).unwrap(), expected);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(wave.stamps.lock().unwrap().len(), 128);
+    std::thread::scope(|scope| {
+        for account in [20, 999, 20, 999] {
+            let wave = &wave;
+            scope.spawn(move || {
+                let request = Some(crate::bots::BotMarketDataRequest { interval_ms: 10000, max_bars: 512 });
+                let filter = crate::bots::BotEventFilter { closed_bars: true, account: true, interval_ms: None };
+                let expected = wave.batch().bot_event_stamp("V-BTC-SPOT", account, request, &[], &[5000], true, filter).unwrap();
+                for _ in 0..32 {
+                    assert_eq!(wave.batch().compute_bot_event_stamp("V-BTC-SPOT", account, request, &[], &[5000], true, filter).unwrap(), expected);
+                }
+            });
+        }
+    });
+    let filter = crate::bots::BotEventFilter { closed_bars: true, account: true, interval_ms: None };
+    let old = wave.batch().bot_event_stamp("V-BTC-SPOT", 20, None, &[], &[], true, filter).unwrap();
+    manager.apply("event-filter", limit(3, 20, Side::Buy, 90, 1)).unwrap();
+    let next = manager.into_native_observation_wave("event-filter".into());
+    assert!(next.stamps.lock().unwrap().is_empty());
+    assert_ne!(next.batch().bot_event_stamp("V-BTC-SPOT", 20, None, &[], &[], true, filter).unwrap(), old);
+    assert_eq!(wave.batch().bot_event_stamp("V-BTC-SPOT", 20, None, &[], &[], true, filter).unwrap(), old);
+}
+
+#[test]
 fn event_prefilter_ignores_empty_clock_ticks_and_observes_same_bar_private_feedback() {
     let mut manager = RoomManager::new();
     manager.create_room(spot_scenario("event-filter")).unwrap();

@@ -34,7 +34,14 @@ def perp(req, position=0, avg=0, cash=10000, funding=0, realized=0):
 class PineBrokerTests(unittest.TestCase):
     def run_source(self, source, req):
         with patch.object(bot, "load_source", return_value='//@version=6\nstrategy("Broker")\n' + source):
-            return bot.decide(req)
+            frozen = copy.deepcopy(req)
+            expected = bot.decide(req)
+            encoded = []
+            actual = bot.decide(req, borrow_history=True, encoded_response=encoded)
+            self.assertEqual(actual, expected)
+            self.assertEqual(json.loads(encoded[0]), expected)
+            self.assertEqual(req, frozen)
+            return expected
 
     def test_limit_stays_live_updates_remaining_quantity_and_cancels_by_id(self):
         source = 'if bar_index < 2\n    strategy.entry("L", strategy.long, qty=2, limit=110-close/5)\nelse\n    strategy.cancel("L")'

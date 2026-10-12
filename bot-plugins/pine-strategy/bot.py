@@ -319,7 +319,7 @@ def legacy_decide(request):
     return response
 
 
-def decide(request, profile=None):
+def decide(request, profile=None, *, borrow_history=False, encoded_response=None):
     # Keep previously journaled v1 instances readable, including their original
     # source/config digest. New instances use the full broker adapter by default.
     state = request.get("state") or {}
@@ -329,7 +329,8 @@ def decide(request, profile=None):
             {"script", "inputs", "bar_interval_ms", "history_limit", "max_qty", "inventory_cap", "slippage_ticks", "fee_buffer_ppm"}}
         return legacy_decide(request)
     broker = broker_module()
-    return broker.decide(request, load_source, compile_program, digest, incremental_module().evaluate, profile)
+    return broker.decide(request, load_source, compile_program, digest, incremental_module().evaluate,
+                         profile, borrow_history, encoded_response)
 
 
 @lru_cache(maxsize=1)
@@ -366,14 +367,16 @@ def serve_worker():
             raise ValueError("unsupported worker envelope")
         response = {"protocol": "bot.worker.v1", "id": envelope["id"]}
         profile = {} if trace else None
+        encoded_response = []
         try:
             request = decoder.decode_readonly(envelope)
             decoded = time.perf_counter()
-            response["response"] = decide(request, profile)
+            response["response"] = decide(request, profile, borrow_history=True,
+                                           encoded_response=encoded_response)
             decided = time.perf_counter()
         except Exception as exc:
             response["error"] = str(exc)
-        encoded = json.dumps(response, separators=(",", ":"), allow_nan=False)
+        encoded = encode_worker_response(response, encoded_response)
         finished = time.perf_counter()
         print(encoded, flush=True)
         if trace and "response" in response:
@@ -382,6 +385,20 @@ def serve_worker():
                 "decode_ms":(decoded-begun)*1000, "decide_ms":(decided-decoded)*1000,
                 "encode_ms":(finished-decided)*1000, **profile}) + "\n")
             trace.flush()
+
+
+def encode_worker_response(response, encoded_response):
+    if encoded_response:
+        # Reuse the exact default-spacing JSON that passed the original Pine
+        # size/finite-number check. JSON whitespace has no protocol meaning.
+        prefix = json.dumps({key: response[key] for key in ("protocol", "id")},
+                            separators=(",", ":"), allow_nan=False)
+        encoded = prefix[:-1] + ',"response":' + encoded_response[0] + '}'
+        # Near the worker framing bound, retain the original compact encoding
+        # so a formerly valid response cannot be rejected by extra whitespace.
+        if len(encoded) + 1 <= 1_048_576:
+            return encoded
+    return json.dumps(response, separators=(",", ":"), allow_nan=False)
 
 
 if __name__ == "__main__":

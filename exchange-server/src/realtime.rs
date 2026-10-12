@@ -105,7 +105,10 @@ impl CachedBot {
 }
 
 type ComputedDecision = Result<(Decision, Option<CachedBot>), String>;
-type DecisionResult = (String, u64, ComputedDecision, bool);
+// A screened candidate has not executed a decision or advanced durable state.
+// Its index routes it to the ordinary bounded worker queue, where admission and
+// event checks still use the latest committed predecessor.
+type DecisionResult = (String, u64, ComputedDecision, bool, Option<usize>);
 
 // Exact state comparisons remain mandatory; this narrows candidates by id
 // instead of comparing every full template/state for every completed bot.
@@ -541,18 +544,27 @@ pub(super) async fn run(
                 let mut wave = Vec::new();
                 let current_epoch = control.epoch.load(Ordering::Acquire);
                 for completed in ready {
-                    let (id, epoch, result, skipped) = completed;
+                    let (id, epoch, result, skipped, screened) = completed;
                     in_flight.remove(&id);
                     if control.stop.load(Ordering::Acquire) || epoch != current_epoch {
                         continue;
                     }
                     match result {
                         Ok((decision, cached)) => {
-                            if let Some(cached) = cached {
-                                instances.insert(id, cached);
-                            }
-                            if !skipped {
-                                wave.push(decision);
+                            if let Some(index) = screened {
+                                if let Some(cached) = cached {
+                                    instances.insert(id.clone(), cached);
+                                }
+                                if !skipped {
+                                    pending_external.push(index, id);
+                                }
+                            } else {
+                                if let Some(cached) = cached {
+                                    instances.insert(id, cached);
+                                }
+                                if !skipped {
+                                    wave.push(decision);
+                                }
                             }
                         }
                         Err(error) => {
@@ -659,7 +671,7 @@ pub(super) async fn run(
                     instances.clear(); // Destructors also stay outside the writer lane.
                     cache_epoch = epoch_now;
                 }
-                let (rooms, registry, agents, epoch) = {
+                let (rooms, registry, agents, screening, epoch) = {
                     let app = shared.app.lock_room(&room_id).await;
                     if control.stop.load(Ordering::Acquire)
                         || app.rooms.status(&room_id).map_err(|e| format!("{e:?}"))?
@@ -688,12 +700,26 @@ pub(super) async fn run(
                         dispatch_offset = dispatch_offset.wrapping_add(16);
                     }
                     pending_external.reset_epoch(epoch);
+                    let mut screening = Vec::new();
                     let agents: Vec<_> = candidates
                         .into_iter()
                         .filter_map(|(index, agent)| {
                             if !app.bot_registry.supports_native_batching(&agent.template) {
-                                pending_external
-                                    .push(index, agent.template.participant_id().to_owned());
+                                let id = agent.template.participant_id();
+                                if pending_external.queued.contains(id) {
+                                    return None;
+                                }
+                                let screen = instances.get(id).is_some_and(|cached| {
+                                    cached.matches(epoch, agent, &app.bot_registry)
+                                        && cached.request.event_filter.is_some()
+                                        && cached.event_stamp.is_some()
+                                });
+                                if screen {
+                                    let cached = instances.remove(id).unwrap();
+                                    screening.push((index, cached.expected.clone(), cached));
+                                    return None;
+                                }
+                                pending_external.push(index, id.to_owned());
                                 return None;
                             }
                             let cached = instances.remove(agent.template.participant_id());
@@ -709,9 +735,41 @@ pub(super) async fn run(
                             Some((prior, cached, valid))
                         })
                         .collect();
-                    (app.rooms.clone(), app.bot_registry.clone(), agents, epoch)
+                    (
+                        app.market_snapshot(),
+                        app.bot_registry.clone(),
+                        agents,
+                        screening,
+                        epoch,
+                    )
                 };
-                let frozen = Arc::new(rooms.into_native_observation_wave(room_id.clone()));
+                let frozen = if screening.is_empty() {
+                    // Native-only waves retain their original snapshot lifetime.
+                    Arc::new(
+                        rooms
+                            .as_ref()
+                            .clone()
+                            .into_native_observation_wave(room_id.clone()),
+                    )
+                } else {
+                    external_observations.get(rooms, &room_id)
+                };
+                let mut screening_batch = Vec::new();
+                for item in screening {
+                    in_flight.insert(item.1.template.participant_id().to_owned());
+                    screening_batch.push(item);
+                    if screening_batch.len() == NATIVE_DECISIONS_PER_TASK {
+                        spawn_event_screening(
+                            &mut decisions,
+                            frozen.clone(),
+                            epoch,
+                            std::mem::take(&mut screening_batch),
+                        );
+                    }
+                }
+                if !screening_batch.is_empty() {
+                    spawn_event_screening(&mut decisions, frozen.clone(), epoch, screening_batch);
+                }
                 let mut native = Vec::new();
                 for (prior, cached, valid) in agents {
                     let id = prior.template.participant_id().to_string();
@@ -757,6 +815,64 @@ pub(super) async fn run(
         )
         .await?;
     }
+}
+
+fn spawn_event_screening(
+    decisions: &mut tokio::task::JoinSet<Vec<DecisionResult>>,
+    frozen: Arc<exchange_core::room::NativeObservationWave>,
+    epoch: u64,
+    inputs: Vec<(usize, SharedAgent, CachedBot)>,
+) {
+    // One small blocking batch checks immutable event inputs before any worker
+    // permit is acquired. No plugin hook/decision runs here, and unchanged
+    // candidates neither enter the worker FIFO nor produce journal revisions.
+    decisions.spawn_blocking(move || {
+        let mut observations = frozen.batch();
+        inputs
+            .into_iter()
+            .map(|(index, prior, cached)| {
+                let id = prior.template.participant_id().to_owned();
+                let mut skipped = false;
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    #[cfg(feature = "bench-execution-timing")]
+                    let _timer = crate::bench_execution_timing::Timer::start(
+                        &crate::bench_execution_timing::BOT_EVENT_PREFILTER,
+                    );
+                    let request = &cached.request;
+                    let (stamp, time) = observations
+                        .bot_event_stamp(
+                            prior.requires_instrument().map_err(|e| format!("{e:?}"))?,
+                            prior.config().account_id,
+                            request.history,
+                            &request.related,
+                            &request.intervals,
+                            request.account_events,
+                            request.event_filter.expect("screened event filter"),
+                        )
+                        .map_err(|e| format!("{e:?}"))?;
+                    skipped = stamp.is_some()
+                        && stamp == cached.event_stamp
+                        && !event_wake_is_due(&prior.kind_state, time);
+                    #[cfg(feature = "bench-execution-timing")]
+                    if skipped {
+                        let _timer = crate::bench_execution_timing::Timer::start(
+                            &crate::bench_execution_timing::BOT_EVENT_SKIP,
+                        );
+                    }
+                    Ok((
+                        Decision {
+                            next: prior.kind_state.clone(),
+                            actions: Arc::default(),
+                            prior,
+                        },
+                        Some(cached),
+                    ))
+                }))
+                .unwrap_or_else(|_| Err("bot event screening panicked".to_owned()));
+                (id, epoch, result, skipped, Some(index))
+            })
+            .collect()
+    });
 }
 
 // Pending work outlives market ticks. A new tick adds eligible instances but
@@ -1118,7 +1234,7 @@ fn spawn_decision_batch(
                     result
                 }))
                 .unwrap_or_else(|_| Err("bot panicked".to_string()));
-                (id, epoch, result, skipped)
+                (id, epoch, result, skipped, None)
             })
             .collect()
     });
@@ -1377,14 +1493,37 @@ mod index_tests {
                 cached = None;
             } // Process/recovery cache is optional.
             rooms.advance_clock("f6-batch", advance).unwrap();
+            let frozen = Arc::new(
+                rooms
+                    .clone()
+                    .into_native_observation_wave("f6-batch".into()),
+            );
+            if let Some(instance) = cached.take() {
+                let calls_before = calls.load(Ordering::SeqCst);
+                let mut screening = tokio::task::JoinSet::new();
+                spawn_event_screening(
+                    &mut screening,
+                    frozen.clone(),
+                    7,
+                    vec![(9, prior.clone(), instance)],
+                );
+                let screened = screening.join_next().await.unwrap().unwrap().pop().unwrap();
+                assert_eq!(screened.3, expected_skipped);
+                assert_eq!(screened.4, Some(9));
+                let (unchanged, instance) = screened.2.unwrap();
+                assert!(Arc::ptr_eq(&unchanged.next, &prior.kind_state));
+                assert!(unchanged.actions.is_empty());
+                assert_eq!(
+                    calls.load(Ordering::SeqCst),
+                    calls_before,
+                    "screening must never call a plugin or advance its state"
+                );
+                cached = instance;
+            }
             let mut tasks = tokio::task::JoinSet::new();
             spawn_decision_batch(
                 &mut tasks,
-                Arc::new(
-                    rooms
-                        .clone()
-                        .into_native_observation_wave("f6-batch".into()),
-                ),
+                frozen,
                 registry.clone(),
                 vec![(prior.clone(), cached)],
                 7,

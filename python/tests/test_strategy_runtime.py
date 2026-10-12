@@ -43,6 +43,12 @@ class IncrementalPineTests(unittest.TestCase):
                     # Missed appends/restarts rebuild from the exact durable transcript.
                     if end in (13, 24): incremental.SESSIONS.clear()
                     fast = bot.decide(req)
+                    frozen = copy.deepcopy(req)
+                    encoded = []
+                    borrowed = bot.decide(req, borrow_history=True, encoded_response=encoded)
+                    self.assertEqual(borrowed, fast, (script, seed, end))
+                    self.assertEqual(json.loads(encoded[0]), fast)
+                    self.assertEqual(req, frozen)
                     req["state"] = copy.deepcopy(slow_state)
                     with patch.object(incremental, "evaluate", incremental.replay):
                         slow = bot.decide(req)
@@ -185,6 +191,53 @@ class WorkerTransportTests(unittest.TestCase):
         self.assertEqual(req, invalid)
         restored = decoder.decode_readonly({"id":4, "cache_key":key, "request":copy.deepcopy(frozen)})
         self.assertEqual(bot.decide(restored), expected)
+
+    def test_worker_borrowed_history_matches_owned_state_through_append_quiet_and_rollback(self):
+        state = None
+        requests = []
+        for end in (9, 10, 10, 11):
+            req = broker_request([100 + i for i in range(end)])
+            req["state"] = state
+            requests.append(copy.deepcopy(req))
+            frozen = copy.deepcopy(req)
+            expected = bot.decide(req)
+            encoded = []
+            actual = bot.decide(req, borrow_history=True, encoded_response=encoded)
+            self.assertEqual(actual, expected)
+            self.assertEqual(json.loads(encoded[0]), expected)
+            self.assertEqual(req, frozen)
+            # The response is serialized before the next decoder call. Owned
+            # public calls still have independently mutable returned history.
+            if req["state"]:
+                expected["state"]["accounts"][0]["position_size"] = 999
+                self.assertEqual(req, frozen)
+            state = json.loads(encoded[0])["state"]
+        for req in (requests[1], requests[0]):
+            frozen = copy.deepcopy(req)
+            bot.incremental_module().SESSIONS.clear()
+            expected = bot.decide(req)
+            actual = bot.decide(req, borrow_history=True)
+            self.assertEqual(actual, expected)
+            self.assertEqual(req, frozen)
+        invalid = copy.deepcopy(requests[-1])
+        invalid["state"]["bars"][0]["close"] += 1
+        frozen = copy.deepcopy(invalid)
+        with self.assertRaisesRegex(ValueError, "history changed"):
+            bot.decide(invalid, borrow_history=True)
+        self.assertEqual(invalid, frozen)
+
+    def test_worker_encoded_response_reuse_preserves_json_and_framing_boundary(self):
+        for value in ({"unicode": "汉字", "escaped": '\\"\n', "nested": [1, -0.0, {}]},
+                      [0] * 349520):
+            response = {"protocol": "bot.worker.v1", "id": 123, "response": value}
+            validated = json.dumps(value, allow_nan=False)
+            encoded = bot.encode_worker_response(response, [validated])
+            self.assertEqual(json.loads(encoded), response)
+            ordinary = json.dumps(response, separators=(",", ":"), allow_nan=False)
+            if len(validated.encode()) + 50 > 1_048_576:
+                self.assertEqual(encoded, ordinary)
+            else:
+                self.assertIn(validated, encoded)
 
     def test_incremental_tail_cache_remains_independent_of_consumer_input(self):
         incremental = bot.incremental_module();incremental.SESSIONS.clear()

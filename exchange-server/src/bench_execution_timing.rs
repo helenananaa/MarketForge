@@ -107,6 +107,9 @@ pub(crate) static JOURNAL_COMPRESS: Counter = Counter::new();
 pub(crate) static BOT_WORKER_START: Counter = Counter::new();
 pub(crate) static BOT_REQUEST_CLONE: Counter = Counter::new();
 pub(crate) static BOT_STATE_RESTORE: Counter = Counter::new();
+pub(crate) static BOT_INPROCESS_CALL: Counter = Counter::new();
+pub(crate) static BOT_INPROCESS_REBUILD: Counter = Counter::new();
+pub(crate) static BOT_INPROCESS_APPEND: Counter = Counter::new();
 pub(crate) static BOT_DISPATCH_QUEUE: Counter = Counter::new();
 pub(crate) static BOT_QUEUE_DISCARD: Counter = Counter::new();
 pub(crate) static JOURNAL_FULL_VALIDATE: Counter = Counter::new();
@@ -188,6 +191,9 @@ pub(crate) fn append_metrics(body: &mut String) {
         ("bot_worker_start", &BOT_WORKER_START),
         ("bot_request_clone", &BOT_REQUEST_CLONE),
         ("bot_state_restore", &BOT_STATE_RESTORE),
+        ("bot_inprocess_call", &BOT_INPROCESS_CALL),
+        ("bot_inprocess_rebuild", &BOT_INPROCESS_REBUILD),
+        ("bot_inprocess_append", &BOT_INPROCESS_APPEND),
         ("bot_dispatch_queue", &BOT_DISPATCH_QUEUE),
         ("bot_queue_discard", &BOT_QUEUE_DISCARD),
         ("journal_full_validate", &JOURNAL_FULL_VALIDATE),

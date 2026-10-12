@@ -1,0 +1,10 @@
+[workspace]
+members = ["crates/pine-builtins", "crates/pine-ir", "crates/pine-syntax", "crates/pine-sema", "crates/pine-runtime"]
+resolver = "2"
+
+[workspace.package]
+description = "Clean-room Pine-compatible indicator runtime subset; not affiliated with TradingView."
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/helenananaa/pine-compat-runtime"
+rust-version = "1.95"

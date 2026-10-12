@@ -240,6 +240,7 @@ def prewarm_market(client, room, spec, longest_bars):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--server", type=Path, required=True)
+    parser.add_argument("--pine-in-process", action="store_true", help="enable the optional qualified Rust Pine backend")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--counts", type=int, nargs="+", default=[100,500,1000,3000])
     parser.add_argument("--seconds", type=float, default=30)
@@ -306,6 +307,7 @@ def main():
     measurement_timers = []
     def installed_popen(*values, **kwargs):
         if kwargs.get("env", {}).get("MARKETFORGE_BIND_ADDR"):
+            kwargs["env"]["MARKETFORGE_PINE_IN_PROCESS"] = "1" if args.pine_in_process else "0"
             kwargs["env"]["MARKETFORGE_BOT_PLUGIN_DIR"] = str(args.plugin_dir.resolve())
             process = popen(*values, **kwargs)
             monitors.append(ProcessTreeMetrics(process.pid))

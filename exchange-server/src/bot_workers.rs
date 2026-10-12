@@ -155,13 +155,13 @@ impl Worker {
         let encode_timer = super::bench_execution_timing::Timer::start(
             &super::bench_execution_timing::BOT_WIRE_ENCODE,
         );
-        let packet = self
+        let mut packet = self
             .requests
             .as_ref()
             .map(|cache| cache.encode(request, id, MAX_REQUEST_BYTES))
             .transpose()?;
-        let bytes = if let Some(packet) = &packet {
-            packet.bytes.clone()
+        let bytes = if let Some(packet) = &mut packet {
+            std::mem::take(&mut packet.bytes)
         } else {
             let mut bytes = serde_json::to_vec(
                 &serde_json::json!({"protocol":"bot.worker.v1", "id":id, "request":request}),

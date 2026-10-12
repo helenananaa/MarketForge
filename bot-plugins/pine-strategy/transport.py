@@ -14,10 +14,11 @@ class RequestDecoder:
         return self._decode(envelope, True)
 
     def decode_readonly(self, envelope):
-        """Borrow host input only for the Pine consumer that copies mutable state.
+        """Borrow host input only for the synchronous Pine worker consumer.
 
-        The consumer must leave every input field unchanged. Generic consumers
-        keep decode(), which supplies independent mutable input.
+        The consumer must leave every input field unchanged and serialize its
+        response before the next decode. Generic consumers keep decode(),
+        which supplies independent mutable input.
         """
         return self._decode(envelope, False)
 

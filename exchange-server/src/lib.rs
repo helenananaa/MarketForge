@@ -32,6 +32,8 @@ mod historical_queries;
 pub mod journal;
 #[cfg(all(test, feature = "memory-diagnostics"))]
 mod memory_diagnostics;
+#[cfg(feature = "pine-in-process")]
+pub mod pine_inprocess;
 pub mod platform;
 mod realtime;
 #[cfg(test)]

@@ -25,6 +25,7 @@ use crate::{ClearingEventSummary, EventSummary, RoomExecutionSummary};
 
 mod pg_cached;
 mod projection;
+mod scheduler_json;
 mod snapshot_bytes;
 mod stored_mutation;
 pub use projection::QueryProjectionMetrics;
@@ -1473,6 +1474,7 @@ struct InMemoryRoomWriterLease {
 
 #[derive(Clone, Debug, Default)]
 pub struct InMemoryJournalStore {
+    scheduler_json: scheduler_json::Cache,
     platform: PlatformData,
     rooms: Vec<StoredRoom>,
     executions: Vec<JournalExecution>,
@@ -2182,7 +2184,7 @@ impl JournalStore for InMemoryJournalStore {
     ) -> Result<(), JournalError> {
         #[cfg(feature = "bench-execution-timing")]
         let validation_started = std::time::Instant::now();
-        let validated = validate_pending_mutation(mutation)?;
+        let validated = validate_pending_mutation_cached(mutation, &mut self.scheduler_json)?;
         #[cfg(feature = "bench-execution-timing")]
         crate::bench_execution_timing::JOURNAL_VALIDATE.record(validation_started);
 
@@ -2961,6 +2963,7 @@ impl JournalStore for SharedInMemoryJournalStore {
 }
 
 pub struct PostgresJournalStore {
+    scheduler_json: scheduler_json::Cache,
     database_url: String,
     client: Client,
     runtime_lock: PostgresRuntimeLock,
@@ -2978,6 +2981,7 @@ impl PostgresJournalStore {
     pub fn connect(database_url: &str) -> Result<Self, JournalError> {
         Ok(Self {
             database_url: database_url.to_string(),
+            scheduler_json: scheduler_json::Cache::default(),
             client: Client::connect(database_url, NoTls).map_err(JournalError::Postgres)?,
             runtime_lock: PostgresRuntimeLock::None,
             projector: None,
@@ -4556,7 +4560,7 @@ impl JournalStore for PostgresJournalStore {
         profile.field("snapshot", snapshot.is_some());
         #[cfg(feature = "bench-execution-timing")]
         let validation_started = std::time::Instant::now();
-        let validated = validate_pending_mutation(mutation)?;
+        let validated = validate_pending_mutation_cached(mutation, &mut self.scheduler_json)?;
         #[cfg(feature = "bench-execution-timing")]
         crate::bench_execution_timing::JOURNAL_VALIDATE.record(validation_started);
 
@@ -4643,7 +4647,7 @@ impl JournalStore for PostgresJournalStore {
         validate_fenced_room_mutation(claim, mutation)?;
         #[cfg(feature = "bench-execution-timing")]
         let validation_started = std::time::Instant::now();
-        let validated = validate_pending_mutation(mutation)?;
+        let validated = validate_pending_mutation_cached(mutation, &mut self.scheduler_json)?;
         #[cfg(feature = "bench-execution-timing")]
         crate::bench_execution_timing::JOURNAL_VALIDATE.record(validation_started);
 
@@ -6406,6 +6410,13 @@ fn command_cursor_after_records(records: &[JournalExecution]) -> Result<u64, Jou
 fn validate_pending_mutation(
     mutation: &PendingJournalMutation,
 ) -> Result<ValidatedPendingMutation<'_>, JournalError> {
+    validate_pending_mutation_cached(mutation, &mut scheduler_json::Cache::default())
+}
+
+fn validate_pending_mutation_cached<'a>(
+    mutation: &'a PendingJournalMutation,
+    cache: &mut scheduler_json::Cache,
+) -> Result<ValidatedPendingMutation<'a>, JournalError> {
     #[cfg(feature = "bench-execution-timing")]
     let _full_timer =
         matches!(mutation.mutation, RoomMutation::SchedulerProgress { .. }).then(|| {
@@ -6414,7 +6425,7 @@ fn validate_pending_mutation(
             )
         });
     i64_from_u64(mutation.command_cursor, "command_cursor")?;
-    let payload = RecoveryJson::encode(&mutation.mutation)?;
+    let payload = scheduler_json::encode(&mutation.mutation, cache)?;
     match &mutation.mutation {
         RoomMutation::StateCheckpoint { actor, .. } => {
             if actor.room_id() != mutation.room_id {

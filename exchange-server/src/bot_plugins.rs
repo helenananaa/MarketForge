@@ -70,6 +70,8 @@ struct ProcessBotFactory {
     directory: PathBuf,
     pool: Option<Arc<WorkerPool>>,
     event_prefilter_enabled: bool,
+    #[cfg(feature = "pine-in-process")]
+    in_process: Option<Arc<crate::pine_inprocess::Host>>,
 }
 
 /// Read sorted <root>/<package>/bot.json manifests once at startup.
@@ -152,6 +154,14 @@ pub fn load_bot_plugins(root: &Path) -> Result<BotRegistry, BotError> {
         let event_prefilter_enabled = manifest.host_event_prefilter
             || std::env::var("MARKETFORGE_EXPERIMENTAL_EVENT_PREFILTER").as_deref() == Ok("1");
         registry.register(ProcessBotFactory {
+            #[cfg(feature = "pine-in-process")]
+            in_process: if manifest.bot.id == "pine.strategy"
+                && std::env::var("MARKETFORGE_PINE_IN_PROCESS").as_deref() == Ok("1")
+            {
+                Some(Arc::new(crate::pine_inprocess::Host::load(&directory)?))
+            } else {
+                None
+            },
             manifest,
             directory,
             pool,
@@ -331,20 +341,46 @@ impl ScheduledBot for ProcessBot {
         let request_clone_timer = crate::bench_execution_timing::Timer::start(
             &crate::bench_execution_timing::BOT_REQUEST_CLONE,
         );
-        let request = BotDecisionRequest {
-            protocol_version: BOT_PROTOCOL_VERSION.into(),
-            plugin_id: self.config.plugin_id.clone(),
-            plugin_version: self.config.plugin_version.clone(),
-            state_version: self.config.state_version,
-            participant: self.config.participant.clone(),
-            seed: self.config.seed,
-            config: self.config.config.clone(),
-            state: self.state.as_ref().clone(),
-            observation: observation.clone(),
+        #[cfg(feature = "pine-in-process")]
+        let direct = self
+            .factory
+            .in_process
+            .as_ref()
+            .filter(|host| host.eligible_borrowed(&self.config, &self.state));
+        #[cfg(not(feature = "pine-in-process"))]
+        let direct: Option<std::convert::Infallible> = None;
+        let response = if let Some(host) = direct {
+            #[cfg(feature = "bench-execution-timing")]
+            drop(request_clone_timer);
+            #[cfg(feature = "pine-in-process")]
+            {
+                host.decide_borrowed(
+                    &self.config,
+                    &self.state,
+                    observation,
+                    self.factory.manifest.timeout_ms,
+                )?
+            }
+            #[cfg(not(feature = "pine-in-process"))]
+            {
+                match host {}
+            }
+        } else {
+            let request = BotDecisionRequest {
+                protocol_version: BOT_PROTOCOL_VERSION.into(),
+                plugin_id: self.config.plugin_id.clone(),
+                plugin_version: self.config.plugin_version.clone(),
+                state_version: self.config.state_version,
+                participant: self.config.participant.clone(),
+                seed: self.config.seed,
+                config: self.config.config.clone(),
+                state: self.state.as_ref().clone(),
+                observation: observation.clone(),
+            };
+            #[cfg(feature = "bench-execution-timing")]
+            drop(request_clone_timer);
+            self.factory.exchange(&request)?
         };
-        #[cfg(feature = "bench-execution-timing")]
-        drop(request_clone_timer);
-        let response = self.factory.exchange(&request)?;
         if response.protocol_version != BOT_PROTOCOL_VERSION
             || response.plugin_id != self.config.plugin_id
             || response.plugin_version != self.config.plugin_version
@@ -472,6 +508,12 @@ pub(super) fn process_command(directory: &Path, args: &[String]) -> Command {
 
 impl ProcessBotFactory {
     fn exchange(&self, request: &BotDecisionRequest) -> Result<BotDecisionResponse, BotError> {
+        #[cfg(feature = "pine-in-process")]
+        if let Some(host) = &self.in_process
+            && host.eligible(request)
+        {
+            return host.decide(request, self.manifest.timeout_ms);
+        }
         if let Some(pool) = &self.pool {
             return pool.exchange(&self.directory, &self.manifest, request);
         }
@@ -879,6 +921,8 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
             serde_json::from_slice(&fs::read(package.0.join("test/bot.json")).unwrap()).unwrap();
         assert!(!manifest.host_event_prefilter);
         let mut factory = ProcessBotFactory {
+            #[cfg(feature = "pine-in-process")]
+            in_process: None,
             manifest,
             directory: package.0.clone(),
             pool: None,

@@ -1,5 +1,6 @@
 """Fixed complete exchange receipts: replay workers versus incremental workers."""
 import hashlib
+import os
 import json
 from pathlib import Path
 import shutil
@@ -26,7 +27,7 @@ class StrategyRuntimeHttpTests(unittest.TestCase):
                  "rsi.pine": [*range(110, 102, -1), *([120] * 12)],
                  "breakout.pine": [*([100] * 6), 110, *([80] * 12)]}
         paths = {}
-        for mode in ("replay", "incremental"):
+        for mode in (("replay", "incremental", "in-process") if os.environ.get("MARKETFORGE_TEST_PINE_IN_PROCESS") == "1" else ("replay", "incremental")):
             path = Path(self.directory.name) / mode
             shutil.copytree(http.ROOT / "bot-plugins", path,
                 ignore=shutil.ignore_patterns("__pycache__", *([".runtime"] if mode == "replay" else [])))
@@ -40,6 +41,7 @@ class StrategyRuntimeHttpTests(unittest.TestCase):
             paths[mode] = path
         actual = {}
         for mode in paths:
+            self.env["MARKETFORGE_PINE_IN_PROCESS"] = "1" if mode == "in-process" else "0"
             self.env["MARKETFORGE_BOT_PLUGIN_DIR"] = str(paths[mode])
             self.start()
             receipt = []
@@ -62,6 +64,8 @@ class StrategyRuntimeHttpTests(unittest.TestCase):
                 self.stop()
             actual[mode] = receipt
         self.assertEqual(actual["replay"], actual["incremental"])
+        if "in-process" in actual:
+            self.assertEqual(actual["incremental"], actual["in-process"])
         payload = json.dumps(actual["incremental"], sort_keys=True, separators=(",", ":"))
         (self.receipts / "fixed-incremental-exchange.json").write_text(json.dumps({
             "scope":"3 exact bundled sources; fixed manual real partial fills and closes; not async throughput",

@@ -6,6 +6,7 @@ members = [
     "marketforge-candlescope-plugin",
 ]
 resolver = "3"
+exclude = ["vendor/pine-compat-runtime"]
 
 [workspace.package]
 edition = "2024"

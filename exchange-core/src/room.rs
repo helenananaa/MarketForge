@@ -257,6 +257,7 @@ impl RoomManager {
             history: BTreeMap::new(),
             shared_public: None,
             shared_history: None,
+            shared_stamps: None,
         }
     }
 
@@ -268,6 +269,7 @@ impl RoomManager {
             room_id,
             public: Mutex::default(),
             history: Mutex::default(),
+            stamps: Mutex::default(),
         }
     }
 
@@ -1696,7 +1698,22 @@ pub struct RoomObservationBatch<'a> {
     history: ObservationHistoryCache,
     shared_public: Option<&'a Mutex<PublicObservationCache>>,
     shared_history: Option<&'a Mutex<ObservationHistoryCache>>,
+    shared_stamps: Option<&'a Mutex<BotStampCache>>,
 }
+
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct BotStampKey {
+    instrument: String,
+    account: AccountId,
+    request: Option<(u64, usize)>,
+    related: Vec<String>,
+    intervals: Vec<u64>,
+    account_events: bool,
+    closed_bars: bool,
+    private_account: bool,
+    interval: Option<u64>,
+}
+type BotStampCache = BTreeMap<BotStampKey, (Option<[u8; 32]>, u64)>;
 
 type PublicObservationCell =
     Arc<OnceLock<Result<Arc<crate::ParticipantObservation>, RoomManagerError>>>;
@@ -1707,6 +1724,7 @@ pub struct NativeObservationWave {
     room_id: String,
     public: Mutex<PublicObservationCache>,
     history: Mutex<ObservationHistoryCache>,
+    stamps: Mutex<BotStampCache>,
 }
 
 impl NativeObservationWave {
@@ -1714,6 +1732,7 @@ impl NativeObservationWave {
         let mut batch = self.rooms.observation_batch(&self.room_id);
         batch.shared_public = Some(&self.public);
         batch.shared_history = Some(&self.history);
+        batch.shared_stamps = Some(&self.stamps);
         batch
     }
 }
@@ -1721,12 +1740,12 @@ impl NativeObservationWave {
 /// The immutable room borrow is the cache validity boundary. Keep extra
 /// receipts/bars for this wave to avoid replaying history for every POV bot.
 struct ObservationHistory {
-    receipts: Vec<crate::observation::BotTradeReceipt>,
+    receipts: Arc<Vec<crate::observation::BotTradeReceipt>>,
     complete: bool,
     candles: BTreeMap<u64, Vec<crate::Candle>>,
     volume: Option<u128>,
     accounts: BTreeMap<AccountId, ObservationAccountHistory>,
-    account_events: Option<BTreeMap<AccountId, Vec<crate::observation::BotAccountEvent>>>,
+    account_events: Option<BTreeMap<AccountId, Arc<Vec<crate::observation::BotAccountEvent>>>>,
     account_execution_index: Option<BTreeMap<AccountId, Vec<usize>>>,
     candle_stamps: BTreeMap<(u64, usize), [u8; 32]>,
 }
@@ -1734,7 +1753,7 @@ struct ObservationHistory {
 #[derive(Default)]
 struct ObservationAccountHistory {
     volume: u128,
-    receipt_indices: Vec<usize>,
+    receipt_indices: Arc<Vec<usize>>,
 }
 
 impl ObservationHistory {
@@ -1772,11 +1791,11 @@ impl ObservationHistory {
                 }
                 let own = accounts.entry(account).or_default();
                 own.volume = own.volume.saturating_add(u128::from(trade.qty));
-                own.receipt_indices.push(index);
+                Arc::make_mut(&mut own.receipt_indices).push(index);
             }
         }
         Self {
-            receipts,
+            receipts: Arc::new(receipts),
             complete,
             candles: BTreeMap::new(),
             volume,
@@ -1822,7 +1841,7 @@ impl RoomObservationBatch<'_> {
         history
             .account_events
             .get_or_insert_with(BTreeMap::new)
-            .insert(account, events);
+            .insert(account, Arc::new(events));
         Ok(())
     }
     fn history_for(
@@ -1846,6 +1865,50 @@ impl RoomObservationBatch<'_> {
     /// prefix and completeness. Serialization failure disables the optimization.
     #[allow(clippy::too_many_arguments)]
     pub fn bot_event_stamp(
+        &mut self,
+        instrument: &str,
+        account: AccountId,
+        request: Option<crate::bots::BotMarketDataRequest>,
+        related: &[String],
+        intervals: &[u64],
+        account_events: bool,
+        filter: crate::bots::BotEventFilter,
+    ) -> Result<(Option<[u8; 32]>, u64), RoomManagerError> {
+        // All inputs belong to this immutable room version. A different wave
+        // starts with an empty cache, including after restore/history correction.
+        let key = BotStampKey {
+            instrument: instrument.into(),
+            account,
+            request: request.map(|r| (r.interval_ms, r.max_bars)),
+            related: related.to_vec(),
+            intervals: intervals.to_vec(),
+            account_events,
+            closed_bars: filter.closed_bars,
+            private_account: filter.account,
+            interval: filter.interval_ms,
+        };
+        if let Some(cache) = self.shared_stamps
+            && let Some(stamp) = cache.lock().unwrap().get(&key).copied()
+        {
+            return Ok(stamp);
+        }
+        let stamp = self.compute_bot_event_stamp(
+            instrument,
+            account,
+            request,
+            related,
+            intervals,
+            account_events,
+            filter,
+        )?;
+        if let Some(cache) = self.shared_stamps {
+            cache.lock().unwrap().insert(key, stamp);
+        }
+        Ok(stamp)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn compute_bot_event_stamp(
         &mut self,
         instrument: &str,
         account: AccountId,
@@ -1900,15 +1963,45 @@ impl RoomObservationBatch<'_> {
                 .account_events
                 .as_ref()
                 .and_then(|m| m.get(&account))
-                .map_or(&[][..], Vec::as_slice);
+                .cloned()
+                .unwrap_or_default();
             let indices = history
                 .accounts
                 .get(&account)
-                .map_or(&[][..], |a| a.receipt_indices.as_slice());
+                .map(|a| a.receipt_indices.clone())
+                .unwrap_or_default();
             let truncated = !history.complete
                 || history.candles[&request.interval_ms].len() > request.max_bars
                 || indices.len() > 4096
                 || (account_events && events.len() > 4096);
+            let receipts = history.receipts.clone();
+            let mut candle_stamps = Vec::new();
+            if filter.closed_bars {
+                for interval in std::iter::once(&request.interval_ms).chain(intervals.iter()) {
+                    history.prepare_candles(*interval, time)?;
+                    let key = (*interval, request.max_bars);
+                    if !history.candle_stamps.contains_key(&key) {
+                        let candles = &history.candles[interval];
+                        let mut digest = EventHashWriter(Sha256::new());
+                        if !digest.value(&(
+                            interval,
+                            history.complete,
+                            candles.len() > request.max_bars,
+                            &candles[candles.len().saturating_sub(request.max_bars)..],
+                        )) {
+                            return Ok((None, time));
+                        }
+                        history
+                            .candle_stamps
+                            .insert(key, digest.0.finalize().into());
+                    }
+                    candle_stamps.push(history.candle_stamps[&key]);
+                }
+            }
+            // The wave owns immutable receipt/event/index buffers. Only lazy
+            // preparation needs the directory lock; hash private histories in
+            // parallel without retaining a market-wide mutex or copying them.
+            drop(history);
             if !writer.value(&(request.interval_ms, truncated)) {
                 return Ok((None, time));
             }
@@ -1918,7 +2011,7 @@ impl RoomObservationBatch<'_> {
                 }
                 for &index in &indices[indices.len().saturating_sub(4096)..] {
                     // Includes both fees: conservative extra wakes are harmless.
-                    let receipt = &history.receipts[index];
+                    let receipt = &receipts[index];
                     if !writer.value(&(
                         &receipt.trade,
                         receipt.market_time_ms,
@@ -1941,28 +2034,9 @@ impl RoomObservationBatch<'_> {
                     return Ok((None, time));
                 }
             }
-            if filter.closed_bars {
-                for interval in std::iter::once(&request.interval_ms).chain(intervals.iter()) {
-                    history.prepare_candles(*interval, time)?;
-                    let key = (*interval, request.max_bars);
-                    if !history.candle_stamps.contains_key(&key) {
-                        let candles = &history.candles[interval];
-                        let mut digest = EventHashWriter(Sha256::new());
-                        if !digest.value(&(
-                            interval,
-                            history.complete,
-                            candles.len() > request.max_bars,
-                            &candles[candles.len().saturating_sub(request.max_bars)..],
-                        )) {
-                            return Ok((None, time));
-                        }
-                        history
-                            .candle_stamps
-                            .insert(key, digest.0.finalize().into());
-                    }
-                    if !writer.value(&history.candle_stamps[&key]) {
-                        return Ok((None, time));
-                    }
+            for stamp in candle_stamps {
+                if !writer.value(&stamp) {
+                    return Ok((None, time));
                 }
             }
         }
@@ -1996,7 +2070,7 @@ impl RoomObservationBatch<'_> {
                     .as_ref()
                     .unwrap()
                     .get(&account_id)
-                    .cloned()
+                    .map(|events| events.as_ref().clone())
                     .unwrap_or_default();
                 if data.account_events.len() > 4096 {
                     data.truncated = true;

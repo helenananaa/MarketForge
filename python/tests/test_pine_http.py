@@ -53,6 +53,8 @@ class PineHttpTests(unittest.TestCase):
                         MARKETFORGE_BOT_PLUGIN_DIR=str(ROOT / "bot-plugins"),
                         PATH=str(Path(sys.executable).parent) + os.pathsep + self.env["PATH"])
         self.process = None
+        if os.environ.get("MARKETFORGE_TEST_PINE_IN_PROCESS") == "1":
+            self.env["MARKETFORGE_PINE_IN_PROCESS"] = "1"
         self.log = None
         self.receipts = ROOT / "target/pine-http"
         self.receipts.mkdir(parents=True, exist_ok=True)
