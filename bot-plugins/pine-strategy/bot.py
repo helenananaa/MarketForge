@@ -10,9 +10,12 @@ import copy
 from fractions import Fraction
 import hashlib
 import json
+from functools import lru_cache
 import math
+import os
 from pathlib import Path
 import sys
+import time
 
 PACKAGE = Path(__file__).resolve().parent
 MAX_EXACT = 2**53 - 1
@@ -135,9 +138,10 @@ def ledger_before(state, time):
     return cash, position, cost
 
 
-def compile_program(source, inputs):
+@lru_cache(maxsize=64)
+def prepared_source(source):
     import pine_compat
-    if pine_compat.__version__ != "0.3.1":
+    if pine_compat.__version__ not in ("0.3.1", "0.3.1+mf1"):
         raise ValueError("Pine bot requires qualified pine-compat-runtime==0.3.1")
     report = pine_compat.analyze_script(source)
     # Titles are the public configuration keys; stable callSiteIds are runtime keys.
@@ -150,12 +154,17 @@ def compile_program(source, inputs):
         if title in available:
             ambiguous.add(title)
         available[title] = item["callSiteId"]
+    return pine_compat.compile_script(source), available, ambiguous
+
+
+def compile_program(source, inputs):
+    program, available, ambiguous = prepared_source(source)
     if set(inputs) & ambiguous:
         raise ValueError("overridden input titles must be unique")
     unknown = set(inputs) - set(available)
     if unknown:
         raise ValueError(f"unknown Pine inputs: {sorted(unknown)}")
-    return pine_compat.compile_script(source), {available[key]: value for key, value in inputs.items()}
+    return program, {available[key]: value for key, value in inputs.items()}
 
 
 def validate_intents(intents, pyramiding, state):
@@ -225,10 +234,11 @@ def translate(intents, pyramiding, account, observation, config, state):
     return [{"PlaceImmediateOrCancel": {"side": side, "price_tick": price, "qty": qty}}]
 
 
-def decide(request):
+def legacy_decide(request):
     if (request["protocol_version"], request["plugin_id"], request["plugin_version"], request["state_version"]) != (
             "bot.v1", "pine.strategy", "1.0.0", 1):
-        raise ValueError("unsupported Pine bot identity")
+        if (request["protocol_version"], request["plugin_id"], request["plugin_version"], request["state_version"]) != ("bot.v1", "pine.strategy", "2.0.0", 1):
+            raise ValueError("unsupported Pine bot identity")
     config = request["config"]
     observation = request["observation"]
     data = observation.get("bot_market_data")
@@ -309,5 +319,76 @@ def decide(request):
     return response
 
 
+def decide(request, profile=None):
+    # Keep previously journaled v1 instances readable, including their original
+    # source/config digest. New instances use the full broker adapter by default.
+    state = request.get("state") or {}
+    if request["config"].get("execution_mode") == "legacy" or (state.get("identity") and not state.get("broker_schema")):
+        request = copy.deepcopy(request)
+        request["config"] = {key: value for key, value in request["config"].items() if key in
+            {"script", "inputs", "bar_interval_ms", "history_limit", "max_qty", "inventory_cap", "slippage_ticks", "fee_buffer_ppm"}}
+        return legacy_decide(request)
+    broker = broker_module()
+    return broker.decide(request, load_source, compile_program, digest, incremental_module().evaluate, profile)
+
+
+@lru_cache(maxsize=1)
+def incremental_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("marketforge_pine_incremental", PACKAGE / "incremental.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@lru_cache(maxsize=1)
+def broker_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("marketforge_pine_broker", PACKAGE / "broker.py")
+    broker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(broker)
+    return broker
+
+
+def serve_worker():
+    """Durable state travels with each call; speculative caches require exact committed prefixes."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("marketforge_pine_transport", PACKAGE / "transport.py")
+    transport = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(transport)
+    decoder = transport.RequestDecoder()
+    trace_dir = os.environ.get("PINE_BENCH_PY_TRACE_DIR")
+    trace = (Path(trace_dir) / f"worker-{os.getpid()}.jsonl").open("w", encoding="utf-8") if trace_dir else None
+    for line in sys.stdin:
+        begun = time.perf_counter()
+        envelope = json.loads(line)
+        if envelope.get("protocol") != "bot.worker.v1" or not isinstance(envelope.get("id"), int):
+            raise ValueError("unsupported worker envelope")
+        response = {"protocol": "bot.worker.v1", "id": envelope["id"]}
+        profile = {} if trace else None
+        try:
+            request = decoder.decode_readonly(envelope)
+            decoded = time.perf_counter()
+            response["response"] = decide(request, profile)
+            decided = time.perf_counter()
+        except Exception as exc:
+            response["error"] = str(exc)
+        encoded = json.dumps(response, separators=(",", ":"), allow_nan=False)
+        finished = time.perf_counter()
+        print(encoded, flush=True)
+        if trace and "response" in response:
+            trace.write(json.dumps({"id":request["participant"]["participant_id"], "sequence":envelope["id"],
+                "market_time_ms":request["observation"]["market_time_ms"],
+                "decode_ms":(decoded-begun)*1000, "decide_ms":(decided-decoded)*1000,
+                "encode_ms":(finished-decided)*1000, **profile}) + "\n")
+            trace.flush()
+
+
 if __name__ == "__main__":
-    print(json.dumps(decide(json.loads(sys.stdin.readline())), separators=(",", ":"), allow_nan=False), flush=True)
+    if sys.argv[1:] == ["--worker"]:
+        runtime = PACKAGE / ".runtime"
+        if runtime.is_dir():
+            sys.path.insert(0, str(runtime))
+        serve_worker()
+    else:
+        print(json.dumps(decide(json.loads(sys.stdin.readline())), separators=(",", ":"), allow_nan=False), flush=True)

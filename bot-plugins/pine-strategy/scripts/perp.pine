@@ -1,0 +1,15 @@
+//@version=6
+strategy("MarketForge perpetual trend")
+qty = input.int(2, "Quantity", minval=1)
+fast = ta.sma(close, 3)
+slow = ta.sma(close, 8)
+if fast > slow and strategy.position_size == 0
+    strategy.entry("L", strategy.long, qty=qty)
+if fast < slow and strategy.position_size == 0
+    strategy.entry("S", strategy.short, qty=qty)
+if fast < slow and strategy.position_size > 0
+    strategy.close("L")
+if fast > slow and strategy.position_size < 0
+    strategy.close("S")
+plot(fast)
+plot(slow)

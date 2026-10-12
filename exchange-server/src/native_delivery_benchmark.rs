@@ -93,12 +93,13 @@ async fn fixed_native_delivery_workload() {
                         std::mem::take(&mut inputs),
                         0,
                         true,
+                        None,
                     );
                     dispatches += 1;
                 }
             }
             if !inputs.is_empty() {
-                spawn_decision_batch(&mut jobs, frozen, registry.clone(), inputs, 0, true);
+                spawn_decision_batch(&mut jobs, frozen, registry.clone(), inputs, 0, true, None);
                 dispatches += 1;
             }
         } else {
@@ -115,6 +116,7 @@ async fn fixed_native_delivery_workload() {
                         related: registry.related_instruments(&prior.template).unwrap(),
                         intervals: registry.additional_intervals(&prior.template).unwrap(),
                         account_events: registry.account_events(&prior.template),
+                        event_filter: registry.event_filter(&prior.template),
                     }),
                 };
                 let mut view = observations
@@ -142,6 +144,7 @@ async fn fixed_native_delivery_workload() {
                         id,
                         0,
                         compute_decision(prior, view, registry, cached, request, 0),
+                        false,
                     )]
                 });
                 dispatches += 1;
@@ -149,7 +152,8 @@ async fn fixed_native_delivery_workload() {
         }
         let mut computed = BTreeMap::new();
         while let Some(packet) = jobs.join_next().await {
-            for (id, _, result) in packet.unwrap() {
+            for (id, _, result, skipped) in packet.unwrap() {
+                assert!(!skipped);
                 let (decision, cached) = result.unwrap();
                 if let Some(cached) = cached {
                     instances.insert(id.clone(), cached);

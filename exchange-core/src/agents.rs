@@ -130,7 +130,7 @@ impl AgentTemplate {
                 plugin_id: config.plugin_id.clone(),
                 plugin_version: config.plugin_version.clone(),
                 state_version: config.state_version,
-                data: serde_json::Value::Null,
+                data: serde_json::Value::Null.into(),
             },
         }
     }
@@ -203,7 +203,7 @@ macro_rules! builtin_bot {
                     owned_state = if data.is_null() {
                         initial_state
                     } else {
-                        serde_json::from_value(data.clone())
+                        serde_json::from_value(data.as_ref().clone())
                             .map_err(|error| crate::bots::BotError(error.to_string()))?
                     };
                     &owned_state
@@ -242,7 +242,9 @@ impl crate::bots::ScheduledBot for BuiltinPluginAdapter {
             plugin_id: self.config.plugin_id.clone(),
             plugin_version: self.config.plugin_version.clone(),
             state_version: self.config.state_version,
-            data: serde_json::to_value(self.bot.snapshot()).expect("builtin state serializes"),
+            data: serde_json::to_value(self.bot.snapshot())
+                .expect("builtin state serializes")
+                .into(),
         }
     }
 }
@@ -382,7 +384,9 @@ pub enum PersistedAgentKindState {
         plugin_id: String,
         plugin_version: String,
         state_version: u16,
-        data: serde_json::Value,
+        /// Immutable shared payload: checkpoints clone handles, updates replace or use copy-on-write.
+        /// Serde keeps the existing plugin JSON and durable schema unchanged.
+        data: std::sync::Arc<serde_json::Value>,
     },
     Noise {
         rng_state: u64,

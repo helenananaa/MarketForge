@@ -1,0 +1,12 @@
+{
+  "runtime_version": "0.3.1+mf1",
+  "scope": "bar-close external account evaluation; frozen-prefix equality and bounded host recovery",
+  "source_sha256": {
+    "basis.pine": "cce058c8e9ce040d4d771029b61ac7e334abb502b64972b7f4ef070454ae5b90",
+    "breakout.pine": "0b3ca54621fa9c57a6979a34f2e1c3bb2f9e5ffa03904a740925283cc697f784",
+    "limit.pine": "da2d01e9c5789f96b8aab5e724fb45d77c31e9860356fcc9c7a81bcbaa25a301",
+    "ma.pine": "5b05dac3d2bd42aff7d3d0d75e6a4d5cd41b64ea6d9e34dfd8d861f3f0b3c165",
+    "perp.pine": "ec941ad46aaf184057b26b36bcb0dce249eecf13228a99192f04e2ee743c9b4f",
+    "rsi.pine": "2a8c15eed0be312d956b1e0f4672006e04f77aa4c9798f4abcc8ee890699b3fc"
+  }
+}

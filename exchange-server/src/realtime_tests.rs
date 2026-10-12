@@ -82,7 +82,7 @@ impl ScheduledBot for Bot {
             panic!("controlled bot panic");
         }
         if let PersistedAgentKindState::Plugin { data, .. } = &mut self.state {
-            *data = serde_json::json!(data.as_u64().unwrap_or(0) + 1);
+            *data = serde_json::json!(data.as_u64().unwrap_or(0) + 1).into();
         }
         Ok(vec![OrderAction::PlaceLimit {
             side: Side::Buy,
@@ -427,6 +427,31 @@ async fn realtime_large_wave_yields_between_bounded_durable_batches() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn external_wave_drains_between_ticks_without_duplicate_decisions() {
+    let (shared, _, _) = setup("external-drain").await;
+    let ids: Vec<String> = (0..48).map(|i| format!("external-{i}")).collect();
+    let names: Vec<&str> = ids.iter().map(String::as_str).collect();
+    start(&shared, "external-drain", &names, 10000).await;
+    eventually(&shared, |app| {
+        ids.iter().all(|id| count(app, "external-drain", id) >= 1)
+    })
+    .await;
+    {
+        let app = shared.app.lock().await;
+        assert_eq!(
+            app.rooms.clock("external-drain").unwrap().step(),
+            1,
+            "all external bots must run before a second market tick"
+        );
+        assert!(
+            ids.iter().all(|id| count(&app, "external-drain", id) == 1),
+            "each bot gets one decision for the queued observation wave"
+        );
+    }
+    shutdown(&shared).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn realtime_slow_bot_does_not_block_clock_other_bot_http_or_other_room() {
     use axum::body::Body;
     use tower::ServiceExt;
@@ -637,7 +662,7 @@ fn work(
 ) -> realtime::Work {
     let mut next = prior.kind_state.clone();
     if let PersistedAgentKindState::Plugin { data, .. } = &mut next {
-        *data = serde_json::json!(1);
+        *data = serde_json::json!(1).into();
     }
     realtime::Work::Bot {
         control: control.clone(),
@@ -857,7 +882,7 @@ async fn realtime_ack_preserves_roster_and_untouched_state_and_recovers_empty_ac
         let mut app = shared.app.lock().await;
         let mut scheduler = app.schedulers[room].clone();
         if let PersistedAgentKindState::Plugin { data, .. } = &mut scheduler.agents[1].kind_state {
-            *data = serde_json::json!({"untouched": "x".repeat(10000)});
+            *data = serde_json::json!({"untouched": "x".repeat(10000)}).into();
         }
         install_scheduler(&mut app, scheduler).await.unwrap();
         let scheduler = &app.schedulers[room];
@@ -1273,15 +1298,26 @@ async fn realtime_empty_wave_keeps_market_snapshot_and_replays_checkpoint_and_de
         .as_ref()
         .unwrap()
         .load(Ordering::Acquire);
-    for _ in 0..102 {
+    for turn in 0..102 {
         let epoch = control.epoch.load(Ordering::Acquire);
         let decisions = priors
             .iter()
             .map(|prior| {
-                let realtime::Work::Bot { decision, .. } = work(&control, prior, epoch, vec![])
+                let realtime::Work::Bot { mut decision, .. } = work(&control, prior, epoch, vec![])
                 else {
                     unreachable!()
                 };
+                // Every revision advances real-shaped transcript data, including
+                // the full-checkpoint boundary, rather than repeating one scalar.
+                let PersistedAgentKindState::Plugin { data, .. } =
+                    Arc::make_mut(&mut decision.next)
+                else {
+                    unreachable!()
+                };
+                *data = serde_json::json!({
+                    "bars": (0..=turn).map(|i| serde_json::json!({"time": i * 1000, "close": 100 + i})).collect::<Vec<_>>(),
+                    "receipt": {"turn": turn, "participant": prior.template.participant_id()},
+                }).into();
                 *decision
             })
             .collect();

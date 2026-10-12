@@ -1,0 +1,18 @@
+{
+  "bot": {
+    "id": "python.sma", "name": "Python SMA trader", "version": "1.0.0",
+    "protocol_version": "bot.v1", "state_version": 1, "runtime": "process",
+    "parameters": {
+      "bar_interval_ms": {"type":"integer","default":10000,"minimum":1000},
+      "fast": {"type":"integer","default":3,"minimum":1,"maximum":512},
+      "slow": {"type":"integer","default":8,"minimum":2,"maximum":512},
+      "qty": {"type":"integer","default":1,"minimum":1,"maximum":100},
+      "inventory_cap": {"type":"integer","default":10,"minimum":1,"maximum":100000},
+      "slippage_ticks": {"type":"integer","default":2,"minimum":0,"maximum":10000}
+    }
+  },
+  "command": ["python3", "bot.py"], "timeout_ms": 5000,
+  "worker_pool": {"workers":4,"command":["python3","bot.py","--worker"]},
+  "market_data": {"interval_parameter":"bar_interval_ms","max_bars":2049},
+  "decision_trigger": {"kind":"events","closed_bars":true,"account":true}
+}

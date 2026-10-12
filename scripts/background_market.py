@@ -33,7 +33,7 @@ def recipe(room="background-market", seed=7, autostart=True, pine=False):
             spec["agents"].append({"Plugin": {
                 "participant": {"participant_id": f"pine-{index + 1}", "kind": "RuleAgent",
                                 "room_id": room, "account_id": account, "instrument_id": "V-BTC-SPOT"},
-                "plugin_id": "pine.strategy", "plugin_version": "1.0.0", "state_version": 1,
+                "plugin_id": "pine.strategy", "plugin_version": "2.0.0", "state_version": 1,
                 "config_version": 1, "config": {"script": script, "inputs": inputs,
                     "bar_interval_ms": interval, "history_limit": 512, "max_qty": 2,
                     "inventory_cap": 10, "slippage_ticks": 2, "fee_buffer_ppm": 1000},

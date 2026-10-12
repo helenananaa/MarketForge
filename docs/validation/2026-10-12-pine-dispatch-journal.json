@@ -1,0 +1,4447 @@
+{
+  "artifact_root": "E:\\projects\\MarketForge\\.local\\pine-dispatch-profile-20261012",
+  "measurement_order": [
+    "A1",
+    "B1",
+    "B2",
+    "A2",
+    "C1",
+    "D1",
+    "E1",
+    "E2",
+    "D2",
+    "E3"
+  ],
+  "attempted_final_abba": [
+    "D1",
+    "E1",
+    "E2",
+    "D2"
+  ],
+  "excluded_rounds": {
+    "E1": "one compiler-nonempty sample; retained but excluded from performance comparison"
+  },
+  "final_clean_comparison": {
+    "before": [
+      "D1",
+      "D2"
+    ],
+    "candidate": [
+      "E2",
+      "E3"
+    ],
+    "note": "E3 is appended after D2 to replace E1 contamination; this clean set is not an intact ABBA order"
+  },
+  "intermediate_abba": [
+    "A1",
+    "B1",
+    "B2",
+    "A2"
+  ],
+  "qualification_scope": "1000 Pine plus 38 native; three exact MA/RSI/breakout sources; 692 parameter sets; 10/15/30 s periods; real gateway prewarm 192/128/64 closed bars; 20 s warmup plus 30 s measurement; memory journal",
+  "summaries": [
+    {
+      "label": "A1",
+      "rate": 0.9993407934606225,
+      "place_p95_ms": 388.36629999968864,
+      "cancel_p95_ms": 20.913999999720545,
+      "behind": 225,
+      "backlog_p95": 1,
+      "backlog_max": 1,
+      "cores": 2.5820906149556175,
+      "peak_mib": 3145.109375,
+      "failed_gates": {
+        "order_p95_under_250ms": false,
+        "literal_step_rate": false,
+        "no_closed_bar_backlog": false
+      }
+    },
+    {
+      "label": "B1",
+      "rate": 0.9807297891729165,
+      "place_p95_ms": 176.39820000022155,
+      "cancel_p95_ms": 26.296199999706005,
+      "behind": 138,
+      "backlog_p95": 1,
+      "backlog_max": 1,
+      "cores": 1.604731984066186,
+      "peak_mib": 3171.64453125,
+      "failed_gates": {
+        "literal_step_rate": false,
+        "no_closed_bar_backlog": false
+      }
+    },
+    {
+      "label": "B2",
+      "rate": 0.9791341482288564,
+      "place_p95_ms": 125.24579999990237,
+      "cancel_p95_ms": 21.64210000046296,
+      "behind": 123,
+      "backlog_p95": 1,
+      "backlog_max": 1,
+      "cores": 1.7606562890443858,
+      "peak_mib": 3203.19921875,
+      "failed_gates": {
+        "literal_step_rate": false,
+        "no_closed_bar_backlog": false
+      }
+    },
+    {
+      "label": "A2",
+      "rate": 1.0036152764750408,
+      "place_p95_ms": 369.7379999994155,
+      "cancel_p95_ms": 24.454100000184553,
+      "behind": 222,
+      "backlog_p95": 1,
+      "backlog_max": 1,
+      "cores": 2.46761176741398,
+      "peak_mib": 3151.859375,
+      "failed_gates": {
+        "order_p95_under_250ms": false,
+        "no_closed_bar_backlog": false
+      }
+    },
+    {
+      "label": "C1",
+      "rate": 1.0106721113055586,
+      "place_p95_ms": 106.34240000035788,
+      "cancel_p95_ms": 24.906499999815424,
+      "behind": 82,
+      "backlog_p95": 1,
+      "backlog_max": 1,
+      "cores": 1.4291001161740648,
+      "peak_mib": 3175.66015625,
+      "failed_gates": {
+        "no_closed_bar_backlog": false
+      }
+    },
+    {
+      "label": "D1",
+      "rate": 0.9850275172022632,
+      "place_p95_ms": 380.12909999997646,
+      "cancel_p95_ms": 24.778400000286638,
+      "behind": 229,
+      "backlog_p95": 1,
+      "backlog_max": 1,
+      "cores": 2.438975502110581,
+      "peak_mib": 3132.0546875,
+      "failed_gates": {
+        "order_p95_under_250ms": false,
+        "literal_step_rate": false,
+        "no_closed_bar_backlog": false
+      }
+    },
+    {
+      "label": "E1",
+      "rate": 1.008040039995534,
+      "place_p95_ms": 187.49909999951342,
+      "cancel_p95_ms": 27.76960000028339,
+      "behind": 131,
+      "backlog_p95": 1,
+      "backlog_max": 1,
+      "cores": 1.1987360446670285,
+      "peak_mib": 3214.93359375,
+      "failed_gates": {
+        "no_closed_bar_backlog": false,
+        "compiler_quiet": false
+      }
+    },
+    {
+      "label": "E2",
+      "rate": 0.9807735511157191,
+      "place_p95_ms": 108.11519999970187,
+      "cancel_p95_ms": 29.55969999948138,
+      "behind": 68,
+      "backlog_p95": 1,
+      "backlog_max": 1,
+      "cores": 0.9722646278910824,
+      "peak_mib": 3217.86328125,
+      "failed_gates": {
+        "literal_step_rate": false,
+        "no_closed_bar_backlog": false
+      }
+    },
+    {
+      "label": "D2",
+      "rate": 0.9862252256355013,
+      "place_p95_ms": 387.9603000004863,
+      "cancel_p95_ms": 24.23449999969307,
+      "behind": 232,
+      "backlog_p95": 1,
+      "backlog_max": 1,
+      "cores": 2.582541098064883,
+      "peak_mib": 3149.734375,
+      "failed_gates": {
+        "order_p95_under_250ms": false,
+        "literal_step_rate": false,
+        "no_closed_bar_backlog": false
+      }
+    },
+    {
+      "label": "E3",
+      "rate": 0.9750660415592338,
+      "place_p95_ms": 56.62029999984952,
+      "cancel_p95_ms": 18.94350000020495,
+      "behind": 116,
+      "backlog_p95": 1,
+      "backlog_max": 1,
+      "cores": 0.975208706491534,
+      "peak_mib": 3172.9921875,
+      "failed_gates": {
+        "literal_step_rate": false,
+        "no_closed_bar_backlog": false
+      }
+    }
+  ],
+  "cases": [
+    {
+      "label": "A1",
+      "rate": 0.9993407934606225,
+      "qualified": {
+        "order_p95_under_250ms": false,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "latency": {
+        "view": {
+          "count": 50,
+          "p50_ms": 22.721899999851303,
+          "p95_ms": 400.40980000048876,
+          "max_ms": 418.3028000006743
+        },
+        "place": {
+          "count": 50,
+          "p50_ms": 18.32710000053339,
+          "p95_ms": 388.36629999968864,
+          "max_ms": 402.97040000041306
+        },
+        "cancel": {
+          "count": 49,
+          "p50_ms": 15.462399999705667,
+          "p95_ms": 20.913999999720545,
+          "max_ms": 24.819299999762734
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130841,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 8000,
+          "p95_ms": 20000,
+          "max_ms": 21000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "instances_behind_closed_bars": 225
+      },
+      "phases": {
+        "directory_wait": {
+          "count": 19587,
+          "total_wall_ms": 5.568,
+          "mean_ms_per_call": 0.0002842701792004901
+        },
+        "room_wait": {
+          "count": 19587,
+          "total_wall_ms": 102.8298,
+          "mean_ms_per_call": 0.005249900444172156
+        },
+        "room_held": {
+          "count": 19588,
+          "total_wall_ms": 11111.2666,
+          "mean_ms_per_call": 0.5672486522360629
+        },
+        "venue_wait": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_compute": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_commit": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_fallback": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "order_prepare": {
+          "count": 190,
+          "total_wall_ms": 19.146800000000013,
+          "mean_ms_per_call": 0.10077263157894743
+        },
+        "order_apply": {
+          "count": 190,
+          "total_wall_ms": 148.95850000000007,
+          "mean_ms_per_call": 0.7839921052631583
+        },
+        "order_receipt": {
+          "count": 190,
+          "total_wall_ms": 1.3748999999999985,
+          "mean_ms_per_call": 0.007236315789473676
+        },
+        "order_journal": {
+          "count": 190,
+          "total_wall_ms": 27.3664,
+          "mean_ms_per_call": 0.1440336842105263
+        },
+        "order_publish": {
+          "count": 190,
+          "total_wall_ms": 1.0150000000000006,
+          "mean_ms_per_call": 0.005342105263157898
+        },
+        "bot_state_copy": {
+          "count": 21662,
+          "total_wall_ms": 62.5942,
+          "mean_ms_per_call": 0.0028895854491736684
+        },
+        "bot_blocking_wait": {
+          "count": 21662,
+          "total_wall_ms": 475.1503,
+          "mean_ms_per_call": 0.02193473825131567
+        },
+        "bot_turn": {
+          "count": 21673,
+          "total_wall_ms": 212616.50289999996,
+          "mean_ms_per_call": 9.810201767175746
+        },
+        "bot_observation": {
+          "count": 21662,
+          "total_wall_ms": 17351.98,
+          "mean_ms_per_call": 0.8010331456005909
+        },
+        "bot_event_prefilter": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_event_skip": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_trigger": {
+          "count": 21662,
+          "total_wall_ms": 1748.6239,
+          "mean_ms_per_call": 0.08072310497645648
+        },
+        "bot_evaluate": {
+          "count": 2411,
+          "total_wall_ms": 192994.7783,
+          "mean_ms_per_call": 80.04760609705517
+        },
+        "bot_worker_acquire": {
+          "count": 2408,
+          "total_wall_ms": 140163.9618,
+          "mean_ms_per_call": 58.20762533222591
+        },
+        "bot_wire_encode": {
+          "count": 2408,
+          "total_wall_ms": 3886.0657,
+          "mean_ms_per_call": 1.6138146594684386
+        },
+        "bot_worker_roundtrip": {
+          "count": 2411,
+          "total_wall_ms": 43096.297,
+          "mean_ms_per_call": 17.87486395686437
+        },
+        "bot_wire_decode": {
+          "count": 2411,
+          "total_wall_ms": 2776.8793000000005,
+          "mean_ms_per_call": 1.1517541683948571
+        },
+        "scheduler_admission": {
+          "count": 2136,
+          "total_wall_ms": 32.8372,
+          "mean_ms_per_call": 0.015373220973782773
+        },
+        "scheduler_apply": {
+          "count": 2136,
+          "total_wall_ms": 466.4475,
+          "mean_ms_per_call": 0.21837429775280898
+        },
+        "scheduler_mutation_build": {
+          "count": 2136,
+          "total_wall_ms": 48.211000000000006,
+          "mean_ms_per_call": 0.022570692883895134
+        },
+        "scheduler_checkpoint": {
+          "count": 250,
+          "total_wall_ms": 0.09640000000000001,
+          "mean_ms_per_call": 0.00038560000000000005
+        },
+        "scheduler_install": {
+          "count": 2137,
+          "total_wall_ms": 42.5534,
+          "mean_ms_per_call": 0.019912681328965842
+        },
+        "scheduler_materialize": {
+          "count": 22,
+          "total_wall_ms": 47.19690000000001,
+          "mean_ms_per_call": 2.1453136363636367
+        },
+        "scheduler_delta_clone": {
+          "count": 248,
+          "total_wall_ms": 0.5221000000000001,
+          "mean_ms_per_call": 0.0021052419354838712
+        },
+        "scheduler_delta_between": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "scheduler_publish": {
+          "count": 19588,
+          "total_wall_ms": 18.086400000000005,
+          "mean_ms_per_call": 0.0009233408209107619
+        },
+        "journal_request_clone": {
+          "count": 2137,
+          "total_wall_ms": 2.9948000000000006,
+          "mean_ms_per_call": 0.0014014038371548904
+        },
+        "journal_queue": {
+          "count": 3219,
+          "total_wall_ms": 23311.4969,
+          "mean_ms_per_call": 7.241844330537433
+        },
+        "journal_operation": {
+          "count": 3220,
+          "total_wall_ms": 10002.614399999999,
+          "mean_ms_per_call": 3.106401987577639
+        },
+        "journal_validate": {
+          "count": 2138,
+          "total_wall_ms": 3500.2048999999997,
+          "mean_ms_per_call": 1.637139803554724
+        },
+        "journal_serialize": {
+          "count": 2138,
+          "total_wall_ms": 5526.0996,
+          "mean_ms_per_call": 2.5847051449953224
+        },
+        "journal_compress": {
+          "count": 2138,
+          "total_wall_ms": 848.9236999999999,
+          "mean_ms_per_call": 0.3970644059869036
+        },
+        "bot_worker_start": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_request_clone": {
+          "count": 2400,
+          "total_wall_ms": 1185.98,
+          "mean_ms_per_call": 0.49415833333333337
+        },
+        "bot_state_restore": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_dispatch_queue": {
+          "count": 21662,
+          "total_wall_ms": 2941849.0986,
+          "mean_ms_per_call": 135.8069014218447
+        },
+        "bot_queue_discard": {
+          "count": 8085,
+          "total_wall_ms": 8342486.0649999995,
+          "mean_ms_per_call": 1031.8473797155225
+        },
+        "journal_full_validate": {
+          "count": 23,
+          "total_wall_ms": 3279.2439,
+          "mean_ms_per_call": 142.57582173913042
+        },
+        "journal_full_serialize": {
+          "count": 23,
+          "total_wall_ms": 5214.3523000000005,
+          "mean_ms_per_call": 226.71096956521743
+        }
+      },
+      "python": {
+        "decode_ms": {
+          "count": 2400,
+          "mean_ms": 5.7830622500148365,
+          "p95_ms": 7.430399999975634,
+          "max_ms": 52.22990000038408
+        },
+        "decide_ms": {
+          "count": 2400,
+          "mean_ms": 10.952927624999043,
+          "p95_ms": 15.118700000130048,
+          "max_ms": 60.907099999894854
+        },
+        "encode_ms": {
+          "count": 2400,
+          "mean_ms": 0.7318932499856601,
+          "p95_ms": 1.01379999978235,
+          "max_ms": 1.4462999997704173
+        },
+        "state_copy_ms": {
+          "count": 2400,
+          "mean_ms": 3.188809083332368,
+          "p95_ms": 4.27880000006553,
+          "max_ms": 48.470800000359304
+        },
+        "evaluate_ms": {
+          "count": 2009,
+          "mean_ms": 4.195601294175448,
+          "p95_ms": 5.669399999533198,
+          "max_ms": 46.63139999956911
+        },
+        "validate_response_ms": {
+          "count": 2400,
+          "mean_ms": 0.7592178333303915,
+          "p95_ms": 1.0523999999350053,
+          "max_ms": 1.8171000001530047
+        }
+      },
+      "worker_response_to_commit_return": {
+        "count": 2397,
+        "mean_ms": 47.82806257822278,
+        "p95_ms": 387.994,
+        "max_ms": 435.24
+      },
+      "unmatched_worker_responses": 2,
+      "trace_scope": "market times 1941000..1971000, not identical to exact wall measurement window; completion trace is successful commit return, not proof for every stale candidate",
+      "backlog_by_interval_ms": {
+        "10000": {
+          "0": 109,
+          "1": 225
+        },
+        "15000": {
+          "0": 333
+        },
+        "30000": {
+          "0": 333
+        }
+      },
+      "required_inputs": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 197,
+          "latest_open_ms": 1960000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 131,
+          "latest_open_ms": 1950000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 65,
+          "latest_open_ms": 1920000,
+          "market_time_ms": 1971000
+        }
+      },
+      "process_tree": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 111,
+        "average_logical_cores": 2.5820906149556175,
+        "peak_sampled_rss_mib": 3145.109375
+      },
+      "errors": [],
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-dispatch-profile-20261012\\A1\\bots-1000\\report.json",
+      "server_sha256": "f98035f5c0a22ee31a9007c789a6fbe49b40324d196235fb2257010c7043f0aa",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "compiler_nonempty_samples": 0,
+      "other_server_nonempty_samples": 0,
+      "driver_global_event_prefilter": false,
+      "effective_pine_manifest_prefilter": false
+    },
+    {
+      "label": "B1",
+      "rate": 0.9807297891729165,
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "latency": {
+        "view": {
+          "count": 54,
+          "p50_ms": 21.810899999763933,
+          "p95_ms": 222.45380000003934,
+          "max_ms": 277.05990000049496
+        },
+        "place": {
+          "count": 53,
+          "p50_ms": 19.167299999935494,
+          "p95_ms": 176.39820000022155,
+          "max_ms": 242.48639999950683
+        },
+        "cancel": {
+          "count": 53,
+          "p50_ms": 14.65490000009595,
+          "p95_ms": 26.296199999706005,
+          "max_ms": 34.003799999482
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130928,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 6000,
+          "p95_ms": 21000,
+          "max_ms": 21000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "instances_behind_closed_bars": 138
+      },
+      "phases": {
+        "directory_wait": {
+          "count": 21375,
+          "total_wall_ms": 5.5338,
+          "mean_ms_per_call": 0.00025889122807017546
+        },
+        "room_wait": {
+          "count": 21375,
+          "total_wall_ms": 118.19320000000002,
+          "mean_ms_per_call": 0.005529506432748539
+        },
+        "room_held": {
+          "count": 21376,
+          "total_wall_ms": 6701.393899999999,
+          "mean_ms_per_call": 0.3135008373877245
+        },
+        "venue_wait": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_compute": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_commit": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_fallback": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "order_prepare": {
+          "count": 199,
+          "total_wall_ms": 18.62020000000001,
+          "mean_ms_per_call": 0.09356884422110559
+        },
+        "order_apply": {
+          "count": 199,
+          "total_wall_ms": 168.85719999999992,
+          "mean_ms_per_call": 0.84852864321608
+        },
+        "order_receipt": {
+          "count": 199,
+          "total_wall_ms": 1.6112000000000002,
+          "mean_ms_per_call": 0.008096482412060303
+        },
+        "order_journal": {
+          "count": 199,
+          "total_wall_ms": 28.56650000000002,
+          "mean_ms_per_call": 0.1435502512562815
+        },
+        "order_publish": {
+          "count": 199,
+          "total_wall_ms": 1.1758000000000006,
+          "mean_ms_per_call": 0.005908542713567842
+        },
+        "bot_state_copy": {
+          "count": 24100,
+          "total_wall_ms": 66.71610000000001,
+          "mean_ms_per_call": 0.0027683029045643156
+        },
+        "bot_blocking_wait": {
+          "count": 24100,
+          "total_wall_ms": 399.5327000000001,
+          "mean_ms_per_call": 0.016578120331950212
+        },
+        "bot_turn": {
+          "count": 24100,
+          "total_wall_ms": 127076.87290000002,
+          "mean_ms_per_call": 5.272899290456432
+        },
+        "bot_observation": {
+          "count": 24100,
+          "total_wall_ms": 20631.328999999998,
+          "mean_ms_per_call": 0.8560717427385891
+        },
+        "bot_event_prefilter": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_event_skip": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_trigger": {
+          "count": 24100,
+          "total_wall_ms": 1888.9365000000003,
+          "mean_ms_per_call": 0.07837910788381744
+        },
+        "bot_evaluate": {
+          "count": 2129,
+          "total_wall_ms": 103693.5049,
+          "mean_ms_per_call": 48.70526298731799
+        },
+        "bot_worker_acquire": {
+          "count": 2128,
+          "total_wall_ms": 74565.50580000001,
+          "mean_ms_per_call": 35.040181296992486
+        },
+        "bot_wire_encode": {
+          "count": 2129,
+          "total_wall_ms": 3291.1203,
+          "mean_ms_per_call": 1.5458526538280883
+        },
+        "bot_worker_roundtrip": {
+          "count": 2128,
+          "total_wall_ms": 21059.1719,
+          "mean_ms_per_call": 9.896227396616542
+        },
+        "bot_wire_decode": {
+          "count": 2129,
+          "total_wall_ms": 2383.9871000000003,
+          "mean_ms_per_call": 1.119768482855801
+        },
+        "scheduler_admission": {
+          "count": 1918,
+          "total_wall_ms": 25.8723,
+          "mean_ms_per_call": 0.013489207507820646
+        },
+        "scheduler_apply": {
+          "count": 1918,
+          "total_wall_ms": 265.2904,
+          "mean_ms_per_call": 0.13831616266944732
+        },
+        "scheduler_mutation_build": {
+          "count": 1918,
+          "total_wall_ms": 43.2925,
+          "mean_ms_per_call": 0.022571689259645464
+        },
+        "scheduler_checkpoint": {
+          "count": 130,
+          "total_wall_ms": 0.034900000000000014,
+          "mean_ms_per_call": 0.0002684615384615386
+        },
+        "scheduler_install": {
+          "count": 1919,
+          "total_wall_ms": 33.1266,
+          "mean_ms_per_call": 0.01726242834809797
+        },
+        "scheduler_materialize": {
+          "count": 19,
+          "total_wall_ms": 42.549899999999994,
+          "mean_ms_per_call": 2.2394684210526314
+        },
+        "scheduler_delta_clone": {
+          "count": 129,
+          "total_wall_ms": 0.4216,
+          "mean_ms_per_call": 0.0032682170542635658
+        },
+        "scheduler_delta_between": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "scheduler_publish": {
+          "count": 21376,
+          "total_wall_ms": 16.950399999999995,
+          "mean_ms_per_call": 0.0007929640718562871
+        },
+        "journal_request_clone": {
+          "count": 1919,
+          "total_wall_ms": 1.6246999999999998,
+          "mean_ms_per_call": 0.000846638874413757
+        },
+        "journal_queue": {
+          "count": 3118,
+          "total_wall_ms": 9955.834299999999,
+          "mean_ms_per_call": 3.1930193393200765
+        },
+        "journal_operation": {
+          "count": 3119,
+          "total_wall_ms": 5811.0248,
+          "mean_ms_per_call": 1.8631050977877526
+        },
+        "journal_validate": {
+          "count": 1920,
+          "total_wall_ms": 4511.7194,
+          "mean_ms_per_call": 2.3498538541666667
+        },
+        "journal_serialize": {
+          "count": 1920,
+          "total_wall_ms": 508.5184,
+          "mean_ms_per_call": 0.26485333333333333
+        },
+        "journal_compress": {
+          "count": 1920,
+          "total_wall_ms": 657.2401000000001,
+          "mean_ms_per_call": 0.3423125520833334
+        },
+        "bot_worker_start": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_request_clone": {
+          "count": 2130,
+          "total_wall_ms": 1035.0358999999999,
+          "mean_ms_per_call": 0.4859323474178403
+        },
+        "bot_state_restore": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_dispatch_queue": {
+          "count": 24100,
+          "total_wall_ms": 9752198.683100002,
+          "mean_ms_per_call": 404.6555470165976
+        },
+        "bot_queue_discard": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "journal_full_validate": {
+          "count": 19,
+          "total_wall_ms": 4141.606400000001,
+          "mean_ms_per_call": 217.97928421052634
+        },
+        "journal_full_serialize": {
+          "count": 19,
+          "total_wall_ms": 457.3077,
+          "mean_ms_per_call": 24.068826315789476
+        }
+      },
+      "python": {
+        "decode_ms": {
+          "count": 2132,
+          "mean_ms": 0.35494240149340767,
+          "p95_ms": 0.5898999997953069,
+          "max_ms": 1.4080000000831205
+        },
+        "decide_ms": {
+          "count": 2132,
+          "mean_ms": 8.518785412763982,
+          "p95_ms": 11.632900000222435,
+          "max_ms": 50.11650000051304
+        },
+        "encode_ms": {
+          "count": 2132,
+          "mean_ms": 0.6902810975493534,
+          "p95_ms": 1.015699999697972,
+          "max_ms": 2.653700000337267
+        },
+        "state_copy_ms": {
+          "count": 2132,
+          "mean_ms": 2.9817763133133695,
+          "p95_ms": 4.299100000025646,
+          "max_ms": 35.8832000001712
+        },
+        "evaluate_ms": {
+          "count": 2080,
+          "mean_ms": 1.2432248076829813,
+          "p95_ms": 1.6187000001082197,
+          "max_ms": 39.77800000029674
+        },
+        "validate_response_ms": {
+          "count": 2132,
+          "mean_ms": 0.708910694174591,
+          "p95_ms": 1.03190000027098,
+          "max_ms": 2.280400000017835
+        }
+      },
+      "worker_response_to_commit_return": {
+        "count": 2117,
+        "mean_ms": 35.058297118564006,
+        "p95_ms": 267.68,
+        "max_ms": 297.034
+      },
+      "unmatched_worker_responses": 1,
+      "trace_scope": "market times 1941000..1971000, not identical to exact wall measurement window; completion trace is successful commit return, not proof for every stale candidate",
+      "backlog_by_interval_ms": {
+        "10000": {
+          "0": 196,
+          "1": 138
+        },
+        "15000": {
+          "0": 333
+        },
+        "30000": {
+          "0": 333
+        }
+      },
+      "required_inputs": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 197,
+          "latest_open_ms": 1960000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 131,
+          "latest_open_ms": 1950000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 65,
+          "latest_open_ms": 1920000,
+          "market_time_ms": 1971000
+        }
+      },
+      "process_tree": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 111,
+        "average_logical_cores": 1.604731984066186,
+        "peak_sampled_rss_mib": 3171.64453125
+      },
+      "errors": [],
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-dispatch-profile-20261012\\B1\\bots-1000\\report.json",
+      "server_sha256": "971f0937077e0eb39a28b74e16a96550f4e779abcb4a226d012adf9a4e1b8a99",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "compiler_nonempty_samples": 0,
+      "other_server_nonempty_samples": 0,
+      "driver_global_event_prefilter": false,
+      "effective_pine_manifest_prefilter": false
+    },
+    {
+      "label": "B2",
+      "rate": 0.9791341482288564,
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "latency": {
+        "view": {
+          "count": 55,
+          "p50_ms": 20.667300000241084,
+          "p95_ms": 135.29779999953462,
+          "max_ms": 235.6379000002562
+        },
+        "place": {
+          "count": 54,
+          "p50_ms": 17.667899999651127,
+          "p95_ms": 125.24579999990237,
+          "max_ms": 217.98219999982393
+        },
+        "cancel": {
+          "count": 54,
+          "p50_ms": 15.084399999977904,
+          "p95_ms": 21.64210000046296,
+          "max_ms": 24.14550000048621
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130943,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 6000,
+          "p95_ms": 21000,
+          "max_ms": 21000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "instances_behind_closed_bars": 123
+      },
+      "phases": {
+        "directory_wait": {
+          "count": 22853,
+          "total_wall_ms": 6.082300000000001,
+          "mean_ms_per_call": 0.00026614886448168737
+        },
+        "room_wait": {
+          "count": 22852,
+          "total_wall_ms": 118.9273,
+          "mean_ms_per_call": 0.005204240329074042
+        },
+        "room_held": {
+          "count": 22852,
+          "total_wall_ms": 7162.1055,
+          "mean_ms_per_call": 0.3134126334675302
+        },
+        "venue_wait": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_compute": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_commit": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_fallback": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "order_prepare": {
+          "count": 201,
+          "total_wall_ms": 19.340300000000013,
+          "mean_ms_per_call": 0.09622039800995032
+        },
+        "order_apply": {
+          "count": 201,
+          "total_wall_ms": 174.09640000000002,
+          "mean_ms_per_call": 0.8661512437810946
+        },
+        "order_receipt": {
+          "count": 201,
+          "total_wall_ms": 1.4555000000000007,
+          "mean_ms_per_call": 0.007241293532338312
+        },
+        "order_journal": {
+          "count": 201,
+          "total_wall_ms": 25.745400000000018,
+          "mean_ms_per_call": 0.12808656716417918
+        },
+        "order_publish": {
+          "count": 201,
+          "total_wall_ms": 1.0631999999999993,
+          "mean_ms_per_call": 0.005289552238805967
+        },
+        "bot_state_copy": {
+          "count": 25260,
+          "total_wall_ms": 67.393,
+          "mean_ms_per_call": 0.0026679730799683294
+        },
+        "bot_blocking_wait": {
+          "count": 25260,
+          "total_wall_ms": 409.92599999999993,
+          "mean_ms_per_call": 0.016228266033254155
+        },
+        "bot_turn": {
+          "count": 25272,
+          "total_wall_ms": 137904.0956,
+          "mean_ms_per_call": 5.4567939062994615
+        },
+        "bot_observation": {
+          "count": 25262,
+          "total_wall_ms": 27086.0765,
+          "mean_ms_per_call": 1.0722063375821391
+        },
+        "bot_event_prefilter": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_event_skip": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_trigger": {
+          "count": 25262,
+          "total_wall_ms": 1931.5394000000001,
+          "mean_ms_per_call": 0.07646027234581586
+        },
+        "bot_evaluate": {
+          "count": 2367,
+          "total_wall_ms": 107540.19230000002,
+          "mean_ms_per_call": 45.43311884241657
+        },
+        "bot_worker_acquire": {
+          "count": 2365,
+          "total_wall_ms": 76460.7561,
+          "mean_ms_per_call": 32.33012942917548
+        },
+        "bot_wire_encode": {
+          "count": 2364,
+          "total_wall_ms": 3790.589,
+          "mean_ms_per_call": 1.6034640439932317
+        },
+        "bot_worker_roundtrip": {
+          "count": 2368,
+          "total_wall_ms": 22076.7111,
+          "mean_ms_per_call": 9.322935430743243
+        },
+        "bot_wire_decode": {
+          "count": 2368,
+          "total_wall_ms": 2665.5563999999995,
+          "mean_ms_per_call": 1.1256572635135134
+        },
+        "scheduler_admission": {
+          "count": 2092,
+          "total_wall_ms": 28.209299999999995,
+          "mean_ms_per_call": 0.013484369024856594
+        },
+        "scheduler_apply": {
+          "count": 2091,
+          "total_wall_ms": 361.048,
+          "mean_ms_per_call": 0.17266762314681972
+        },
+        "scheduler_mutation_build": {
+          "count": 2091,
+          "total_wall_ms": 40.85620000000001,
+          "mean_ms_per_call": 0.01953907221425156
+        },
+        "scheduler_checkpoint": {
+          "count": 180,
+          "total_wall_ms": 0.045899999999999996,
+          "mean_ms_per_call": 0.00025499999999999996
+        },
+        "scheduler_install": {
+          "count": 2091,
+          "total_wall_ms": 38.02159999999999,
+          "mean_ms_per_call": 0.01818345289335246
+        },
+        "scheduler_materialize": {
+          "count": 21,
+          "total_wall_ms": 40.151,
+          "mean_ms_per_call": 1.911952380952381
+        },
+        "scheduler_delta_clone": {
+          "count": 179,
+          "total_wall_ms": 0.35109999999999997,
+          "mean_ms_per_call": 0.0019614525139664803
+        },
+        "scheduler_delta_between": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "scheduler_publish": {
+          "count": 22852,
+          "total_wall_ms": 15.971399999999996,
+          "mean_ms_per_call": 0.0006989060038508662
+        },
+        "journal_request_clone": {
+          "count": 2092,
+          "total_wall_ms": 2.1075,
+          "mean_ms_per_call": 0.0010074091778202678
+        },
+        "journal_queue": {
+          "count": 3297,
+          "total_wall_ms": 8309.8288,
+          "mean_ms_per_call": 2.520421231422505
+        },
+        "journal_operation": {
+          "count": 3297,
+          "total_wall_ms": 6158.7435000000005,
+          "mean_ms_per_call": 1.8679840764331213
+        },
+        "journal_validate": {
+          "count": 2092,
+          "total_wall_ms": 4693.1889,
+          "mean_ms_per_call": 2.243398135755258
+        },
+        "journal_serialize": {
+          "count": 2092,
+          "total_wall_ms": 566.6565,
+          "mean_ms_per_call": 0.27086830783938814
+        },
+        "journal_compress": {
+          "count": 2092,
+          "total_wall_ms": 740.8353999999999,
+          "mean_ms_per_call": 0.3541278202676864
+        },
+        "bot_worker_start": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_request_clone": {
+          "count": 2358,
+          "total_wall_ms": 1151.821,
+          "mean_ms_per_call": 0.4884737065309584
+        },
+        "bot_state_restore": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_dispatch_queue": {
+          "count": 25260,
+          "total_wall_ms": 9396861.728400001,
+          "mean_ms_per_call": 372.00561078384806
+        },
+        "bot_queue_discard": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "journal_full_validate": {
+          "count": 21,
+          "total_wall_ms": 4206.3235,
+          "mean_ms_per_call": 200.30111904761907
+        },
+        "journal_full_serialize": {
+          "count": 21,
+          "total_wall_ms": 474.68330000000003,
+          "mean_ms_per_call": 22.60396666666667
+        }
+      },
+      "python": {
+        "decode_ms": {
+          "count": 2361,
+          "mean_ms": 0.36037509530513273,
+          "p95_ms": 0.5907000004299334,
+          "max_ms": 0.9215000000040163
+        },
+        "decide_ms": {
+          "count": 2361,
+          "mean_ms": 7.921698348148772,
+          "p95_ms": 11.09439999981987,
+          "max_ms": 49.84060000060708
+        },
+        "encode_ms": {
+          "count": 2361,
+          "mean_ms": 0.6704567979732894,
+          "p95_ms": 1.009399999929883,
+          "max_ms": 2.353699999730452
+        },
+        "state_copy_ms": {
+          "count": 2361,
+          "mean_ms": 3.001784752238838,
+          "p95_ms": 4.338800000368792,
+          "max_ms": 45.906299999842304
+        },
+        "evaluate_ms": {
+          "count": 2087,
+          "mean_ms": 1.1517494489619855,
+          "p95_ms": 1.6131000002133078,
+          "max_ms": 32.34419999989768
+        },
+        "validate_response_ms": {
+          "count": 2361,
+          "mean_ms": 0.6950880135425035,
+          "p95_ms": 1.0405000002720044,
+          "max_ms": 1.7219000001205131
+        }
+      },
+      "worker_response_to_commit_return": {
+        "count": 2346,
+        "mean_ms": 32.31648252344416,
+        "p95_ms": 247.938,
+        "max_ms": 299.345
+      },
+      "unmatched_worker_responses": 12,
+      "trace_scope": "market times 1941000..1971000, not identical to exact wall measurement window; completion trace is successful commit return, not proof for every stale candidate",
+      "backlog_by_interval_ms": {
+        "10000": {
+          "0": 211,
+          "1": 123
+        },
+        "15000": {
+          "0": 333
+        },
+        "30000": {
+          "0": 333
+        }
+      },
+      "required_inputs": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 197,
+          "latest_open_ms": 1960000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 131,
+          "latest_open_ms": 1950000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 65,
+          "latest_open_ms": 1920000,
+          "market_time_ms": 1971000
+        }
+      },
+      "process_tree": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 111,
+        "average_logical_cores": 1.7606562890443858,
+        "peak_sampled_rss_mib": 3203.19921875
+      },
+      "errors": [],
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-dispatch-profile-20261012\\B2\\bots-1000\\report.json",
+      "server_sha256": "971f0937077e0eb39a28b74e16a96550f4e779abcb4a226d012adf9a4e1b8a99",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "compiler_nonempty_samples": 0,
+      "other_server_nonempty_samples": 0,
+      "driver_global_event_prefilter": false,
+      "effective_pine_manifest_prefilter": false
+    },
+    {
+      "label": "A2",
+      "rate": 1.0036152764750408,
+      "qualified": {
+        "order_p95_under_250ms": false,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": true,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "latency": {
+        "view": {
+          "count": 52,
+          "p50_ms": 19.829400000162423,
+          "p95_ms": 361.6371000007348,
+          "max_ms": 381.5599999998085
+        },
+        "place": {
+          "count": 50,
+          "p50_ms": 18.006700000114506,
+          "p95_ms": 369.7379999994155,
+          "max_ms": 399.9859000005017
+        },
+        "cancel": {
+          "count": 49,
+          "p50_ms": 14.608300000872987,
+          "p95_ms": 24.454100000184553,
+          "max_ms": 28.071100000488514
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130844,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 8000,
+          "p95_ms": 21000,
+          "max_ms": 21000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "instances_behind_closed_bars": 222
+      },
+      "phases": {
+        "directory_wait": {
+          "count": 20626,
+          "total_wall_ms": 5.2328,
+          "mean_ms_per_call": 0.0002536992145835354
+        },
+        "room_wait": {
+          "count": 20626,
+          "total_wall_ms": 93.4983,
+          "mean_ms_per_call": 0.004533031125763599
+        },
+        "room_held": {
+          "count": 20627,
+          "total_wall_ms": 10611.4071,
+          "mean_ms_per_call": 0.5144425801134436
+        },
+        "venue_wait": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_compute": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_commit": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_fallback": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "order_prepare": {
+          "count": 193,
+          "total_wall_ms": 19.3823,
+          "mean_ms_per_call": 0.10042642487046632
+        },
+        "order_apply": {
+          "count": 193,
+          "total_wall_ms": 145.0675,
+          "mean_ms_per_call": 0.7516450777202073
+        },
+        "order_receipt": {
+          "count": 193,
+          "total_wall_ms": 1.3763000000000005,
+          "mean_ms_per_call": 0.007131088082901557
+        },
+        "order_journal": {
+          "count": 193,
+          "total_wall_ms": 26.008099999999985,
+          "mean_ms_per_call": 0.13475699481865278
+        },
+        "order_publish": {
+          "count": 193,
+          "total_wall_ms": 0.9744999999999999,
+          "mean_ms_per_call": 0.005049222797927461
+        },
+        "bot_state_copy": {
+          "count": 22281,
+          "total_wall_ms": 60.921299999999995,
+          "mean_ms_per_call": 0.0027342264709842466
+        },
+        "bot_blocking_wait": {
+          "count": 22281,
+          "total_wall_ms": 396.3396,
+          "mean_ms_per_call": 0.01778823212602666
+        },
+        "bot_turn": {
+          "count": 22270,
+          "total_wall_ms": 204136.2825,
+          "mean_ms_per_call": 9.16642489896722
+        },
+        "bot_observation": {
+          "count": 22281,
+          "total_wall_ms": 16997.1587,
+          "mean_ms_per_call": 0.7628543916341277
+        },
+        "bot_event_prefilter": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_event_skip": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_trigger": {
+          "count": 22281,
+          "total_wall_ms": 1733.8645,
+          "mean_ms_per_call": 0.07781807369507651
+        },
+        "bot_evaluate": {
+          "count": 2367,
+          "total_wall_ms": 184873.8915,
+          "mean_ms_per_call": 78.10472813688213
+        },
+        "bot_worker_acquire": {
+          "count": 2369,
+          "total_wall_ms": 135328.1154,
+          "mean_ms_per_call": 57.124573828619674
+        },
+        "bot_wire_encode": {
+          "count": 2369,
+          "total_wall_ms": 3749.2453000000005,
+          "mean_ms_per_call": 1.582627817644576
+        },
+        "bot_worker_roundtrip": {
+          "count": 2367,
+          "total_wall_ms": 40927.1885,
+          "mean_ms_per_call": 17.290742923531894
+        },
+        "bot_wire_decode": {
+          "count": 2367,
+          "total_wall_ms": 2665.8796,
+          "mean_ms_per_call": 1.1262693705111957
+        },
+        "scheduler_admission": {
+          "count": 2133,
+          "total_wall_ms": 30.3242,
+          "mean_ms_per_call": 0.014216690107829348
+        },
+        "scheduler_apply": {
+          "count": 2133,
+          "total_wall_ms": 422.3575,
+          "mean_ms_per_call": 0.1980110173464604
+        },
+        "scheduler_mutation_build": {
+          "count": 2133,
+          "total_wall_ms": 46.5777,
+          "mean_ms_per_call": 0.021836708860759495
+        },
+        "scheduler_checkpoint": {
+          "count": 254,
+          "total_wall_ms": 0.0842,
+          "mean_ms_per_call": 0.00033149606299212597
+        },
+        "scheduler_install": {
+          "count": 2134,
+          "total_wall_ms": 42.6425,
+          "mean_ms_per_call": 0.019982427366447984
+        },
+        "scheduler_materialize": {
+          "count": 22,
+          "total_wall_ms": 45.6611,
+          "mean_ms_per_call": 2.0755045454545455
+        },
+        "scheduler_delta_clone": {
+          "count": 252,
+          "total_wall_ms": 0.46349999999999997,
+          "mean_ms_per_call": 0.001839285714285714
+        },
+        "scheduler_delta_between": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "scheduler_publish": {
+          "count": 20627,
+          "total_wall_ms": 17.156600000000005,
+          "mean_ms_per_call": 0.0008317544965336696
+        },
+        "journal_request_clone": {
+          "count": 2134,
+          "total_wall_ms": 2.6975999999999996,
+          "mean_ms_per_call": 0.0012641049671977505
+        },
+        "journal_queue": {
+          "count": 3253,
+          "total_wall_ms": 20893.8047,
+          "mean_ms_per_call": 6.422934122348601
+        },
+        "journal_operation": {
+          "count": 3254,
+          "total_wall_ms": 9559.7664,
+          "mean_ms_per_call": 2.9378507682851875
+        },
+        "journal_validate": {
+          "count": 2134,
+          "total_wall_ms": 3165.4231,
+          "mean_ms_per_call": 1.4833285379568886
+        },
+        "journal_serialize": {
+          "count": 2135,
+          "total_wall_ms": 5304.3287,
+          "mean_ms_per_call": 2.4844630913348946
+        },
+        "journal_compress": {
+          "count": 2135,
+          "total_wall_ms": 827.9807999999999,
+          "mean_ms_per_call": 0.3878130210772833
+        },
+        "bot_worker_start": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_request_clone": {
+          "count": 2378,
+          "total_wall_ms": 1157.5093,
+          "mean_ms_per_call": 0.48675748528174934
+        },
+        "bot_state_restore": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_dispatch_queue": {
+          "count": 22281,
+          "total_wall_ms": 3483580.5876,
+          "mean_ms_per_call": 156.34758707418877
+        },
+        "bot_queue_discard": {
+          "count": 8333,
+          "total_wall_ms": 8381896.0177,
+          "mean_ms_per_call": 1005.8677568342733
+        },
+        "journal_full_validate": {
+          "count": 22,
+          "total_wall_ms": 2955.8943999999997,
+          "mean_ms_per_call": 134.35883636363636
+        },
+        "journal_full_serialize": {
+          "count": 23,
+          "total_wall_ms": 4998.1162,
+          "mean_ms_per_call": 217.3094
+        }
+      },
+      "python": {
+        "decode_ms": {
+          "count": 2373,
+          "mean_ms": 5.529677918260846,
+          "p95_ms": 7.312499999898137,
+          "max_ms": 43.83910000069591
+        },
+        "decide_ms": {
+          "count": 2373,
+          "mean_ms": 10.669291192574834,
+          "p95_ms": 14.80379999975412,
+          "max_ms": 54.50930000006338
+        },
+        "encode_ms": {
+          "count": 2373,
+          "mean_ms": 0.7082964601767789,
+          "p95_ms": 0.9978999996747007,
+          "max_ms": 1.517700000476907
+        },
+        "state_copy_ms": {
+          "count": 2373,
+          "mean_ms": 3.0551806574051468,
+          "p95_ms": 4.180400000223017,
+          "max_ms": 44.03009999987262
+        },
+        "evaluate_ms": {
+          "count": 2003,
+          "mean_ms": 4.126416425347022,
+          "p95_ms": 5.517499999768916,
+          "max_ms": 45.2807000001485
+        },
+        "validate_response_ms": {
+          "count": 2373,
+          "mean_ms": 0.7321747576743786,
+          "p95_ms": 1.0336000004826928,
+          "max_ms": 1.681099999586877
+        }
+      },
+      "worker_response_to_commit_return": {
+        "count": 2357,
+        "mean_ms": 45.80703775986424,
+        "p95_ms": 363.974,
+        "max_ms": 413.064
+      },
+      "unmatched_worker_responses": 5,
+      "trace_scope": "market times 1941000..1971000, not identical to exact wall measurement window; completion trace is successful commit return, not proof for every stale candidate",
+      "backlog_by_interval_ms": {
+        "10000": {
+          "0": 112,
+          "1": 222
+        },
+        "15000": {
+          "0": 333
+        },
+        "30000": {
+          "0": 333
+        }
+      },
+      "required_inputs": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 197,
+          "latest_open_ms": 1960000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 131,
+          "latest_open_ms": 1950000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 65,
+          "latest_open_ms": 1920000,
+          "market_time_ms": 1971000
+        }
+      },
+      "process_tree": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 111,
+        "average_logical_cores": 2.46761176741398,
+        "peak_sampled_rss_mib": 3151.859375
+      },
+      "errors": [],
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-dispatch-profile-20261012\\A2\\bots-1000\\report.json",
+      "server_sha256": "f98035f5c0a22ee31a9007c789a6fbe49b40324d196235fb2257010c7043f0aa",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "compiler_nonempty_samples": 0,
+      "other_server_nonempty_samples": 0,
+      "driver_global_event_prefilter": false,
+      "effective_pine_manifest_prefilter": false
+    },
+    {
+      "label": "C1",
+      "rate": 1.0106721113055586,
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": true,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "latency": {
+        "view": {
+          "count": 56,
+          "p50_ms": 18.08530000016617,
+          "p95_ms": 184.21380000017962,
+          "max_ms": 211.25369999936083
+        },
+        "place": {
+          "count": 55,
+          "p50_ms": 16.74280000042927,
+          "p95_ms": 106.34240000035788,
+          "max_ms": 141.45229999940057
+        },
+        "cancel": {
+          "count": 56,
+          "p50_ms": 15.18839999971533,
+          "p95_ms": 24.906499999815424,
+          "max_ms": 26.700200000050245
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130984,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 6000,
+          "p95_ms": 21000,
+          "max_ms": 21000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "instances_behind_closed_bars": 82
+      },
+      "phases": {
+        "directory_wait": {
+          "count": 22944,
+          "total_wall_ms": 5.816,
+          "mean_ms_per_call": 0.00025348675034867504
+        },
+        "room_wait": {
+          "count": 22944,
+          "total_wall_ms": 97.75490000000002,
+          "mean_ms_per_call": 0.004260586645746165
+        },
+        "room_held": {
+          "count": 22945,
+          "total_wall_ms": 4886.8858,
+          "mean_ms_per_call": 0.21298260187404663
+        },
+        "venue_wait": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_compute": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_commit": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_fallback": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "order_prepare": {
+          "count": 205,
+          "total_wall_ms": 19.153099999999995,
+          "mean_ms_per_call": 0.09342975609756095
+        },
+        "order_apply": {
+          "count": 205,
+          "total_wall_ms": 159.25520000000006,
+          "mean_ms_per_call": 0.7768546341463417
+        },
+        "order_receipt": {
+          "count": 205,
+          "total_wall_ms": 1.3645000000000014,
+          "mean_ms_per_call": 0.006656097560975616
+        },
+        "order_journal": {
+          "count": 205,
+          "total_wall_ms": 27.719600000000014,
+          "mean_ms_per_call": 0.13521756097560983
+        },
+        "order_publish": {
+          "count": 205,
+          "total_wall_ms": 1.1028000000000002,
+          "mean_ms_per_call": 0.005379512195121952
+        },
+        "bot_state_copy": {
+          "count": 26389,
+          "total_wall_ms": 72.84389999999999,
+          "mean_ms_per_call": 0.0027603887983629538
+        },
+        "bot_blocking_wait": {
+          "count": 26389,
+          "total_wall_ms": 364.3701,
+          "mean_ms_per_call": 0.01380765091515404
+        },
+        "bot_turn": {
+          "count": 26374,
+          "total_wall_ms": 114393.0724,
+          "mean_ms_per_call": 4.3373425494805495
+        },
+        "bot_observation": {
+          "count": 2087,
+          "total_wall_ms": 142.5943,
+          "mean_ms_per_call": 0.0683250119789171
+        },
+        "bot_event_prefilter": {
+          "count": 26389,
+          "total_wall_ms": 24142.2193,
+          "mean_ms_per_call": 0.9148591951191785
+        },
+        "bot_event_skip": {
+          "count": 24302,
+          "total_wall_ms": 2.4896,
+          "mean_ms_per_call": 0.00010244424327215867
+        },
+        "bot_trigger": {
+          "count": 2087,
+          "total_wall_ms": 195.2148,
+          "mean_ms_per_call": 0.09353847628174412
+        },
+        "bot_evaluate": {
+          "count": 2072,
+          "total_wall_ms": 89915.06000000003,
+          "mean_ms_per_call": 43.39529922779924
+        },
+        "bot_worker_acquire": {
+          "count": 2075,
+          "total_wall_ms": 65026.638399999996,
+          "mean_ms_per_call": 31.338138987951805
+        },
+        "bot_wire_encode": {
+          "count": 2075,
+          "total_wall_ms": 2956.2608,
+          "mean_ms_per_call": 1.424704
+        },
+        "bot_worker_roundtrip": {
+          "count": 2073,
+          "total_wall_ms": 18203.022900000004,
+          "mean_ms_per_call": 8.78100477568741
+        },
+        "bot_wire_decode": {
+          "count": 2072,
+          "total_wall_ms": 2029.9251000000002,
+          "mean_ms_per_call": 0.9796935810810812
+        },
+        "scheduler_admission": {
+          "count": 1855,
+          "total_wall_ms": 26.099899999999998,
+          "mean_ms_per_call": 0.014070026954177896
+        },
+        "scheduler_apply": {
+          "count": 1855,
+          "total_wall_ms": 183.7700000000001,
+          "mean_ms_per_call": 0.09906738544474399
+        },
+        "scheduler_mutation_build": {
+          "count": 1855,
+          "total_wall_ms": 30.0019,
+          "mean_ms_per_call": 0.01617353099730458
+        },
+        "scheduler_checkpoint": {
+          "count": 101,
+          "total_wall_ms": 0.02479999999999999,
+          "mean_ms_per_call": 0.0002455445544554454
+        },
+        "scheduler_install": {
+          "count": 1856,
+          "total_wall_ms": 24.3756,
+          "mean_ms_per_call": 0.013133405172413792
+        },
+        "scheduler_materialize": {
+          "count": 18,
+          "total_wall_ms": 29.4929,
+          "mean_ms_per_call": 1.6384944444444445
+        },
+        "scheduler_delta_clone": {
+          "count": 101,
+          "total_wall_ms": 0.20109999999999995,
+          "mean_ms_per_call": 0.0019910891089108904
+        },
+        "scheduler_delta_between": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "scheduler_publish": {
+          "count": 22945,
+          "total_wall_ms": 16.157000000000004,
+          "mean_ms_per_call": 0.0007041621268250165
+        },
+        "journal_request_clone": {
+          "count": 1856,
+          "total_wall_ms": 1.4767000000000001,
+          "mean_ms_per_call": 0.0007956357758620691
+        },
+        "journal_queue": {
+          "count": 3113,
+          "total_wall_ms": 5102.369500000001,
+          "mean_ms_per_call": 1.6390522004497272
+        },
+        "journal_operation": {
+          "count": 3114,
+          "total_wall_ms": 4104.2703,
+          "mean_ms_per_call": 1.3180058766859346
+        },
+        "journal_validate": {
+          "count": 1856,
+          "total_wall_ms": 2940.6682,
+          "mean_ms_per_call": 1.5844117456896551
+        },
+        "journal_serialize": {
+          "count": 1857,
+          "total_wall_ms": 407.2328,
+          "mean_ms_per_call": 0.2192960689283791
+        },
+        "journal_compress": {
+          "count": 1857,
+          "total_wall_ms": 470.8801,
+          "mean_ms_per_call": 0.2535703284868067
+        },
+        "bot_worker_start": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_request_clone": {
+          "count": 2087,
+          "total_wall_ms": 911.4273,
+          "mean_ms_per_call": 0.4367164829899377
+        },
+        "bot_state_restore": {
+          "count": 2063,
+          "total_wall_ms": 2.0691,
+          "mean_ms_per_call": 0.0010029568589432864
+        },
+        "bot_dispatch_queue": {
+          "count": 26389,
+          "total_wall_ms": 7424063.3519,
+          "mean_ms_per_call": 281.3317424646633
+        },
+        "bot_queue_discard": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "journal_full_validate": {
+          "count": 18,
+          "total_wall_ms": 2546.8531,
+          "mean_ms_per_call": 141.49183888888888
+        },
+        "journal_full_serialize": {
+          "count": 19,
+          "total_wall_ms": 355.56730000000005,
+          "mean_ms_per_call": 18.714068421052634
+        }
+      },
+      "python": {
+        "decode_ms": {
+          "count": 2082,
+          "mean_ms": 0.3810544188211843,
+          "p95_ms": 0.638799999251205,
+          "max_ms": 1.5800999999555643
+        },
+        "decide_ms": {
+          "count": 2082,
+          "mean_ms": 7.483867195003193,
+          "p95_ms": 10.485199999493489,
+          "max_ms": 50.99869999958173
+        },
+        "encode_ms": {
+          "count": 2082,
+          "mean_ms": 0.5836000000036287,
+          "p95_ms": 0.9149000006800634,
+          "max_ms": 1.232799999343115
+        },
+        "state_copy_ms": {
+          "count": 2082,
+          "mean_ms": 2.6618775696445898,
+          "p95_ms": 4.017600000224775,
+          "max_ms": 29.250799999317678
+        },
+        "evaluate_ms": {
+          "count": 2058,
+          "mean_ms": 1.1336881438212951,
+          "p95_ms": 1.6175000000657747,
+          "max_ms": 42.208799999571056
+        },
+        "validate_response_ms": {
+          "count": 2082,
+          "mean_ms": 0.6143339096974811,
+          "p95_ms": 0.9750999997777399,
+          "max_ms": 2.1742999997513834
+        }
+      },
+      "worker_response_to_commit_return": {
+        "count": 2067,
+        "mean_ms": 23.559312046444123,
+        "p95_ms": 172.684,
+        "max_ms": 231.858
+      },
+      "unmatched_worker_responses": 1,
+      "trace_scope": "market times 1941000..1971000, not identical to exact wall measurement window; completion trace is successful commit return, not proof for every stale candidate",
+      "backlog_by_interval_ms": {
+        "10000": {
+          "0": 252,
+          "1": 82
+        },
+        "15000": {
+          "0": 333
+        },
+        "30000": {
+          "0": 333
+        }
+      },
+      "required_inputs": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 197,
+          "latest_open_ms": 1960000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 131,
+          "latest_open_ms": 1950000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 65,
+          "latest_open_ms": 1920000,
+          "market_time_ms": 1971000
+        }
+      },
+      "process_tree": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 112,
+        "average_logical_cores": 1.4291001161740648,
+        "peak_sampled_rss_mib": 3175.66015625
+      },
+      "errors": [],
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-dispatch-profile-20261012\\C1\\bots-1000\\report.json",
+      "server_sha256": "971f0937077e0eb39a28b74e16a96550f4e779abcb4a226d012adf9a4e1b8a99",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "compiler_nonempty_samples": 0,
+      "other_server_nonempty_samples": 0,
+      "driver_global_event_prefilter": false,
+      "effective_pine_manifest_prefilter": true
+    },
+    {
+      "label": "D1",
+      "rate": 0.9850275172022632,
+      "qualified": {
+        "order_p95_under_250ms": false,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "latency": {
+        "view": {
+          "count": 51,
+          "p50_ms": 22.495600000183913,
+          "p95_ms": 364.81539999931556,
+          "max_ms": 411.6005000005316
+        },
+        "place": {
+          "count": 50,
+          "p50_ms": 17.745000000104483,
+          "p95_ms": 380.12909999997646,
+          "max_ms": 404.2607000001226
+        },
+        "cancel": {
+          "count": 50,
+          "p50_ms": 15.39760000014212,
+          "p95_ms": 24.778400000286638,
+          "max_ms": 403.9882999995825
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130837,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 9000,
+          "p95_ms": 21000,
+          "max_ms": 21000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "instances_behind_closed_bars": 229
+      },
+      "phases": {
+        "directory_wait": {
+          "count": 21054,
+          "total_wall_ms": 5.4945,
+          "mean_ms_per_call": 0.0002609717868338558
+        },
+        "room_wait": {
+          "count": 21054,
+          "total_wall_ms": 113.9207,
+          "mean_ms_per_call": 0.005410881542699725
+        },
+        "room_held": {
+          "count": 21055,
+          "total_wall_ms": 9914.6723,
+          "mean_ms_per_call": 0.47089395867964856
+        },
+        "venue_wait": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_compute": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_commit": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_fallback": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "order_prepare": {
+          "count": 193,
+          "total_wall_ms": 19.5873,
+          "mean_ms_per_call": 0.10148860103626943
+        },
+        "order_apply": {
+          "count": 193,
+          "total_wall_ms": 163.98400000000004,
+          "mean_ms_per_call": 0.8496580310880831
+        },
+        "order_receipt": {
+          "count": 193,
+          "total_wall_ms": 1.6111000000000004,
+          "mean_ms_per_call": 0.008347668393782386
+        },
+        "order_journal": {
+          "count": 193,
+          "total_wall_ms": 36.57939999999999,
+          "mean_ms_per_call": 0.18953056994818648
+        },
+        "order_publish": {
+          "count": 193,
+          "total_wall_ms": 1.0584999999999996,
+          "mean_ms_per_call": 0.00548445595854922
+        },
+        "bot_state_copy": {
+          "count": 22573,
+          "total_wall_ms": 62.2596,
+          "mean_ms_per_call": 0.002758144686129447
+        },
+        "bot_blocking_wait": {
+          "count": 22573,
+          "total_wall_ms": 399.48740000000004,
+          "mean_ms_per_call": 0.017697576750985693
+        },
+        "bot_turn": {
+          "count": 22575,
+          "total_wall_ms": 200223.1825,
+          "mean_ms_per_call": 8.86924396456257
+        },
+        "bot_observation": {
+          "count": 22573,
+          "total_wall_ms": 18313.0414,
+          "mean_ms_per_call": 0.8112807956408098
+        },
+        "bot_event_prefilter": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_event_skip": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_trigger": {
+          "count": 22573,
+          "total_wall_ms": 1787.0354,
+          "mean_ms_per_call": 0.07916694280777921
+        },
+        "bot_evaluate": {
+          "count": 2282,
+          "total_wall_ms": 179480.3516,
+          "mean_ms_per_call": 78.65046082383874
+        },
+        "bot_worker_acquire": {
+          "count": 2280,
+          "total_wall_ms": 130938.2488,
+          "mean_ms_per_call": 57.42905649122807
+        },
+        "bot_wire_encode": {
+          "count": 2280,
+          "total_wall_ms": 3668.3693000000003,
+          "mean_ms_per_call": 1.608933903508772
+        },
+        "bot_worker_roundtrip": {
+          "count": 2282,
+          "total_wall_ms": 39976.49880000001,
+          "mean_ms_per_call": 17.518185276073623
+        },
+        "bot_wire_decode": {
+          "count": 2282,
+          "total_wall_ms": 2567.0858,
+          "mean_ms_per_call": 1.1249280455740578
+        },
+        "scheduler_admission": {
+          "count": 2018,
+          "total_wall_ms": 29.341199999999997,
+          "mean_ms_per_call": 0.014539742319127849
+        },
+        "scheduler_apply": {
+          "count": 2018,
+          "total_wall_ms": 379.1798,
+          "mean_ms_per_call": 0.18789881070366699
+        },
+        "scheduler_mutation_build": {
+          "count": 2018,
+          "total_wall_ms": 42.085800000000006,
+          "mean_ms_per_call": 0.02085520317145689
+        },
+        "scheduler_checkpoint": {
+          "count": 202,
+          "total_wall_ms": 0.07139999999999999,
+          "mean_ms_per_call": 0.0003534653465346534
+        },
+        "scheduler_install": {
+          "count": 2019,
+          "total_wall_ms": 38.7421,
+          "mean_ms_per_call": 0.01918875681030213
+        },
+        "scheduler_materialize": {
+          "count": 20,
+          "total_wall_ms": 41.22639999999999,
+          "mean_ms_per_call": 2.0613199999999994
+        },
+        "scheduler_delta_clone": {
+          "count": 202,
+          "total_wall_ms": 0.46219999999999994,
+          "mean_ms_per_call": 0.0022881188118811877
+        },
+        "scheduler_delta_between": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "scheduler_publish": {
+          "count": 21055,
+          "total_wall_ms": 16.530500000000004,
+          "mean_ms_per_call": 0.000785110425077179
+        },
+        "journal_request_clone": {
+          "count": 2019,
+          "total_wall_ms": 2.6464999999999996,
+          "mean_ms_per_call": 0.001310797424467558
+        },
+        "journal_queue": {
+          "count": 3134,
+          "total_wall_ms": 19068.5613,
+          "mean_ms_per_call": 6.084416496490109
+        },
+        "journal_operation": {
+          "count": 3135,
+          "total_wall_ms": 8909.972699999998,
+          "mean_ms_per_call": 2.842096555023923
+        },
+        "journal_validate": {
+          "count": 2020,
+          "total_wall_ms": 3092.6276,
+          "mean_ms_per_call": 1.5310037623762376
+        },
+        "journal_serialize": {
+          "count": 2020,
+          "total_wall_ms": 4931.516600000001,
+          "mean_ms_per_call": 2.441344851485149
+        },
+        "journal_compress": {
+          "count": 2020,
+          "total_wall_ms": 758.2497999999999,
+          "mean_ms_per_call": 0.37537118811881187
+        },
+        "bot_worker_start": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_request_clone": {
+          "count": 2280,
+          "total_wall_ms": 1112.1478000000002,
+          "mean_ms_per_call": 0.4877841228070176
+        },
+        "bot_state_restore": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_dispatch_queue": {
+          "count": 22573,
+          "total_wall_ms": 3690047.9636999997,
+          "mean_ms_per_call": 163.47175668719265
+        },
+        "bot_queue_discard": {
+          "count": 7359,
+          "total_wall_ms": 7463324.624999998,
+          "mean_ms_per_call": 1014.176467590705
+        },
+        "journal_full_validate": {
+          "count": 21,
+          "total_wall_ms": 2891.1795,
+          "mean_ms_per_call": 137.6752142857143
+        },
+        "journal_full_serialize": {
+          "count": 21,
+          "total_wall_ms": 4632.2078,
+          "mean_ms_per_call": 220.5813238095238
+        }
+      },
+      "python": {
+        "decode_ms": {
+          "count": 2280,
+          "mean_ms": 5.5301189912342394,
+          "p95_ms": 7.316299999729381,
+          "max_ms": 47.54190000039671
+        },
+        "decide_ms": {
+          "count": 2280,
+          "mean_ms": 10.888499868422498,
+          "p95_ms": 15.106500000001688,
+          "max_ms": 60.976900000241585
+        },
+        "encode_ms": {
+          "count": 2280,
+          "mean_ms": 0.7171270175364809,
+          "p95_ms": 1.0074000001623062,
+          "max_ms": 2.1618999999191146
+        },
+        "state_copy_ms": {
+          "count": 2280,
+          "mean_ms": 3.0367721491298303,
+          "p95_ms": 4.2388000001665205,
+          "max_ms": 45.76989999986836
+        },
+        "evaluate_ms": {
+          "count": 2012,
+          "mean_ms": 4.137248061651754,
+          "p95_ms": 5.605099999229424,
+          "max_ms": 51.888400000279944
+        },
+        "validate_response_ms": {
+          "count": 2280,
+          "mean_ms": 0.7395493420928464,
+          "p95_ms": 1.0461000001669163,
+          "max_ms": 2.3648999995202757
+        }
+      },
+      "worker_response_to_commit_return": {
+        "count": 2265,
+        "mean_ms": 49.714474613686534,
+        "p95_ms": 378.802,
+        "max_ms": 426.086
+      },
+      "unmatched_worker_responses": 5,
+      "trace_scope": "market times 1941000..1971000, not identical to exact wall measurement window; completion trace is successful commit return, not proof for every stale candidate",
+      "backlog_by_interval_ms": {
+        "10000": {
+          "0": 105,
+          "1": 229
+        },
+        "15000": {
+          "0": 333
+        },
+        "30000": {
+          "0": 333
+        }
+      },
+      "required_inputs": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 197,
+          "latest_open_ms": 1960000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 131,
+          "latest_open_ms": 1950000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 65,
+          "latest_open_ms": 1920000,
+          "market_time_ms": 1971000
+        }
+      },
+      "process_tree": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 111,
+        "average_logical_cores": 2.438975502110581,
+        "peak_sampled_rss_mib": 3132.0546875
+      },
+      "errors": [],
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-dispatch-profile-20261012\\D1\\bots-1000\\report.json",
+      "server_sha256": "f98035f5c0a22ee31a9007c789a6fbe49b40324d196235fb2257010c7043f0aa",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "compiler_nonempty_samples": 0,
+      "other_server_nonempty_samples": 0,
+      "driver_global_event_prefilter": false,
+      "effective_pine_manifest_prefilter": false
+    },
+    {
+      "label": "E1",
+      "rate": 1.008040039995534,
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": true,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": false,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "latency": {
+        "view": {
+          "count": 54,
+          "p50_ms": 23.454999999557913,
+          "p95_ms": 211.02559999962978,
+          "max_ms": 219.62450000046374
+        },
+        "place": {
+          "count": 54,
+          "p50_ms": 18.26980000078038,
+          "p95_ms": 187.49909999951342,
+          "max_ms": 273.4333999997034
+        },
+        "cancel": {
+          "count": 54,
+          "p50_ms": 15.181599999777973,
+          "p95_ms": 27.76960000028339,
+          "max_ms": 32.20979999969131
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130935,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 6000,
+          "p95_ms": 21000,
+          "max_ms": 21000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "instances_behind_closed_bars": 131
+      },
+      "phases": {
+        "directory_wait": {
+          "count": 9439,
+          "total_wall_ms": 2.8790999999999993,
+          "mean_ms_per_call": 0.00030502171840237306
+        },
+        "room_wait": {
+          "count": 9439,
+          "total_wall_ms": 47.276300000000006,
+          "mean_ms_per_call": 0.005008613200550906
+        },
+        "room_held": {
+          "count": 9440,
+          "total_wall_ms": 6426.203400000001,
+          "mean_ms_per_call": 0.6807418855932205
+        },
+        "venue_wait": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_compute": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_commit": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_fallback": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "order_prepare": {
+          "count": 201,
+          "total_wall_ms": 22.189099999999996,
+          "mean_ms_per_call": 0.11039353233830844
+        },
+        "order_apply": {
+          "count": 201,
+          "total_wall_ms": 186.92509999999993,
+          "mean_ms_per_call": 0.9299756218905469
+        },
+        "order_receipt": {
+          "count": 201,
+          "total_wall_ms": 1.7307000000000006,
+          "mean_ms_per_call": 0.008610447761194033
+        },
+        "order_journal": {
+          "count": 201,
+          "total_wall_ms": 33.5171,
+          "mean_ms_per_call": 0.16675174129353235
+        },
+        "order_publish": {
+          "count": 201,
+          "total_wall_ms": 1.4421999999999997,
+          "mean_ms_per_call": 0.0071751243781094515
+        },
+        "bot_state_copy": {
+          "count": 24158,
+          "total_wall_ms": 59.0307,
+          "mean_ms_per_call": 0.002443525954135276
+        },
+        "bot_blocking_wait": {
+          "count": 24158,
+          "total_wall_ms": 430.1956,
+          "mean_ms_per_call": 0.01780758340922262
+        },
+        "bot_turn": {
+          "count": 24155,
+          "total_wall_ms": 106284.3125,
+          "mean_ms_per_call": 4.40009573587249
+        },
+        "bot_observation": {
+          "count": 2074,
+          "total_wall_ms": 128.1722,
+          "mean_ms_per_call": 0.06179951783992286
+        },
+        "bot_wave_build": {
+          "count": 179,
+          "total_wall_ms": 20.6094,
+          "mean_ms_per_call": 0.11513631284916201
+        },
+        "bot_wave_reuse": {
+          "count": 5980,
+          "total_wall_ms": 0.4991,
+          "mean_ms_per_call": 8.346153846153847e-05
+        },
+        "bot_event_prefilter": {
+          "count": 24158,
+          "total_wall_ms": 3321.1495999999997,
+          "mean_ms_per_call": 0.1374761818031294
+        },
+        "bot_event_skip": {
+          "count": 22084,
+          "total_wall_ms": 2.802,
+          "mean_ms_per_call": 0.00012687918855279842
+        },
+        "bot_trigger": {
+          "count": 2074,
+          "total_wall_ms": 215.866,
+          "mean_ms_per_call": 0.10408196721311476
+        },
+        "bot_evaluate": {
+          "count": 2071,
+          "total_wall_ms": 102608.07699999999,
+          "mean_ms_per_call": 49.54518445195557
+        },
+        "bot_worker_acquire": {
+          "count": 2070,
+          "total_wall_ms": 74778.60869999998,
+          "mean_ms_per_call": 36.124931739130425
+        },
+        "bot_wire_encode": {
+          "count": 2070,
+          "total_wall_ms": 3226.5121999999997,
+          "mean_ms_per_call": 1.5587015458937197
+        },
+        "bot_worker_roundtrip": {
+          "count": 2071,
+          "total_wall_ms": 20127.8834,
+          "mean_ms_per_call": 9.718920038628681
+        },
+        "bot_wire_decode": {
+          "count": 2071,
+          "total_wall_ms": 2292.5021,
+          "mean_ms_per_call": 1.1069541767262192
+        },
+        "scheduler_admission": {
+          "count": 1789,
+          "total_wall_ms": 22.3593,
+          "mean_ms_per_call": 0.012498211291224148
+        },
+        "scheduler_apply": {
+          "count": 1789,
+          "total_wall_ms": 314.6644,
+          "mean_ms_per_call": 0.1758884292901062
+        },
+        "scheduler_mutation_build": {
+          "count": 1789,
+          "total_wall_ms": 37.8105,
+          "mean_ms_per_call": 0.02113499161542761
+        },
+        "scheduler_checkpoint": {
+          "count": 111,
+          "total_wall_ms": 0.03259999999999999,
+          "mean_ms_per_call": 0.0002936936936936936
+        },
+        "scheduler_install": {
+          "count": 1790,
+          "total_wall_ms": 35.392300000000006,
+          "mean_ms_per_call": 0.01977223463687151
+        },
+        "scheduler_materialize": {
+          "count": 17,
+          "total_wall_ms": 37.1784,
+          "mean_ms_per_call": 2.186964705882353
+        },
+        "scheduler_delta_clone": {
+          "count": 111,
+          "total_wall_ms": 0.3258000000000001,
+          "mean_ms_per_call": 0.002935135135135136
+        },
+        "scheduler_delta_between": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "scheduler_publish": {
+          "count": 9440,
+          "total_wall_ms": 11.968599999999995,
+          "mean_ms_per_call": 0.001267860169491525
+        },
+        "journal_request_clone": {
+          "count": 1790,
+          "total_wall_ms": 2.2751,
+          "mean_ms_per_call": 0.0012710055865921789
+        },
+        "journal_queue": {
+          "count": 2981,
+          "total_wall_ms": 8870.843,
+          "mean_ms_per_call": 2.9757943643072795
+        },
+        "journal_operation": {
+          "count": 2982,
+          "total_wall_ms": 5544.390899999999,
+          "mean_ms_per_call": 1.8592860160965792
+        },
+        "journal_validate": {
+          "count": 1791,
+          "total_wall_ms": 4268.349099999999,
+          "mean_ms_per_call": 2.3832211613623673
+        },
+        "journal_serialize": {
+          "count": 1791,
+          "total_wall_ms": 496.77029999999996,
+          "mean_ms_per_call": 0.27737035175879393
+        },
+        "journal_compress": {
+          "count": 1791,
+          "total_wall_ms": 635.5192,
+          "mean_ms_per_call": 0.3548404243439419
+        },
+        "bot_worker_start": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_request_clone": {
+          "count": 2074,
+          "total_wall_ms": 1000.6016000000002,
+          "mean_ms_per_call": 0.4824501446480232
+        },
+        "bot_state_restore": {
+          "count": 2039,
+          "total_wall_ms": 2.4188,
+          "mean_ms_per_call": 0.0011862677783227072
+        },
+        "bot_dispatch_queue": {
+          "count": 24158,
+          "total_wall_ms": 8732356.4026,
+          "mean_ms_per_call": 361.4685157132213
+        },
+        "bot_queue_discard": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "journal_full_validate": {
+          "count": 18,
+          "total_wall_ms": 3910.5191000000004,
+          "mean_ms_per_call": 217.25106111111114
+        },
+        "journal_full_serialize": {
+          "count": 18,
+          "total_wall_ms": 446.91420000000005,
+          "mean_ms_per_call": 24.82856666666667
+        }
+      },
+      "python": {
+        "decode_ms": {
+          "count": 2068,
+          "mean_ms": 0.363481721459469,
+          "p95_ms": 0.602699999944889,
+          "max_ms": 1.6024999995352118
+        },
+        "decide_ms": {
+          "count": 2068,
+          "mean_ms": 8.289625580277136,
+          "p95_ms": 10.933700000350655,
+          "max_ms": 45.3853999997591
+        },
+        "encode_ms": {
+          "count": 2068,
+          "mean_ms": 0.7026570599534688,
+          "p95_ms": 1.0032000000137486,
+          "max_ms": 1.4934000000721426
+        },
+        "state_copy_ms": {
+          "count": 2068,
+          "mean_ms": 2.9590686170193354,
+          "p95_ms": 4.229999999552092,
+          "max_ms": 34.00999999939813
+        },
+        "evaluate_ms": {
+          "count": 2033,
+          "mean_ms": 1.1946578455441086,
+          "p95_ms": 1.5471000006073155,
+          "max_ms": 37.0959000001676
+        },
+        "validate_response_ms": {
+          "count": 2068,
+          "mean_ms": 0.7168189555270016,
+          "p95_ms": 1.0234999999738648,
+          "max_ms": 1.5788000000611646
+        }
+      },
+      "worker_response_to_commit_return": {
+        "count": 2054,
+        "mean_ms": 34.91392843232717,
+        "p95_ms": 267.213,
+        "max_ms": 302.281
+      },
+      "unmatched_worker_responses": 8,
+      "trace_scope": "market times 1941000..1971000, not identical to exact wall measurement window; completion trace is successful commit return, not proof for every stale candidate",
+      "backlog_by_interval_ms": {
+        "10000": {
+          "0": 203,
+          "1": 131
+        },
+        "15000": {
+          "0": 333
+        },
+        "30000": {
+          "0": 333
+        }
+      },
+      "required_inputs": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 197,
+          "latest_open_ms": 1960000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 131,
+          "latest_open_ms": 1950000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 65,
+          "latest_open_ms": 1920000,
+          "market_time_ms": 1971000
+        }
+      },
+      "process_tree": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 110,
+        "average_logical_cores": 1.1987360446670285,
+        "peak_sampled_rss_mib": 3214.93359375
+      },
+      "errors": [],
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-dispatch-profile-20261012\\E1\\bots-1000\\report.json",
+      "server_sha256": "07a1df5b439a11d3d8a36e33a779859386c0db7eddf624d6922d79f75a460d32",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "compiler_nonempty_samples": 1,
+      "other_server_nonempty_samples": 0,
+      "driver_global_event_prefilter": false,
+      "effective_pine_manifest_prefilter": true
+    },
+    {
+      "label": "E2",
+      "rate": 0.9807735511157191,
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "latency": {
+        "view": {
+          "count": 57,
+          "p50_ms": 18.549399999756133,
+          "p95_ms": 71.75769999957993,
+          "max_ms": 140.6251999997039
+        },
+        "place": {
+          "count": 54,
+          "p50_ms": 17.772299999705865,
+          "p95_ms": 108.11519999970187,
+          "max_ms": 140.27050000004238
+        },
+        "cancel": {
+          "count": 54,
+          "p50_ms": 16.07700000022305,
+          "p95_ms": 29.55969999948138,
+          "max_ms": 32.51819999968575
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130998,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 6000,
+          "p95_ms": 21000,
+          "max_ms": 21000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "instances_behind_closed_bars": 68
+      },
+      "phases": {
+        "directory_wait": {
+          "count": 10635,
+          "total_wall_ms": 2.4800999999999997,
+          "mean_ms_per_call": 0.00023320169252468264
+        },
+        "room_wait": {
+          "count": 10635,
+          "total_wall_ms": 32.0086,
+          "mean_ms_per_call": 0.0030097414198401507
+        },
+        "room_held": {
+          "count": 10636,
+          "total_wall_ms": 4360.7107000000005,
+          "mean_ms_per_call": 0.4099953647987966
+        },
+        "venue_wait": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_compute": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_commit": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_fallback": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "order_prepare": {
+          "count": 201,
+          "total_wall_ms": 22.378799999999984,
+          "mean_ms_per_call": 0.11133731343283575
+        },
+        "order_apply": {
+          "count": 201,
+          "total_wall_ms": 174.13509999999997,
+          "mean_ms_per_call": 0.8663437810945271
+        },
+        "order_receipt": {
+          "count": 201,
+          "total_wall_ms": 1.6348000000000003,
+          "mean_ms_per_call": 0.008133333333333334
+        },
+        "order_journal": {
+          "count": 201,
+          "total_wall_ms": 31.328699999999998,
+          "mean_ms_per_call": 0.1558641791044776
+        },
+        "order_publish": {
+          "count": 201,
+          "total_wall_ms": 1.2927999999999997,
+          "mean_ms_per_call": 0.006431840796019899
+        },
+        "bot_state_copy": {
+          "count": 27268,
+          "total_wall_ms": 53.5586,
+          "mean_ms_per_call": 0.0019641557870030803
+        },
+        "bot_blocking_wait": {
+          "count": 27268,
+          "total_wall_ms": 404.958,
+          "mean_ms_per_call": 0.01485103417925774
+        },
+        "bot_turn": {
+          "count": 27278,
+          "total_wall_ms": 92410.28959999999,
+          "mean_ms_per_call": 3.3877223256837006
+        },
+        "bot_observation": {
+          "count": 2152,
+          "total_wall_ms": 133.4388,
+          "mean_ms_per_call": 0.06200687732342007
+        },
+        "bot_wave_build": {
+          "count": 216,
+          "total_wall_ms": 15.2165,
+          "mean_ms_per_call": 0.07044675925925926
+        },
+        "bot_wave_reuse": {
+          "count": 7120,
+          "total_wall_ms": 0.4707,
+          "mean_ms_per_call": 6.610955056179776e-05
+        },
+        "bot_event_prefilter": {
+          "count": 27268,
+          "total_wall_ms": 2676.5996000000005,
+          "mean_ms_per_call": 0.09815899955992374
+        },
+        "bot_event_skip": {
+          "count": 25116,
+          "total_wall_ms": 2.2255,
+          "mean_ms_per_call": 8.860885491320273e-05
+        },
+        "bot_trigger": {
+          "count": 2152,
+          "total_wall_ms": 186.4702,
+          "mean_ms_per_call": 0.08664972118959108
+        },
+        "bot_evaluate": {
+          "count": 2162,
+          "total_wall_ms": 89393.72010000004,
+          "mean_ms_per_call": 41.34769662349678
+        },
+        "bot_worker_acquire": {
+          "count": 2160,
+          "total_wall_ms": 65509.36319999999,
+          "mean_ms_per_call": 30.328408888888884
+        },
+        "bot_wire_encode": {
+          "count": 2161,
+          "total_wall_ms": 2957.6964,
+          "mean_ms_per_call": 1.3686702452568253
+        },
+        "bot_worker_roundtrip": {
+          "count": 2161,
+          "total_wall_ms": 17474.115900000004,
+          "mean_ms_per_call": 8.086124895881538
+        },
+        "bot_wire_decode": {
+          "count": 2162,
+          "total_wall_ms": 1830.9568,
+          "mean_ms_per_call": 0.8468810360777058
+        },
+        "scheduler_admission": {
+          "count": 1929,
+          "total_wall_ms": 19.311600000000002,
+          "mean_ms_per_call": 0.010011197511664075
+        },
+        "scheduler_apply": {
+          "count": 1929,
+          "total_wall_ms": 279.7844,
+          "mean_ms_per_call": 0.14504116122343183
+        },
+        "scheduler_mutation_build": {
+          "count": 1929,
+          "total_wall_ms": 29.814199999999992,
+          "mean_ms_per_call": 0.015455780196993257
+        },
+        "scheduler_checkpoint": {
+          "count": 173,
+          "total_wall_ms": 0.037000000000000005,
+          "mean_ms_per_call": 0.00021387283236994222
+        },
+        "scheduler_install": {
+          "count": 1930,
+          "total_wall_ms": 21.000100000000003,
+          "mean_ms_per_call": 0.010880880829015546
+        },
+        "scheduler_materialize": {
+          "count": 19,
+          "total_wall_ms": 29.264499999999998,
+          "mean_ms_per_call": 1.540236842105263
+        },
+        "scheduler_delta_clone": {
+          "count": 172,
+          "total_wall_ms": 0.28040000000000004,
+          "mean_ms_per_call": 0.0016302325581395351
+        },
+        "scheduler_delta_between": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "scheduler_publish": {
+          "count": 10636,
+          "total_wall_ms": 11.294200000000004,
+          "mean_ms_per_call": 0.001061884166980068
+        },
+        "journal_request_clone": {
+          "count": 1930,
+          "total_wall_ms": 1.6551999999999998,
+          "mean_ms_per_call": 0.0008576165803108807
+        },
+        "journal_queue": {
+          "count": 3158,
+          "total_wall_ms": 3825.5278000000003,
+          "mean_ms_per_call": 1.2113767574414187
+        },
+        "journal_operation": {
+          "count": 3159,
+          "total_wall_ms": 3561.8003,
+          "mean_ms_per_call": 1.1275088002532447
+        },
+        "journal_validate": {
+          "count": 1930,
+          "total_wall_ms": 2675.0836,
+          "mean_ms_per_call": 1.3860536787564766
+        },
+        "journal_serialize": {
+          "count": 1931,
+          "total_wall_ms": 345.81059999999997,
+          "mean_ms_per_call": 0.17908368720870013
+        },
+        "journal_compress": {
+          "count": 1931,
+          "total_wall_ms": 424.5308,
+          "mean_ms_per_call": 0.21985023303987572
+        },
+        "bot_worker_start": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_request_clone": {
+          "count": 2152,
+          "total_wall_ms": 806.4023,
+          "mean_ms_per_call": 0.3747222583643123
+        },
+        "bot_state_restore": {
+          "count": 2041,
+          "total_wall_ms": 2.0103,
+          "mean_ms_per_call": 0.0009849583537481627
+        },
+        "bot_dispatch_queue": {
+          "count": 27268,
+          "total_wall_ms": 6040739.065800002,
+          "mean_ms_per_call": 221.5321646545402
+        },
+        "bot_queue_discard": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "journal_full_validate": {
+          "count": 19,
+          "total_wall_ms": 2329.3599999999997,
+          "mean_ms_per_call": 122.5978947368421
+        },
+        "journal_full_serialize": {
+          "count": 19,
+          "total_wall_ms": 291.8528,
+          "mean_ms_per_call": 15.360673684210527
+        }
+      },
+      "python": {
+        "decode_ms": {
+          "count": 2162,
+          "mean_ms": 0.2961507863059604,
+          "p95_ms": 0.5367999992813566,
+          "max_ms": 0.913599999876169
+        },
+        "decide_ms": {
+          "count": 2162,
+          "mean_ms": 6.873066003703516,
+          "p95_ms": 9.702400000605849,
+          "max_ms": 49.07790000015666
+        },
+        "encode_ms": {
+          "count": 2162,
+          "mean_ms": 0.5742839963119484,
+          "p95_ms": 0.8778999999776715,
+          "max_ms": 1.5892999999778112
+        },
+        "state_copy_ms": {
+          "count": 2162,
+          "mean_ms": 2.539043432013313,
+          "p95_ms": 3.769299999476061,
+          "max_ms": 38.23689999990165
+        },
+        "evaluate_ms": {
+          "count": 2051,
+          "mean_ms": 0.9993862505945895,
+          "p95_ms": 1.3891999997213134,
+          "max_ms": 40.37400000015623
+        },
+        "validate_response_ms": {
+          "count": 2162,
+          "mean_ms": 0.593351850134758,
+          "p95_ms": 0.912600000447128,
+          "max_ms": 1.8553999998403015
+        }
+      },
+      "worker_response_to_commit_return": {
+        "count": 2146,
+        "mean_ms": 19.4579715750233,
+        "p95_ms": 149.347,
+        "max_ms": 242.69
+      },
+      "unmatched_worker_responses": 12,
+      "trace_scope": "market times 1941000..1971000, not identical to exact wall measurement window; completion trace is successful commit return, not proof for every stale candidate",
+      "backlog_by_interval_ms": {
+        "10000": {
+          "0": 266,
+          "1": 68
+        },
+        "15000": {
+          "0": 333
+        },
+        "30000": {
+          "0": 333
+        }
+      },
+      "required_inputs": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 197,
+          "latest_open_ms": 1960000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 131,
+          "latest_open_ms": 1950000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 65,
+          "latest_open_ms": 1920000,
+          "market_time_ms": 1971000
+        }
+      },
+      "process_tree": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 113,
+        "average_logical_cores": 0.9722646278910824,
+        "peak_sampled_rss_mib": 3217.86328125
+      },
+      "errors": [],
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-dispatch-profile-20261012\\E2\\bots-1000\\report.json",
+      "server_sha256": "07a1df5b439a11d3d8a36e33a779859386c0db7eddf624d6922d79f75a460d32",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "compiler_nonempty_samples": 0,
+      "other_server_nonempty_samples": 0,
+      "driver_global_event_prefilter": false,
+      "effective_pine_manifest_prefilter": true
+    },
+    {
+      "label": "D2",
+      "rate": 0.9862252256355013,
+      "qualified": {
+        "order_p95_under_250ms": false,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "latency": {
+        "view": {
+          "count": 50,
+          "p50_ms": 19.67049999984738,
+          "p95_ms": 390.1643999997759,
+          "max_ms": 423.75319999973726
+        },
+        "place": {
+          "count": 48,
+          "p50_ms": 18.912100000306964,
+          "p95_ms": 387.9603000004863,
+          "max_ms": 426.1924000002182
+        },
+        "cancel": {
+          "count": 48,
+          "p50_ms": 15.21370000045863,
+          "p95_ms": 24.23449999969307,
+          "max_ms": 26.10229999936564
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130834,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 8000,
+          "p95_ms": 20000,
+          "max_ms": 21000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "instances_behind_closed_bars": 232
+      },
+      "phases": {
+        "directory_wait": {
+          "count": 20232,
+          "total_wall_ms": 5.5301,
+          "mean_ms_per_call": 0.0002733343218663503
+        },
+        "room_wait": {
+          "count": 20232,
+          "total_wall_ms": 120.4631,
+          "mean_ms_per_call": 0.005954087584025307
+        },
+        "room_held": {
+          "count": 20233,
+          "total_wall_ms": 10791.8,
+          "mean_ms_per_call": 0.5333761676469134
+        },
+        "venue_wait": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_compute": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_commit": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_fallback": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "order_prepare": {
+          "count": 189,
+          "total_wall_ms": 20.943700000000007,
+          "mean_ms_per_call": 0.11081322751322754
+        },
+        "order_apply": {
+          "count": 189,
+          "total_wall_ms": 160.82860000000005,
+          "mean_ms_per_call": 0.8509449735449738
+        },
+        "order_receipt": {
+          "count": 189,
+          "total_wall_ms": 1.529,
+          "mean_ms_per_call": 0.00808994708994709
+        },
+        "order_journal": {
+          "count": 189,
+          "total_wall_ms": 31.0351,
+          "mean_ms_per_call": 0.1642068783068783
+        },
+        "order_publish": {
+          "count": 189,
+          "total_wall_ms": 0.9847999999999999,
+          "mean_ms_per_call": 0.00521058201058201
+        },
+        "bot_state_copy": {
+          "count": 21795,
+          "total_wall_ms": 63.1421,
+          "mean_ms_per_call": 0.0028970910759348475
+        },
+        "bot_blocking_wait": {
+          "count": 21795,
+          "total_wall_ms": 427.1097,
+          "mean_ms_per_call": 0.01959668272539573
+        },
+        "bot_turn": {
+          "count": 21791,
+          "total_wall_ms": 215313.5095,
+          "mean_ms_per_call": 9.880845739066586
+        },
+        "bot_observation": {
+          "count": 21795,
+          "total_wall_ms": 18017.2766,
+          "mean_ms_per_call": 0.8266701812342281
+        },
+        "bot_event_prefilter": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_event_skip": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_trigger": {
+          "count": 21795,
+          "total_wall_ms": 1750.3645999999999,
+          "mean_ms_per_call": 0.08031037393897682
+        },
+        "bot_evaluate": {
+          "count": 2393,
+          "total_wall_ms": 194968.60440000004,
+          "mean_ms_per_call": 81.47455261178439
+        },
+        "bot_worker_acquire": {
+          "count": 2392,
+          "total_wall_ms": 142487.27770000004,
+          "mean_ms_per_call": 59.56825990802677
+        },
+        "bot_wire_encode": {
+          "count": 2392,
+          "total_wall_ms": 3935.6027,
+          "mean_ms_per_call": 1.64531885451505
+        },
+        "bot_worker_roundtrip": {
+          "count": 2390,
+          "total_wall_ms": 43163.667799999996,
+          "mean_ms_per_call": 18.060112050209202
+        },
+        "bot_wire_decode": {
+          "count": 2393,
+          "total_wall_ms": 2831.1925,
+          "mean_ms_per_call": 1.1831142916840787
+        },
+        "scheduler_admission": {
+          "count": 2135,
+          "total_wall_ms": 34.7987,
+          "mean_ms_per_call": 0.016299156908665104
+        },
+        "scheduler_apply": {
+          "count": 2135,
+          "total_wall_ms": 463.8287,
+          "mean_ms_per_call": 0.21724997658079626
+        },
+        "scheduler_mutation_build": {
+          "count": 2135,
+          "total_wall_ms": 49.2697,
+          "mean_ms_per_call": 0.02307714285714286
+        },
+        "scheduler_checkpoint": {
+          "count": 245,
+          "total_wall_ms": 0.08619999999999998,
+          "mean_ms_per_call": 0.00035183673469387747
+        },
+        "scheduler_install": {
+          "count": 2136,
+          "total_wall_ms": 40.4443,
+          "mean_ms_per_call": 0.018934597378277154
+        },
+        "scheduler_materialize": {
+          "count": 21,
+          "total_wall_ms": 48.3167,
+          "mean_ms_per_call": 2.300795238095238
+        },
+        "scheduler_delta_clone": {
+          "count": 241,
+          "total_wall_ms": 0.46789999999999987,
+          "mean_ms_per_call": 0.0019414937759336093
+        },
+        "scheduler_delta_between": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "scheduler_publish": {
+          "count": 20233,
+          "total_wall_ms": 19.486999999999995,
+          "mean_ms_per_call": 0.0009631295408491076
+        },
+        "journal_request_clone": {
+          "count": 2136,
+          "total_wall_ms": 3.1778000000000004,
+          "mean_ms_per_call": 0.001487734082397004
+        },
+        "journal_queue": {
+          "count": 3222,
+          "total_wall_ms": 20524.1883,
+          "mean_ms_per_call": 6.370014990689014
+        },
+        "journal_operation": {
+          "count": 3223,
+          "total_wall_ms": 9654.5955,
+          "mean_ms_per_call": 2.9955307167235494
+        },
+        "journal_validate": {
+          "count": 2137,
+          "total_wall_ms": 3371.9629999999997,
+          "mean_ms_per_call": 1.5778956481048196
+        },
+        "journal_serialize": {
+          "count": 2137,
+          "total_wall_ms": 5313.1661,
+          "mean_ms_per_call": 2.4862733270940574
+        },
+        "journal_compress": {
+          "count": 2137,
+          "total_wall_ms": 831.1619000000001,
+          "mean_ms_per_call": 0.38893865231633135
+        },
+        "bot_worker_start": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_request_clone": {
+          "count": 2397,
+          "total_wall_ms": 1258.3554,
+          "mean_ms_per_call": 0.5249709637046307
+        },
+        "bot_state_restore": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_dispatch_queue": {
+          "count": 21795,
+          "total_wall_ms": 3495692.6127,
+          "mean_ms_per_call": 160.38965876118377
+        },
+        "bot_queue_discard": {
+          "count": 8103,
+          "total_wall_ms": 8216087.919399999,
+          "mean_ms_per_call": 1013.956302529927
+        },
+        "journal_full_validate": {
+          "count": 22,
+          "total_wall_ms": 3142.8868999999995,
+          "mean_ms_per_call": 142.85849545454542
+        },
+        "journal_full_serialize": {
+          "count": 22,
+          "total_wall_ms": 4979.4264,
+          "mean_ms_per_call": 226.33756363636365
+        }
+      },
+      "python": {
+        "decode_ms": {
+          "count": 2398,
+          "mean_ms": 5.7280334028300794,
+          "p95_ms": 7.618600000569131,
+          "max_ms": 53.918200000225625
+        },
+        "decide_ms": {
+          "count": 2398,
+          "mean_ms": 11.192709174328751,
+          "p95_ms": 15.376199999991513,
+          "max_ms": 62.92050000047311
+        },
+        "encode_ms": {
+          "count": 2398,
+          "mean_ms": 0.7347940366816692,
+          "p95_ms": 1.0244000004604459,
+          "max_ms": 1.3745999995080638
+        },
+        "state_copy_ms": {
+          "count": 2398,
+          "mean_ms": 3.167262677215163,
+          "p95_ms": 4.369000000224332,
+          "max_ms": 43.838399999913236
+        },
+        "evaluate_ms": {
+          "count": 2049,
+          "mean_ms": 4.2547637872199005,
+          "p95_ms": 5.72809999994206,
+          "max_ms": 53.075900000294496
+        },
+        "validate_response_ms": {
+          "count": 2398,
+          "mean_ms": 0.7629881150849017,
+          "p95_ms": 1.0696999997890089,
+          "max_ms": 1.4024999991306686
+        }
+      },
+      "worker_response_to_commit_return": {
+        "count": 2383,
+        "mean_ms": 48.91708476710029,
+        "p95_ms": 384.751,
+        "max_ms": 436.964
+      },
+      "unmatched_worker_responses": 5,
+      "trace_scope": "market times 1941000..1971000, not identical to exact wall measurement window; completion trace is successful commit return, not proof for every stale candidate",
+      "backlog_by_interval_ms": {
+        "10000": {
+          "0": 102,
+          "1": 232
+        },
+        "15000": {
+          "0": 333
+        },
+        "30000": {
+          "0": 333
+        }
+      },
+      "required_inputs": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 197,
+          "latest_open_ms": 1960000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 131,
+          "latest_open_ms": 1950000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 65,
+          "latest_open_ms": 1920000,
+          "market_time_ms": 1971000
+        }
+      },
+      "process_tree": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 109,
+        "average_logical_cores": 2.582541098064883,
+        "peak_sampled_rss_mib": 3149.734375
+      },
+      "errors": [],
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-dispatch-profile-20261012\\D2\\bots-1000\\report.json",
+      "server_sha256": "f98035f5c0a22ee31a9007c789a6fbe49b40324d196235fb2257010c7043f0aa",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "compiler_nonempty_samples": 0,
+      "other_server_nonempty_samples": 0,
+      "driver_global_event_prefilter": false,
+      "effective_pine_manifest_prefilter": false
+    },
+    {
+      "label": "E3",
+      "rate": 0.9750660415592338,
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "latency": {
+        "view": {
+          "count": 56,
+          "p50_ms": 18.053900000268186,
+          "p95_ms": 106.72739999972691,
+          "max_ms": 200.23719999971945
+        },
+        "place": {
+          "count": 56,
+          "p50_ms": 16.751900000599562,
+          "p95_ms": 56.62029999984952,
+          "max_ms": 97.49560000000201
+        },
+        "cancel": {
+          "count": 56,
+          "p50_ms": 14.758700000129465,
+          "p95_ms": 18.94350000020495,
+          "max_ms": 27.96829999988404
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130950,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 6000,
+          "p95_ms": 21000,
+          "max_ms": 21000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "instances_behind_closed_bars": 116
+      },
+      "phases": {
+        "directory_wait": {
+          "count": 9864,
+          "total_wall_ms": 3.0511999999999997,
+          "mean_ms_per_call": 0.00030932684509326844
+        },
+        "room_wait": {
+          "count": 9863,
+          "total_wall_ms": 35.8146,
+          "mean_ms_per_call": 0.00363120754334381
+        },
+        "room_held": {
+          "count": 9863,
+          "total_wall_ms": 4692.0928,
+          "mean_ms_per_call": 0.47572673628713374
+        },
+        "venue_wait": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_compute": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_commit": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "venue_fallback": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "order_prepare": {
+          "count": 202,
+          "total_wall_ms": 19.07129999999998,
+          "mean_ms_per_call": 0.09441237623762366
+        },
+        "order_apply": {
+          "count": 202,
+          "total_wall_ms": 154.1588999999999,
+          "mean_ms_per_call": 0.7631628712871282
+        },
+        "order_receipt": {
+          "count": 202,
+          "total_wall_ms": 1.3826,
+          "mean_ms_per_call": 0.006844554455445545
+        },
+        "order_journal": {
+          "count": 202,
+          "total_wall_ms": 27.353499999999997,
+          "mean_ms_per_call": 0.13541336633663364
+        },
+        "order_publish": {
+          "count": 202,
+          "total_wall_ms": 1.3240999999999996,
+          "mean_ms_per_call": 0.006554950495049503
+        },
+        "bot_state_copy": {
+          "count": 27201,
+          "total_wall_ms": 63.633,
+          "mean_ms_per_call": 0.0023393625234366384
+        },
+        "bot_blocking_wait": {
+          "count": 27201,
+          "total_wall_ms": 339.82849999999996,
+          "mean_ms_per_call": 0.012493235542810925
+        },
+        "bot_turn": {
+          "count": 27209,
+          "total_wall_ms": 89614.46789999999,
+          "mean_ms_per_call": 3.2935597743393727
+        },
+        "bot_observation": {
+          "count": 2038,
+          "total_wall_ms": 155.46460000000002,
+          "mean_ms_per_call": 0.07628292443572131
+        },
+        "bot_wave_build": {
+          "count": 147,
+          "total_wall_ms": 14.598600000000001,
+          "mean_ms_per_call": 0.09931020408163266
+        },
+        "bot_wave_reuse": {
+          "count": 6510,
+          "total_wall_ms": 0.5386,
+          "mean_ms_per_call": 8.273425499231951e-05
+        },
+        "bot_event_prefilter": {
+          "count": 27202,
+          "total_wall_ms": 2411.6445,
+          "mean_ms_per_call": 0.08865688184692301
+        },
+        "bot_event_skip": {
+          "count": 25164,
+          "total_wall_ms": 2.4471000000000003,
+          "mean_ms_per_call": 9.724606580829758e-05
+        },
+        "bot_trigger": {
+          "count": 2038,
+          "total_wall_ms": 193.51309999999998,
+          "mean_ms_per_call": 0.09495245338567222
+        },
+        "bot_evaluate": {
+          "count": 2045,
+          "total_wall_ms": 86841.02360000001,
+          "mean_ms_per_call": 42.46504821515893
+        },
+        "bot_worker_acquire": {
+          "count": 2044,
+          "total_wall_ms": 64016.298899999994,
+          "mean_ms_per_call": 31.31912862035225
+        },
+        "bot_wire_encode": {
+          "count": 2044,
+          "total_wall_ms": 2815.4181000000003,
+          "mean_ms_per_call": 1.3774061154598827
+        },
+        "bot_worker_roundtrip": {
+          "count": 2045,
+          "total_wall_ms": 16355.9847,
+          "mean_ms_per_call": 7.9980365281173595
+        },
+        "bot_wire_decode": {
+          "count": 2045,
+          "total_wall_ms": 1762.9633999999999,
+          "mean_ms_per_call": 0.8620847921760391
+        },
+        "scheduler_admission": {
+          "count": 1838,
+          "total_wall_ms": 28.7303,
+          "mean_ms_per_call": 0.015631284004352555
+        },
+        "scheduler_apply": {
+          "count": 1838,
+          "total_wall_ms": 173.31489999999997,
+          "mean_ms_per_call": 0.09429537540805222
+        },
+        "scheduler_mutation_build": {
+          "count": 1838,
+          "total_wall_ms": 33.7207,
+          "mean_ms_per_call": 0.018346409140369967
+        },
+        "scheduler_checkpoint": {
+          "count": 102,
+          "total_wall_ms": 0.029500000000000012,
+          "mean_ms_per_call": 0.00028921568627450993
+        },
+        "scheduler_install": {
+          "count": 1838,
+          "total_wall_ms": 24.198999999999998,
+          "mean_ms_per_call": 0.01316594124047878
+        },
+        "scheduler_materialize": {
+          "count": 19,
+          "total_wall_ms": 33.10600000000001,
+          "mean_ms_per_call": 1.7424210526315793
+        },
+        "scheduler_delta_clone": {
+          "count": 99,
+          "total_wall_ms": 0.3095,
+          "mean_ms_per_call": 0.0031262626262626263
+        },
+        "scheduler_delta_between": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "scheduler_publish": {
+          "count": 9863,
+          "total_wall_ms": 11.597099999999998,
+          "mean_ms_per_call": 0.0011758187164148837
+        },
+        "journal_request_clone": {
+          "count": 1839,
+          "total_wall_ms": 1.5287000000000006,
+          "mean_ms_per_call": 0.000831266992930941
+        },
+        "journal_queue": {
+          "count": 3075,
+          "total_wall_ms": 4877.632200000001,
+          "mean_ms_per_call": 1.5862218536585369
+        },
+        "journal_operation": {
+          "count": 3075,
+          "total_wall_ms": 4017.4907000000003,
+          "mean_ms_per_call": 1.3065010406504065
+        },
+        "journal_validate": {
+          "count": 1839,
+          "total_wall_ms": 3001.2979000000005,
+          "mean_ms_per_call": 1.6320271343121264
+        },
+        "journal_serialize": {
+          "count": 1839,
+          "total_wall_ms": 432.90840000000003,
+          "mean_ms_per_call": 0.23540424143556282
+        },
+        "journal_compress": {
+          "count": 1839,
+          "total_wall_ms": 470.2063,
+          "mean_ms_per_call": 0.2556858618814573
+        },
+        "bot_worker_start": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "bot_request_clone": {
+          "count": 2038,
+          "total_wall_ms": 811.2326999999999,
+          "mean_ms_per_call": 0.3980533366045142
+        },
+        "bot_state_restore": {
+          "count": 2014,
+          "total_wall_ms": 2.3646000000000003,
+          "mean_ms_per_call": 0.0011740814299900696
+        },
+        "bot_dispatch_queue": {
+          "count": 27201,
+          "total_wall_ms": 6154689.7183,
+          "mean_ms_per_call": 226.26703864931434
+        },
+        "bot_queue_discard": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_ms_per_call": null
+        },
+        "journal_full_validate": {
+          "count": 19,
+          "total_wall_ms": 2630.6878,
+          "mean_ms_per_call": 138.45725263157897
+        },
+        "journal_full_serialize": {
+          "count": 19,
+          "total_wall_ms": 386.0484,
+          "mean_ms_per_call": 20.318336842105264
+        }
+      },
+      "python": {
+        "decode_ms": {
+          "count": 2039,
+          "mean_ms": 0.34060828837579865,
+          "p95_ms": 0.6829000003563124,
+          "max_ms": 1.3835999998264015
+        },
+        "decide_ms": {
+          "count": 2039,
+          "mean_ms": 6.799809514478775,
+          "p95_ms": 10.213300000032177,
+          "max_ms": 59.70950000028097
+        },
+        "encode_ms": {
+          "count": 2039,
+          "mean_ms": 0.5381835703730647,
+          "p95_ms": 0.8912000002965215,
+          "max_ms": 1.3989999997647828
+        },
+        "state_copy_ms": {
+          "count": 2039,
+          "mean_ms": 2.489278715056473,
+          "p95_ms": 3.913300000021991,
+          "max_ms": 27.60720000060246
+        },
+        "evaluate_ms": {
+          "count": 2015,
+          "mean_ms": 0.9875879900737029,
+          "p95_ms": 1.5450000000782893,
+          "max_ms": 2.7597999996942235
+        },
+        "validate_response_ms": {
+          "count": 2039,
+          "mean_ms": 0.5633793526301074,
+          "p95_ms": 0.9442000000490225,
+          "max_ms": 1.8322000005355221
+        }
+      },
+      "worker_response_to_commit_return": {
+        "count": 2024,
+        "mean_ms": 23.311097826086957,
+        "p95_ms": 176.393,
+        "max_ms": 263.336
+      },
+      "unmatched_worker_responses": 7,
+      "trace_scope": "market times 1941000..1971000, not identical to exact wall measurement window; completion trace is successful commit return, not proof for every stale candidate",
+      "backlog_by_interval_ms": {
+        "10000": {
+          "0": 218,
+          "1": 116
+        },
+        "15000": {
+          "0": 333
+        },
+        "30000": {
+          "0": 333
+        }
+      },
+      "required_inputs": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 197,
+          "latest_open_ms": 1960000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 131,
+          "latest_open_ms": 1950000,
+          "market_time_ms": 1971000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 65,
+          "latest_open_ms": 1920000,
+          "market_time_ms": 1971000
+        }
+      },
+      "process_tree": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 112,
+        "average_logical_cores": 0.975208706491534,
+        "peak_sampled_rss_mib": 3172.9921875
+      },
+      "errors": [],
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-dispatch-profile-20261012\\E3\\bots-1000\\report.json",
+      "server_sha256": "07a1df5b439a11d3d8a36e33a779859386c0db7eddf624d6922d79f75a460d32",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "compiler_nonempty_samples": 0,
+      "other_server_nonempty_samples": 0,
+      "driver_global_event_prefilter": false,
+      "effective_pine_manifest_prefilter": true
+    }
+  ],
+  "validation": {
+    "test-workspace-candidate5-repeat.log": {
+      "sha256": "a189a28097e1f94558be1eaa1cf9d7b90e96470a3ceed533f93bc50d6216179b",
+      "test_results": [
+        "test result: ok. 327 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 90.46s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 271 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 26.30s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    "clippy-candidate5.log": {
+      "sha256": "3a0f593503f6303088e03b347c0dd14435e874babdda588ffb48fdeb17816790",
+      "test_results": []
+    },
+    "check-default-candidate5.log": {
+      "sha256": "3a8be0f731901c71e8d8812f084604f9ecb5af8013f4d83e54b91d23912e238f",
+      "test_results": []
+    },
+    "test-postgres-candidate5.log": {
+      "sha256": "1503dedef7602ddbae0a6e1723b90ccba0c91779cfa071b1a4cf8fdbb006655d",
+      "test_results": [
+        "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 263 filtered out; finished in 2.72s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    "fixed-candidate5.log": {
+      "sha256": "af9ffa1cc4547f10238ce2488b9e384916734ef986775ca596aa06dbc3c1384d",
+      "test_results": []
+    },
+    "http-candidate5.log": {
+      "sha256": "6b4a494127b0f6926b943afa29c41861dec83c6f5528592eaaee4c30b3dd2fcb",
+      "test_results": []
+    },
+    "python-candidate.log": {
+      "sha256": "bbdfb037eeb75757b315f2b8ed067640be93d1582658ba8ae60480dc8a936326",
+      "test_results": []
+    }
+  },
+  "complete_fixed_execution_equivalence": {
+    "identical_complete_receipts": true,
+    "steps": 59,
+    "canonical_sha256": "48c26aa5e50e9a8417e8ce7de464eb4cff0a511f65288bb686e0d3a15024ecfa",
+    "scope": "3 exact bundled sources; fixed manual real partial fills and closes; not async throughput"
+  },
+  "current_implementation_verified_files": {
+    "bot-plugins/buy-remaining/bot.json": "cbe42ef1b077a71a56c711ce62126826dc0a9bc0e72feea4629f7bd290476871",
+    "bot-plugins/buy-remaining/bot.py": "8282bcc6c5850988c61e5c8261007ec6a43cc83489ff4b2a2b64abcbe648133a",
+    "bot-plugins/pine-strategy/.runtime/LICENSE": "8e1268bc914f002d44b9b1949f2b7f35dff3859b7204b3b04ef82901c3f9c961",
+    "bot-plugins/pine-strategy/.runtime/pine_compat.pyd": "8ef5900e5bfeadfbced7edef772e8b0a00188215448d4417f869b29d09c9c427",
+    "bot-plugins/pine-strategy/.runtime/provenance.json": "7b19de91143fd53e0b95b11f9ae68c92fb3f52309dfda9bf3632ce89737edcd6",
+    "bot-plugins/pine-strategy/bot.json": "9b8d7956b3693fb883cf94b8eb4580b001ec587ffdbeb35f709d241cf53a3e8c",
+    "bot-plugins/pine-strategy/bot.py": "f7020aded47acaa7b1e86f6370550353c67c4a6a4fea7244ca29c0d47cb9ce04",
+    "bot-plugins/pine-strategy/broker.py": "3e381feffb2051b638bed110c29a7bf62e35a98fe8695149f3b56490203a9b7f",
+    "bot-plugins/pine-strategy/incremental-qualified.json": "907b7c92ea56a292a9e38d0384022ebab193051d8ddefec4becfb03130034e83",
+    "bot-plugins/pine-strategy/incremental.py": "1e6eb50d8d170288d56721774901349d206df004faa7f4c5197ad481933e2d51",
+    "bot-plugins/pine-strategy/requirements.txt": "3d821cea89cfca890dbe05adf78a691f9c36bcb965f39b26d3c83c0076d312ae",
+    "bot-plugins/pine-strategy/scripts/basis.pine": "cce058c8e9ce040d4d771029b61ac7e334abb502b64972b7f4ef070454ae5b90",
+    "bot-plugins/pine-strategy/scripts/breakout.pine": "0b3ca54621fa9c57a6979a34f2e1c3bb2f9e5ffa03904a740925283cc697f784",
+    "bot-plugins/pine-strategy/scripts/limit.pine": "da2d01e9c5789f96b8aab5e724fb45d77c31e9860356fcc9c7a81bcbaa25a301",
+    "bot-plugins/pine-strategy/scripts/ma.pine": "5b05dac3d2bd42aff7d3d0d75e6a4d5cd41b64ea6d9e34dfd8d861f3f0b3c165",
+    "bot-plugins/pine-strategy/scripts/perp.pine": "ec941ad46aaf184057b26b36bcb0dce249eecf13228a99192f04e2ee743c9b4f",
+    "bot-plugins/pine-strategy/scripts/rsi.pine": "2a8c15eed0be312d956b1e0f4672006e04f77aa4c9798f4abcc8ee890699b3fc",
+    "bot-plugins/pine-strategy/transport.py": "ee6f44a098a66e5fa19b6b746fae980aaf6f4e08477fe201340afd8740bcbb7d",
+    "bot-plugins/python-sma/bot.json": "7bab45c34fd7a0f230e15a6b09fd4ab90748d18d16f60ff1e5d9e0aa732c9c46",
+    "bot-plugins/python-sma/bot.py": "3087793c314464bbe2785bf4e92a4fe9aa7f4f716c0941c6b95b57ec5f6156dc",
+    "Cargo.lock": "509bab300fde081a5e114ffe8ddf0c53baf43102ce52db652fcecad291e9b6bf",
+    "Cargo.toml": "bc548a64d173d5af10424e2d604da1d97b11dd4bfdd799518f99df46a2c81a8c",
+    "exchange-core/Cargo.toml": "4721acb25c0fa1558067e5837da3bba38ea83a7c7265412184d20b41f772543f",
+    "exchange-core/examples/background_market.rs": "9a470671e77be844ea27467a7a6aefa2a6cacc1e6e3afb3c16b251ab6e5ff4a8",
+    "exchange-core/examples/behavior_market.rs": "85b95dfe3ec956e2ee6cb705c92b884118e1338b732ba21a00e806b69d7e6a69",
+    "exchange-core/examples/benchmark_bot_runtime.rs": "57c48a4bd9780397e3188455dd48c4911caf88af42b06a7d2a133ac28632d16d",
+    "exchange-core/examples/benchmark_margin_risk.rs": "7077693d5ccd170435a654061bb1572700f85d68816a145faa1294b139822db9",
+    "exchange-core/examples/benchmark_margin_view.rs": "ecf1f6d49363aaafd6594f357a94e33e662a6c9faffd65f808d77c5d6bdd8eae",
+    "exchange-core/examples/benchmark_matching_transactions.rs": "c270558984f7fe03e67e112c7b7b968ea640ab41cac596895320b1ab46764a8a",
+    "exchange-core/examples/benchmark_mixed_transactions.rs": "34ab5fc086192997e21a7be5beb1c1c4d1cb1f8107b6a1e73e7c92567d94a8c5",
+    "exchange-core/examples/benchmark_order_transactions.rs": "6384de0ec9ae35714c329d50686e6496ff03e2b104554dbb540b192345670148",
+    "exchange-core/examples/smoke.rs": "2e7772293365556668e0dca7dcc0572067847a53a11c914c91bdd471270d9c10",
+    "exchange-core/src/account.rs": "787306c4eb0443f3f1f5d386079b5a1db8ac68da35f8d8de5358611483ae9c19",
+    "exchange-core/src/actor.rs": "43e8f80929fb072161e24c8bf2731065f9e6c7f902ae3ff4d875233d76481029",
+    "exchange-core/src/agents.rs": "396b1959b638dafca30cabb1fb762183c533714e1b1cb0cff80759a5479f2670",
+    "exchange-core/src/bot_risk.rs": "b4538a7aa7ee390b1760c6e7504b0d762b642c38f7d7ff72e391cefcafa1d527",
+    "exchange-core/src/bots.rs": "bb3df5b91f7f095a0a5830f56087a5bdf50faa1e28070a59616bb6e1cf1df4f8",
+    "exchange-core/src/candles.rs": "e924eb4ec9507feb2d1edd1065cdb7cdd9311e0f4531897ca5df65c5fb702c6e",
+    "exchange-core/src/clock.rs": "b06318f815ee93a6530447eb192c0ed29b5e538c80ca8bd1c8ce9b23eef4562d",
+    "exchange-core/src/conditional_orders.rs": "3325f407ac0fd1f8d79073eeaaafc827b837381a0a1632289562805ac5b958fd",
+    "exchange-core/src/conditional_orders_actor.rs": "9127596a760efc5fd287d1eafb064d8d096a95bfee618971c4f26100834f91a1",
+    "exchange-core/src/engine.rs": "516d5ef0c190f2d83868cff234c5b679a80e2af14ec0e0bf5195fadcd18fa476",
+    "exchange-core/src/funding.rs": "377469bc7c37cc0425b566a274fb4cf77b52d9ef546952e6f85594502436a582",
+    "exchange-core/src/funding_tests.rs": "07d85e5fe928881d1a387a21efaa7ef1780f06bd3b6f21496fb4633dd1efd93b",
+    "exchange-core/src/gateway.rs": "ac844ed205c036039af23ae89c49e7df30f640a1a01ec5518b4dcfdd0346f06b",
+    "exchange-core/src/hedge_tests.rs": "2094dfac297c9b0147e365f5fb4e317f7c189ec9dd22b17f227e7c177108b308",
+    "exchange-core/src/history.rs": "ff9787b0d31a10cf48bdba51c06d851d6d9d7c57bc6f641e314a470f9c0eb446",
+    "exchange-core/src/incremental_risk_tests.rs": "be45e6659aec43270bee4dbaeb3d97ababbbc0b26eff5222e80ca475c8d97f91",
+    "exchange-core/src/jsonl.rs": "a1592c6d4b1876a99d2f6106405798d48e3a855b97740d66a2a718bfc7db293f",
+    "exchange-core/src/lib.rs": "3f5682cf713b4f6229aceaed908a31cb2bab10b23d74c657d49052fc9d260a7b",
+    "exchange-core/src/log.rs": "8bb98ef35159aad095dea388a2f1e094d1e83565e3792fe34464dccfddba1526",
+    "exchange-core/src/market.rs": "40916eb0efa6ddafb3e6167f1fcd076c853cb69abaf92852c99017d90944247f",
+    "exchange-core/src/market_behavior_integration_tests.rs": "b6a06cd9a716b3380f7c4be60a202044928ce1851bd022863546ab4de320424a",
+    "exchange-core/src/market_behaviors_tests.rs": "42a9a8b398b713826dfcf541a7e6c19c95dddeb64ab865518ed39c5822cfcc98",
+    "exchange-core/src/market_bots.rs": "9c070a926029b6cbc48432797747ede51af80c34eed7116357c68bd325cbf1d2",
+    "exchange-core/src/market_bots_tests.rs": "1b8c770128d0d0d3cc3866084c34a64dd342b1ffd757cc77eb5780d6210860ad",
+    "exchange-core/src/market_events.rs": "5990f431f5b8ebc878c78ea50118388c206f2dfcb5e6b7007ddce0043e8fffd6",
+    "exchange-core/src/market_microstructure_integration_tests.rs": "def8e495949bfb2e62c7f93aae4b8f77d828251528f546f7a73b789f94a63643",
+    "exchange-core/src/market_microstructure_tests.rs": "3493a4184d1e8003d5b65834b2a0df7e366a54733f4f446b587b0252bffdbf43",
+    "exchange-core/src/model.rs": "da33f359022714b72eaa4cb0b32899dae9ea66750a4bb781fade22415d332f8b",
+    "exchange-core/src/observation.rs": "c22c06a043f7640bde2bdd7d108c81f0971fdeaf9af59defcc48f0636af62b17",
+    "exchange-core/src/order_protection_tests.rs": "4ea6d999505e881b6e3e7f07b823ed8b1ba234b90ffdff8d17caa9dc3a384b4e",
+    "exchange-core/src/orderbook_nodes.rs": "1fa4478a6d75cae1809403b9c911aee522f2763c4630eb935c314facaef06fdd",
+    "exchange-core/src/orderbook_storage.rs": "d043ffb2e01b7c8ea5e990ba1ed0386dcfb76428a7a030d9aefaf2f171b0ad50",
+    "exchange-core/src/participant.rs": "638de3d376b23a5a07e3abb811f36ac256bc29bd6f37e99da7b702c6fb7e8533",
+    "exchange-core/src/performance.rs": "ba6afde9fe28796a7937245f4e69fdf5bc60ee74d2eed1d79e4964cdceee1c6e",
+    "exchange-core/src/perp.rs": "8350ef61908c95bde9077d9263572da88aa122d45cab17689c5bb4dc24af4e57",
+    "exchange-core/src/perp_incremental_tests.rs": "aadc55ea185c2fedb26fb00f510aeede51ea0ca0e5b41e13d0fd5d0776039952",
+    "exchange-core/src/population.rs": "6cacef77e123eff13d9b0303882afdff40ecb50851fffc45a1a887ebe95c72e3",
+    "exchange-core/src/population_tests.rs": "e6203ae10dd4b529a5ebb9e400acb14b20fa61f487337a0fd7cfc1344c15517d",
+    "exchange-core/src/portfolio.rs": "0324f7ff3b1b82a20d80ae3d87ef16bf1ee02bcd6a23d97d693bee1004f15308",
+    "exchange-core/src/position_protection.rs": "5ca7a2752651cc4614b412dcf7c20311f43e777dcf10f2b50ecb68a9aaf6e787",
+    "exchange-core/src/position_protection_actor.rs": "694a08d7ef368d8d2d374acab9c2d4b193afd77e61fec08da25ced4b478bff6b",
+    "exchange-core/src/price_link.rs": "fc582a19fb9077b2b5ae057fdc20a6e02c5e7fea70c1f8432a87591e1680b8a3",
+    "exchange-core/src/price_link_tests.rs": "a52736b6fca9e03665346dba8b31400efbe0217c064658f9cc9b21fdac38cb97",
+    "exchange-core/src/replay.rs": "4dfe90ab4e8419b57da25b2408998fb2eea7a02ff58d1f9f8b8483b5ec5200f5",
+    "exchange-core/src/risk.rs": "51b58e138879abcc718269dad90aaf36f9f83c88f25728f2bfd0eee690ffc11c",
+    "exchange-core/src/risk_scope.rs": "ac3dd50bc092e090925cda83894004ce0fda2dc17481ce9e4d14a65a49e36bde",
+    "exchange-core/src/room.rs": "829cf29d1c797c720f5c57a1d2b562cf39ab6f08b226a03f5594e21853b3932b",
+    "exchange-core/src/room_bot_event_tests.rs": "1672cb85d27ec8df1558acae6b2dfbef16db16c92dc285b4aeb9b0c88d312656",
+    "exchange-core/src/room_incremental_risk_tests.rs": "8710263cbd485520c9c8f4a59720bcee97e4707db5ebb84011eddc2bd9633ad9",
+    "exchange-core/src/scenario.rs": "11de107988b2178121178c7a6ee03fd6539b890dee419e7cde7e06c7efd5df21",
+    "exchange-core/src/scheduler.rs": "768ae4e62a31afecfcb8c2e25c4d3e23cbb61dae89907f6cfc5d74122fe9fa65",
+    "exchange-core/src/shared_map.rs": "1122506f67aec42cac8054c928ba349a3e1ffa6fb3e41de582bfe2bdbc0de061",
+    "exchange-core/src/simulation.rs": "350c9aeeb201705557b8add7e77e0e5dc3d9d7e940175e2551fa4fa81045fe2f",
+    "exchange-core/src/spot.rs": "7d1f1afeced8132b884d970fb163da53542015a6ce47c47a1c4b45d12cae81d9",
+    "exchange-core/src/trading.rs": "79d76465a79fd9096e132385d90ebb7e335e0bbcd1a69410dd791369497c286f",
+    "exchange-core/src/training.rs": "8944b494cb20a68c30a7ab3f9164f9b36c54229d0b8c5aa3d1822fe840d46704",
+    "exchange-core/src/training_scenarios.rs": "733840c24b92fdc7c04e985e7b40fd1c9ffd590784b1798a14c790ea0696e6f8",
+    "exchange-core/src/transfer.rs": "384bd70e3711dca571da5133c0e304437156ad990e7d00bcba91e7815329f4ac",
+    "exchange-core/src/venue_rules.rs": "128b9e31e75b6a3db7a3fa67e595fdf3bc9f3ed792e03da0c4e84bfa012d4569",
+    "exchange-core/tests/fixtures/legacy_orderbook.json": "6a61160ee8c1d3735e0c3cae0fe0bb635e8a4685ace6578750a4f329b3e7533e",
+    "exchange-core/tests/orderbook_legacy_contract.rs": "afd85620997ea17431f0fe61fa347d2801b0cf47bdf6ae933f4d44bd194acce0",
+    "exchange-server/Cargo.toml": "a0abe8ab138d9efa96e8328fc1be64a9238fd53667c9b2363830005e06c59a98",
+    "exchange-server/examples/benchmark_margin_progress.rs": "304d4d23b163809a0d19c4af227102fa5dadf6c3683d86db5d483470de0d706d",
+    "exchange-server/examples/benchmark_room_http.rs": "3af23f8039823db8c7f6395f422a4468b2745eb5309cdb19f76718f956f2e24a",
+    "exchange-server/migrations/0001_initial_schema.sql": "0295b7a71adb9d4de4c918def42f1a8f0736ceb8d3b184af548792f35b7350a8",
+    "exchange-server/migrations/0002_access_control.sql": "3b34f6fdd85ebc5fdf8647f2949e31b8ea78c4624bb0f3605ba4b038c7cf7a74",
+    "exchange-server/migrations/0003_instrument_projection_scope.sql": "3a12e51325f555e8979b149f7d5626964279a3060a697b8aae852a4270169600",
+    "exchange-server/migrations/0004_transfer_journal.sql": "1c50e7d799c200c0417d31e38726c965a260ee3e67097fc2823eb95bb8601cd9",
+    "exchange-server/migrations/0005_margin_projection_fields.sql": "7f70fdf3614f5cd760b3e3ae7b788b1b58de429e69f67f803347b738a561964f",
+    "exchange-server/migrations/0006_claim_unowned_legacy_rooms.sql": "048af381777427fa0fb89a3a61f2f70ee84d6d787c7a3ada18cbb505cfd49063",
+    "exchange-server/migrations/0007_room_mutation_journal.sql": "fac4be10002a68d1a3faf7cf90d8d5e87926d322e0121eb7736c7afb3cbdf771",
+    "exchange-server/migrations/0008_portfolio_margin_projection_fields.sql": "964f81082fddbbad72348606d3d9f636f8f5435623a25fd9ae1303f1b574e12f",
+    "exchange-server/migrations/0009_authoritative_market_time.sql": "d295f586ae6d5a14554311112576a24003a66616db98fb61b9fc98c7fb486aa8",
+    "exchange-server/migrations/0010_order_request_idempotency.sql": "fe9c643d71b388a89aedf901bd0ee83772a6e0c5029a986cd617164a895555de",
+    "exchange-server/migrations/0011_room_writer_leases.sql": "31f70d46696ed6ff50120831bbf755cf1bb96193d93b84ddc62a078e7326bdfb",
+    "exchange-server/migrations/0012_room_writer_owner_url.sql": "07d6231139200054834f4fef78e262184fe124dedcb60b3a5f82a50f486f318b",
+    "exchange-server/migrations/0013_scheduler_and_control_idempotency.sql": "3d942896eaa8ffa5b637e46d72a85a393ed25b06e333bf5b142f8b0999d03e49",
+    "exchange-server/migrations/0014_external_action_quota.sql": "4daa938c9196d93379897a70a4e0afbf08c360e0472d9dee7ba15b4c2bef3e4c",
+    "exchange-server/migrations/0015_recovery_heads.sql": "6263abb65c4dd22110bb624f1090617496a7720e5fbf2b889d95842078ddaab4",
+    "exchange-server/migrations/0016_scheduler_deltas.sql": "8ca02ba0cd5aa693f8da53c83ec2403ca2c5ea738c6271dc52bf81b67a0a2efd",
+    "exchange-server/migrations/0017_competition_platform.sql": "1374c7e370b58145697b547727db56d43a09463dffff57751c320c55886fdb18",
+    "exchange-server/migrations/0018_async_query_projections.sql": "958b496bd70930e7a47b0d2d76f0619d274aefc0c7460161b0b901072f921872",
+    "exchange-server/migrations/0019_fast_checkpoint_storage.sql": "b67a0771ab1c3471c58bb213c1ce7ebe074b66e727a92d65f27d2d567016813f",
+    "exchange-server/src/account_activity.rs": "a6d6be7dfd427715434de5437cf7f54a7ce30c5a84924bdd0b09dbba13e23aa1",
+    "exchange-server/src/account_events.rs": "3febeb0a640e4a5a16a126de758a19fbc691ab0358d9166f50fe70c89c3fbb17",
+    "exchange-server/src/auth.rs": "b28092a588b23feec6e4498a5b7fea0f6befd15c9aed88ec760dd6f04011bba8",
+    "exchange-server/src/bench_execution_timing.rs": "74076bfdec6cc6958abc07625bf832a5bba5219ea31cb9a96cf1a599e5e0fb7f",
+    "exchange-server/src/bin/journal-audit.rs": "cc1fdea8a71f62a4a298719ccab7a1428541ba9ded60dc25e0d7a7f0aeebef37",
+    "exchange-server/src/bot_dispatch.rs": "b8784b9ddc5405a76d87d662e9b0574fd661bd7c70522b2fd62b7871a908357a",
+    "exchange-server/src/bot_history.rs": "475cbc8b9505bede5ca495846107cf8a5071f8c305ad3b5802171f258ea3241a",
+    "exchange-server/src/bot_plugins.rs": "0930a3fcfc23c8168b88cce94db2abc85b53836134c0b9405eb39509836b0dfb",
+    "exchange-server/src/bot_wire.rs": "f214e75667cd074b278c4f7ef4262d6006d65dd2e803abe56df88e1d2779e55e",
+    "exchange-server/src/bot_workers.rs": "423809095be11d91bf9aae2e8fa13f8d8c04c0518cdc4d5b0c94c46d1b6bfa73",
+    "exchange-server/src/competition/tests.rs": "92b3489b4a1152575ca27f3e747e02114bf718731d8602580b2ebe157093269d",
+    "exchange-server/src/competition.rs": "a6b7472b7479f01e8ee8c31fddcadf9a630fe131dbb82d0d905cbf5a3cce67d8",
+    "exchange-server/src/event_output_tests.rs": "fcdbb42e041c816c11671f9f429711057edeb01023fc724a26f5c4eeddbab8df",
+    "exchange-server/src/funding_tests.rs": "3f3700395aa2ff138438e593f309f5da467781bc3029d26829a5a200ccb31223",
+    "exchange-server/src/hedge_tests.rs": "a0cc6a7bf096a9e8d6b56c8f982490fc2a187bbe85fe7059cc59188e32bfacd1",
+    "exchange-server/src/historical_queries.rs": "9c0a520437db5dc0ff4f7a94b2dcbefea797f107507f2a2cf04d231b682dbfd6",
+    "exchange-server/src/journal/pg_cached.rs": "81620904fc09568a8f035b74dab728be851c2cf5b59deb15aa487446f62014de",
+    "exchange-server/src/journal/projection.rs": "30a556773908d93acc3c2d0c212849a4a4b668dcfe4b67b2e4b562a8fd4607c9",
+    "exchange-server/src/journal/snapshot_bytes.rs": "4f57de5f952e5fc643e351ea0f93ebd13d357a741de0daa66c38886a7a67722d",
+    "exchange-server/src/journal/stored_mutation.rs": "b484bc2c5b0c318003348427bc5dc19f56aa97c8a991ad7067712ae6c15b0edb",
+    "exchange-server/src/journal.rs": "0491f24292f4329fb312ecf6b5db8241aff4c714b7d2a2fcc39bcc8b6ed5dbfe",
+    "exchange-server/src/journal_worker.rs": "cb46dec00349027ab4345e3c3f1b916d16eb90611a99c1090898a2f79344ba13",
+    "exchange-server/src/lib.rs": "6e36a3b0d3766bb33875b0d00e514fbd2a099e97fba04aa41b11dd9348b8ae8d",
+    "exchange-server/src/main.rs": "35cc5c8f67e49ccec8258b6cc569856db2a77eddc51810b0a91f008aa7e9a371",
+    "exchange-server/src/market_analysis.rs": "eb3e6ec6c80d877a73f6ad16b6180de7a8c5c5bb9558102debd04ab950b65d25",
+    "exchange-server/src/market_behavior_server_tests.rs": "618bde4afb8eb7c2fedbe0d5f8512cd0e1aef7ebf66da30586c1e13bd7a93f10",
+    "exchange-server/src/market_events.rs": "02d3d29c3ff88dc1e5e831ece0e4e946b7c761ee668a79b929091bd60a8f7557",
+    "exchange-server/src/market_events_tests.rs": "1b6ff32c4ac026307498ddcb4062179e52075400755a46a988d5487f7e098093",
+    "exchange-server/src/memory_diagnostics.rs": "709f4dc8efc03f9db6cdb4dc36a1f093a3edbb570705aa35fa9d98c6f38077cc",
+    "exchange-server/src/native_delivery_benchmark.rs": "02f74bba110007feee5e27bc10488ba907bc4df0fe3401026d3354e43d05b3d3",
+    "exchange-server/src/order_protection_tests.rs": "a05114a40766c19aa976187d20d3a7174128cd6f460bd6247dd0009fc381d4e9",
+    "exchange-server/src/platform.rs": "c94937c4ca36de42f47dfb55faf424661e42ce1ac2ab238e9662ab8201df491f",
+    "exchange-server/src/position_protection_tests.rs": "8fd100b96066b37dd990b18e2746586a994f17947983b4d4730d40aa1ca0b8fd",
+    "exchange-server/src/price_link_tests.rs": "4e01a5bf83a9ede4b0cb208180c6a1f9ab7b8d1c4f6c6c6953a3a89b7073185d",
+    "exchange-server/src/realtime.rs": "98cf2bf6ad3b1f8b71b8945c36605e689177760260048a8a3095eacc9502de75",
+    "exchange-server/src/realtime_tests.rs": "4ed72b2887dd9a7ca520407b1f149bbd151b1cd99a65a8160cfb53cdccb4f4ca",
+    "exchange-server/src/risk_benchmark.rs": "a55dc21e3fe56d8536779010cde2f944694aa4ee458048cc168e3f2c0065c55f",
+    "exchange-server/src/risk_benchmark_realtime.rs": "5e84dc674e62b53d7fd8e14688fc34e2b16daa9719fc69eaa1cc90b999ff7f39",
+    "exchange-server/src/room_portal/tests.rs": "3b453d02a2f889cb5eb211a7594cf85f90a0625616842c124280da9611eb4161",
+    "exchange-server/src/room_portal.rs": "926000775353c32042a1cd3b3c80b643198e9dfe16ebdebe76ad37011c9f2397",
+    "exchange-server/src/room_runtime.rs": "4f7e7e3d715c833472024202dee93bcd13dde1abdb67101708e99cb0d2fe0fe1",
+    "exchange-server/src/scheduler_delta.rs": "9815e82c9ead5c055e64d5962bbca289b9c702728a14296859c65e29ab6f6eed",
+    "exchange-server/src/simulation_ws/tests.rs": "3b5cd6ffd808b5c2f221252d219227fdd2c44f4b6afb4ca45ed98d89172270e5",
+    "exchange-server/src/simulation_ws.rs": "0abdf6cb2bb14fea5929f972a2c04ce785886437ebe88c226fb8d5befd0694dd",
+    "exchange-server/src/storage_audit.rs": "85295e0a4e83c54c10520513a33d1a35c65a26b00986eabfc8cea2f06d0ba367",
+    "exchange-server/src/stream_output.rs": "9248a7b15b3e1dffdb5d1aaca48375f0c04b6db58e1666088263eb90443da941",
+    "exchange-server/src/venue_order_tests.rs": "3d76c9c871b898d1c61aa899e4044e48738e232ea49c318ac0c94029d4ac9faa",
+    "exchange-server/src/venue_orders.rs": "8bee595821e040bf9f1f15c85d874a2f1174e91bae5b4b8e6e3caeb381571656",
+    "exchange-server/src/wallet_output.rs": "135479b4d92c676e7bf8fbb1cb2905a928184fa7aa57474f7996607d7aa647ab",
+    "exchange-server/src/write_profile.rs": "65739cf8a6856150c41ca3f6e935b3f7acd247f45a855443de9770b483249dd7",
+    "marketforge-candlescope-plugin/Cargo.toml": "0454191e8f0226cdfa8960135a51b65df6e826bd8ee8d87d16e8d52c8d2e6982",
+    "marketforge-candlescope-plugin/plugin/manifest.json": "95d438c56f9934b9ce3ca09df462ddcb5d730a0caf356cfda6511e95c116ce1e",
+    "marketforge-candlescope-plugin/README.md": "9dbaca5d10b27ebc2f6aa94c9dca820baf69a23ce5d8cacc9c40300e7f6b9a3c",
+    "marketforge-candlescope-plugin/src/adapter.rs": "a08730f48205679bdaddb27f879af2a32ce085ad382ea22a53261989ad68daea",
+    "marketforge-candlescope-plugin/src/error.rs": "d47aff7459760945d19b5a02a63e494c610041041b7615f0a5874fd59cfe0bca",
+    "marketforge-candlescope-plugin/src/lib.rs": "f99308988a52f638cec714501e415987f84e9a7043909abb8e1b42001f2a0ab9",
+    "marketforge-candlescope-plugin/src/main.rs": "6a155e1011a178b345f21a2c69acbbd6e5228f726f064a420a974baccdfd5d90",
+    "marketforge-candlescope-plugin/src/platform.rs": "6bb859d855031fffe07aeb7a9602877bcbfcb3d18af5ea42c4df31e5da4b0698",
+    "marketforge-candlescope-plugin/src/provider.rs": "d7e69803db53a4cefc777b31705aa5d9cb5ca9ca70d9ff7c965a2da124760b55",
+    "marketforge-candlescope-plugin/tests/platform_protocol.rs": "7d30d26ed1f9f5a7b31356aeb32de61dc3042054a6b6347b4ba318335359eb14",
+    "marketforge-candlescope-plugin/tests/provider_contract.rs": "b9a1a7aa2ce429ec897f4e8bfd0de33dbbab31c99c6392947a7af5689404db4a",
+    "marketforge-cli/Cargo.toml": "cd571110dd907ca81a813fdde87f62e2e2b1c4081f59423c1d06358461cd826a",
+    "marketforge-cli/src/main.rs": "9c4b4409185363ae84c09a77323cd89d014cbf6b73f2b063b1ddefecc3e145de",
+    "python/examples/buy_remaining.py": "3406efc8ef9473b9bbfd83ae784bc8b569f070ffe4cd8f7259ff1e5648ce119b",
+    "python/marketforge/__init__.py": "8068c385443be28e8ccd94ad6e5c76135097a62d61adb461f1bef6ed4715da21",
+    "python/marketforge/agents/__init__.py": "7700fe2941a49c1f7f39b494d32a05ffd180467874111ebf2050a02e820136ec",
+    "python/marketforge/agents/__main__.py": "c4ae0952bb7bdffb0a94e6de2b27d026943382c38b24d91d6ef1e85e5d739762",
+    "python/marketforge/agents/advanced_tools.py": "d8bc7ca7e6e05a2a6cbf46a6e68ef41b524f97c963d617d535fe545418abe6ff",
+    "python/marketforge/agents/alerts.py": "89dd3112c2c51abd63dbe17185ba004440e3630eeb0648868ff0418c2e27a4f0",
+    "python/marketforge/agents/combined_alerts.py": "d05450c974c21476d319e69c58ef12ed3f782a29810f508168ea05a707a526e7",
+    "python/marketforge/agents/connectors.py": "92adae0d36f5bc035c5593aad22392b5fe7b3f911cd264e6fc46513094091664",
+    "python/marketforge/agents/event_data.py": "4e1279bab8563ee3e3cd2491f544037aa0c727e79639eb3f4fad0b2a511f5421",
+    "python/marketforge/agents/external.py": "3f06897743d0edbc26f8c6055a9469ec2d3972f30f567a4defea885cecb451f6",
+    "python/marketforge/agents/legacy.py": "44290c5c0cb096542dc134f17d65f4a1dacd42b461d789af872d74a6830f23c7",
+    "python/marketforge/agents/market_data.py": "08c93d469d61955f90f0f0999e9cbc8ecfb25cd1d7b8e2bd368eeac7b2b96e91",
+    "python/marketforge/agents/mcp_server.py": "aacb762bebb3f3f520c381658b241004b301f8f3ae7b7ccdd7420bc6a4a5419e",
+    "python/marketforge/agents/monitoring.py": "9c2ca1c9016c2d877e5dde2c22c383b609e30c17f8f57ef91917ce500bdb388b",
+    "python/marketforge/agents/orders.py": "80769af211f7aeb38e24c85aad06e4338c9d4662a9122e30fd963ff97d0b76ed",
+    "python/marketforge/agents/policies.py": "d4223de7066e60fe627437622995c01f712bb1edff98fa31d49d51b16f431dcd",
+    "python/marketforge/agents/program_sdk.py": "6dc870cd596915ed7b2b10731565225731f6bb6d2e9b9eedfc20c38cbafb16ef",
+    "python/marketforge/agents/projects.py": "6f7e95f267d1b2c341a31e2ad27a55dfacccbc858972995b25b5782041ae49af",
+    "python/marketforge/agents/replay.py": "317dea2b704a3b2014154296b5b12db1e339db6091f6c876029fe9c6e0bf1bdd",
+    "python/marketforge/agents/research.py": "b6e7dec7b6b8932153bcd5f4198c2fc84ce449004a17c59e67d8720dcd85447f",
+    "python/marketforge/agents/runner.py": "3d701916062ba66fa0efe9de396d7ae52cfb457cd2507e5504ba5b61c4314839",
+    "python/marketforge/agents/runtime.py": "6b26cc774e3ebba86e232d12971f0a9a200cfd3a94b2d3a2421696da17de0df0",
+    "python/marketforge/agents/sandbox.py": "2f9d184fa5ba441496a67bb509e92c6260eaddd42725548aed414fdfe0999de7",
+    "python/marketforge/agents/storage.py": "f78778b1fa231e46bc20a5a47d1aefab9e0faeee8383d7f3bdbafafe76224271",
+    "python/marketforge/agents/window_data.py": "156cbcaf1f242799920605e140dfc245b574dc2830f4a0b7576e497afb13bc56",
+    "python/marketforge/agents/workspace.py": "a3abfa712ee009cf91936556054beb1ad89bc533b476ed1da3d915b9fe607288",
+    "python/marketforge/batch.py": "26cb3fbe218f3f31580414eefb41a97e00acf10f18cb6dd2a85c1f7a17ba72ca",
+    "python/marketforge/calibration.py": "ccfb32bc8c172bb86d74108c19d90f85ad9fd0f1b18ebdfb11e55a3fb43df482",
+    "python/marketforge.egg-info/dependency_links.txt": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "python/marketforge.egg-info/PKG-INFO": "0d8afd0256214e101619addf6e0453dcb8bd88546fa94f6ad6447d5da9a2707c",
+    "python/marketforge.egg-info/requires.txt": "24887d13b4a73a60e8dfd9f6aed5a8209988f4b39b1ebd96cdf39a2087a71c9d",
+    "python/marketforge.egg-info/SOURCES.txt": "792bb5017588acbcc031a53e567f600a148a326620ed179be50487ce9221af8f",
+    "python/marketforge.egg-info/top_level.txt": "b2e2fadd33441b1667c0895e3c846a8026788a93ee54dc5ec408aefba2faf01a",
+    "python/pyproject.toml": "5a3ea315ac40d7888790bec63532d5416f18e342c4be8aee8d1b1f8e8ae8ee43",
+    "python/tests/test_agent_alerts.py": "61a7ea9fe3fc1651ab214f434c5db5706d6b789fb177680a0faedb7fd9cda722",
+    "python/tests/test_agent_combined_alerts.py": "fac0b6e3890601f2f321ac5852e1f4e60568e09db51b50e58bb9cfdfb4bd1c85",
+    "python/tests/test_agent_connectors.py": "9a9d44fcf08291a62e39540aa608e9e8c038f695fb52e9ed29692bb0970a8335",
+    "python/tests/test_agent_event_alerts.py": "534636163fa2e5b4ffbb867c9e1960f43372eb6729680c487518bc2dfb48d659",
+    "python/tests/test_agent_external.py": "e4f62eff5e8807392ac217c897b0e6d5a55de74203ac63f9aee54c61e89f1951",
+    "python/tests/test_agent_live.py": "d143d5415d2afe235736810172400364b34b3425dbcde5bd90b5a14eebdcf901",
+    "python/tests/test_agent_market_data.py": "a1f69c94a36dab96f91bac2a1f615977c16458d0556f16b1c7d01bc9e99243be",
+    "python/tests/test_agent_monitoring.py": "071c6ef3e627532c232f84fe3cc35b1d4a845e5c8f877fc3795178feeba8542d",
+    "python/tests/test_agent_orders_policies.py": "80f9d58ef67a982a5143f1b8c69dae9fa20e1be44dc63ceeb3a0ea06be025e8d",
+    "python/tests/test_agent_projects.py": "a4386ebc445dad53edd2e52a630d70daf33b64f98d622c8e482175e10fedf89f",
+    "python/tests/test_agent_replay.py": "5e5e9c37fae8569883b461c42fe676782a6db8732abd461c061c6744aaa36666",
+    "python/tests/test_agent_runner.py": "1894fb23b42c109dcc2fe7ffed3d26fa95c9e9ed0941d34da05e223c146adf4c",
+    "python/tests/test_agent_runtime.py": "da51f6461d0f964df873771ea8f39f8a43ce413cad2aeb10a92f9e67e9940200",
+    "python/tests/test_agent_workspace.py": "16f4918a9529d99c407ce23759e4982213fc1dccd60afd23abf3a4090d5a6bd2",
+    "python/tests/test_background_market.py": "2bafc557e5fe311908f84255b86eacd9a9a0b581e14556fb8b8d8acc33bff799",
+    "python/tests/test_batch_runner.py": "06a700e5034432af41a9d57bf01fab5f5ff3bb4251faff4c1362d6689b2ec290",
+    "python/tests/test_behavior_market.py": "eac7bbe493d8bb9d0c6ff20dc1b1fcd14dc0a77dab431f415558991f28f54fc3",
+    "python/tests/test_bot_plugins.py": "bdab977b355a6adccdcd99f0f3942de3eee7e656e49973bef275737bcea72ead",
+    "python/tests/test_joint_market_calibration.py": "85860d272784433cb61b91b48a861a96430f21a50ff7add6eee876727eb5d34c",
+    "python/tests/test_market_calibration.py": "6c05fa7930d7acdfd48842a35184bf5ca6f5d65802613680cb2fe058dace0f66",
+    "python/tests/test_market_load.py": "1e39476170d6875a862a79a6add5fe6a1b27c3d61dd2e9a19f36cc1bf9cac8ed",
+    "python/tests/test_pine_bot.py": "20842a522737361c74cb47c9fdada7af0dbb332239d1c51bbc08d7173fe21159",
+    "python/tests/test_pine_broker.py": "960b91eb307e2dbfa04f53c2e6eca691edf3428b7de95c91b3e905c24d794864",
+    "python/tests/test_pine_broker_http.py": "0b39a537f79c52fbab769ed16ea647cbac9de00b265302a0d0cbf2d7a8990da5",
+    "python/tests/test_pine_http.py": "25d7a48e628653dadd4d719966e2c5397f14b809000fe598cc60344184308c4c",
+    "python/tests/test_strategy_runtime.py": "a91191dc6084700d8ae91b06a83069bb454b3e8b5f5d95b11f57d2a9ae1cd300",
+    "python/tests/test_strategy_runtime_http.py": "c2d86cd28ed300185d00db3a203ad9554c03df02c7903b5f2f99a54a9702d9d9",
+    "scripts/agent-runner/Dockerfile": "d2eddd52078ff769f419c23958a29efdfc230dd837d1a823cdab82021f506bdc",
+    "scripts/agent-sandbox/Dockerfile": "7fdb436f852405c06d909465ca289c8185f868988dfa6456580cd06de6bba76f",
+    "scripts/agent_arena.py": "dde63d45f3ee18f474d2a901b5ceb30dc3d02b679e0c38e00e7faf7aa1f909de",
+    "scripts/archive_strategy_documents.py": "b0347309267c1579f018fd1a0a08e64cc33f9b6a71707cdec9e47a63744a270b",
+    "scripts/archive_strategy_sources.py": "c1184623c82e3bb9dd9749fc9e205ee058eb5c739eb5a8755c1bda12a9764628",
+    "scripts/backend_soak.sh": "eb0477a9aada334585979dc7fb41d8d40db74335d3b800cacadd104489c90e91",
+    "scripts/backend_training_smoke.sh": "c868641663830998f58edf73a94126b52d0ae8f64aeeb7776fab8f808b0a67bf",
+    "scripts/background_market.py": "e2b912dfd5c997b0b4849d37bd32b93fd38fd070f0ce88725453f820892755ff",
+    "scripts/backup-candlescope-workbench.ps1": "e827fae7e842cce39868b5f48b8f6260855ccde615c8089afd9346315b7ff4de",
+    "scripts/batch_runner.py": "7b82989c2186cf6e1070d1c6c7092198d2efc6dc77d86e90531395ac1d3a3998",
+    "scripts/behavior_market.py": "577eb19dfb39a8288c1ac0788ce5e9972e8d0e91f61e349d7fa751836b9cfaf1",
+    "scripts/benchmark_margin_progress.py": "ef556ef06b641c97b7a9ab34a071e5e7e4e693bd28f1746039be0ba45ea77dfa",
+    "scripts/benchmark_margin_risk.py": "be987311f0fb0cab1f8791c71cb8419aaba2437a5c22ac140f73696f632fd0e1",
+    "scripts/benchmark_margin_view.py": "13e21457512d11c355f5d194176cd00f9c750e5ec8d114fc234fb65af15e7dba",
+    "scripts/benchmark_market_browser.py": "040c34724c103bd99650fffd7a33a14a7625c483b9f8207f36b9b0a7923caf4e",
+    "scripts/benchmark_market_load.py": "b656f84b9ce1a973eed354ed12acda4e910cd181773ec035f2be8550ba7e0f8f",
+    "scripts/benchmark_native_bot_memory.py": "5734470ea3ffefe66192f747a2e7b94a091aabfdeb8c4d765c929821c44a19a2",
+    "scripts/benchmark_native_delivery.py": "0c88d92567007e1fdf6036d2a7b3750a0882ccbc32d6200ea57804fabae54331",
+    "scripts/benchmark_pine_incremental.py": "1f9131df6391d6da810ad073f61b23536d6410634d725b625d5798a36a013f6b",
+    "scripts/benchmark_room_contention.py": "2ae3f5aa180e82c124d1ac0ac49b3f3cb5a4d557dee654ac8bec81aaa221e3c2",
+    "scripts/benchmark_strategy_runtime.py": "d8124e952d163e6e8f16025feaed55df28f66e8ed8915e8a0835430c8a6d2886",
+    "scripts/build_agent_runner.py": "69b52845cdb5b0024ac397e364b25310ee58680369bd26b7f0c0e8b6dbdd7925",
+    "scripts/build_pine_incremental_runtime.py": "8325ae3ebccb1f31b4fdbb6e29c0461d3471eef5c3de31b1c6d04dd69d59cf11",
+    "scripts/build_strategy_catalog.py": "159015c8a3a6ab17921bf4c857a4df942b2d56524580e4413435ecfb66c92324",
+    "scripts/calibrate_behavior_market.py": "290d392a2503b55758b8412866a3c2ae1ada01cf07332d712e8a3deda022f162",
+    "scripts/candlescope-postgres.ps1": "8f4d19ece2006c0312599bab4fea4c4078824d0b76ec08121cd908e1878aff08",
+    "scripts/compare_behavior_reference.py": "1b61c07155d7405af0ac1b149f670aa62bce1c6c3bccc88779ea993db8dd6392",
+    "scripts/compare_room_contention.py": "b8f19c2de6a9de180df00b4dfea5703b00173f112e013bf47ec5b2c23d01b1ef",
+    "scripts/fixtures/background_market.json": "aaa86daa5d5c5201cc367940f80cf30e1e39a3e7db4b0b167b7645f1ff67e92b",
+    "scripts/fixtures/behavior_market.json": "73cdc1daafad32c8562c36d87d253af223986860d52bc25458f6ed5acc5a308b",
+    "scripts/fixtures/f6_batch_spec.json": "fcce2068db427d8717ff0b0dfb6a1eac9b0d97843ae20b94c7ed118e2d4cfb8c",
+    "scripts/fixtures/linked_market.json": "ecf7016a42bbf01e63361eafefc6aa5b42c9a24c912bbbbcb6aab5dcda8543e2",
+    "scripts/fixtures/microstructure_market.json": "6239cb5a83bf0dbec68026c366d82e0ddba60b6565cc5ec08197cf73f51e3a63",
+    "scripts/fixtures/p5_batch_spec.json": "8b8c9cf3a0debb1d22ca5a31d6f9fd6f855607be94bbb7c904c987c0d4d811f8",
+    "scripts/joint_market_calibration.py": "10149b8f55ed124c7015f1ce1790e8bf7cf7a33531eda3129cb657da3c51e8fb",
+    "scripts/linked_market.py": "0fced94729d1633a739168b27c410051aa1434d5ab98b620357c83f47ed498d8",
+    "scripts/market_arrival_feedback.py": "5fbdac5de88ab35c75ce42b0b277d4e8d08efc6625287d2d3b53ad3208586ef4",
+    "scripts/microstructure_market.py": "9db7f068124e9cb9ab706cd063f3cea00aa4461e4564f01eaf4171471483e35a",
+    "scripts/postgres_multi_active_smoke.sh": "645e462a73219662613bcac99ac88d002ab02ef1d470e97e4b474ab6dc0d1357",
+    "scripts/postgres_smoke.sh": "b635b4cc4ee0c4ec496a593e175c4ce4a01974f085da3c84685082c09b09143c",
+    "scripts/probe_room_head_of_line.py": "dce3366ac4c2a5a75fc1d0b74ee86af004fb28afd2d038b56706e39b06014836",
+    "scripts/process_tree_metrics.py": "e5593664921bb0ca8d214b57e47917e4cfa2cb6dddd18009c899f8df586c4d81",
+    "scripts/research_strategy_boundaries.py": "f71a823ade91ebc3619db1468acfdddfbe0c6c93a6304dfe5644a801cdd90385",
+    "scripts/research_strategy_compat.py": "20fcf1824236d4ec1beda5af9166ed537ebe92fc3db45f42ec555a8206a9eccc",
+    "scripts/setup-candlescope-workbench.ps1": "a9ec39157ca8bccead3551e8b425d69c73ae48ca57cae8ae424d95958c8f1ba8",
+    "scripts/start-candlescope-workbench.ps1": "d8526e56e183019a5916ef4a76e9712147a5c6dd205a54853089956e33baa0a2",
+    "scripts/storage_acceptance.py": "0f99aea6ada3f96fd8035bce5043a29bca6d14209378fb754ebe8761b8a89752",
+    "scripts/storage_archive.py": "92950c28d3d36c9604b03eae663f6a8fcaa6c61fe480f92787ae80dec66a5fa7",
+    "scripts/storage_capacity.py": "443b1deffc6d57a704c8f407bdceaccc15aa419d2f56304e20ed8afc4653957d",
+    "scripts/storage_clickhouse.py": "996d802a3f2fc9f2d4e8e9a11d94312095c8782c6c83577947d22f0fe2e965dd",
+    "scripts/summarize_room_contention.py": "570e0edb77f3de95511f9078c1a1dcfa7af67b8a6f7def0c87ebf53196d68dd2",
+    "scripts/summarize_room_optimization.py": "0865fd72f2f214378ce6b0a5355e67d5d81e5a9b4e1b6744f9401fe477617615",
+    "scripts/tests/frontend_honesty_regression.cjs": "9ed9adf517ef619fd8d663fc762dbe4d8960370d39e32772b633d592995d2547",
+    "scripts/tests/test_storage_archive.py": "3ba2176b38de2d2f9d75dca2b652d2b28cec9ac6bfea82f9e29cb477961b3bc2",
+    "scripts/training_recovery_e2e.sh": "345f1ccda637ebc4125b00f79fb80d0862aa8b1fa7c613191366c7d330f75e59",
+    "scripts/validate-agent-workspace.py": "f1db05e01b19a7ff5c14e7d744db36b5d7fd758b1cc6e5cad4c21a5f01d70dce",
+    "scripts/validate-trading-capabilities.py": "f69ba0b2ea1738ab0bbfb6b54146e6aabf40e600747ff96c914427d81b8f2abe",
+    "scripts/validate_agent_budget_live.py": "f52b2d91948a127c1c47a71a10d925a94adc6fcf02f3244e16c31e196347dd1c",
+    "scripts/validate_agent_event_tools.py": "22d6f35dd2446ccf2fb17e3d11618f0e4cb73686ebecfdc06259f32ea30f85be",
+    "scripts/validate_agent_framework_live.py": "51f7ec7e632c711570995e603048e35a599f1ff83382c542bf942f6b0be590b2",
+    "scripts/validate_agent_runner.py": "4793c2ba18032fd4d14e4b8837b68d66f97089cbec073bd49f7f4629a9cc3025",
+    "scripts/validate_agent_window_tools.py": "a319238e41590757627bd3e72c0998589e59da704273723c48f6bad016c418d1",
+    "scripts/validate_behavior_market_live.py": "c799bb548f75130615c6480fe2574bf1faf9e264c6a293f452bbd449b3153cfd",
+    "scripts/validate_candlescope_analysis.py": "165aca552cf4e51f4799f013988c1fabd24969df0f3c753b9001fa19493c169e",
+    "scripts/validate_competition_platform.py": "572d1bb03e79cc7904762e279ef0b82f02c701b0f8d8860834b0a7eb898b6a84",
+    "scripts/validate_event_output.py": "88ebd5b210d005ca5ca990c005c29b6fafd33182b7d15b720fd8c992ed5d8bc7",
+    "scripts/verify-candlescope-backup.ps1": "8ce1b6bfa23711874d79e3a6419723a7156d23c457f5a0e425ab0c2e47f10b55"
+  },
+  "preserved_failures": {
+    "test-workspace-rejected.log": "candidate initial test type inference compile failure; fixed before measurement",
+    "test-workspace-candidate5.log": "worker test directory cleanup Windows file sharing violation after assertions; unchanged full repeat passed",
+    "fixed-candidate5-first-failed.log": "single HTTP connection reset during resume; unchanged repeat passed; root cause not established"
+  },
+  "discarded_freezes": [
+    "candidate (test inference failure)",
+    "candidate4 (missing test mode argument, fixed before build)"
+  ],
+  "partial_profile": "profile-before host trace valid; Python trace empty because bench env was filtered. profile-complete repairs that instrumentation.",
+  "instrumentation_scope": "Rust bench feature only. Python trace opt-in. Wall-window deltas differ from market-time trace slice 1941000..1971000. Nested concurrent counters cannot be summed; order probe is not Pine decision latency.",
+  "pg_stopped": true,
+  "committed_or_pushed": false,
+  "final_backlog_trace": [
+    {
+      "label": "E2",
+      "lagging": 68,
+      "latest_close_stage_counts": {
+        "worker_response_without_commit_return": 12,
+        "worker_acquired_without_response": 2,
+        "host_dispatch_without_worker_acquired": 2,
+        "not_dispatched_since_latest_close": 52
+      },
+      "limitation": "Terminal state versus flushed trace only. commit_return is not durable admission proof; events after final snapshot are not included. Dispatch can skip without entering a worker. Missing trace flush cannot prove no work ever occurred."
+    },
+    {
+      "label": "E3",
+      "lagging": 116,
+      "latest_close_stage_counts": {
+        "worker_response_without_commit_return": 7,
+        "host_dispatch_without_worker_acquired": 5,
+        "worker_acquired_without_response": 3,
+        "not_dispatched_since_latest_close": 101
+      },
+      "limitation": "Terminal state versus flushed trace only. commit_return is not durable admission proof; events after final snapshot are not included. Dispatch can skip without entering a worker. Missing trace flush cannot prove no work ever occurred."
+    }
+  ],
+  "final_result": {
+    "order_latency_passed": true,
+    "literal_step_rate_passed": false,
+    "zero_closed_bar_backlog_passed": false,
+    "average_behind_before": 230.5,
+    "average_behind_candidate": 92,
+    "behind_reduction_percent": 60.08676789587852,
+    "average_rate_before": 0.9856263714188822,
+    "average_rate_candidate": 0.9779197963374764
+  }
+}

@@ -10,6 +10,10 @@ pub(super) enum StoredMutation {
 
 impl StoredMutation {
     pub(super) fn new(json: Vec<u8>) -> Self {
+        #[cfg(feature = "bench-execution-timing")]
+        let _timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::JOURNAL_COMPRESS,
+        );
         if json.len() >= 1024 {
             let compressed = lz4_flex::block::compress(&json);
             if compressed

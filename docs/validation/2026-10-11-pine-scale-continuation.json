@@ -1,0 +1,3359 @@
+{
+  "date": "2026-10-11",
+  "conclusion": "bounded implementation and validation; no general thousand-Pine capacity or unlimited-history qualification",
+  "machine": {
+    "ram_bytes": 68441346048,
+    "os": "Microsoft Windows 11 家庭版 中文版",
+    "cpu": [
+      {
+        "Name": "13th Gen Intel(R) Core(TM) i9-13900HX",
+        "NumberOfCores": 24,
+        "NumberOfLogicalProcessors": 32
+      }
+    ],
+    "logical_processors": 32,
+    "utc": "2026-10-11T12:10:20.8470953Z"
+  },
+  "head_at_closeout": "9962660456300daeba16c0aba2927dac81d4517b",
+  "scope": "task edits on an already dirty shared workspace; unrelated work retained; no commit/push",
+  "candidate_server_sha256": "0946c59aac2d0c274fd576e2f80af1cfc495252a0751df0200bde82b0f813458",
+  "before_server_sha256": "bd569ccb310c72588b83d656487933fcd9d631cf97b049cd30bafc0ab7dbb4ae",
+  "phase1_server_sha256": "20b48c99c6ab23e2ee9c6bd1860aaac16c1867c4084f2f2c64f1d87b6d886d71",
+  "phase2_server_sha256": "be43e4b8772fd0a12ef7c450c47d56415759270117eff654724f6f67261c1d98",
+  "harness_sha256": "8a8f2a041e2713e970ebd4ed1a64cc047a933e0d48879cfceae3942835a7c998",
+  "source_pins": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\frozen-sources-final.json",
+  "root_vs_frozen_task_files": [
+    {
+      "path": "exchange-server/src/bot_workers.rs",
+      "matches": true,
+      "root_sha256": "ADE2A3749E182EE98716CC83E3B72E3EE318399D436C50DFD238A0296348246D",
+      "candidate_sha256": "ADE2A3749E182EE98716CC83E3B72E3EE318399D436C50DFD238A0296348246D"
+    },
+    {
+      "path": "exchange-server/src/bot_wire.rs",
+      "matches": true,
+      "root_sha256": "F214E75667CD074B278C4F7EF4262D6006D65DD2E803ABE56DF88E1D2779E55E",
+      "candidate_sha256": "F214E75667CD074B278C4F7EF4262D6006D65DD2E803ABE56DF88E1D2779E55E"
+    },
+    {
+      "path": "exchange-server/src/realtime.rs",
+      "matches": true,
+      "root_sha256": "E53632BCECBB7F7CEBD551E3B284A03FF87F9CD6E4BFB20A48A27354BC0B007E",
+      "candidate_sha256": "E53632BCECBB7F7CEBD551E3B284A03FF87F9CD6E4BFB20A48A27354BC0B007E"
+    },
+    {
+      "path": "bot-plugins/pine-strategy/bot.py",
+      "matches": true,
+      "root_sha256": "9097B4E9E46C8723CD0A7500B673D6B2323C02963E21A961AFA3AC3BDABEAA66",
+      "candidate_sha256": "9097B4E9E46C8723CD0A7500B673D6B2323C02963E21A961AFA3AC3BDABEAA66"
+    },
+    {
+      "path": "bot-plugins/pine-strategy/bot.json",
+      "matches": true,
+      "root_sha256": "A8761EF2C7434C268A34E1A2EADF6CFE267AB52016966895F55EDF1534C9AB30",
+      "candidate_sha256": "A8761EF2C7434C268A34E1A2EADF6CFE267AB52016966895F55EDF1534C9AB30"
+    },
+    {
+      "path": "bot-plugins/pine-strategy/incremental.py",
+      "matches": true,
+      "root_sha256": "0749A01999A23D11953AA55C99D33769FEF2D3B5EC3DBCAB4911187292C4119A",
+      "candidate_sha256": "0749A01999A23D11953AA55C99D33769FEF2D3B5EC3DBCAB4911187292C4119A"
+    },
+    {
+      "path": "bot-plugins/pine-strategy/broker.py",
+      "matches": true,
+      "root_sha256": "6FBB8912C4C581A6093B01F4C825E3A3035051B46170EAAEBE8711F6A9A567A4",
+      "candidate_sha256": "6FBB8912C4C581A6093B01F4C825E3A3035051B46170EAAEBE8711F6A9A567A4"
+    },
+    {
+      "path": "bot-plugins/pine-strategy/transport.py",
+      "matches": true,
+      "root_sha256": "4138584663B6DE5BC2EA374AAB2C6CCDAE67F43E5214CED570243D54C240B922",
+      "candidate_sha256": "4138584663B6DE5BC2EA374AAB2C6CCDAE67F43E5214CED570243D54C240B922"
+    },
+    {
+      "path": "exchange-server/src/lib.rs",
+      "matches": false,
+      "root_sha256": "85C6EA77C20BC0C2C1B55E57449D81E1C9577938A545F1CCC894881F95E707A5",
+      "candidate_sha256": "782370ADC8D57F968910E94DC8FAF1AB2D73A2F7BBE92A4D1F91F286FF06A181"
+    },
+    {
+      "path": "exchange-server/src/bot_plugins.rs",
+      "matches": true,
+      "root_sha256": "181E396C867B787FD869AAB6E9A6A8C6BCCFCCE704E67B322E14495720B6E84E",
+      "candidate_sha256": "181E396C867B787FD869AAB6E9A6A8C6BCCFCCE704E67B322E14495720B6E84E"
+    },
+    {
+      "path": "exchange-server/src/realtime_tests.rs",
+      "root_sha256": "9D26E45EC20DFBE870D39383A9DE3FA973F80D1680164C0125304E23A06EABE6",
+      "candidate_sha256": "9D26E45EC20DFBE870D39383A9DE3FA973F80D1680164C0125304E23A06EABE6",
+      "matches": true
+    },
+    {
+      "path": "scripts/benchmark_strategy_runtime.py",
+      "root_sha256": "8A8F2A041E2713E970EBD4ED1A64CC047A933E0D48879CFCEAE3942835A7C998",
+      "candidate_sha256": "8A8F2A041E2713E970EBD4ED1A64CC047A933E0D48879CFCEAE3942835A7C998",
+      "matches": true
+    },
+    {
+      "path": "python/tests/test_strategy_runtime.py",
+      "root_sha256": "5CB6AB02D5220A884FA6421592C80AC08679ADDBFE5E40959232E0EE9EA7A1D7",
+      "candidate_sha256": "5CB6AB02D5220A884FA6421592C80AC08679ADDBFE5E40959232E0EE9EA7A1D7",
+      "matches": true
+    },
+    {
+      "path": "python/tests/test_strategy_runtime_http.py",
+      "root_sha256": "C2D86CD28ED300185D00DB3A203AD9554C03DF02C7903B5F2F99A54A9702D9D9",
+      "candidate_sha256": "C2D86CD28ED300185D00DB3A203AD9554C03DF02C7903B5F2F99A54A9702D9D9",
+      "matches": true
+    }
+  ],
+  "root_vs_frozen_note": "Shared lib.rs differs only in route formatting from another task; mod bot_wire is present in both. Task production files and tests match the frozen candidate.",
+  "compiler_monitor": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\compiler-monitor-draining.jsonl",
+  "closing_verification": {
+    "compiler_quiet": {
+      "compiler_samples": 79,
+      "nonempty_compiler_samples": 0
+    },
+    "cleanup": {
+      "postgres_stopped": true,
+      "remaining_task_processes": []
+    }
+  },
+  "runtime": {
+    "version": "0.3.1+mf1",
+    "source_commit": "8838ed004c7475ce2877189bcd0e43a23bcf365f",
+    "patch_sha256": "6aebefc2e26596ea21d68b2b7abff4a19a6a61d709c32ccc46036eede8ed4534",
+    "binary_sha256": "8ef5900e5bfeadfbced7edef772e8b0a00188215448d4417f869b29d09c9c427",
+    "source": "E:\\projects\\MarketForge\\.local\\pine-incremental-build\\source-fj3vlszk",
+    "artifact": "E:\\projects\\MarketForge\\.local\\pine-incremental-build\\target\\release\\pine_compat.dll",
+    "scope": "private adapter build; not an upstream published release"
+  },
+  "validation": {
+    "rust_workspace": {
+      "passed": 594,
+      "failed": 0,
+      "ignored": 13
+    },
+    "clippy": "workspace/all-targets -D warnings passed",
+    "python_private_tests": 23,
+    "http_and_postgres_tests": 13,
+    "http_log": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\http-tests-draining.log",
+    "fixed_real_exchange": {
+      "scope": "3 exact bundled sources; fixed manual real partial fills and closes; not async throughput",
+      "steps": 59,
+      "canonical_sha256": "48c26aa5e50e9a8417e8ce7de464eb4cff0a511f65288bb686e0d3a15024ecfa"
+    },
+    "fixed_compute": {
+      "scope": "six qualified sources, synthetic frozen account feedback, complete response/state equality; no exchange fills or end-to-end throughput claim",
+      "runtime": "0.3.1+mf1",
+      "bars_per_source": 128,
+      "runs": [
+        {
+          "mode": "replay",
+          "seconds": 5.699244200004614,
+          "response_sha256": "38a9cb2635ab43d4371dea170e92648876f5654b2f72dd6302d49d2c1bc279a2",
+          "decisions": 768,
+          "counter_delta": {
+            "rebuilds": 0,
+            "appends": 0,
+            "fallbacks": 0,
+            "evaluated_bars": 0
+          }
+        },
+        {
+          "mode": "incremental",
+          "seconds": 3.405324400002428,
+          "response_sha256": "38a9cb2635ab43d4371dea170e92648876f5654b2f72dd6302d49d2c1bc279a2",
+          "decisions": 768,
+          "counter_delta": {
+            "rebuilds": 6,
+            "appends": 762,
+            "fallbacks": 0,
+            "evaluated_bars": 768
+          }
+        },
+        {
+          "mode": "incremental",
+          "seconds": 3.4490202000015415,
+          "response_sha256": "38a9cb2635ab43d4371dea170e92648876f5654b2f72dd6302d49d2c1bc279a2",
+          "decisions": 768,
+          "counter_delta": {
+            "rebuilds": 6,
+            "appends": 762,
+            "fallbacks": 0,
+            "evaluated_bars": 768
+          }
+        },
+        {
+          "mode": "replay",
+          "seconds": 5.527975599994534,
+          "response_sha256": "38a9cb2635ab43d4371dea170e92648876f5654b2f72dd6302d49d2c1bc279a2",
+          "decisions": 768,
+          "counter_delta": {
+            "rebuilds": 0,
+            "appends": 0,
+            "fallbacks": 0,
+            "evaluated_bars": 0
+          }
+        }
+      ],
+      "elapsed_reduction_percent": 38.948869603457034
+    }
+  },
+  "final_sustained_tiers": [
+    {
+      "bots": 100,
+      "server_sha256": "0946c59aac2d0c274fd576e2f80af1cfc495252a0751df0200bde82b0f813458",
+      "recipe_sha256": "c449fec7855e9c358095c30eb271d80d20b873f1b6428441b26ad3272a42e182",
+      "steps_per_wall_second": 32.677468032626024,
+      "interval_ms": 25,
+      "target_steps_per_second": 40.0,
+      "warmup_seconds": 5,
+      "measurement_seconds": 30.0,
+      "latency": {
+        "view": {
+          "count": 58,
+          "p50_ms": 16.567500002565794,
+          "p95_ms": 19.013600001926534,
+          "max_ms": 44.83970000001136
+        },
+        "place": {
+          "count": 54,
+          "p50_ms": 17.377000003762078,
+          "p95_ms": 113.17650000273716,
+          "max_ms": 183.52500000037253
+        },
+        "cancel": {
+          "count": 54,
+          "p50_ms": 15.125099998840597,
+          "p95_ms": 38.19419999490492,
+          "max_ms": 143.14470000681467
+        }
+      },
+      "clock_latency": {
+        "count": 111,
+        "p50_ms": 7.5176999962423,
+        "p95_ms": 17.923999999766238,
+        "max_ms": 58.8934999977937
+      },
+      "peak_memory_mib": 357.74609375,
+      "process_tree": {
+        "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+        "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+        "peak_sampled_rss_mib": 554.0,
+        "peak_processes": 10,
+        "average_logical_cores": 3.920533356348105,
+        "seen_pids": [
+          6580,
+          17212,
+          32276,
+          33788,
+          34716,
+          35916,
+          36544,
+          37912,
+          45264,
+          46272
+        ],
+        "errors": []
+      },
+      "language_groups": {
+        "native": {
+          "instances": 38,
+          "initialized": 38,
+          "evaluated_bars": 0,
+          "observed": 38,
+          "lag_sim_ms": {
+            "count": 38,
+            "p50_ms": 1000,
+            "p95_ms": 1000,
+            "max_ms": 1000
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 100,
+          "initialized": 100,
+          "evaluated_bars": 7841,
+          "observed": 100,
+          "lag_sim_ms": {
+            "count": 100,
+            "p50_ms": 12000,
+            "p95_ms": 27000,
+            "max_ms": 39000
+          },
+          "closed_bar_backlog": {
+            "count": 100,
+            "p50": 1,
+            "p95": 2,
+            "max": 2
+          },
+          "instances_behind_closed_bars": 55
+        }
+      },
+      "errors": [],
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": false,
+        "configured_40_steps_per_second": false,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true
+      },
+      "input_activity": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 118,
+          "latest_open_ms": 1170000,
+          "market_time_ms": 1187000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 79,
+          "latest_open_ms": 1170000,
+          "market_time_ms": 1187000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 39,
+          "latest_open_ms": 1140000,
+          "market_time_ms": 1187000
+        }
+      },
+      "sustained_input": true,
+      "storage": "in-memory durable journal; not PostgreSQL",
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-draining-tiers\\bots-100\\report.json",
+      "receipt_sha256": "c0a8f75855ee81fcc0ddd3e6b1db725ffc680b446cecea3b2d691130b17895a7",
+      "final_clock": {
+        "step": 1187,
+        "market_time_ms": 1187000,
+        "step_duration_ms": 1000
+      },
+      "bot_errors": {},
+      "feed_iterations": 288,
+      "feed_trade_receipts": 260,
+      "feed_errors": []
+    },
+    {
+      "bots": 500,
+      "server_sha256": "0946c59aac2d0c274fd576e2f80af1cfc495252a0751df0200bde82b0f813458",
+      "recipe_sha256": "9e36cd1a930e205e59d41ba610e1b6324036aa53d24f397e5d4bcd17d8e3ae50",
+      "steps_per_wall_second": 19.24279953247926,
+      "interval_ms": 25,
+      "target_steps_per_second": 40.0,
+      "warmup_seconds": 5,
+      "measurement_seconds": 30.0,
+      "latency": {
+        "view": {
+          "count": 57,
+          "p50_ms": 18.028600003162865,
+          "p95_ms": 97.36050000356045,
+          "max_ms": 133.23919999675127
+        },
+        "place": {
+          "count": 50,
+          "p50_ms": 59.336000005714595,
+          "p95_ms": 245.95189999672584,
+          "max_ms": 316.3647999972454
+        },
+        "cancel": {
+          "count": 49,
+          "p50_ms": 5.9958999991067685,
+          "p95_ms": 28.96599999803584,
+          "max_ms": 29.952500000945292
+        }
+      },
+      "clock_latency": {
+        "count": 106,
+        "p50_ms": 16.131700002006255,
+        "p95_ms": 110.64749999786727,
+        "max_ms": 186.92850000661565
+      },
+      "peak_memory_mib": 648.12890625,
+      "process_tree": {
+        "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+        "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+        "peak_sampled_rss_mib": 942.87109375,
+        "peak_processes": 10,
+        "average_logical_cores": 3.1045791773285965,
+        "seen_pids": [
+          10212,
+          14176,
+          26196,
+          26696,
+          29368,
+          33964,
+          36932,
+          40580,
+          41540,
+          44332
+        ],
+        "errors": []
+      },
+      "language_groups": {
+        "native": {
+          "instances": 38,
+          "initialized": 38,
+          "evaluated_bars": 0,
+          "observed": 38,
+          "lag_sim_ms": {
+            "count": 38,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 500,
+          "initialized": 500,
+          "evaluated_bars": 23009,
+          "observed": 500,
+          "lag_sim_ms": {
+            "count": 500,
+            "p50_ms": 34000,
+            "p95_ms": 115000,
+            "max_ms": 207000
+          },
+          "closed_bar_backlog": {
+            "count": 500,
+            "p50": 2,
+            "p95": 10,
+            "max": 16
+          },
+          "instances_behind_closed_bars": 429
+        }
+      },
+      "errors": [],
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": false,
+        "configured_40_steps_per_second": false,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true
+      },
+      "input_activity": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 74,
+          "latest_open_ms": 730000,
+          "market_time_ms": 741000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 49,
+          "latest_open_ms": 720000,
+          "market_time_ms": 741000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 24,
+          "latest_open_ms": 690000,
+          "market_time_ms": 741000
+        }
+      },
+      "sustained_input": true,
+      "storage": "in-memory durable journal; not PostgreSQL",
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-draining-tiers\\bots-500\\report.json",
+      "receipt_sha256": "a638a4fff1c398fae1571c9515497e233b875258da52648cb0099467ac3d0ab7",
+      "final_clock": {
+        "step": 741,
+        "market_time_ms": 741000,
+        "step_duration_ms": 1000
+      },
+      "bot_errors": {},
+      "feed_iterations": 189,
+      "feed_trade_receipts": 168,
+      "feed_errors": []
+    },
+    {
+      "bots": 1000,
+      "server_sha256": "0946c59aac2d0c274fd576e2f80af1cfc495252a0751df0200bde82b0f813458",
+      "recipe_sha256": "00243a5528660efd540c49203581e048ede1202ab1cbb342f4759fe85451e4c7",
+      "steps_per_wall_second": 14.779341139338007,
+      "interval_ms": 25,
+      "target_steps_per_second": 40.0,
+      "warmup_seconds": 5,
+      "measurement_seconds": 30.0,
+      "latency": {
+        "view": {
+          "count": 55,
+          "p50_ms": 19.87929999449989,
+          "p95_ms": 176.12900000676746,
+          "max_ms": 232.06580000260146
+        },
+        "place": {
+          "count": 45,
+          "p50_ms": 149.38039999833563,
+          "p95_ms": 362.28059999848483,
+          "max_ms": 414.2435000030673
+        },
+        "cancel": {
+          "count": 44,
+          "p50_ms": 14.914899998984765,
+          "p95_ms": 29.879800000344403,
+          "max_ms": 37.21570000197971
+        }
+      },
+      "clock_latency": {
+        "count": 105,
+        "p50_ms": 16.614000000117812,
+        "p95_ms": 95.85980000701966,
+        "max_ms": 158.21490000234917
+      },
+      "peak_memory_mib": 876.70703125,
+      "process_tree": {
+        "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+        "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+        "peak_sampled_rss_mib": 1242.66015625,
+        "peak_processes": 10,
+        "average_logical_cores": 2.50920443819752,
+        "seen_pids": [
+          7988,
+          16156,
+          18464,
+          21176,
+          30676,
+          32980,
+          34456,
+          36496,
+          38952,
+          46584
+        ],
+        "errors": []
+      },
+      "language_groups": {
+        "native": {
+          "instances": 38,
+          "initialized": 38,
+          "evaluated_bars": 0,
+          "observed": 38,
+          "lag_sim_ms": {
+            "count": 38,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 1000,
+          "initialized": 1000,
+          "evaluated_bars": 34204,
+          "observed": 1000,
+          "lag_sim_ms": {
+            "count": 1000,
+            "p50_ms": 50000,
+            "p95_ms": 172000,
+            "max_ms": 346000
+          },
+          "closed_bar_backlog": {
+            "count": 1000,
+            "p50": 3,
+            "p95": 13,
+            "max": 27
+          },
+          "instances_behind_closed_bars": 940
+        }
+      },
+      "errors": [],
+      "qualified": {
+        "order_p95_under_250ms": false,
+        "configured_step_rate": false,
+        "configured_40_steps_per_second": false,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true
+      },
+      "input_activity": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 58,
+          "latest_open_ms": 570000,
+          "market_time_ms": 585000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 39,
+          "latest_open_ms": 570000,
+          "market_time_ms": 585000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 19,
+          "latest_open_ms": 540000,
+          "market_time_ms": 585000
+        }
+      },
+      "sustained_input": true,
+      "storage": "in-memory durable journal; not PostgreSQL",
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-draining-tiers\\bots-1000\\report.json",
+      "receipt_sha256": "f8b3b2e81a880703c87dc3f6390accd6faa44c52ba6ae55124eae13f5d56512c",
+      "final_clock": {
+        "step": 585,
+        "market_time_ms": 585000,
+        "step_duration_ms": 1000
+      },
+      "bot_errors": {},
+      "feed_iterations": 148,
+      "feed_trade_receipts": 131,
+      "feed_errors": []
+    }
+  ],
+  "final_sustained_abba": {
+    "A1": {
+      "bots": 1000,
+      "server_sha256": "bd569ccb310c72588b83d656487933fcd9d631cf97b049cd30bafc0ab7dbb4ae",
+      "recipe_sha256": "00243a5528660efd540c49203581e048ede1202ab1cbb342f4759fe85451e4c7",
+      "steps_per_wall_second": 7.528114398571537,
+      "interval_ms": 25,
+      "target_steps_per_second": 40.0,
+      "warmup_seconds": 5,
+      "measurement_seconds": 30.0,
+      "latency": {
+        "view": {
+          "count": 58,
+          "p50_ms": 19.36030000069877,
+          "p95_ms": 20.876300004601944,
+          "max_ms": 46.94609999569366
+        },
+        "place": {
+          "count": 51,
+          "p50_ms": 30.69580000010319,
+          "p95_ms": 277.98999999504304,
+          "max_ms": 427.7367000031518
+        },
+        "cancel": {
+          "count": 51,
+          "p50_ms": 15.553600002021994,
+          "p95_ms": 98.78910000406904,
+          "max_ms": 112.17200000101002
+        }
+      },
+      "clock_latency": {
+        "count": 110,
+        "p50_ms": 16.385399998398498,
+        "p95_ms": 17.56749999913154,
+        "max_ms": 41.05320000235224
+      },
+      "peak_memory_mib": 483.8125,
+      "process_tree": {
+        "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+        "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+        "peak_sampled_rss_mib": 626.359375,
+        "peak_processes": 10,
+        "average_logical_cores": 2.5567375117689415,
+        "seen_pids": [
+          4512,
+          10344,
+          20272,
+          27220,
+          29688,
+          35848,
+          37548,
+          38644,
+          42912,
+          47640
+        ],
+        "errors": []
+      },
+      "language_groups": {
+        "native": {
+          "instances": 38,
+          "initialized": 38,
+          "evaluated_bars": 0,
+          "observed": 38,
+          "lag_sim_ms": {
+            "count": 38,
+            "p50_ms": 3000,
+            "p95_ms": 4000,
+            "max_ms": 4000
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 1000,
+          "initialized": 1000,
+          "evaluated_bars": 22470,
+          "observed": 1000,
+          "lag_sim_ms": {
+            "count": 1000,
+            "p50_ms": 20000,
+            "p95_ms": 62000,
+            "max_ms": 129000
+          },
+          "closed_bar_backlog": {
+            "count": 1000,
+            "p50": 1,
+            "p95": 5,
+            "max": 13
+          },
+          "instances_behind_closed_bars": 812
+        }
+      },
+      "errors": [],
+      "qualified": {
+        "order_p95_under_250ms": false,
+        "configured_step_rate": false,
+        "configured_40_steps_per_second": false,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true
+      },
+      "input_activity": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 36,
+          "latest_open_ms": 350000,
+          "market_time_ms": 367000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 24,
+          "latest_open_ms": 345000,
+          "market_time_ms": 367000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 12,
+          "latest_open_ms": 330000,
+          "market_time_ms": 367000
+        }
+      },
+      "sustained_input": true,
+      "storage": "in-memory durable journal; not PostgreSQL",
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-draining-abba\\A1\\bots-1000\\report.json",
+      "receipt_sha256": "481197642237df74e999f79b4d41d229676300ded0adc6827392777274029b43",
+      "final_clock": {
+        "step": 367,
+        "market_time_ms": 367000,
+        "step_duration_ms": 1000
+      },
+      "bot_errors": {},
+      "feed_iterations": 227,
+      "feed_trade_receipts": 224,
+      "feed_errors": []
+    },
+    "B1": {
+      "bots": 1000,
+      "server_sha256": "0946c59aac2d0c274fd576e2f80af1cfc495252a0751df0200bde82b0f813458",
+      "recipe_sha256": "00243a5528660efd540c49203581e048ede1202ab1cbb342f4759fe85451e4c7",
+      "steps_per_wall_second": 14.44539945715516,
+      "interval_ms": 25,
+      "target_steps_per_second": 40.0,
+      "warmup_seconds": 5,
+      "measurement_seconds": 30.0,
+      "latency": {
+        "view": {
+          "count": 55,
+          "p50_ms": 19.773399995756336,
+          "p95_ms": 172.7513000005274,
+          "max_ms": 187.3494000028586
+        },
+        "place": {
+          "count": 46,
+          "p50_ms": 86.27220000198577,
+          "p95_ms": 293.88359999575187,
+          "max_ms": 325.44249999773456
+        },
+        "cancel": {
+          "count": 47,
+          "p50_ms": 15.677199997298885,
+          "p95_ms": 27.495599999383558,
+          "max_ms": 27.89150000171503
+        }
+      },
+      "clock_latency": {
+        "count": 103,
+        "p50_ms": 16.54889999917941,
+        "p95_ms": 123.5750999985612,
+        "max_ms": 175.61189999833005
+      },
+      "peak_memory_mib": 798.61328125,
+      "process_tree": {
+        "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+        "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+        "peak_sampled_rss_mib": 1176.74609375,
+        "peak_processes": 10,
+        "average_logical_cores": 2.381612231088039,
+        "seen_pids": [
+          4704,
+          10848,
+          26812,
+          29992,
+          34552,
+          36592,
+          44124,
+          46060,
+          46160,
+          47956
+        ],
+        "errors": []
+      },
+      "language_groups": {
+        "native": {
+          "instances": 38,
+          "initialized": 38,
+          "evaluated_bars": 0,
+          "observed": 38,
+          "lag_sim_ms": {
+            "count": 38,
+            "p50_ms": 1000,
+            "p95_ms": 1000,
+            "max_ms": 1000
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 1000,
+          "initialized": 1000,
+          "evaluated_bars": 34187,
+          "observed": 1000,
+          "lag_sim_ms": {
+            "count": 1000,
+            "p50_ms": 50000,
+            "p95_ms": 155000,
+            "max_ms": 250000
+          },
+          "closed_bar_backlog": {
+            "count": 1000,
+            "p50": 3,
+            "p95": 12,
+            "max": 25
+          },
+          "instances_behind_closed_bars": 938
+        }
+      },
+      "errors": [],
+      "qualified": {
+        "order_p95_under_250ms": false,
+        "configured_step_rate": false,
+        "configured_40_steps_per_second": false,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true
+      },
+      "input_activity": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 58,
+          "latest_open_ms": 570000,
+          "market_time_ms": 580000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 38,
+          "latest_open_ms": 555000,
+          "market_time_ms": 580000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 19,
+          "latest_open_ms": 540000,
+          "market_time_ms": 580000
+        }
+      },
+      "sustained_input": true,
+      "storage": "in-memory durable journal; not PostgreSQL",
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-draining-abba\\B1\\bots-1000\\report.json",
+      "receipt_sha256": "fcf54f7926026367c4fb8a134ff6fa7865befcd25aba17c301163b956d10c5f3",
+      "final_clock": {
+        "step": 580,
+        "market_time_ms": 580000,
+        "step_duration_ms": 1000
+      },
+      "bot_errors": {},
+      "feed_iterations": 147,
+      "feed_trade_receipts": 140,
+      "feed_errors": []
+    },
+    "B2": {
+      "bots": 1000,
+      "server_sha256": "0946c59aac2d0c274fd576e2f80af1cfc495252a0751df0200bde82b0f813458",
+      "recipe_sha256": "00243a5528660efd540c49203581e048ede1202ab1cbb342f4759fe85451e4c7",
+      "steps_per_wall_second": 15.356379402957968,
+      "interval_ms": 25,
+      "target_steps_per_second": 40.0,
+      "warmup_seconds": 5,
+      "measurement_seconds": 30.0,
+      "latency": {
+        "view": {
+          "count": 56,
+          "p50_ms": 19.61719999962952,
+          "p95_ms": 122.33260000357404,
+          "max_ms": 175.62999999790918
+        },
+        "place": {
+          "count": 46,
+          "p50_ms": 85.8451999956742,
+          "p95_ms": 329.61770000110846,
+          "max_ms": 348.7022000044817
+        },
+        "cancel": {
+          "count": 46,
+          "p50_ms": 13.725400000112131,
+          "p95_ms": 28.403100004652515,
+          "max_ms": 557.128799999191
+        }
+      },
+      "clock_latency": {
+        "count": 104,
+        "p50_ms": 16.523899997991975,
+        "p95_ms": 114.75599999539554,
+        "max_ms": 176.83589999796823
+      },
+      "peak_memory_mib": 870.34375,
+      "process_tree": {
+        "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+        "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+        "peak_sampled_rss_mib": 1273.96484375,
+        "peak_processes": 10,
+        "average_logical_cores": 2.4368050922699034,
+        "seen_pids": [
+          6356,
+          7104,
+          7460,
+          17416,
+          21176,
+          28076,
+          35668,
+          42180,
+          43436,
+          46288
+        ],
+        "errors": []
+      },
+      "language_groups": {
+        "native": {
+          "instances": 38,
+          "initialized": 38,
+          "evaluated_bars": 0,
+          "observed": 38,
+          "lag_sim_ms": {
+            "count": 38,
+            "p50_ms": 0,
+            "p95_ms": 1000,
+            "max_ms": 1000
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 1000,
+          "initialized": 1000,
+          "evaluated_bars": 36158,
+          "observed": 1000,
+          "lag_sim_ms": {
+            "count": 1000,
+            "p50_ms": 41000,
+            "p95_ms": 134000,
+            "max_ms": 379000
+          },
+          "closed_bar_backlog": {
+            "count": 1000,
+            "p50": 3,
+            "p95": 11,
+            "max": 38
+          },
+          "instances_behind_closed_bars": 1000
+        }
+      },
+      "errors": [],
+      "qualified": {
+        "order_p95_under_250ms": false,
+        "configured_step_rate": false,
+        "configured_40_steps_per_second": false,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true
+      },
+      "input_activity": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 60,
+          "latest_open_ms": 590000,
+          "market_time_ms": 600000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 40,
+          "latest_open_ms": 585000,
+          "market_time_ms": 600000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 20,
+          "latest_open_ms": 570000,
+          "market_time_ms": 600000
+        }
+      },
+      "sustained_input": true,
+      "storage": "in-memory durable journal; not PostgreSQL",
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-draining-abba\\B2\\bots-1000\\report.json",
+      "receipt_sha256": "16d57b1eae2f90a16df71f3002d80ae323ea1d4a0b1b680f87eacdb4cf991295",
+      "final_clock": {
+        "step": 600,
+        "market_time_ms": 600000,
+        "step_duration_ms": 1000
+      },
+      "bot_errors": {},
+      "feed_iterations": 152,
+      "feed_trade_receipts": 144,
+      "feed_errors": []
+    },
+    "A2": {
+      "bots": 1000,
+      "server_sha256": "bd569ccb310c72588b83d656487933fcd9d631cf97b049cd30bafc0ab7dbb4ae",
+      "recipe_sha256": "00243a5528660efd540c49203581e048ede1202ab1cbb342f4759fe85451e4c7",
+      "steps_per_wall_second": 6.997208525596665,
+      "interval_ms": 25,
+      "target_steps_per_second": 40.0,
+      "warmup_seconds": 5,
+      "measurement_seconds": 30.0,
+      "latency": {
+        "view": {
+          "count": 57,
+          "p50_ms": 19.70870000513969,
+          "p95_ms": 76.5700999982073,
+          "max_ms": 159.2298000032315
+        },
+        "place": {
+          "count": 50,
+          "p50_ms": 34.85219999856781,
+          "p95_ms": 229.5386000041617,
+          "max_ms": 498.9495000045281
+        },
+        "cancel": {
+          "count": 50,
+          "p50_ms": 14.437999998335727,
+          "p95_ms": 94.84760000486858,
+          "max_ms": 113.09159999655094
+        }
+      },
+      "clock_latency": {
+        "count": 110,
+        "p50_ms": 16.345199997886084,
+        "p95_ms": 17.312099997070618,
+        "max_ms": 79.63440000457922
+      },
+      "peak_memory_mib": 516.328125,
+      "process_tree": {
+        "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+        "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+        "peak_sampled_rss_mib": 646.1796875,
+        "peak_processes": 10,
+        "average_logical_cores": 2.4605409739299535,
+        "seen_pids": [
+          10452,
+          16096,
+          18064,
+          24076,
+          26284,
+          28484,
+          29660,
+          38920,
+          40884,
+          42064
+        ],
+        "errors": []
+      },
+      "language_groups": {
+        "native": {
+          "instances": 38,
+          "initialized": 38,
+          "evaluated_bars": 0,
+          "observed": 38,
+          "lag_sim_ms": {
+            "count": 38,
+            "p50_ms": 2000,
+            "p95_ms": 4000,
+            "max_ms": 4000
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 1000,
+          "initialized": 1000,
+          "evaluated_bars": 20997,
+          "observed": 1000,
+          "lag_sim_ms": {
+            "count": 1000,
+            "p50_ms": 16000,
+            "p95_ms": 62000,
+            "max_ms": 157000
+          },
+          "closed_bar_backlog": {
+            "count": 1000,
+            "p50": 1,
+            "p95": 4,
+            "max": 15
+          },
+          "instances_behind_closed_bars": 657
+        }
+      },
+      "errors": [],
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": false,
+        "configured_40_steps_per_second": false,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true
+      },
+      "input_activity": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 34,
+          "latest_open_ms": 330000,
+          "market_time_ms": 343000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 22,
+          "latest_open_ms": 315000,
+          "market_time_ms": 343000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 11,
+          "latest_open_ms": 300000,
+          "market_time_ms": 343000
+        }
+      },
+      "sustained_input": true,
+      "storage": "in-memory durable journal; not PostgreSQL",
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-draining-abba\\A2\\bots-1000\\report.json",
+      "receipt_sha256": "fbfe2efffbc2629ef248c80472b1c317b4cb89f2e8a6a8a2588ccc0cd6d73c82",
+      "final_clock": {
+        "step": 343,
+        "market_time_ms": 343000,
+        "step_duration_ms": 1000
+      },
+      "bot_errors": {},
+      "feed_iterations": 204,
+      "feed_trade_receipts": 193,
+      "feed_errors": []
+    }
+  },
+  "observed_step_rate_means": {
+    "before": 7.262661462084101,
+    "candidate": 14.900889430056564,
+    "note": "two samples each; async market trajectories differ; not a fixed-work speedup"
+  },
+  "real_time_case": [
+    {
+      "bots": 1000,
+      "server_sha256": "0946c59aac2d0c274fd576e2f80af1cfc495252a0751df0200bde82b0f813458",
+      "recipe_sha256": "b49832222f72f1b200cc721c3c29085225bd9d02c84842f0de88329b06330900",
+      "steps_per_wall_second": 0.9941382285113577,
+      "interval_ms": 1000,
+      "target_steps_per_second": 1.0,
+      "warmup_seconds": 5,
+      "measurement_seconds": 120.0,
+      "latency": {
+        "view": {
+          "count": 230,
+          "p50_ms": 19.485800003167242,
+          "p95_ms": 23.9579999979469,
+          "max_ms": 58.354200002213474
+        },
+        "place": {
+          "count": 221,
+          "p50_ms": 18.00070000172127,
+          "p95_ms": 64.66679999721237,
+          "max_ms": 171.0834999976214
+        },
+        "cancel": {
+          "count": 221,
+          "p50_ms": 14.960699998482596,
+          "p95_ms": 23.994899995159358,
+          "max_ms": 30.77139999368228
+        }
+      },
+      "clock_latency": {
+        "count": 438,
+        "p50_ms": 16.405000002123415,
+        "p95_ms": 17.59909999964293,
+        "max_ms": 59.42349999531871
+      },
+      "peak_memory_mib": 351.73046875,
+      "process_tree": {
+        "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+        "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+        "peak_sampled_rss_mib": 546.03125,
+        "peak_processes": 10,
+        "average_logical_cores": 0.586139999310901,
+        "seen_pids": [
+          12740,
+          19340,
+          24196,
+          26184,
+          33068,
+          33824,
+          40424,
+          41944,
+          42868,
+          47900
+        ],
+        "errors": []
+      },
+      "language_groups": {
+        "native": {
+          "instances": 38,
+          "initialized": 38,
+          "evaluated_bars": 0,
+          "observed": 38,
+          "lag_sim_ms": {
+            "count": 38,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 1000,
+          "initialized": 1000,
+          "evaluated_bars": 8004,
+          "observed": 1000,
+          "lag_sim_ms": {
+            "count": 1000,
+            "p50_ms": 5000,
+            "p95_ms": 6000,
+            "max_ms": 6000
+          },
+          "closed_bar_backlog": {
+            "count": 1000,
+            "p50": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "instances_behind_closed_bars": 0
+        }
+      },
+      "errors": [],
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true
+      },
+      "input_activity": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 12,
+          "latest_open_ms": 110000,
+          "market_time_ms": 126000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 8,
+          "latest_open_ms": 105000,
+          "market_time_ms": 126000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 4,
+          "latest_open_ms": 90000,
+          "market_time_ms": 126000
+        }
+      },
+      "sustained_input": true,
+      "storage": "in-memory durable journal; not PostgreSQL",
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-real-time\\bots-1000\\report.json",
+      "receipt_sha256": "f36ec79c1c95299fc8428e2603d2756822bcd34c91d188d71074bbbcdb48ac32",
+      "final_clock": {
+        "step": 126,
+        "market_time_ms": 126000,
+        "step_duration_ms": 1000
+      },
+      "bot_errors": {},
+      "feed_iterations": 125,
+      "feed_trade_receipts": 121,
+      "feed_errors": []
+    }
+  ],
+  "retained_prior_results": {
+    "phase1_background_interference_abba": {
+      "A1": {
+        "bots": 1000,
+        "server_sha256": "bd569ccb310c72588b83d656487933fcd9d631cf97b049cd30bafc0ab7dbb4ae",
+        "recipe_sha256": "9ee961868532c9f25eb36390e921ad3bc521ce89937ac0a45993d200990f7fe3",
+        "steps_per_wall_second": 8.984652767422158,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 58,
+            "p50_ms": 19.8134999955073,
+            "p95_ms": 21.147500003280584,
+            "max_ms": 21.22669999516802
+          },
+          "place": {
+            "count": 51,
+            "p50_ms": 38.40920000220649,
+            "p95_ms": 259.6551000024192,
+            "max_ms": 466.58909999678144
+          },
+          "cancel": {
+            "count": 51,
+            "p50_ms": 18.184200001996942,
+            "p95_ms": 89.62890000111656,
+            "max_ms": 113.13680000603199
+          }
+        },
+        "clock_latency": {
+          "count": 109,
+          "p50_ms": 16.448200003651436,
+          "p95_ms": 17.768199999409262,
+          "max_ms": 163.52199999528239
+        },
+        "peak_memory_mib": 484.546875,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 624.34765625,
+          "peak_processes": 10,
+          "average_logical_cores": 2.604876727222717,
+          "seen_pids": [
+            4292,
+            17176,
+            30580,
+            31984,
+            34772,
+            35064,
+            37216,
+            39088,
+            46680,
+            47788
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 19000,
+              "p95_ms": 22000,
+              "max_ms": 22000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 19735,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 85000,
+              "p95_ms": 97000,
+              "max_ms": 98000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "instances_behind_closed_bars": 941
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": false,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true
+        },
+        "input_activity": null,
+        "sustained_input": null,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-abba\\A1\\bots-1000\\report.json",
+        "receipt_sha256": "f79aea3b481dc28cca4e73e8e7417e0f7ff453055493adfe4e32e7a0953b7e10",
+        "final_clock": {
+          "step": 398,
+          "market_time_ms": 398000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 0,
+        "feed_trade_receipts": 0,
+        "feed_errors": []
+      },
+      "B1": {
+        "bots": 1000,
+        "server_sha256": "20b48c99c6ab23e2ee9c6bd1860aaac16c1867c4084f2f2c64f1d87b6d886d71",
+        "recipe_sha256": "9ee961868532c9f25eb36390e921ad3bc521ce89937ac0a45993d200990f7fe3",
+        "steps_per_wall_second": 13.335213284105864,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 57,
+            "p50_ms": 19.597499995143153,
+            "p95_ms": 21.413499998743646,
+            "max_ms": 88.16289999958826
+          },
+          "place": {
+            "count": 52,
+            "p50_ms": 21.650700000463985,
+            "p95_ms": 91.54919999855338,
+            "max_ms": 331.61139999720035
+          },
+          "cancel": {
+            "count": 52,
+            "p50_ms": 16.54219999909401,
+            "p95_ms": 71.92010000289883,
+            "max_ms": 78.00629999837838
+          }
+        },
+        "clock_latency": {
+          "count": 108,
+          "p50_ms": 16.343500006769318,
+          "p95_ms": 38.28129999601515,
+          "max_ms": 164.18120000162162
+        },
+        "peak_memory_mib": 624.19921875,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 880.078125,
+          "peak_processes": 10,
+          "average_logical_cores": 2.397234919522296,
+          "seen_pids": [
+            3812,
+            14320,
+            16368,
+            30184,
+            38176,
+            39484,
+            44416,
+            45500,
+            45644,
+            47224
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 13000,
+              "p95_ms": 16000,
+              "max_ms": 16000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 17008,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 221000,
+              "p95_ms": 235000,
+              "max_ms": 237000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "instances_behind_closed_bars": 0
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true
+        },
+        "input_activity": null,
+        "sustained_input": null,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-abba\\B1\\bots-1000\\report.json",
+        "receipt_sha256": "f57cd68ff2df1c3c153beaa912f37503e4d8245461965b1ca81add3502651615",
+        "final_clock": {
+          "step": 537,
+          "market_time_ms": 537000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 0,
+        "feed_trade_receipts": 0,
+        "feed_errors": []
+      },
+      "B2": {
+        "bots": 1000,
+        "server_sha256": "20b48c99c6ab23e2ee9c6bd1860aaac16c1867c4084f2f2c64f1d87b6d886d71",
+        "recipe_sha256": "9ee961868532c9f25eb36390e921ad3bc521ce89937ac0a45993d200990f7fe3",
+        "steps_per_wall_second": 15.96525350579716,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 58,
+            "p50_ms": 19.469800005026627,
+            "p95_ms": 28.081500000553206,
+            "max_ms": 74.11829999909969
+          },
+          "place": {
+            "count": 52,
+            "p50_ms": 18.597199996293057,
+            "p95_ms": 189.77089999680175,
+            "max_ms": 344.17380000377307
+          },
+          "cancel": {
+            "count": 52,
+            "p50_ms": 14.680499996757135,
+            "p95_ms": 61.43100000190316,
+            "max_ms": 335.65019999514334
+          }
+        },
+        "clock_latency": {
+          "count": 109,
+          "p50_ms": 16.436499994597398,
+          "p95_ms": 17.535099999804515,
+          "max_ms": 86.74510000128066
+        },
+        "peak_memory_mib": 543.75,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 799.50390625,
+          "peak_processes": 10,
+          "average_logical_cores": 2.5874093912752514,
+          "seen_pids": [
+            6928,
+            7420,
+            18088,
+            27320,
+            28004,
+            38688,
+            39116,
+            39184,
+            43680,
+            46628
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 18000,
+              "p95_ms": 21000,
+              "max_ms": 21000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 15114,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 43000,
+              "p95_ms": 57000,
+              "max_ms": 59000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 1,
+              "p95": 1,
+              "max": 1
+            },
+            "instances_behind_closed_bars": 558
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true
+        },
+        "input_activity": null,
+        "sustained_input": null,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-abba\\B2\\bots-1000\\report.json",
+        "receipt_sha256": "c1251c02676e54116b0f0ea385c401c808e6e4f5def5e566b565e865caa7bb10",
+        "final_clock": {
+          "step": 599,
+          "market_time_ms": 599000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 0,
+        "feed_trade_receipts": 0,
+        "feed_errors": []
+      },
+      "A2": {
+        "bots": 1000,
+        "server_sha256": "bd569ccb310c72588b83d656487933fcd9d631cf97b049cd30bafc0ab7dbb4ae",
+        "recipe_sha256": "9ee961868532c9f25eb36390e921ad3bc521ce89937ac0a45993d200990f7fe3",
+        "steps_per_wall_second": 12.514414725226585,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 57,
+            "p50_ms": 19.752700005483348,
+            "p95_ms": 21.616199999698438,
+            "max_ms": 94.30799999972805
+          },
+          "place": {
+            "count": 52,
+            "p50_ms": 30.56970000034198,
+            "p95_ms": 229.23180000361754,
+            "max_ms": 453.07039999897825
+          },
+          "cancel": {
+            "count": 51,
+            "p50_ms": 18.982100002176594,
+            "p95_ms": 73.65629999549128,
+            "max_ms": 103.66010000143433
+          }
+        },
+        "clock_latency": {
+          "count": 108,
+          "p50_ms": 16.596100002061576,
+          "p95_ms": 18.444300003466196,
+          "max_ms": 106.93329999776324
+        },
+        "peak_memory_mib": 461.328125,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 602.6015625,
+          "peak_processes": 10,
+          "average_logical_cores": 2.3637536975984714,
+          "seen_pids": [
+            4304,
+            7676,
+            9020,
+            12576,
+            28484,
+            33764,
+            37852,
+            39208,
+            40352,
+            43512
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 15000,
+              "p95_ms": 16000,
+              "max_ms": 16000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 17674,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 139000,
+              "p95_ms": 158000,
+              "max_ms": 161000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "instances_behind_closed_bars": 0
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true
+        },
+        "input_activity": null,
+        "sustained_input": null,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-abba\\A2\\bots-1000\\report.json",
+        "receipt_sha256": "a73e7bc7a59364d649b9aa34782065450406c2e64f1d7d5060fccdb7b65b87ca",
+        "final_clock": {
+          "step": 506,
+          "market_time_ms": 506000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 0,
+        "feed_trade_receipts": 0,
+        "feed_errors": []
+      }
+    },
+    "phase2_quiet_tail_tiers": [
+      {
+        "bots": 100,
+        "server_sha256": "be43e4b8772fd0a12ef7c450c47d56415759270117eff654724f6f67261c1d98",
+        "recipe_sha256": "0d08fdd09f8b2f3573d56f7ca1790e4cdce75502b8c0ac021764e4e4f8005ba4",
+        "steps_per_wall_second": 35.4458869575268,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 58,
+            "p50_ms": 7.428800003253855,
+            "p95_ms": 28.735200001392514,
+            "max_ms": 40.95689999667229
+          },
+          "place": {
+            "count": 55,
+            "p50_ms": 17.28930000535911,
+            "p95_ms": 73.78800000151386,
+            "max_ms": 91.56290000100853
+          },
+          "cancel": {
+            "count": 55,
+            "p50_ms": 14.424599998164922,
+            "p95_ms": 29.107199996360578,
+            "max_ms": 71.72330000321381
+          }
+        },
+        "clock_latency": {
+          "count": 111,
+          "p50_ms": 15.946100000292063,
+          "p95_ms": 25.717500000610016,
+          "max_ms": 41.24210000009043
+        },
+        "peak_memory_mib": 295.58984375,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 475.51953125,
+          "peak_processes": 10,
+          "average_logical_cores": 2.334028128521798,
+          "seen_pids": [
+            5900,
+            9020,
+            13188,
+            29344,
+            32240,
+            32892,
+            35052,
+            38880,
+            44476,
+            47744
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 1000,
+              "p95_ms": 1000,
+              "max_ms": 1000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 100,
+            "initialized": 100,
+            "evaluated_bars": 6956,
+            "observed": 100,
+            "lag_sim_ms": {
+              "count": 100,
+              "p50_ms": 13000,
+              "p95_ms": 52000,
+              "max_ms": 55000
+            },
+            "closed_bar_backlog": {
+              "count": 100,
+              "p50": 1,
+              "p95": 2,
+              "max": 4
+            },
+            "instances_behind_closed_bars": 54
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true
+        },
+        "input_activity": null,
+        "sustained_input": null,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-final-tiers\\bots-100\\report.json",
+        "receipt_sha256": "229c6def0e788e6278ef0d78f769edf66c5f19fe72da94a4c8fb72f8f345853b",
+        "final_clock": {
+          "step": 1267,
+          "market_time_ms": 1267000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 0,
+        "feed_trade_receipts": 0,
+        "feed_errors": []
+      },
+      {
+        "bots": 500,
+        "server_sha256": "be43e4b8772fd0a12ef7c450c47d56415759270117eff654724f6f67261c1d98",
+        "recipe_sha256": "131dcb8327d37ed3ca677ee8268ba56ecfd16325915c6be5192926683a8ecd00",
+        "steps_per_wall_second": 27.435308728636635,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 57,
+            "p50_ms": 17.543099995236844,
+            "p95_ms": 44.043199995940086,
+            "max_ms": 67.37769999745069
+          },
+          "place": {
+            "count": 52,
+            "p50_ms": 18.99079999566311,
+            "p95_ms": 122.33450000348967,
+            "max_ms": 202.24690000031842
+          },
+          "cancel": {
+            "count": 52,
+            "p50_ms": 15.214699997159187,
+            "p95_ms": 116.99919999955455,
+            "max_ms": 159.98440000112168
+          }
+        },
+        "clock_latency": {
+          "count": 109,
+          "p50_ms": 16.336900000169408,
+          "p95_ms": 33.3459999965271,
+          "max_ms": 45.46480000135489
+        },
+        "peak_memory_mib": 706.171875,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 1028.43359375,
+          "peak_processes": 10,
+          "average_logical_cores": 2.1258049347108114,
+          "seen_pids": [
+            6508,
+            12424,
+            33520,
+            35880,
+            35892,
+            36924,
+            43248,
+            44208,
+            46400,
+            47508
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 1000,
+              "p95_ms": 1000,
+              "max_ms": 1000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 500,
+            "initialized": 500,
+            "evaluated_bars": 26363,
+            "observed": 500,
+            "lag_sim_ms": {
+              "count": 500,
+              "p50_ms": 29000,
+              "p95_ms": 127000,
+              "max_ms": 250000
+            },
+            "closed_bar_backlog": {
+              "count": 500,
+              "p50": 1,
+              "p95": 7,
+              "max": 19
+            },
+            "instances_behind_closed_bars": 346
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true
+        },
+        "input_activity": null,
+        "sustained_input": null,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-final-tiers\\bots-500\\report.json",
+        "receipt_sha256": "0b7fea05970b9481b5f6b2afebecfcfa1afba1523975b78f99d5256da5d91f3a",
+        "final_clock": {
+          "step": 1018,
+          "market_time_ms": 1018000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 0,
+        "feed_trade_receipts": 0,
+        "feed_errors": []
+      },
+      {
+        "bots": 1000,
+        "server_sha256": "be43e4b8772fd0a12ef7c450c47d56415759270117eff654724f6f67261c1d98",
+        "recipe_sha256": "9ee961868532c9f25eb36390e921ad3bc521ce89937ac0a45993d200990f7fe3",
+        "steps_per_wall_second": 23.923221285335888,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 58,
+            "p50_ms": 4.527700002654456,
+            "p95_ms": 58.86260000261245,
+            "max_ms": 93.55479999794625
+          },
+          "place": {
+            "count": 49,
+            "p50_ms": 33.29990000202088,
+            "p95_ms": 209.66179999959422,
+            "max_ms": 255.64419999864185
+          },
+          "cancel": {
+            "count": 49,
+            "p50_ms": 15.2719999969122,
+            "p95_ms": 28.868000001239125,
+            "max_ms": 271.7781000028481
+          }
+        },
+        "clock_latency": {
+          "count": 108,
+          "p50_ms": 16.282799995678943,
+          "p95_ms": 45.72149999876274,
+          "max_ms": 110.37760000181152
+        },
+        "peak_memory_mib": 896.65625,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 1264.34375,
+          "peak_processes": 10,
+          "average_logical_cores": 1.585553024884411,
+          "seen_pids": [
+            11652,
+            13844,
+            15040,
+            16588,
+            41904,
+            42136,
+            47224,
+            47244,
+            47640,
+            47764
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 1000,
+              "p95_ms": 1000,
+              "max_ms": 1000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 35017,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 312000,
+              "p95_ms": 367000,
+              "max_ms": 380000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "instances_behind_closed_bars": 0
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true
+        },
+        "input_activity": null,
+        "sustained_input": null,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-final-tiers\\bots-1000\\report.json",
+        "receipt_sha256": "df61c13a72b3b571b07f4fe089485f2cbcf38afb8199ce708359118d30f7c053",
+        "final_clock": {
+          "step": 900,
+          "market_time_ms": 900000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 0,
+        "feed_trade_receipts": 0,
+        "feed_errors": []
+      }
+    ],
+    "funding_only_worker_tuning": {
+      "four": [
+        {
+          "bots": 1000,
+          "server_sha256": "be43e4b8772fd0a12ef7c450c47d56415759270117eff654724f6f67261c1d98",
+          "recipe_sha256": "b929ef6a2265809b7933b88ed0a7a341f45c20aff5e674817cecf5ae457e8170",
+          "steps_per_wall_second": 26.408311489895183,
+          "interval_ms": 25,
+          "target_steps_per_second": 40.0,
+          "warmup_seconds": 5,
+          "measurement_seconds": 30.0,
+          "latency": {
+            "view": {
+              "count": 57,
+              "p50_ms": 18.495000003895257,
+              "p95_ms": 60.394100000848994,
+              "max_ms": 82.49649999925168
+            },
+            "place": {
+              "count": 52,
+              "p50_ms": 18.016599999100436,
+              "p95_ms": 140.69120000203839,
+              "max_ms": 166.31849999976112
+            },
+            "cancel": {
+              "count": 52,
+              "p50_ms": 15.529099997365847,
+              "p95_ms": 109.16079999879003,
+              "max_ms": 184.86719999782508
+            }
+          },
+          "clock_latency": {
+            "count": 108,
+            "p50_ms": 16.22549999592593,
+            "p95_ms": 46.47280000062892,
+            "max_ms": 58.96800000482472
+          },
+          "peak_memory_mib": 729.40625,
+          "process_tree": {
+            "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+            "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+            "peak_sampled_rss_mib": 1036.5078125,
+            "peak_processes": 10,
+            "average_logical_cores": 1.4729185412068146,
+            "seen_pids": [
+              2756,
+              14744,
+              17172,
+              23096,
+              29080,
+              31620,
+              31632,
+              41196,
+              44992,
+              47116
+            ],
+            "errors": []
+          },
+          "language_groups": {
+            "native": {
+              "instances": 38,
+              "initialized": 38,
+              "evaluated_bars": 0,
+              "observed": 38,
+              "lag_sim_ms": {
+                "count": 38,
+                "p50_ms": 1000,
+                "p95_ms": 1000,
+                "max_ms": 1000
+              },
+              "closed_bar_backlog": null,
+              "instances_behind_closed_bars": 0
+            },
+            "pine": {
+              "instances": 1000,
+              "initialized": 1000,
+              "evaluated_bars": 26677,
+              "observed": 1000,
+              "lag_sim_ms": {
+                "count": 1000,
+                "p50_ms": 400000,
+                "p95_ms": 449000,
+                "max_ms": 458000
+              },
+              "closed_bar_backlog": {
+                "count": 1000,
+                "p50": 0,
+                "p95": 0,
+                "max": 0
+              },
+              "instances_behind_closed_bars": 0
+            }
+          },
+          "errors": [],
+          "qualified": {
+            "order_p95_under_250ms": true,
+            "configured_step_rate": false,
+            "configured_40_steps_per_second": false,
+            "literal_step_rate": false,
+            "all_languages_initialized": true,
+            "no_bot_errors": true
+          },
+          "input_activity": {
+            "V-BTC-SPOT:10000": {
+              "closed_bars": 37,
+              "latest_open_ms": 510000,
+              "market_time_ms": 978000
+            },
+            "V-BTC-SPOT:15000": {
+              "closed_bars": 27,
+              "latest_open_ms": 510000,
+              "market_time_ms": 978000
+            },
+            "V-BTC-SPOT:30000": {
+              "closed_bars": 16,
+              "latest_open_ms": 510000,
+              "market_time_ms": 978000
+            }
+          },
+          "sustained_input": null,
+          "storage": "in-memory durable journal; not PostgreSQL",
+          "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-worker-tuning\\4\\bots-1000\\report.json",
+          "receipt_sha256": "584b581125bd89dc1f2c3194db99fd52a6c154011111bff76067d0eeef390b31",
+          "final_clock": {
+            "step": 978,
+            "market_time_ms": 978000,
+            "step_duration_ms": 1000
+          },
+          "bot_errors": {},
+          "feed_iterations": 0,
+          "feed_trade_receipts": 0,
+          "feed_errors": []
+        }
+      ],
+      "sixteen": [
+        {
+          "bots": 1000,
+          "server_sha256": "be43e4b8772fd0a12ef7c450c47d56415759270117eff654724f6f67261c1d98",
+          "recipe_sha256": "b929ef6a2265809b7933b88ed0a7a341f45c20aff5e674817cecf5ae457e8170",
+          "steps_per_wall_second": 21.383215090169266,
+          "interval_ms": 25,
+          "target_steps_per_second": 40.0,
+          "warmup_seconds": 5,
+          "measurement_seconds": 30.0,
+          "latency": {
+            "view": {
+              "count": 56,
+              "p50_ms": 18.49249999941094,
+              "p95_ms": 99.09169999446021,
+              "max_ms": 115.50379999971483
+            },
+            "place": {
+              "count": 50,
+              "p50_ms": 34.611600000062026,
+              "p95_ms": 165.364700005739,
+              "max_ms": 255.99810000130674
+            },
+            "cancel": {
+              "count": 50,
+              "p50_ms": 17.45880000089528,
+              "p95_ms": 108.93709999800194,
+              "max_ms": 430.56049999722745
+            }
+          },
+          "clock_latency": {
+            "count": 106,
+            "p50_ms": 16.30200000363402,
+            "p95_ms": 102.53000000375323,
+            "max_ms": 131.99049999821
+          },
+          "peak_memory_mib": 1241.23046875,
+          "process_tree": {
+            "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+            "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+            "peak_sampled_rss_mib": 2074.59765625,
+            "peak_processes": 34,
+            "average_logical_cores": 2.7236099961745377,
+            "seen_pids": [
+              692,
+              3600,
+              3816,
+              4332,
+              5408,
+              5780,
+              5824,
+              12460,
+              12752,
+              13800,
+              13824,
+              15696,
+              16572,
+              17160,
+              17200,
+              20280,
+              25120,
+              27740,
+              27856,
+              29024,
+              31252,
+              32352,
+              33336,
+              34988,
+              38196,
+              40492,
+              41944,
+              41988,
+              43200,
+              44284,
+              44868,
+              45388,
+              47076,
+              47820
+            ],
+            "errors": []
+          },
+          "language_groups": {
+            "native": {
+              "instances": 38,
+              "initialized": 38,
+              "evaluated_bars": 0,
+              "observed": 38,
+              "lag_sim_ms": {
+                "count": 38,
+                "p50_ms": 2000,
+                "p95_ms": 2000,
+                "max_ms": 2000
+              },
+              "closed_bar_backlog": null,
+              "instances_behind_closed_bars": 0
+            },
+            "pine": {
+              "instances": 1000,
+              "initialized": 1000,
+              "evaluated_bars": 49227,
+              "observed": 1000,
+              "lag_sim_ms": {
+                "count": 1000,
+                "p50_ms": 57000,
+                "p95_ms": 201000,
+                "max_ms": 398000
+              },
+              "closed_bar_backlog": {
+                "count": 1000,
+                "p50": 3,
+                "p95": 16,
+                "max": 40
+              },
+              "instances_behind_closed_bars": 926
+            }
+          },
+          "errors": [],
+          "qualified": {
+            "order_p95_under_250ms": true,
+            "configured_step_rate": false,
+            "configured_40_steps_per_second": false,
+            "literal_step_rate": false,
+            "all_languages_initialized": true,
+            "no_bot_errors": true
+          },
+          "input_activity": {
+            "V-BTC-SPOT:10000": {
+              "closed_bars": 82,
+              "latest_open_ms": 810000,
+              "market_time_ms": 820000
+            },
+            "V-BTC-SPOT:15000": {
+              "closed_bars": 54,
+              "latest_open_ms": 795000,
+              "market_time_ms": 820000
+            },
+            "V-BTC-SPOT:30000": {
+              "closed_bars": 27,
+              "latest_open_ms": 780000,
+              "market_time_ms": 820000
+            }
+          },
+          "sustained_input": null,
+          "storage": "in-memory durable journal; not PostgreSQL",
+          "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-worker-tuning\\16\\bots-1000\\report.json",
+          "receipt_sha256": "6b4554adcbf6b0cda7fd80e567e6e52a29543190c304b00bb7d11d57ba1b17e1",
+          "final_clock": {
+            "step": 820,
+            "market_time_ms": 820000,
+            "step_duration_ms": 1000
+          },
+          "bot_errors": {},
+          "feed_iterations": 0,
+          "feed_trade_receipts": 0,
+          "feed_errors": []
+        }
+      ]
+    },
+    "phase2_sustained_tiers": [
+      {
+        "bots": 100,
+        "server_sha256": "be43e4b8772fd0a12ef7c450c47d56415759270117eff654724f6f67261c1d98",
+        "recipe_sha256": "c449fec7855e9c358095c30eb271d80d20b873f1b6428441b26ad3272a42e182",
+        "steps_per_wall_second": 36.20281564956955,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 58,
+            "p50_ms": 16.41350000136299,
+            "p95_ms": 21.20930000091903,
+            "max_ms": 26.496800004679244
+          },
+          "place": {
+            "count": 55,
+            "p50_ms": 17.926300002727658,
+            "p95_ms": 77.54669999849284,
+            "max_ms": 86.67470000364119
+          },
+          "cancel": {
+            "count": 55,
+            "p50_ms": 14.192799993907101,
+            "p95_ms": 26.667800004361197,
+            "max_ms": 29.73329999804264
+          }
+        },
+        "clock_latency": {
+          "count": 110,
+          "p50_ms": 16.058600005635526,
+          "p95_ms": 20.14850000705337,
+          "max_ms": 33.25199999380857
+        },
+        "peak_memory_mib": 368.7734375,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 561.83203125,
+          "peak_processes": 10,
+          "average_logical_cores": 2.554883195093411,
+          "seen_pids": [
+            4568,
+            7856,
+            9316,
+            10560,
+            18524,
+            27572,
+            29988,
+            32104,
+            32336,
+            33580
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 1000,
+              "p95_ms": 1000,
+              "max_ms": 1000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 100,
+            "initialized": 100,
+            "evaluated_bars": 8541,
+            "observed": 100,
+            "lag_sim_ms": {
+              "count": 100,
+              "p50_ms": 14000,
+              "p95_ms": 33000,
+              "max_ms": 39000
+            },
+            "closed_bar_backlog": {
+              "count": 100,
+              "p50": 1,
+              "p95": 2,
+              "max": 4
+            },
+            "instances_behind_closed_bars": 78
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true,
+          "recent_nonempty_input": true,
+          "no_input_feed_errors": true
+        },
+        "input_activity": {
+          "V-BTC-SPOT:10000": {
+            "closed_bars": 129,
+            "latest_open_ms": 1280000,
+            "market_time_ms": 1294000
+          },
+          "V-BTC-SPOT:15000": {
+            "closed_bars": 86,
+            "latest_open_ms": 1275000,
+            "market_time_ms": 1294000
+          },
+          "V-BTC-SPOT:30000": {
+            "closed_bars": 43,
+            "latest_open_ms": 1260000,
+            "market_time_ms": 1294000
+          }
+        },
+        "sustained_input": true,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-sustained-tiers\\bots-100\\report.json",
+        "receipt_sha256": "5eeacab39a9cbf9ed28d5e72ee16869f50754179064babfebbf54c307f3c0f8a",
+        "final_clock": {
+          "step": 1294,
+          "market_time_ms": 1294000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 296,
+        "feed_trade_receipts": 264,
+        "feed_errors": []
+      },
+      {
+        "bots": 500,
+        "server_sha256": "be43e4b8772fd0a12ef7c450c47d56415759270117eff654724f6f67261c1d98",
+        "recipe_sha256": "9e36cd1a930e205e59d41ba610e1b6324036aa53d24f397e5d4bcd17d8e3ae50",
+        "steps_per_wall_second": 20.318075270409725,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 56,
+            "p50_ms": 17.95720000518486,
+            "p95_ms": 92.48170000500977,
+            "max_ms": 169.99989999749232
+          },
+          "place": {
+            "count": 48,
+            "p50_ms": 33.30429999914486,
+            "p95_ms": 286.5118999980041,
+            "max_ms": 410.49780000321334
+          },
+          "cancel": {
+            "count": 47,
+            "p50_ms": 14.84840000193799,
+            "p95_ms": 289.84020000643795,
+            "max_ms": 398.3202000017627
+          }
+        },
+        "clock_latency": {
+          "count": 106,
+          "p50_ms": 16.2586000005831,
+          "p95_ms": 110.24610000458779,
+          "max_ms": 152.41479999531293
+        },
+        "peak_memory_mib": 645.29296875,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 951.40234375,
+          "peak_processes": 10,
+          "average_logical_cores": 2.2761649824192585,
+          "seen_pids": [
+            10356,
+            14468,
+            26288,
+            28100,
+            32596,
+            40980,
+            42476,
+            45496,
+            46168,
+            47896
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 2000,
+              "p95_ms": 2000,
+              "max_ms": 2000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 500,
+            "initialized": 500,
+            "evaluated_bars": 24362,
+            "observed": 500,
+            "lag_sim_ms": {
+              "count": 500,
+              "p50_ms": 44000,
+              "p95_ms": 209000,
+              "max_ms": 334000
+            },
+            "closed_bar_backlog": {
+              "count": 500,
+              "p50": 3,
+              "p95": 15,
+              "max": 33
+            },
+            "instances_behind_closed_bars": 431
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": false,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true,
+          "recent_nonempty_input": true,
+          "no_input_feed_errors": true
+        },
+        "input_activity": {
+          "V-BTC-SPOT:10000": {
+            "closed_bars": 80,
+            "latest_open_ms": 790000,
+            "market_time_ms": 802000
+          },
+          "V-BTC-SPOT:15000": {
+            "closed_bars": 53,
+            "latest_open_ms": 780000,
+            "market_time_ms": 802000
+          },
+          "V-BTC-SPOT:30000": {
+            "closed_bars": 26,
+            "latest_open_ms": 750000,
+            "market_time_ms": 802000
+          }
+        },
+        "sustained_input": true,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-sustained-tiers\\bots-500\\report.json",
+        "receipt_sha256": "9ed1ec9825971e0b69c87b0d97d1355a4733533dc6583af1296b1db1355db83c",
+        "final_clock": {
+          "step": 802,
+          "market_time_ms": 802000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 188,
+        "feed_trade_receipts": 168,
+        "feed_errors": []
+      },
+      {
+        "bots": 1000,
+        "server_sha256": "be43e4b8772fd0a12ef7c450c47d56415759270117eff654724f6f67261c1d98",
+        "recipe_sha256": "00243a5528660efd540c49203581e048ede1202ab1cbb342f4759fe85451e4c7",
+        "steps_per_wall_second": 15.034766729819347,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 55,
+            "p50_ms": 19.746599995414726,
+            "p95_ms": 160.64059999916935,
+            "max_ms": 218.19010000035632
+          },
+          "place": {
+            "count": 42,
+            "p50_ms": 161.6087999937008,
+            "p95_ms": 421.4205999960541,
+            "max_ms": 685.2811999997357
+          },
+          "cancel": {
+            "count": 42,
+            "p50_ms": 15.660999997635372,
+            "p95_ms": 31.364700000267476,
+            "max_ms": 303.610299997672
+          }
+        },
+        "clock_latency": {
+          "count": 104,
+          "p50_ms": 16.567400001804344,
+          "p95_ms": 116.36559999897145,
+          "max_ms": 185.93949999922188
+        },
+        "peak_memory_mib": 807.6484375,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 1157.5859375,
+          "peak_processes": 10,
+          "average_logical_cores": 1.9222416295107796,
+          "seen_pids": [
+            17136,
+            27676,
+            28812,
+            32204,
+            34336,
+            35348,
+            38196,
+            41744,
+            42444,
+            47832
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 1000,
+              "p95_ms": 1000,
+              "max_ms": 1000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 33201,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 73000,
+              "p95_ms": 276000,
+              "max_ms": 493000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 4,
+              "p95": 21,
+              "max": 43
+            },
+            "instances_behind_closed_bars": 959
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": false,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true,
+          "recent_nonempty_input": true,
+          "no_input_feed_errors": true
+        },
+        "input_activity": {
+          "V-BTC-SPOT:10000": {
+            "closed_bars": 60,
+            "latest_open_ms": 590000,
+            "market_time_ms": 606000
+          },
+          "V-BTC-SPOT:15000": {
+            "closed_bars": 40,
+            "latest_open_ms": 585000,
+            "market_time_ms": 606000
+          },
+          "V-BTC-SPOT:30000": {
+            "closed_bars": 20,
+            "latest_open_ms": 570000,
+            "market_time_ms": 606000
+          }
+        },
+        "sustained_input": true,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-sustained-tiers\\bots-1000\\report.json",
+        "receipt_sha256": "59a814817eb5ed60337634e68794a1da815ed06c249b51f77238754fe01fdb6b",
+        "final_clock": {
+          "step": 606,
+          "market_time_ms": 606000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 131,
+        "feed_trade_receipts": 108,
+        "feed_errors": []
+      }
+    ],
+    "phase2_sustained_abba": {
+      "A1": {
+        "bots": 1000,
+        "server_sha256": "bd569ccb310c72588b83d656487933fcd9d631cf97b049cd30bafc0ab7dbb4ae",
+        "recipe_sha256": "00243a5528660efd540c49203581e048ede1202ab1cbb342f4759fe85451e4c7",
+        "steps_per_wall_second": 8.505689237866891,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 58,
+            "p50_ms": 19.132800000079442,
+            "p95_ms": 21.24799999728566,
+            "max_ms": 72.19169999734731
+          },
+          "place": {
+            "count": 52,
+            "p50_ms": 29.154699994251132,
+            "p95_ms": 106.17029999411898,
+            "max_ms": 139.1555000009248
+          },
+          "cancel": {
+            "count": 52,
+            "p50_ms": 15.902500002994202,
+            "p95_ms": 103.32409999682568,
+            "max_ms": 618.8185999999405
+          }
+        },
+        "clock_latency": {
+          "count": 110,
+          "p50_ms": 16.315300003043376,
+          "p95_ms": 17.399299998942297,
+          "max_ms": 72.26359999913257
+        },
+        "peak_memory_mib": 595.5625,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 740.43359375,
+          "peak_processes": 10,
+          "average_logical_cores": 2.6706395681087423,
+          "seen_pids": [
+            3844,
+            10632,
+            15072,
+            25132,
+            33860,
+            37028,
+            39760,
+            40428,
+            44360,
+            45388
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 3000,
+              "p95_ms": 5000,
+              "max_ms": 6000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 25485,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 17000,
+              "p95_ms": 58000,
+              "max_ms": 171000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 1,
+              "p95": 5,
+              "max": 18
+            },
+            "instances_behind_closed_bars": 716
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true,
+          "recent_nonempty_input": true,
+          "no_input_feed_errors": true
+        },
+        "input_activity": {
+          "V-BTC-SPOT:10000": {
+            "closed_bars": 41,
+            "latest_open_ms": 400000,
+            "market_time_ms": 410000
+          },
+          "V-BTC-SPOT:15000": {
+            "closed_bars": 27,
+            "latest_open_ms": 390000,
+            "market_time_ms": 410000
+          },
+          "V-BTC-SPOT:30000": {
+            "closed_bars": 13,
+            "latest_open_ms": 360000,
+            "market_time_ms": 410000
+          }
+        },
+        "sustained_input": true,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-abba-sustained\\A1\\bots-1000\\report.json",
+        "receipt_sha256": "488b3a2620b77e854423b010f4cd291855fc8a984db9497eef6f3be3ed245c6c",
+        "final_clock": {
+          "step": 410,
+          "market_time_ms": 410000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 208,
+        "feed_trade_receipts": 204,
+        "feed_errors": []
+      },
+      "B1": {
+        "bots": 1000,
+        "server_sha256": "be43e4b8772fd0a12ef7c450c47d56415759270117eff654724f6f67261c1d98",
+        "recipe_sha256": "00243a5528660efd540c49203581e048ede1202ab1cbb342f4759fe85451e4c7",
+        "steps_per_wall_second": 15.566334588023283,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 55,
+            "p50_ms": 19.896300000254996,
+            "p95_ms": 170.5004999967059,
+            "max_ms": 179.749199996877
+          },
+          "place": {
+            "count": 43,
+            "p50_ms": 156.55310000147438,
+            "p95_ms": 363.9744999964023,
+            "max_ms": 437.9278999986127
+          },
+          "cancel": {
+            "count": 43,
+            "p50_ms": 15.96119999885559,
+            "p95_ms": 29.52530000038678,
+            "max_ms": 256.427000000258
+          }
+        },
+        "clock_latency": {
+          "count": 101,
+          "p50_ms": 16.709600000467617,
+          "p95_ms": 136.05449999886332,
+          "max_ms": 177.36090000107652
+        },
+        "peak_memory_mib": 816.58203125,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 1187.546875,
+          "peak_processes": 10,
+          "average_logical_cores": 2.0032997466476714,
+          "seen_pids": [
+            4876,
+            7104,
+            10184,
+            21732,
+            22460,
+            24996,
+            35128,
+            37312,
+            42912,
+            44008
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 1000,
+              "p95_ms": 1000,
+              "max_ms": 1000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 34670,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 79000,
+              "p95_ms": 261000,
+              "max_ms": 572000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 4,
+              "p95": 20,
+              "max": 57
+            },
+            "instances_behind_closed_bars": 888
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": false,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true,
+          "recent_nonempty_input": true,
+          "no_input_feed_errors": true
+        },
+        "input_activity": {
+          "V-BTC-SPOT:10000": {
+            "closed_bars": 62,
+            "latest_open_ms": 610000,
+            "market_time_ms": 627000
+          },
+          "V-BTC-SPOT:15000": {
+            "closed_bars": 41,
+            "latest_open_ms": 600000,
+            "market_time_ms": 627000
+          },
+          "V-BTC-SPOT:30000": {
+            "closed_bars": 20,
+            "latest_open_ms": 570000,
+            "market_time_ms": 627000
+          }
+        },
+        "sustained_input": true,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-abba-sustained\\B1\\bots-1000\\report.json",
+        "receipt_sha256": "394f745f0d69ceb62beea5cafcad0e0c50a8570950add04110d43faa5f6d6a45",
+        "final_clock": {
+          "step": 627,
+          "market_time_ms": 627000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 135,
+        "feed_trade_receipts": 105,
+        "feed_errors": []
+      },
+      "B2": {
+        "bots": 1000,
+        "server_sha256": "be43e4b8772fd0a12ef7c450c47d56415759270117eff654724f6f67261c1d98",
+        "recipe_sha256": "00243a5528660efd540c49203581e048ede1202ab1cbb342f4759fe85451e4c7",
+        "steps_per_wall_second": 17.887265482295614,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 56,
+            "p50_ms": 18.713699995714705,
+            "p95_ms": 129.31059999391437,
+            "max_ms": 149.42119999614079
+          },
+          "place": {
+            "count": 50,
+            "p50_ms": 20.610999999917112,
+            "p95_ms": 241.82989999826532,
+            "max_ms": 275.8968999987701
+          },
+          "cancel": {
+            "count": 50,
+            "p50_ms": 14.39599999866914,
+            "p95_ms": 28.173200000310317,
+            "max_ms": 397.47750000242377
+          }
+        },
+        "clock_latency": {
+          "count": 105,
+          "p50_ms": 16.267600003629923,
+          "p95_ms": 105.46930000418797,
+          "max_ms": 143.99299999786308
+        },
+        "peak_memory_mib": 923.4765625,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 1309.23828125,
+          "peak_processes": 10,
+          "average_logical_cores": 1.9473290518337822,
+          "seen_pids": [
+            5780,
+            7292,
+            9944,
+            11224,
+            20932,
+            27788,
+            31144,
+            36020,
+            37672,
+            39404
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 1000,
+              "p95_ms": 1000,
+              "max_ms": 1000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 40879,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 58000,
+              "p95_ms": 223000,
+              "max_ms": 628000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 3,
+              "p95": 17,
+              "max": 63
+            },
+            "instances_behind_closed_bars": 928
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true,
+          "recent_nonempty_input": true,
+          "no_input_feed_errors": true
+        },
+        "input_activity": {
+          "V-BTC-SPOT:10000": {
+            "closed_bars": 70,
+            "latest_open_ms": 690000,
+            "market_time_ms": 700000
+          },
+          "V-BTC-SPOT:15000": {
+            "closed_bars": 46,
+            "latest_open_ms": 675000,
+            "market_time_ms": 700000
+          },
+          "V-BTC-SPOT:30000": {
+            "closed_bars": 23,
+            "latest_open_ms": 660000,
+            "market_time_ms": 700000
+          }
+        },
+        "sustained_input": true,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-abba-sustained\\B2\\bots-1000\\report.json",
+        "receipt_sha256": "6bc9d0488dbd6ee8dec9818cbd19ef75fbd6a3bf632d2a818239dcd5cf559380",
+        "final_clock": {
+          "step": 700,
+          "market_time_ms": 700000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 162,
+        "feed_trade_receipts": 155,
+        "feed_errors": []
+      },
+      "A2": {
+        "bots": 1000,
+        "server_sha256": "bd569ccb310c72588b83d656487933fcd9d631cf97b049cd30bafc0ab7dbb4ae",
+        "recipe_sha256": "00243a5528660efd540c49203581e048ede1202ab1cbb342f4759fe85451e4c7",
+        "steps_per_wall_second": 8.987475290947758,
+        "interval_ms": 25,
+        "target_steps_per_second": 40.0,
+        "warmup_seconds": 5,
+        "measurement_seconds": 30.0,
+        "latency": {
+          "view": {
+            "count": 58,
+            "p50_ms": 18.464399996446446,
+            "p95_ms": 42.70700000051875,
+            "max_ms": 177.41820000082953
+          },
+          "place": {
+            "count": 52,
+            "p50_ms": 25.192400004016235,
+            "p95_ms": 109.48330000246642,
+            "max_ms": 526.7781000002287
+          },
+          "cancel": {
+            "count": 52,
+            "p50_ms": 14.545300000463612,
+            "p95_ms": 109.44729999755509,
+            "max_ms": 125.65669999457896
+          }
+        },
+        "clock_latency": {
+          "count": 110,
+          "p50_ms": 15.952600006130524,
+          "p95_ms": 17.15410000178963,
+          "max_ms": 39.24199999892153
+        },
+        "peak_memory_mib": 541.63671875,
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 683.30078125,
+          "peak_processes": 10,
+          "average_logical_cores": 2.7991477099762463,
+          "seen_pids": [
+            6532,
+            8672,
+            32592,
+            35828,
+            40488,
+            41716,
+            42672,
+            42968,
+            43224,
+            47640
+          ],
+          "errors": []
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 4000,
+              "p95_ms": 5000,
+              "max_ms": 5000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 27134,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 17000,
+              "p95_ms": 58000,
+              "max_ms": 155000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 1,
+              "p95": 4,
+              "max": 15
+            },
+            "instances_behind_closed_bars": 806
+          }
+        },
+        "errors": [],
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": false,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true,
+          "recent_nonempty_input": true,
+          "no_input_feed_errors": true
+        },
+        "input_activity": {
+          "V-BTC-SPOT:10000": {
+            "closed_bars": 43,
+            "latest_open_ms": 420000,
+            "market_time_ms": 435000
+          },
+          "V-BTC-SPOT:15000": {
+            "closed_bars": 29,
+            "latest_open_ms": 420000,
+            "market_time_ms": 435000
+          },
+          "V-BTC-SPOT:30000": {
+            "closed_bars": 14,
+            "latest_open_ms": 390000,
+            "market_time_ms": 435000
+          }
+        },
+        "sustained_input": true,
+        "storage": "in-memory durable journal; not PostgreSQL",
+        "receipt": "E:\\projects\\MarketForge\\.local\\pine-scale-continuation-20261011\\pure-pine-abba-sustained\\A2\\bots-1000\\report.json",
+        "receipt_sha256": "fb0d07ce15dee76220afc06cb30fda7069b3aea704b9e75b28b02e010e8355af",
+        "final_clock": {
+          "step": 435,
+          "market_time_ms": 435000,
+          "step_duration_ms": 1000
+        },
+        "bot_errors": {},
+        "feed_iterations": 221,
+        "feed_trade_receipts": 221,
+        "feed_errors": []
+      }
+    }
+  },
+  "failure_receipts": [
+    {
+      "phase": "shared Cargo cache",
+      "outcome": "rejected candidate artifact before any comparison",
+      "reason": "before and candidate binaries had the same SHA256 and candidate compilation completed without compiling changed sources; rebuilt using an independent target"
+    },
+    {
+      "phase": "first PostgreSQL database creation",
+      "outcome": "failed, then repaired",
+      "reason": "PowerShell passed concatenated -h127.0.0.1 incorrectly; explicit -h and host arguments succeeded. Only this task cluster was started."
+    },
+    {
+      "phase": "shared workspace build",
+      "outcome": "narrow compile repair",
+      "reason": "new market_analysis.rs passed RoomReadState to an AppState-only helper; use the command cursor on the pinned room snapshot instead"
+    }
+  ],
+  "checkpoint_boundary": {
+    "runtime": "0.3.1+mf1",
+    "external_session_exports": [
+      "append",
+      "cursor"
+    ],
+    "complete_calculation_checkpoint_available": false,
+    "remaining_horizon": {
+      "default": 512,
+      "maximum": 2048
+    },
+    "reason": "ExternalSession exports append/cursor only. No complete serializer/restorer exists for HistoricalRuntime, TA/request contexts, object identities and external broker state. Output snapshots are not calculation checkpoints.",
+    "policy": "Keep the existing fail-closed horizon and durable full transcript; do not reset state or widen history limits to mask the missing continuation contract."
+  },
+  "limitations": [
+    "Three exact bundled spot scripts replicated across independent accounts, not 1000 distinct strategies.",
+    "Only six exact source SHA256s qualify for incremental execution; other and legacy scripts replay.",
+    "40x stress: a 25ms wall clock tick advances 1000ms simulation, with 10/15/30s simulated bars.",
+    "Short in-memory durable journal load; PostgreSQL restart correctness tested separately from capacity.",
+    "Final paused backlog and simulation observation lag are not wall-clock decision P95.",
+    "No per-decision wall-clock P95 instrumentation or long-run memory/worker-recycle qualification.",
+    "Sampled summed working set counts shared pages per process and can miss short-lived processes.",
+    "Responses and durable transcript remain complete; no complete Pine calculation checkpoint.",
+    "History default512/max2048 fail-closed unchanged; upstream 0.3.2 compatibility work not integrated."
+  ]
+}

@@ -21,7 +21,7 @@ from background_market import recipe
 def request(prices, script="ma.pine", state=None):
     config = {name: value["default"] for name, value in json.loads(
         (ROOT / "bot-plugins/pine-strategy/bot.json").read_text(encoding="utf-8"))["bot"]["parameters"].items()}
-    config.update(script=script, bar_interval_ms=1000)
+    config.update(script=script, bar_interval_ms=1000, execution_mode="legacy")
     candles = [{"schema_version": 1, "open_time_ms": i * 1000, "close_time_ms": (i + 1) * 1000,
                 "open_tick": price, "high_tick": price, "low_tick": price, "close_tick": price,
                 "volume": 1, "quote_volume": price, "trades": 1, "is_final": True}

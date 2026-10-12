@@ -1,0 +1,11 @@
+//@version=6
+strategy("MarketForge resting limit")
+offset = input.int(2, "Offset", minval=1)
+qty = input.int(2, "Quantity", minval=1)
+mean = ta.sma(close, 5)
+if close < mean and strategy.position_size == 0
+    strategy.entry("L", strategy.long, qty=qty, limit=close-offset)
+if close >= mean
+    strategy.cancel("L")
+    strategy.close("L")
+plot(mean)

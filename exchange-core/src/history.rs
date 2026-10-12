@@ -81,6 +81,18 @@ impl<T: Clone> History<T> {
 }
 
 impl<T> History<T> {
+    /// Indexed immutable reads without flattening shared history chunks.
+    pub(crate) fn at(&self, index: usize) -> Option<&T> {
+        if index >= self.len {
+            return None;
+        }
+        let sealed = self.len - self.tail.len();
+        if index < sealed {
+            self.chunks.get(index / CHUNK_SIZE)?.get(index % CHUNK_SIZE)
+        } else {
+            self.tail.get(index - sealed)
+        }
+    }
     pub(crate) fn is_empty(&self) -> bool {
         self.len == 0
     }

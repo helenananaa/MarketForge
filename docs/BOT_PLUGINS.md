@@ -58,7 +58,7 @@ bot-plugins/
 
 ## 3. 编写决策入口
 
-每次决策启动一次进程。stdin 收到一行 JSON；进程必须在 stdout 写一个 JSON 响应并退出。诊断写到 stderr。请求包括：
+未声明 `worker_pool` 时，每次决策启动一次进程。stdin 收到一行 JSON；进程必须在 stdout 写一个 JSON 响应并退出。诊断写到 stderr。请求包括：
 
 - `protocol_version`、`plugin_id`、`plugin_version`、`state_version`；
 - `participant`：实例 ID、房间、账户、明确的交易品种；
@@ -93,7 +93,84 @@ print(json.dumps(response), flush=True)
 
 插件返回动作，由平台绑定账户、品种并提交到统一网关。插件不需要持有交易 API 凭据。每次最多 64 个动作，request 最大 4 MiB，response 最大 1 MiB，stderr 最大 64 KiB。默认决策超时 1000 ms，清单可设 1–10000 ms。自动模式下，进程失败、超时、超限或响应版本错误只暂停出错的 bot，`bot_errors` 按实例记录原因，`last_error` 保留最近错误；市场和其他 bot 继续运行。重新应用 bot 列表可重试这些实例。手动单步仍在任一 bot 失败时拒绝整个候选步骤。Unix 上同时终止该进程组并回收子进程。
 
-策略内部的随机数状态、计数器和其他需要恢复的数据都必须放入返回的 `state`。不要依靠进程内存跨步骤保存状态；相同配置、seed、state、observation 应产生相同决策。模型权重可从插件目录加载，但每次启动都会重新加载，因此长耗时模型应先预计算或通过插件连接自己的推理服务。自动模式在市场锁外并发计算 bot 决策，每个实例最多一个在途决策；手动单步保持确定性的串行调度。没有常驻模型进程、热安装或热升级。
+原生 `OrderAction` 的限价、Post-only、IOC/FOK、合约 reduce-only、撤改单、条件单和
+保护订单均可使用，受对应市场原有能力和风控约束。跨品种或需要关联真实订单 ID 时，
+使用 bot 专用信封；不能修改房间或账户，也不能嵌套信封：
+
+```json
+{"BotOrder":{"instrument_id":"V-BTC-PERP","key":"hedge-leg",
+ "action":{"PlaceProtected":{"side":"Sell","qty":1,"order_type":"Limit",
+ "price_tick":105,"reduce_only":false}}}}
+```
+
+目标必须是主品种或工厂声明的 related instrument。宿主先校验整批路由，再对每个
+实际品种执行训练策略、权限和风控检查；恢复中的动作也校验。HTTP 人工订单 API
+拒绝此信封，避免从路径绑定的品种绕过路由检查。
+
+宿主把实际 `command_seq`、仿真时间、`order_id`、原生动作、接受/拒绝和原因放入
+插件 object state 的保留字段 `_host_receipts`，与交易和状态一起持久化。插件在下次
+决策消费该字段；最多保留 64 个回执。不要猜测订单 ID；接受 IOC 不等于发生了成交。
+使用信封时 state 必须是 JSON object。其他未使用信封的插件保持原来的 opaque state。
+观察中的 `instrument` 提供真实 tick/lot 与资产元数据。历史 `account_events` 中的
+Spot 仅保留现金、库存、费用等清算账本字段；当前 `own_account` 才提供可用余额和
+挂单预留。Perp 反馈包括实际持仓侧、均价、权益、资金费和保证金状态。
+
+进程清单可声明 `related_instruments_parameter` 与 `additional_intervals_parameter`，
+分别引用已声明的 array 参数。前者提供品种列表，后者提供正整数毫秒周期。
+相关市场也获得清单指定的 history；附加周期在主 observation 的
+`bot_market_data.streams` 中。`account_events=true` 会附加自己的清算账户快照和
+自己的条件单状态。数据与主 observation 使用同一个冻结房间版本。
+清单可通过 `compatible_versions` 显式列出经过插件实现支持的旧版本；仍要求相同
+state_version，协议和响应身份不放宽。默认只接受安装版本。
+
+策略内部的随机数状态、计数器和其他需要恢复的数据都必须放入返回的 `state`；相同配置、seed、state、observation 应产生相同决策。自动模式在市场锁外并发计算，每个实例最多一个在途决策；手动单步保持确定性的串行调度。常驻进程可以缓存模型、编译结果和计算结果，但必须能从请求携带的 durable state 恢复；缓存失效不能改变交易行为。没有热安装或热升级。
+
+### 常驻 worker 与事件触发
+
+可信本地插件可在清单顶层声明：
+
+```json
+{
+  "worker_pool": {"workers": 4, "command": ["python3", "bot.py", "--worker"]},
+  "decision_trigger": {"kind": "events", "closed_bars": true, "account": true}
+}
+```
+
+不声明触发器时仍按每 tick 观察。事件模式在选定的收盘历史、盘口/公开成交、自己的
+账户/挂单/风控/清算反馈、回执或配置变化时唤醒；可加 `book: true` 或
+`interval_ms: 1000`。收盘触发要求清单声明历史行情。插件返回 object state，保留
+宿主字段 `_host_dispatch`、`_host_observation`、`_host_receipts`；宿主会覆盖前两项。
+完整历史摘要会检测改写和截断。累计公开成交量归入 `book` 事件，收盘/账户事件只摘要
+相应字段，避免每笔公开成交都唤醒收盘策略。插件可返回 `_next_wake_ms` 指定仿真时间
+deadline，让未完成对冲等工作在安静行情中继续。应在处理后清除或推进 deadline。
+
+worker 按行接收 `{"protocol":"bot.worker.v1","id":123,"request":<bot.v1请求>}`，
+按行返回同 protocol/id 和 `response: <bot.v1响应>`，或者 `error: "原因"`，两者只能
+有一个。进程持续读下一行，stdout 只用于协议。一个 worker 一次只处理一个请求，
+默认同一插件的不同账户可能轮流分配给任意 worker，不能把进程内的上一个账户当作当前状态。
+可设置 `instance_affinity: true`，按 participant 的稳定 SHA256 固定 worker 槽位；忙碌槽位
+在原 timeout 内等待，不能借用别的槽位。故障或淘汰后仍从宿主已提交状态恢复。
+`delta_requests: true` 是插件显式实现的可选传输能力：首次收到 `cache_key` 和完整 request，
+随后可能收到同一 key、此前请求 id 的 `base` 和 `request_delta` 操作列表。
+操作为 `set`、`remove` 或带旧长度 `from` 的 `append`，路径由字段名或非负数组索引组成。
+基准 id/追加长度不符必须报错；不得用此前 response 推断宿主 state。双方缓存各最多 512 份输入，
+缓存失效发送全量，展开后的请求仍受 4 MiB 上限约束。未实现该协议的插件保持默认 false。
+原 `command` 和一次性协议继续保留。
+
+每个已安装插件共用一个池，`workers` 为 1–32；自动调度在整个服务进程内最多有
+16 个外部决策任务、32 个常驻 worker 的全局预算。跨插件满额时淘汰最久未用的空闲
+worker，下一次从已提交状态恢复；忙碌 worker 不被淘汰。池等待与执行共用清单
+timeout；候选实例轮换扫描，待处理队列仅保存身份和索引，同一实例去重。
+先取得名额再复制最新提交状态，任务完成后继续派发；新 tick 保留未派发候选，
+epoch、停止和暂停仍校验。每个 worker 固定 3 个 I/O 线程；大小上限沿用 bot.v1，stderr 的
+64 KiB 为进程生命周期累计上限。错误、超时、身份不符或达到 `max_calls` 后回收进程，
+`max_calls` 默认 10000，可设置 1–1000000；Pine 使用 500000。
+失败请求不自动重试，下一次从宿主已提交状态开始。Windows 回收直接子进程，Unix
+回收进程组；这仍是可信代码执行机制。
+
+`python.sma@1.0.0` 是仓库新增的标准库现货 SMA 示例：收盘事件执行、128 项公开均线
+结果缓存，私有余额与库存分别决策。它是原创有限示例，不表示其他 Python 框架已兼容。
+公开行情聚合可在同一冻结观察批次中共享；账户、订单、成交和策略变量保持实例隔离。
 
 ## 4. 创建和运行实例
 

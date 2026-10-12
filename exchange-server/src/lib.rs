@@ -1,7 +1,7 @@
 mod account_activity;
 mod account_events;
-mod market_events;
 mod market_analysis;
+mod market_events;
 mod stream_output;
 mod wallet_output;
 use std::{
@@ -22,8 +22,11 @@ use std::{
 pub mod auth;
 #[cfg(feature = "bench-execution-timing")]
 mod bench_execution_timing;
+mod bot_dispatch;
 mod bot_history;
 pub mod bot_plugins;
+mod bot_wire;
+mod bot_workers;
 mod competition;
 mod historical_queries;
 pub mod journal;
@@ -734,20 +737,7 @@ impl AppState {
         transfer_records: &[JournalTransfer],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
-        if self.platform.competitions.contains_key(&mutation.room_id)
-            && matches!(
-                &mutation.mutation,
-                RoomMutation::ClockAdvanced { .. }
-                    | RoomMutation::DepositSubmitted { .. }
-                    | RoomMutation::WithdrawalSubmitted { .. }
-                    | RoomMutation::VenueToVenueTransferSubmitted { .. }
-                    | RoomMutation::TrainingProgress { .. }
-            )
-        {
-            return Err(JournalError::Recovery(
-                "competition room configuration is frozen".into(),
-            ));
-        }
+        self.validate_room_mutation_access(mutation)?;
         match self.room_lease_claim(&mutation.room_id)? {
             Some(claim) => {
                 self.journal
@@ -766,6 +756,56 @@ impl AppState {
                     .await
             }
         }
+    }
+
+    async fn append_room_mutation_owned(
+        &self,
+        mutation: PendingJournalMutation,
+        execution_records: &[JournalExecution],
+        transfer_records: &[JournalTransfer],
+        snapshot: Option<&JournalSnapshot>,
+    ) -> Result<PendingJournalMutation, JournalError> {
+        self.validate_room_mutation_access(&mutation)?;
+        let claim = self.room_lease_claim(&mutation.room_id)?;
+        #[cfg(feature = "bench-execution-timing")]
+        let clone_timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::JOURNAL_REQUEST_CLONE,
+        );
+        let execution_records = execution_records.to_vec();
+        let transfer_records = transfer_records.to_vec();
+        let snapshot = snapshot.cloned();
+        #[cfg(feature = "bench-execution-timing")]
+        drop(clone_timer);
+        self.journal
+            .append_room_mutation_owned(
+                claim,
+                mutation,
+                execution_records,
+                transfer_records,
+                snapshot,
+            )
+            .await
+    }
+
+    fn validate_room_mutation_access(
+        &self,
+        mutation: &PendingJournalMutation,
+    ) -> Result<(), JournalError> {
+        if self.platform.competitions.contains_key(&mutation.room_id)
+            && matches!(
+                &mutation.mutation,
+                RoomMutation::ClockAdvanced { .. }
+                    | RoomMutation::DepositSubmitted { .. }
+                    | RoomMutation::WithdrawalSubmitted { .. }
+                    | RoomMutation::VenueToVenueTransferSubmitted { .. }
+                    | RoomMutation::TrainingProgress { .. }
+            )
+        {
+            return Err(JournalError::Recovery(
+                "competition room configuration is frozen".into(),
+            ));
+        }
+        Ok(())
     }
 
     fn room_lease_readiness_error(&self) -> Option<String> {
@@ -4383,11 +4423,15 @@ async fn append_control_mutation(
     transfer_records: &[JournalTransfer],
     snapshot: Option<&JournalSnapshot>,
 ) -> Result<Option<serde_json::Value>, ApiError> {
+    let request_fingerprint = pending
+        .control_idempotency
+        .as_ref()
+        .map(|record| record.request_fingerprint.clone());
     match state
-        .append_room_mutation(&pending, execution_records, transfer_records, snapshot)
+        .append_room_mutation_owned(pending, execution_records, transfer_records, snapshot)
         .await
     {
-        Ok(()) => Ok(None),
+        Ok(_) => Ok(None),
         Err(JournalError::ControlIdempotencyConflict {
             user_id,
             room_id,
@@ -4406,10 +4450,9 @@ async fn append_control_mutation(
                         ),
                     )
                 })?;
-            if pending
-                .control_idempotency
+            if request_fingerprint
                 .as_ref()
-                .is_some_and(|record| record.request_fingerprint != existing.request_fingerprint)
+                .is_some_and(|fingerprint| *fingerprint != existing.request_fingerprint)
             {
                 return Err(control_conflict_error(&idempotency_key));
             }
@@ -9835,6 +9878,10 @@ async fn commit_scheduler_transaction(
         {
             return Ok(Json(return_state.then_some(replayed)));
         }
+        #[cfg(feature = "bench-execution-timing")]
+        let admission_timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::SCHEDULER_ADMISSION,
+        );
         if let Some(work) = &realtime {
             let current = state
                 .schedulers
@@ -9864,6 +9911,8 @@ async fn commit_scheduler_transaction(
                 format!("manual step requires room {room_id} to be paused"),
             ));
         }
+        #[cfg(feature = "bench-execution-timing")]
+        drop(admission_timer);
         // Live work reads the locked predecessor and prepares a sparse patch.
         // Only deterministic/manual execution needs an owned complete roster.
         if control.is_none()
@@ -9976,6 +10025,8 @@ async fn commit_scheduler_transaction(
             .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
         };
         let mut candidate_rooms = candidate;
+        #[cfg(feature = "bench-execution-timing")]
+        crate::bench_execution_timing::SCHEDULER_APPLY.record(apply_started);
         shared.lifecycle.record_scheduler_phase(2, apply_started);
         let next_order_id = order_id;
         let mut outcome = match result {
@@ -10073,6 +10124,8 @@ async fn commit_scheduler_transaction(
                 u64::try_from(checkpoint_started.elapsed().as_millis()).unwrap_or(u64::MAX),
             );
         }
+        #[cfg(feature = "bench-execution-timing")]
+        crate::bench_execution_timing::SCHEDULER_CHECKPOINT.record(checkpoint_started);
         shared
             .lifecycle
             .record_scheduler_phase(3, checkpoint_started);
@@ -10113,11 +10166,21 @@ async fn commit_scheduler_transaction(
                 )
                 .map_err(api_error_from_journal)?;
         }
+        #[cfg(feature = "bench-execution-timing")]
+        let mutation_timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::SCHEDULER_MUTATION_BUILD,
+        );
         let delta = if manual || snapshot_due || outcome.state().revision.is_multiple_of(100) {
             None
         } else {
             match &outcome {
-                Candidate::Patch(delta) => Some(delta.clone()),
+                Candidate::Patch(delta) => {
+                    #[cfg(feature = "bench-execution-timing")]
+                    let _timer = crate::bench_execution_timing::Timer::start(
+                        &crate::bench_execution_timing::SCHEDULER_DELTA_CLONE,
+                    );
+                    Some(delta.clone())
+                }
                 Candidate::Full(next) => state
                     .schedulers
                     .get(&room_id)
@@ -10141,6 +10204,8 @@ async fn commit_scheduler_transaction(
             Some(record) => pending.with_control_idempotency(record),
             None => pending,
         };
+        #[cfg(feature = "bench-execution-timing")]
+        drop(mutation_timer);
         let journal_started = Instant::now();
         if !competition::market_allowed(&state, &room_id) {
             return Err(api_error(
@@ -10161,6 +10226,10 @@ async fn commit_scheduler_transaction(
             let replayed = serde_json::from_value(replay_json).map_err(api_error_from_json)?;
             return Ok(Json(return_state.then_some(replayed)));
         }
+        #[cfg(feature = "bench-execution-timing")]
+        let _install_timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::SCHEDULER_INSTALL,
+        );
         order_ids.commit(next_order_id);
         if let Some((run_id, run)) = updated_training {
             if manual {
@@ -10231,10 +10300,22 @@ async fn commit_bot_state_only(
     delta
         .validate_predecessor(current)
         .map_err(api_error_from_journal)?;
+    #[cfg(feature = "bench-execution-timing")]
+    crate::bench_execution_timing::SCHEDULER_APPLY.record(started);
     shared.lifecycle.record_scheduler_phase(2, started);
+    #[cfg(feature = "bench-execution-timing")]
+    let mutation_timer = crate::bench_execution_timing::Timer::start(
+        &crate::bench_execution_timing::SCHEDULER_MUTATION_BUILD,
+    );
     let progress = if delta.state.revision.is_multiple_of(100) {
+        #[cfg(feature = "bench-execution-timing")]
+        let _timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::SCHEDULER_MATERIALIZE,
+        );
         let mut next = current.clone();
-        delta.apply(&mut next).map_err(api_error_from_journal)?;
+        delta
+            .apply_owned(&mut next)
+            .map_err(api_error_from_journal)?;
         RoomMutation::SchedulerProgress {
             clock_steps: 0,
             state: next,
@@ -10243,10 +10324,12 @@ async fn commit_bot_state_only(
     } else {
         RoomMutation::SchedulerDelta {
             clock_steps: 0,
-            delta: delta.clone(),
+            delta,
             training: None,
         }
     };
+    #[cfg(feature = "bench-execution-timing")]
+    drop(mutation_timer);
     let cursor = next_persisted_command_cursor(state, room_id).map_err(api_error_from_journal)?;
     let pending = PendingJournalMutation::new(room_id.to_owned(), cursor, progress);
     if !competition::market_allowed(state, room_id) {
@@ -10256,15 +10339,25 @@ async fn commit_bot_state_only(
         ));
     }
     let started = Instant::now();
-    let appended = state.append_room_mutation(&pending, &[], &[], None).await;
+    let appended = state
+        .append_room_mutation_owned(pending, &[], &[], None)
+        .await;
     shared.lifecycle.record_scheduler_phase(4, started);
-    appended.map_err(api_error_from_journal)?;
+    let committed = appended.map_err(api_error_from_journal)?;
     // The outer durable task owns the lane through append + install, even if
     // its caller is cancelled. Errors above leave both state and readers intact.
+    #[cfg(feature = "bench-execution-timing")]
+    let _timer = crate::bench_execution_timing::Timer::start(
+        &crate::bench_execution_timing::SCHEDULER_INSTALL,
+    );
     let current = state.scheduler_mut(room_id).expect("locked predecessor");
-    delta
-        .apply_owned(current)
-        .expect("validated patch after durable append");
+    match committed.mutation {
+        RoomMutation::SchedulerDelta { delta, .. } => delta
+            .apply_owned(current)
+            .expect("validated patch after durable append"),
+        RoomMutation::SchedulerProgress { state, .. } => *current = state,
+        _ => unreachable!("state-only work prepared a scheduler mutation"),
+    }
     Ok(return_state.then(|| current.clone()))
 }
 

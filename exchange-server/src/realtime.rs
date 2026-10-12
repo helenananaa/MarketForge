@@ -79,6 +79,7 @@ struct ObservationRequest {
     related: Vec<String>,
     intervals: Vec<u64>,
     account_events: bool,
+    event_filter: Option<exchange_core::bots::BotEventFilter>,
 }
 
 struct CachedBot {
@@ -87,6 +88,7 @@ struct CachedBot {
     registry: exchange_core::BotRegistry,
     request: Arc<ObservationRequest>,
     bot: Box<dyn exchange_core::ScheduledBot>,
+    event_stamp: Option<[u8; 32]>,
 }
 
 impl CachedBot {
@@ -103,7 +105,7 @@ impl CachedBot {
 }
 
 type ComputedDecision = Result<(Decision, Option<CachedBot>), String>;
-type DecisionResult = (String, u64, ComputedDecision);
+type DecisionResult = (String, u64, ComputedDecision, bool);
 
 // Exact state comparisons remain mandatory; this narrows candidates by id
 // instead of comparing every full template/state for every completed bot.
@@ -495,6 +497,14 @@ pub(super) async fn run(
     let mut instances = BTreeMap::<String, CachedBot>::new();
     let mut cache_epoch = control.epoch.load(Ordering::Acquire);
     let mut prefer_clock = false;
+    let mut dispatch_offset = 0usize;
+    let mut pending_external = ExternalQueue::new(cache_epoch);
+    let mut external_observations = ObservationWaveCache::default();
+    static EXTERNAL_PERMITS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let external_permits = EXTERNAL_PERMITS
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(16)))
+        .clone();
     loop {
         if control.stop.load(Ordering::Acquire) || !shared.lifecycle.is_accepting_durable_writes() {
             return Ok(());
@@ -531,7 +541,7 @@ pub(super) async fn run(
                 let mut wave = Vec::new();
                 let current_epoch = control.epoch.load(Ordering::Acquire);
                 for completed in ready {
-                    let (id, epoch, result) = completed;
+                    let (id, epoch, result, skipped) = completed;
                     in_flight.remove(&id);
                     if control.stop.load(Ordering::Acquire) || epoch != current_epoch {
                         continue;
@@ -541,7 +551,9 @@ pub(super) async fn run(
                             if let Some(cached) = cached {
                                 instances.insert(id, cached);
                             }
-                            wave.push(decision);
+                            if !skipped {
+                                wave.push(decision);
+                            }
                         }
                         Err(error) => {
                             failed.insert(id.clone());
@@ -551,46 +563,69 @@ pub(super) async fn run(
                         }
                     }
                 }
-                if wave.is_empty() {
-                    continue;
-                }
-                let result = commit_realtime_work(
-                    shared.clone(),
-                    room_id.clone(),
-                    Work::Bots {
-                        control: control.clone(),
-                        epoch: current_epoch,
-                        decisions: wave.clone(),
-                    },
-                )
-                .await;
-                if let Err((status, body)) = result {
-                    if status != StatusCode::BAD_REQUEST {
-                        return Err(body.0.error);
-                    }
-                    // No part of the failed wave was committed. Retrying its members
-                    // preserves each bot's atomicity and existing error isolation.
-                    for decision in wave {
-                        let id = decision.prior.template.participant_id().to_string();
-                        let result = commit_realtime_work(
-                            shared.clone(),
-                            room_id.clone(),
-                            Work::Bot {
-                                control: control.clone(),
-                                epoch: current_epoch,
-                                decision: Box::new(decision),
-                            },
-                        )
-                        .await;
-                        if let Err((status, body)) = result {
-                            if status != StatusCode::BAD_REQUEST {
-                                return Err(body.0.error);
+                if !wave.is_empty() {
+                    let result = commit_realtime_work(
+                        shared.clone(),
+                        room_id.clone(),
+                        Work::Bots {
+                            control: control.clone(),
+                            epoch: current_epoch,
+                            decisions: wave.clone(),
+                        },
+                    )
+                    .await;
+                    #[cfg(feature = "bench-execution-timing")]
+                    if result.is_ok() {
+                        for decision in &wave {
+                            if let exchange_core::PersistedAgentKindState::Plugin {
+                                plugin_id,
+                                data,
+                                ..
+                            } = decision.next.as_ref()
+                                && plugin_id == "pine.strategy"
+                            {
+                                let time = data
+                                    .get("_host_observation")
+                                    .and_then(|v| v.get(1))
+                                    .and_then(serde_json::Value::as_u64)
+                                    .unwrap_or(0);
+                                crate::bench_execution_timing::trace(
+                                    "commit_return",
+                                    decision.prior.template.participant_id(),
+                                    time,
+                                    0,
+                                );
                             }
-                            let error = body.0.error;
-                            failed.insert(id.clone());
-                            shared.lifecycle.record_agent_error();
-                            *last_error.lock().unwrap() = Some(format!("bot {id}: {error}"));
-                            bot_errors.lock().unwrap().insert(id, error);
+                        }
+                    }
+                    if let Err((status, body)) = result {
+                        if status != StatusCode::BAD_REQUEST {
+                            return Err(body.0.error);
+                        }
+                        // No part of the failed wave was committed. Retrying its members
+                        // preserves each bot's atomicity and existing error isolation.
+                        for decision in wave {
+                            let id = decision.prior.template.participant_id().to_string();
+                            let result = commit_realtime_work(
+                                shared.clone(),
+                                room_id.clone(),
+                                Work::Bot {
+                                    control: control.clone(),
+                                    epoch: current_epoch,
+                                    decision: Box::new(decision),
+                                },
+                            )
+                            .await;
+                            if let Err((status, body)) = result {
+                                if status != StatusCode::BAD_REQUEST {
+                                    return Err(body.0.error);
+                                }
+                                let error = body.0.error;
+                                failed.insert(id.clone());
+                                shared.lifecycle.record_agent_error();
+                                *last_error.lock().unwrap() = Some(format!("bot {id}: {error}"));
+                                bot_errors.lock().unwrap().insert(id, error);
+                            }
                         }
                     }
                 }
@@ -637,15 +672,30 @@ pub(super) async fn run(
                         .get(&room_id)
                         .ok_or_else(|| format!("room {room_id} has no scheduler state"))?;
                     let epoch = control.epoch.load(Ordering::Acquire);
-                    let agents: Vec<_> = scheduler
+                    let mut candidates: Vec<_> = scheduler
                         .agents
                         .iter()
-                        .filter(|agent| {
+                        .enumerate()
+                        .filter(|(_, agent)| {
                             scheduler.bots_enabled
                                 && !in_flight.contains(agent.template.participant_id())
                                 && !failed.contains(agent.template.participant_id())
                         })
-                        .map(|agent| {
+                        .collect();
+                    if !candidates.is_empty() {
+                        let count = candidates.len();
+                        candidates.rotate_left(dispatch_offset % count);
+                        dispatch_offset = dispatch_offset.wrapping_add(16);
+                    }
+                    pending_external.reset_epoch(epoch);
+                    let agents: Vec<_> = candidates
+                        .into_iter()
+                        .filter_map(|(index, agent)| {
+                            if !app.bot_registry.supports_native_batching(&agent.template) {
+                                pending_external
+                                    .push(index, agent.template.participant_id().to_owned());
+                                return None;
+                            }
                             let cached = instances.remove(agent.template.participant_id());
                             let valid = cached
                                 .as_ref()
@@ -656,7 +706,7 @@ pub(super) async fn run(
                                 agent.clone().into()
                             };
                             // Return stale instances too: do not drop plugin objects under the lock.
-                            (prior, cached, valid)
+                            Some((prior, cached, valid))
                         })
                         .collect();
                     (app.rooms.clone(), app.bot_registry.clone(), agents, epoch)
@@ -665,37 +715,224 @@ pub(super) async fn run(
                 let mut native = Vec::new();
                 for (prior, cached, valid) in agents {
                     let id = prior.template.participant_id().to_string();
-                    in_flight.insert(id);
                     let input = (prior, cached.filter(|_| valid));
-                    if registry.supports_native_batching(&input.0.template) {
-                        native.push(input);
-                        if native.len() == NATIVE_DECISIONS_PER_TASK {
-                            spawn_decision_batch(
-                                &mut decisions,
-                                frozen.clone(),
-                                registry.clone(),
-                                std::mem::take(&mut native),
-                                epoch,
-                                true,
-                            );
-                        }
-                    } else {
+                    in_flight.insert(id);
+                    native.push(input);
+                    if native.len() == NATIVE_DECISIONS_PER_TASK {
                         spawn_decision_batch(
                             &mut decisions,
                             frozen.clone(),
                             registry.clone(),
-                            vec![input],
+                            std::mem::take(&mut native),
                             epoch,
-                            false,
+                            true,
+                            None,
                         );
                     }
                 }
                 if !native.is_empty() {
-                    spawn_decision_batch(&mut decisions, frozen, registry, native, epoch, true);
+                    spawn_decision_batch(
+                        &mut decisions,
+                        frozen,
+                        registry,
+                        native,
+                        epoch,
+                        true,
+                        None,
+                    );
                 }
             }
         }
+        dispatch_external_pending(
+            &shared,
+            &room_id,
+            &control,
+            &external_permits,
+            &mut pending_external,
+            &mut decisions,
+            &mut in_flight,
+            &failed,
+            &mut instances,
+            &mut external_observations,
+        )
+        .await?;
     }
+}
+
+// Pending work outlives market ticks. A new tick adds eligible instances but
+// cannot move an older candidate behind instances that already completed.
+struct ExternalQueue {
+    epoch: u64,
+    items: VecDeque<(usize, String, Instant)>,
+    queued: BTreeSet<String>,
+}
+
+#[derive(Default)]
+struct ObservationWaveCache {
+    current: Option<(
+        Arc<exchange_core::RoomManager>,
+        Arc<exchange_core::room::NativeObservationWave>,
+    )>,
+}
+impl ObservationWaveCache {
+    fn get(
+        &mut self,
+        snapshot: Arc<exchange_core::RoomManager>,
+        room_id: &str,
+    ) -> Arc<exchange_core::room::NativeObservationWave> {
+        if let Some((previous, wave)) = &self.current
+            && Arc::ptr_eq(previous, &snapshot)
+        {
+            #[cfg(feature = "bench-execution-timing")]
+            let _timer = crate::bench_execution_timing::Timer::start(
+                &crate::bench_execution_timing::BOT_WAVE_REUSE,
+            );
+            return wave.clone();
+        }
+        #[cfg(feature = "bench-execution-timing")]
+        let _timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::BOT_WAVE_BUILD,
+        );
+        let wave = Arc::new(
+            snapshot
+                .as_ref()
+                .clone()
+                .into_native_observation_wave(room_id.to_owned()),
+        );
+        self.current = Some((snapshot, wave.clone()));
+        wave
+    }
+}
+impl ExternalQueue {
+    fn new(epoch: u64) -> Self {
+        Self {
+            epoch,
+            items: VecDeque::new(),
+            queued: BTreeSet::new(),
+        }
+    }
+    fn clear(&mut self) {
+        self.items.clear();
+        self.queued.clear();
+    }
+    fn reset_epoch(&mut self, epoch: u64) {
+        if self.epoch != epoch {
+            self.clear();
+            self.epoch = epoch;
+        }
+    }
+    fn push(&mut self, index: usize, id: String) {
+        if self.queued.insert(id.clone()) {
+            self.items.push_back((index, id, Instant::now()));
+        }
+    }
+    fn pop(&mut self) -> Option<(usize, String, Instant)> {
+        let item = self.items.pop_front()?;
+        self.queued.remove(&item.1);
+        Some(item)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn dispatch_external_pending(
+    shared: &SharedState,
+    room_id: &str,
+    control: &Control,
+    permits: &Arc<tokio::sync::Semaphore>,
+    pending: &mut ExternalQueue,
+    decisions: &mut tokio::task::JoinSet<Vec<DecisionResult>>,
+    in_flight: &mut BTreeSet<String>,
+    failed: &BTreeSet<String>,
+    instances: &mut BTreeMap<String, CachedBot>,
+    observations: &mut ObservationWaveCache,
+) -> Result<(), String> {
+    if pending.items.is_empty() {
+        return Ok(());
+    }
+    let (rooms, registry, inputs, epoch) = {
+        let app = shared.app.lock_room(room_id).await;
+        let epoch = control.epoch.load(Ordering::Acquire);
+        if control.stop.load(Ordering::Acquire)
+            || pending.epoch != epoch
+            || app.rooms.status(room_id).map_err(|e| format!("{e:?}"))? != MarketStatus::Running
+        {
+            pending.clear();
+            return Ok(());
+        }
+        let scheduler = app
+            .schedulers
+            .get(room_id)
+            .ok_or_else(|| format!("room {room_id} has no scheduler state"))?;
+        let mut inputs = Vec::new();
+        while !pending.items.is_empty() {
+            // Reserve BEFORE copying any durable transcript. Completed tasks
+            // refill this budget without waiting for the next market tick.
+            let Ok(permit) = permits.clone().try_acquire_owned() else {
+                break;
+            };
+            let (index, id, _queued) = pending.pop().unwrap();
+            #[cfg(feature = "bench-execution-timing")]
+            {
+                crate::bench_execution_timing::BOT_DISPATCH_QUEUE.record(_queued);
+                crate::bench_execution_timing::trace(
+                    "dispatch",
+                    &id,
+                    app.rooms.clock(room_id).unwrap().market_time_ms(),
+                    _queued.elapsed().as_micros() as u64,
+                );
+            }
+            let Some(agent) = scheduler
+                .agents
+                .get(index)
+                .filter(|a| a.template.participant_id() == id)
+            else {
+                continue;
+            };
+            if !scheduler.bots_enabled || in_flight.contains(&id) || failed.contains(&id) {
+                continue;
+            }
+            #[cfg(feature = "bench-execution-timing")]
+            let copy_timer = crate::bench_execution_timing::Timer::start(
+                &crate::bench_execution_timing::BOT_STATE_COPY,
+            );
+            let cached = instances.remove(&id);
+            let valid = cached
+                .as_ref()
+                .is_some_and(|c| c.matches(epoch, agent, &app.bot_registry));
+            let prior = if valid {
+                cached.as_ref().unwrap().expected.clone()
+            } else {
+                agent.clone().into()
+            };
+            #[cfg(feature = "bench-execution-timing")]
+            drop(copy_timer);
+            // Stale plugin destructors must run after releasing the room lane.
+            inputs.push((id, prior, cached, valid, permit));
+        }
+        if inputs.is_empty() {
+            return Ok(());
+        }
+        (
+            app.market_snapshot(),
+            app.bot_registry.clone(),
+            inputs,
+            epoch,
+        )
+    };
+    let frozen = observations.get(rooms, room_id);
+    for (id, prior, cached, valid, permit) in inputs {
+        in_flight.insert(id);
+        spawn_decision_batch(
+            decisions,
+            frozen.clone(),
+            registry.clone(),
+            vec![(prior, cached.filter(|_| valid))],
+            epoch,
+            false,
+            Some(permit),
+        );
+    }
+    Ok(())
 }
 
 fn spawn_decision_batch(
@@ -705,15 +942,32 @@ fn spawn_decision_batch(
     inputs: Vec<(SharedAgent, Option<CachedBot>)>,
     epoch: u64,
     native: bool,
+    permit: Option<tokio::sync::OwnedSemaphorePermit>,
 ) {
     // Observation construction, metadata hooks, strategy calls and destructors
     // all run outside both the room lane and the clock's async task.
+    #[cfg(feature = "bench-execution-timing")]
+    let blocking_timer = (!native).then(|| {
+        crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::BOT_BLOCKING_WAIT,
+        )
+    });
     decisions.spawn_blocking(move || {
+        #[cfg(feature = "bench-execution-timing")]
+        drop(blocking_timer);
+        let _permit = permit;
         let mut observations = frozen.batch();
         inputs
             .into_iter()
-            .map(|(prior, cached)| {
+            .map(|(prior, mut cached)| {
                 let id = prior.template.participant_id().to_string();
+                #[cfg(feature = "bench-execution-timing")]
+                let _turn_timer = (!native).then(|| {
+                    crate::bench_execution_timing::Timer::start(
+                        &crate::bench_execution_timing::BOT_TURN,
+                    )
+                });
+                let mut skipped = false;
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     #[cfg(all(test, feature = "memory-diagnostics"))]
                     let delivery_scope = crate::memory_diagnostics::Scope::enter(
@@ -732,9 +986,54 @@ fn spawn_decision_batch(
                                 .additional_intervals(&prior.template)
                                 .map_err(|e| e.to_string())?,
                             account_events: registry.account_events(&prior.template),
+                            event_filter: registry.event_filter(&prior.template),
                         }),
                     };
                     let instrument = prior.requires_instrument().map_err(|e| format!("{e:?}"))?;
+                    let event_stamp = if let Some(filter) = request.event_filter {
+                        #[cfg(feature = "bench-execution-timing")]
+                        let _filter_timer = crate::bench_execution_timing::Timer::start(
+                            &crate::bench_execution_timing::BOT_EVENT_PREFILTER,
+                        );
+                        let (stamp, time) = observations
+                            .bot_event_stamp(
+                                instrument,
+                                prior.config().account_id,
+                                request.history,
+                                &request.related,
+                                &request.intervals,
+                                request.account_events,
+                                filter,
+                            )
+                            .map_err(|e| format!("{e:?}"))?;
+                        if stamp.is_some()
+                            && cached.as_ref().is_some_and(|c| c.event_stamp == stamp)
+                            && !event_wake_is_due(&prior.kind_state, time)
+                        {
+                            #[cfg(feature = "bench-execution-timing")]
+                            let _skip_timer = crate::bench_execution_timing::Timer::start(
+                                &crate::bench_execution_timing::BOT_EVENT_SKIP,
+                            );
+                            skipped = true;
+                            return Ok((
+                                Decision {
+                                    next: prior.kind_state.clone(),
+                                    actions: Arc::default(),
+                                    prior,
+                                },
+                                cached,
+                            ));
+                        }
+                        stamp
+                    } else {
+                        None
+                    };
+                    #[cfg(feature = "bench-execution-timing")]
+                    let observation_timer = (!native).then(|| {
+                        crate::bench_execution_timing::Timer::start(
+                            &crate::bench_execution_timing::BOT_OBSERVATION,
+                        )
+                    });
                     let observation =
                         if native && request.intervals.is_empty() && !request.account_events {
                             DecisionObservation::Shared(
@@ -770,20 +1069,69 @@ fn spawn_decision_batch(
                         };
                     #[cfg(all(test, feature = "memory-diagnostics"))]
                     drop(delivery_scope);
-                    compute_decision_input(
+                    #[cfg(feature = "bench-execution-timing")]
+                    drop(observation_timer);
+                    let due = if let DecisionObservation::Owned(view) = &observation {
+                        #[cfg(feature = "bench-execution-timing")]
+                        let _trigger_timer = (!native).then(|| {
+                            crate::bench_execution_timing::Timer::start(
+                                &crate::bench_execution_timing::BOT_TRIGGER,
+                            )
+                        });
+                        registry
+                            .decision_is_due(&prior.template, &prior.kind_state, view)
+                            .map_err(|e| e.to_string())?
+                    } else {
+                        true
+                    };
+                    if !due {
+                        skipped = true;
+                        if let Some(cached) = &mut cached {
+                            cached.event_stamp = event_stamp;
+                        }
+                        return Ok((
+                            Decision {
+                                next: prior.kind_state.clone(),
+                                actions: Arc::default(),
+                                prior,
+                            },
+                            cached,
+                        ));
+                    }
+                    #[cfg(feature = "bench-execution-timing")]
+                    let _evaluate_timer = (!native).then(|| {
+                        crate::bench_execution_timing::Timer::start(
+                            &crate::bench_execution_timing::BOT_EVALUATE,
+                        )
+                    });
+                    let mut result = compute_decision_input(
                         prior,
                         observation,
                         registry.clone(),
                         cached,
                         request,
                         epoch,
-                    )
+                    );
+                    if let Ok((_, Some(cached))) = &mut result {
+                        cached.event_stamp = event_stamp;
+                    }
+                    result
                 }))
                 .unwrap_or_else(|_| Err("bot panicked".to_string()));
-                (id, epoch, result)
+                (id, epoch, result, skipped)
             })
             .collect()
     });
+}
+
+fn event_wake_is_due(state: &exchange_core::PersistedAgentKindState, time: u64) -> bool {
+    match state {
+        exchange_core::PersistedAgentKindState::Plugin { data, .. } => data
+            .get("_next_wake_ms")
+            .and_then(serde_json::Value::as_u64)
+            .is_some_and(|deadline| deadline <= time),
+        _ => false,
+    }
 }
 
 // This value is consumed on the blocking worker's stack, never queued. Boxing
@@ -825,7 +1173,12 @@ fn compute_decision_input(
     let _scope = crate::memory_diagnostics::Scope::enter(crate::memory_diagnostics::Origin::Bot);
     let reusable = cached.is_some() || registry.supports_instance_reuse(&prior.template);
     let mut bot = match cached {
-        Some(cached) => cached.bot,
+        Some(cached) => {
+            let mut bot = cached.bot;
+            bot.prepare_reused_call(&prior.kind_state)
+                .map_err(|e| e.to_string())?;
+            bot
+        }
         None => registry
             .create(&prior.template, &prior.kind_state)
             .map_err(|e| e.to_string())?,
@@ -838,7 +1191,7 @@ fn compute_decision_input(
     if actions.len() > exchange_core::MAX_BOT_ACTIONS {
         return Err("bot exceeded action limit".to_string());
     }
-    let next = Arc::new(bot.snapshot());
+    let next = Arc::new(bot.take_snapshot());
     exchange_core::bots::validate_bot_orders(
         prior.requires_instrument().map_err(|e| format!("{e:?}"))?,
         &request.related,
@@ -854,6 +1207,7 @@ fn compute_decision_input(
         registry,
         request,
         bot,
+        event_stamp: None,
     });
     Ok((
         Decision {
@@ -871,7 +1225,184 @@ mod delivery_benchmark;
 
 #[cfg(test)]
 mod index_tests {
+    #[test]
+    fn observation_wave_reuses_only_the_exact_immutable_market_snapshot() {
+        let mut cache = super::ObservationWaveCache::default();
+        let snapshot = std::sync::Arc::new(exchange_core::RoomManager::new());
+        let first = cache.get(snapshot.clone(), "room");
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &cache.get(snapshot.clone(), "room")
+        ));
+        // Even identical contents in a newly published snapshot invalidate all
+        // history/account caches; no heuristic revision or last-bar shortcut.
+        let changed = std::sync::Arc::new(snapshot.as_ref().clone());
+        let next = cache.get(changed.clone(), "room");
+        assert!(!std::sync::Arc::ptr_eq(&first, &next));
+        assert!(std::sync::Arc::ptr_eq(&next, &cache.get(changed, "room")));
+    }
+
+    #[test]
+    fn external_queue_preserves_older_candidates_across_ticks_and_resets_on_epoch() {
+        let mut queue = super::ExternalQueue::new(3);
+        queue.push(0, "completed".into());
+        queue.push(1, "older".into());
+        assert_eq!(queue.pop().unwrap().1, "completed");
+        queue.reset_epoch(3); // Next tick must not discard the still waiting bot.
+        queue.push(1, "older".into());
+        queue.push(0, "completed".into());
+        assert_eq!(queue.items.len(), 2);
+        assert_eq!(queue.pop().unwrap().1, "older");
+        queue.reset_epoch(4); // Reconfiguration cannot retain stale roster indices.
+        assert!(queue.pop().is_none());
+        queue.push(7, "new-roster".into());
+        assert_eq!(queue.pop().unwrap().0, 7);
+    }
     use super::*;
+
+    struct EventFactory {
+        descriptor: exchange_core::BotDescriptor,
+        calls: Arc<AtomicUsize>,
+    }
+    struct EventBot {
+        calls: Arc<AtomicUsize>,
+        state: exchange_core::PersistedAgentKindState,
+    }
+    impl exchange_core::BotFactory for EventFactory {
+        fn descriptor(&self) -> &exchange_core::BotDescriptor {
+            &self.descriptor
+        }
+        fn supports_instance_reuse(&self) -> bool {
+            true
+        }
+        fn event_filter(&self) -> Option<exchange_core::bots::BotEventFilter> {
+            Some(exchange_core::bots::BotEventFilter {
+                closed_bars: true,
+                account: true,
+                interval_ms: None,
+            })
+        }
+        fn market_data_request(
+            &self,
+            _: &exchange_core::AgentTemplate,
+        ) -> Result<Option<exchange_core::bots::BotMarketDataRequest>, BotError> {
+            Ok(Some(exchange_core::bots::BotMarketDataRequest {
+                interval_ms: 10_000,
+                max_bars: 512,
+            }))
+        }
+        fn create(
+            &self,
+            _: &exchange_core::AgentTemplate,
+            state: &exchange_core::PersistedAgentKindState,
+        ) -> Result<Box<dyn exchange_core::ScheduledBot>, BotError> {
+            Ok(Box::new(EventBot {
+                calls: self.calls.clone(),
+                state: state.clone(),
+            }))
+        }
+    }
+    impl exchange_core::ScheduledBot for EventBot {
+        fn decide(
+            &mut self,
+            view: &exchange_core::ParticipantObservation,
+        ) -> Result<Vec<OrderAction>, BotError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if let exchange_core::PersistedAgentKindState::Plugin { data, .. } = &mut self.state {
+                let calls = data
+                    .get("calls")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0)
+                    + 1;
+                *data = serde_json::json!({ "calls": calls, "_next_wake_ms": view.market_time_ms + 5000 }).into();
+            }
+            Ok(vec![])
+        }
+        fn snapshot(&self) -> exchange_core::PersistedAgentKindState {
+            self.state.clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn early_event_skip_preserves_state_and_timed_wake_and_cold_restore() {
+        let value: serde_json::Value =
+            serde_json::from_str(include_str!("../../scripts/fixtures/f6_batch_spec.json"))
+                .unwrap();
+        let mut rooms = RoomManager::new();
+        rooms
+            .create_room(serde_json::from_value(value["scenario"].clone()).unwrap())
+            .unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut registry = exchange_core::BotRegistry::default();
+        registry
+            .register(EventFactory {
+                descriptor: exchange_core::BotDescriptor {
+                    id: "event.test".into(),
+                    name: "Event test".into(),
+                    version: "1".into(),
+                    protocol_version: "bot.v1".into(),
+                    state_version: 1,
+                    runtime: "test".into(),
+                    parameters: BTreeMap::new(),
+                },
+                calls: calls.clone(),
+            })
+            .unwrap();
+        let template = exchange_core::AgentTemplate::Plugin(exchange_core::BotConfig {
+            participant: exchange_core::ParticipantConfig {
+                participant_id: "event-bot".into(),
+                room_id: "f6-batch".into(),
+                account_id: 20,
+                instrument_id: Some("V-BTC-SPOT".into()),
+                kind: exchange_core::ParticipantKind::RuleAgent,
+            },
+            plugin_id: "event.test".into(),
+            plugin_version: "1".into(),
+            state_version: 1,
+            config_version: 1,
+            seed: 1,
+            config: serde_json::json!({}),
+        });
+        let mut prior = SharedAgent::from(PersistedAgent::from_template(template));
+        let mut cached = None;
+        for (advance, expected_skipped, expected_calls) in [
+            (0, false, 1),
+            (1, true, 1),
+            (3, true, 1),
+            (1, false, 2),
+            (1, true, 2),
+            (0, false, 3),
+        ] {
+            if expected_calls == 3 {
+                cached = None;
+            } // Process/recovery cache is optional.
+            rooms.advance_clock("f6-batch", advance).unwrap();
+            let mut tasks = tokio::task::JoinSet::new();
+            spawn_decision_batch(
+                &mut tasks,
+                Arc::new(
+                    rooms
+                        .clone()
+                        .into_native_observation_wave("f6-batch".into()),
+                ),
+                registry.clone(),
+                vec![(prior.clone(), cached)],
+                7,
+                false,
+                None,
+            );
+            let result = tasks.join_next().await.unwrap().unwrap().pop().unwrap();
+            assert_eq!(result.3, expected_skipped);
+            let (decision, returned) = result.2.unwrap();
+            if expected_skipped {
+                assert!(Arc::ptr_eq(&decision.next, &prior.kind_state));
+            }
+            assert!(decision.actions.is_empty());
+            prior = prior.after(decision.next);
+            cached = returned;
+            assert_eq!(calls.load(Ordering::SeqCst), expected_calls);
+        }
+    }
     #[test]
     fn cached_runtime_requires_exact_committed_state_epoch_and_factory_identity() {
         let spec: exchange_core::population::BackgroundMarket = serde_json::from_str(include_str!(
@@ -886,6 +1417,7 @@ mod index_tests {
         let request = Arc::new(ObservationRequest {
             intervals: vec![],
             account_events: false,
+            event_filter: None,
             history: registry.market_data_request(&prior.template).unwrap(),
             related: registry.related_instruments(&prior.template).unwrap(),
         });
@@ -1061,7 +1593,7 @@ mod index_tests {
                 .unwrap();
             let mut changed = prior.kind_state.clone();
             if let exchange_core::PersistedAgentKindState::Plugin { data, .. } = &mut changed {
-                *data = serde_json::json!({"changed": changes.len() + position});
+                *data = serde_json::json!({"changed": changes.len() + position}).into();
             }
             reference.agents[found].kind_state = changed.clone();
             reference.agents[found].unfinished_actions.clear();

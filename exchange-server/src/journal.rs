@@ -942,6 +942,7 @@ pub struct JournalMutation {
 // A borrowed envelope has the same wire shape as JournalMutation, without
 // cloning a checkpoint or a batch of bot states just to encode it.
 #[derive(Serialize)]
+#[cfg(test)]
 struct JournalMutationRef<'a> {
     room_id: &'a str,
     mutation_seq: u64,
@@ -952,7 +953,7 @@ struct JournalMutationRef<'a> {
 
 // Only the validator may construct this proof. The immutable borrow keeps its
 // contents unchanged through projection checks and the eventual store write.
-struct ValidatedPendingMutation<'a>(&'a PendingJournalMutation);
+struct ValidatedPendingMutation<'a>(&'a PendingJournalMutation, RecoveryJson);
 
 const INSERT_ROOM_MUTATION_SQL: &str = "INSERT INTO marketforge_room_mutations \
     (room_id,command_cursor,schema_version,mutation_kind,payload_json) \
@@ -981,7 +982,7 @@ impl<'a> PreparedRoomMutation<'a> {
             command_cursor: i64_from_u64(mutation.command_cursor, "command_cursor")?,
             schema_version: i32::from(ROOM_MUTATION_SCHEMA_VERSION),
             mutation_kind: mutation.mutation.kind_name(),
-            payload: RecoveryJson::encode(&mutation.mutation)?,
+            payload: validated.1,
         })
     }
 
@@ -1013,7 +1014,18 @@ fn encode_validated_mutation(
     validated: &ValidatedPendingMutation<'_>,
     mutation_seq: u64,
 ) -> Result<Vec<u8>, JournalError> {
+    #[cfg(feature = "bench-execution-timing")]
+    let _timer = crate::bench_execution_timing::Timer::start(
+        &crate::bench_execution_timing::JOURNAL_SERIALIZE,
+    );
     let mutation = validated.0;
+    #[cfg(feature = "bench-execution-timing")]
+    let _full_timer =
+        matches!(mutation.mutation, RoomMutation::SchedulerProgress { .. }).then(|| {
+            crate::bench_execution_timing::Timer::start(
+                &crate::bench_execution_timing::JOURNAL_FULL_SERIALIZE,
+            )
+        });
     #[cfg(test)]
     if tests::REVALIDATE_AND_CLONE_MUTATION.get() {
         // Frozen pre-optimization write path, including its second validation.
@@ -1027,14 +1039,16 @@ fn encode_validated_mutation(
         })
         .map_err(JournalError::Serialize);
     }
-    serde_json::to_vec(&JournalMutationRef {
-        room_id: &mutation.room_id,
-        mutation_seq,
-        command_cursor: mutation.command_cursor,
-        schema_version: ROOM_MUTATION_SCHEMA_VERSION,
-        mutation: &mutation.mutation,
-    })
-    .map_err(JournalError::Serialize)
+    // The proof owns checked compact JSON. Append that payload verbatim: never
+    // traverse the full scheduler a second time. Metadata strings still use serde.
+    let mut encoded = format!(
+        "{{\"room_id\":{},\"mutation_seq\":{},\"command_cursor\":{},\"schema_version\":{},\"mutation\":",
+        serde_json::to_string(&mutation.room_id).map_err(JournalError::Serialize)?,
+        mutation_seq, mutation.command_cursor, ROOM_MUTATION_SCHEMA_VERSION,
+    ).into_bytes();
+    encoded.extend_from_slice(&validated.1.0);
+    encoded.push(b'}');
+    Ok(encoded)
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -2166,7 +2180,12 @@ impl JournalStore for InMemoryJournalStore {
         transfer_records: &[JournalTransfer],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
+        #[cfg(feature = "bench-execution-timing")]
+        let validation_started = std::time::Instant::now();
         let validated = validate_pending_mutation(mutation)?;
+        #[cfg(feature = "bench-execution-timing")]
+        crate::bench_execution_timing::JOURNAL_VALIDATE.record(validation_started);
+
         validate_mutation_execution_records(mutation, execution_records)?;
         // Already committed executions were validated at append time. Clock and
         // state-only mutations add no projection rows, so need no history replay.
@@ -4535,7 +4554,12 @@ impl JournalStore for PostgresJournalStore {
     ) -> Result<(), JournalError> {
         let mut profile = crate::write_profile::Profile::new("pg_append_room_mutation");
         profile.field("snapshot", snapshot.is_some());
+        #[cfg(feature = "bench-execution-timing")]
+        let validation_started = std::time::Instant::now();
         let validated = validate_pending_mutation(mutation)?;
+        #[cfg(feature = "bench-execution-timing")]
+        crate::bench_execution_timing::JOURNAL_VALIDATE.record(validation_started);
+
         validate_mutation_execution_records(mutation, execution_records)?;
         for record in transfer_records {
             validate_transfer(record)?;
@@ -4617,7 +4641,12 @@ impl JournalStore for PostgresJournalStore {
         let mut profile = crate::write_profile::Profile::new("pg_append_room_mutation_fenced");
         profile.field("snapshot", snapshot.is_some());
         validate_fenced_room_mutation(claim, mutation)?;
+        #[cfg(feature = "bench-execution-timing")]
+        let validation_started = std::time::Instant::now();
         let validated = validate_pending_mutation(mutation)?;
+        #[cfg(feature = "bench-execution-timing")]
+        crate::bench_execution_timing::JOURNAL_VALIDATE.record(validation_started);
+
         validate_mutation_execution_records(mutation, execution_records)?;
         for record in transfer_records {
             validate_transfer(record)?;
@@ -6377,8 +6406,15 @@ fn command_cursor_after_records(records: &[JournalExecution]) -> Result<u64, Jou
 fn validate_pending_mutation(
     mutation: &PendingJournalMutation,
 ) -> Result<ValidatedPendingMutation<'_>, JournalError> {
+    #[cfg(feature = "bench-execution-timing")]
+    let _full_timer =
+        matches!(mutation.mutation, RoomMutation::SchedulerProgress { .. }).then(|| {
+            crate::bench_execution_timing::Timer::start(
+                &crate::bench_execution_timing::JOURNAL_FULL_VALIDATE,
+            )
+        });
     i64_from_u64(mutation.command_cursor, "command_cursor")?;
-    validate_recovery_json(&mutation.mutation)?;
+    let payload = RecoveryJson::encode(&mutation.mutation)?;
     match &mutation.mutation {
         RoomMutation::StateCheckpoint { actor, .. } => {
             if actor.room_id() != mutation.room_id {
@@ -6467,7 +6503,7 @@ fn validate_pending_mutation(
             }
         }
     }
-    Ok(ValidatedPendingMutation(mutation))
+    Ok(ValidatedPendingMutation(mutation, payload))
 }
 
 fn validate_mutation_execution_records(
@@ -7468,6 +7504,31 @@ mod tests {
                 },
             ),
         ]
+    }
+
+    #[test]
+    fn checked_payload_envelope_preserves_escaped_room_and_legacy_bytes() {
+        let mutation = PendingJournalMutation::new(
+            "雪\"\\\n",
+            71,
+            RoomMutation::ClockAdvanced {
+                steps: 1,
+                completed_transfers: Vec::new(),
+            },
+        );
+        let proof = validate_pending_mutation(&mutation).unwrap();
+        let legacy = serde_json::to_vec(&JournalMutationRef {
+            room_id: &mutation.room_id,
+            mutation_seq: 7,
+            command_cursor: 71,
+            schema_version: ROOM_MUTATION_SCHEMA_VERSION,
+            mutation: &mutation.mutation,
+        })
+        .unwrap();
+        assert_eq!(encode_validated_mutation(&proof, 7).unwrap(), legacy);
+        let decoded: JournalMutation = serde_json::from_slice(&legacy).unwrap();
+        assert_eq!(decoded.room_id, mutation.room_id);
+        assert_eq!(decoded.command_cursor, mutation.command_cursor);
     }
 
     #[test]

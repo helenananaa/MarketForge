@@ -216,14 +216,24 @@ impl JournalWorker {
             .operations_in_flight
             .fetch_add(1, Ordering::Relaxed);
         let mut profile = crate::write_profile::Profile::new("journal_job");
+        #[cfg(feature = "bench-execution-timing")]
+        let queued_at = std::time::Instant::now();
         let (result_sender, result_receiver) = oneshot::channel();
         let metrics = Arc::clone(&self.metrics);
         if self
             .sender
             .send(Box::new(move |store| {
+                #[cfg(feature = "bench-execution-timing")]
+                crate::bench_execution_timing::JOURNAL_QUEUE.record(queued_at);
                 profile.mark("queue_wait");
                 metrics.worker_active.fetch_add(1, Ordering::Relaxed);
+                #[cfg(feature = "bench-execution-timing")]
+                let operation_timer = crate::bench_execution_timing::Timer::start(
+                    &crate::bench_execution_timing::JOURNAL_OPERATION,
+                );
                 let result = operation(store);
+                #[cfg(feature = "bench-execution-timing")]
+                drop(operation_timer);
                 profile.mark("operation");
                 metrics.worker_active.fetch_sub(1, Ordering::Relaxed);
                 metrics.operations_completed.fetch_add(1, Ordering::Relaxed);
@@ -510,6 +520,37 @@ impl JournalCoordinator {
         .await
     }
 
+    /// The durable caller owns the candidate. Return that same allocation only
+    /// after storage accepts it, so installation needs no second transcript.
+    pub(crate) async fn append_room_mutation_owned(
+        &self,
+        claim: Option<RoomLeaseClaim>,
+        mutation: PendingJournalMutation,
+        execution_records: Vec<JournalExecution>,
+        transfer_records: Vec<JournalTransfer>,
+        snapshot: Option<JournalSnapshot>,
+    ) -> Result<PendingJournalMutation, JournalError> {
+        self.execute(move |store| {
+            match claim {
+                Some(claim) => store.append_room_mutation_fenced(
+                    &claim,
+                    &mutation,
+                    &execution_records,
+                    &transfer_records,
+                    snapshot.as_ref(),
+                )?,
+                None => store.append_room_mutation(
+                    &mutation,
+                    &execution_records,
+                    &transfer_records,
+                    snapshot.as_ref(),
+                )?,
+            }
+            Ok(mutation)
+        })
+        .await
+    }
+
     pub(crate) async fn append_room_mutation(
         &self,
         mutation: &PendingJournalMutation,
@@ -517,10 +558,16 @@ impl JournalCoordinator {
         transfer_records: &[JournalTransfer],
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
+        #[cfg(feature = "bench-execution-timing")]
+        let clone_timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::JOURNAL_REQUEST_CLONE,
+        );
         let mutation = mutation.clone();
         let execution_records = execution_records.to_vec();
         let transfer_records = transfer_records.to_vec();
         let snapshot = snapshot.cloned();
+        #[cfg(feature = "bench-execution-timing")]
+        drop(clone_timer);
         self.execute(move |store| {
             store.append_room_mutation(
                 &mutation,
@@ -541,10 +588,16 @@ impl JournalCoordinator {
         snapshot: Option<&JournalSnapshot>,
     ) -> Result<(), JournalError> {
         let claim = claim.clone();
+        #[cfg(feature = "bench-execution-timing")]
+        let clone_timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::JOURNAL_REQUEST_CLONE,
+        );
         let mutation = mutation.clone();
         let execution_records = execution_records.to_vec();
         let transfer_records = transfer_records.to_vec();
         let snapshot = snapshot.cloned();
+        #[cfg(feature = "bench-execution-timing")]
+        drop(clone_timer);
         self.execute(move |store| {
             store.append_room_mutation_fenced(
                 &claim,

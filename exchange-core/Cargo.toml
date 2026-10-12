@@ -9,3 +9,4 @@ repository.workspace = true
 im = { version = "15.1.0", features = ["serde"] }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
+sha2 = "0.10"

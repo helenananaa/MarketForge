@@ -21,6 +21,7 @@ mod tests {
         JournalMutation, JournalRecovery, ROOM_MUTATION_SCHEMA_VERSION, RoomMutation,
     };
     use exchange_core::{PersistedAgent, SchedulerMode, SchedulerPhase};
+    use std::sync::Arc;
 
     fn sample() -> SchedulerState {
         let spec: exchange_core::population::BackgroundMarket = serde_json::from_str(include_str!(
@@ -42,6 +43,67 @@ mod tests {
             schema_version: ROOM_MUTATION_SCHEMA_VERSION,
             mutation,
         }
+    }
+
+    #[test]
+    fn full_checkpoint_shares_plugin_payload_but_isolates_updates_and_keeps_json_schema() {
+        let mut prior = sample();
+        let index = prior
+            .agents
+            .iter()
+            .position(|agent| matches!(agent.kind_state, PersistedAgentKindState::Plugin { .. }))
+            .unwrap();
+        let payload = serde_json::json!({
+            "bars": (0..512).map(|i| serde_json::json!({"time": i * 1000, "close": 100 + i})).collect::<Vec<_>>(),
+            "_host_receipts": [{"order_id": 71, "accepted": true}],
+        });
+        let PersistedAgentKindState::Plugin { data, .. } = &mut prior.agents[index].kind_state
+        else {
+            unreachable!()
+        };
+        *data = payload.clone().into();
+        let original = data.clone();
+        let mut checkpoint = Candidate::Full(prior.clone()).materialize(None);
+        let PersistedAgentKindState::Plugin {
+            data,
+            plugin_id,
+            plugin_version,
+            state_version,
+        } = &mut checkpoint.agents[index].kind_state
+        else {
+            unreachable!()
+        };
+        assert!(
+            Arc::ptr_eq(&original, data),
+            "full checkpoint must not copy historical JSON"
+        );
+        let expected = serde_json::json!({"Plugin": {
+            "plugin_id": plugin_id, "plugin_version": plugin_version,
+            "state_version": state_version, "data": payload,
+        }});
+        assert_eq!(
+            serde_json::to_value(&prior.agents[index].kind_state).unwrap(),
+            expected
+        );
+        Arc::make_mut(data)["_host_receipts"][0]["order_id"] = 72.into();
+        assert!(!Arc::ptr_eq(&original, data));
+        assert_eq!(original["_host_receipts"][0]["order_id"], 71);
+        checkpoint.revision = 1;
+        let delta = SchedulerDelta::between(&prior, &checkpoint).unwrap();
+        let recovered = Candidate::Patch(delta.clone()).materialize(Some(&prior));
+        assert_eq!(recovered, checkpoint);
+        assert_eq!(
+            prior.revision, 0,
+            "candidate construction must not install progress"
+        );
+        let encoded = serde_json::to_vec(&checkpoint).unwrap();
+        let restored: SchedulerState = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(restored, checkpoint);
+        assert_eq!(serde_json::to_vec(&restored).unwrap(), encoded);
+        let mut installed = prior;
+        delta.apply_owned(&mut installed).unwrap();
+        assert_eq!(installed, restored);
+        assert_eq!(original["_host_receipts"][0]["order_id"], 71);
     }
 
     #[test]
@@ -201,6 +263,10 @@ impl SchedulerDelta {
     }
 
     pub fn between(prior: &SchedulerState, next: &SchedulerState) -> Option<Self> {
+        #[cfg(feature = "bench-execution-timing")]
+        let _timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::SCHEDULER_DELTA_BETWEEN,
+        );
         if prior.room_id != next.room_id
             || prior.version != next.version
             || prior.revision.checked_add(1) != Some(next.revision)
@@ -323,6 +389,10 @@ impl Candidate {
     }
 
     pub fn materialize(&self, prior: Option<&SchedulerState>) -> SchedulerState {
+        #[cfg(feature = "bench-execution-timing")]
+        let _timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::SCHEDULER_MATERIALIZE,
+        );
         match self {
             Self::Full(state) => state.clone(),
             Self::Patch(delta) => {

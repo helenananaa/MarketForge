@@ -128,7 +128,7 @@ fn state(bot: &dyn ScheduledBot) -> State {
     let PersistedAgentKindState::Plugin { data, .. } = bot.snapshot() else {
         panic!()
     };
-    serde_json::from_value(data).unwrap()
+    serde_json::from_value(data.as_ref().clone()).unwrap()
 }
 
 fn resting(id: u64, side: Side, price: i64, qty: u64) -> Order {
@@ -198,7 +198,7 @@ fn factory_rejects_invalid_bounds_relationships_and_state() {
     let t = template("TrendTrader", json!({}));
     let mut saved = t.initial_state();
     if let PersistedAgentKindState::Plugin { data, .. } = &mut saved {
-        *data = serde_json::to_value(State::default()).unwrap();
+        *data = serde_json::to_value(State::default()).unwrap().into();
     }
     assert!(registry.create(&t, &saved).is_err());
 }

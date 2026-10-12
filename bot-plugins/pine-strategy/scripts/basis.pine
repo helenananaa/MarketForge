@@ -1,0 +1,10 @@
+//@version=6
+strategy("MarketForge cash and carry")
+entryBasis = input.int(4, "Entry basis", minval=1)
+qty = input.int(2, "Quantity", minval=1)
+perp = request.security("V-BTC-PERP", timeframe.period, close)
+if perp-close > entryBasis and strategy.position_size == 0
+    strategy.entry("L", strategy.long, qty=qty)
+if perp-close <= 0 and strategy.position_size > 0
+    strategy.close("L")
+plot(perp-close)

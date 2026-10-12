@@ -409,7 +409,7 @@ impl BotFactory for Factory {
                 ..State::default()
             }
         } else {
-            let state: State = serde_json::from_value(data.clone()).map_err(json_error)?;
+            let state: State = serde_json::from_value(data.as_ref().clone()).map_err(json_error)?;
             if !state.risk.valid()
                 || state
                     .volume_baseline
@@ -1723,7 +1723,9 @@ impl ScheduledBot for MarketBot {
             plugin_id: self.plugin.plugin_id.clone(),
             plugin_version: self.plugin.plugin_version.clone(),
             state_version: 1,
-            data: serde_json::to_value(&self.state).expect("bounded market bot state serializes"),
+            data: serde_json::to_value(&self.state)
+                .expect("bounded market bot state serializes")
+                .into(),
         }
     }
 }

@@ -1,0 +1,3089 @@
+{
+  "date": "2026-10-12",
+  "head": "b4ce7dcde55ba09aff79b8294984d183a63f6e5c",
+  "scope": "Owned scheduler mutation crosses the journal thread and returns after durable acceptance. Full checkpoint frequency, worker count, history bounds and trading semantics unchanged.",
+  "diagnostic_profile": {
+    "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\profile-before\\bots-1000\\report.json",
+    "stages": {
+      "stages": {
+        "directory_wait": {
+          "count": 12130,
+          "total_wall_ms": 4.6118,
+          "mean_wall_ms": 0.00038019785655399834,
+          "max_wall_ms": 0.0261,
+          "p95_upper_wall_ms": 0.001024
+        },
+        "room_wait": {
+          "count": 12130,
+          "total_wall_ms": 158.032,
+          "mean_wall_ms": 0.013028194558944764,
+          "max_wall_ms": 12.8777,
+          "p95_upper_wall_ms": 0.001024
+        },
+        "room_held": {
+          "count": 12130,
+          "total_wall_ms": 42434.5206,
+          "mean_wall_ms": 3.4983116735366857,
+          "max_wall_ms": 2427.6487,
+          "p95_upper_wall_ms": 4.194304
+        },
+        "venue_wait": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_wall_ms": null,
+          "max_wall_ms": 0.0,
+          "p95_upper_wall_ms": null
+        },
+        "venue_compute": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_wall_ms": null,
+          "max_wall_ms": 0.0,
+          "p95_upper_wall_ms": null
+        },
+        "venue_commit": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_wall_ms": null,
+          "max_wall_ms": 0.0,
+          "p95_upper_wall_ms": null
+        },
+        "venue_fallback": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_wall_ms": null,
+          "max_wall_ms": 0.0,
+          "p95_upper_wall_ms": null
+        },
+        "order_prepare": {
+          "count": 1380,
+          "total_wall_ms": 115.3031,
+          "mean_wall_ms": 0.08355297101449276,
+          "max_wall_ms": 0.5402,
+          "p95_upper_wall_ms": 0.262144
+        },
+        "order_apply": {
+          "count": 1380,
+          "total_wall_ms": 583.8794,
+          "mean_wall_ms": 0.4231010144927536,
+          "max_wall_ms": 2.7494,
+          "p95_upper_wall_ms": 2.097152
+        },
+        "order_receipt": {
+          "count": 1380,
+          "total_wall_ms": 8.4112,
+          "mean_wall_ms": 0.006095072463768116,
+          "max_wall_ms": 0.0478,
+          "p95_upper_wall_ms": 0.016384
+        },
+        "order_journal": {
+          "count": 1380,
+          "total_wall_ms": 155.6215,
+          "mean_wall_ms": 0.11276920289855072,
+          "max_wall_ms": 1.9104,
+          "p95_upper_wall_ms": 0.262144
+        },
+        "order_publish": {
+          "count": 1380,
+          "total_wall_ms": 5.1966,
+          "mean_wall_ms": 0.0037656521739130437,
+          "max_wall_ms": 0.0317,
+          "p95_upper_wall_ms": 0.008192
+        },
+        "bot_state_copy": {
+          "count": 16550,
+          "total_wall_ms": 3859.5851,
+          "mean_wall_ms": 0.2332075589123867,
+          "max_wall_ms": 0.9478,
+          "p95_upper_wall_ms": 1.048576
+        },
+        "bot_blocking_wait": {
+          "count": 16550,
+          "total_wall_ms": 1178.0092,
+          "mean_wall_ms": 0.07117880362537764,
+          "max_wall_ms": 0.9038,
+          "p95_upper_wall_ms": 0.262144
+        },
+        "bot_turn": {
+          "count": 16548,
+          "total_wall_ms": 270102.3095,
+          "mean_wall_ms": 16.322353728547256,
+          "max_wall_ms": 1192.7239,
+          "p95_upper_wall_ms": 134.217728
+        },
+        "bot_observation": {
+          "count": 16550,
+          "total_wall_ms": 17663.5594,
+          "mean_wall_ms": 1.0672845558912387,
+          "max_wall_ms": 9.0207,
+          "p95_upper_wall_ms": 4.194304
+        },
+        "bot_event_prefilter": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_wall_ms": null,
+          "max_wall_ms": 0.0,
+          "p95_upper_wall_ms": null
+        },
+        "bot_event_skip": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_wall_ms": null,
+          "max_wall_ms": 0.0,
+          "p95_upper_wall_ms": null
+        },
+        "bot_trigger": {
+          "count": 16550,
+          "total_wall_ms": 1139.788,
+          "mean_wall_ms": 0.06886936555891238,
+          "max_wall_ms": 0.3403,
+          "p95_upper_wall_ms": 0.131072
+        },
+        "bot_evaluate": {
+          "count": 3264,
+          "total_wall_ms": 250750.5603,
+          "mean_wall_ms": 76.82308832720588,
+          "max_wall_ms": 1192.4087,
+          "p95_upper_wall_ms": 268.435456
+        },
+        "bot_worker_acquire": {
+          "count": 3266,
+          "total_wall_ms": 182457.6096,
+          "mean_wall_ms": 55.865771463563995,
+          "max_wall_ms": 1150.3963,
+          "p95_upper_wall_ms": 268.435456
+        },
+        "bot_wire_encode": {
+          "count": 3266,
+          "total_wall_ms": 4417.7258,
+          "mean_wall_ms": 1.3526410900183712,
+          "max_wall_ms": 4.2805,
+          "p95_upper_wall_ms": 4.194304
+        },
+        "bot_worker_roundtrip": {
+          "count": 3264,
+          "total_wall_ms": 58679.5513,
+          "mean_wall_ms": 17.977803707107842,
+          "max_wall_ms": 206.0006,
+          "p95_upper_wall_ms": 67.108864
+        },
+        "bot_wire_decode": {
+          "count": 3264,
+          "total_wall_ms": 2271.9754,
+          "mean_wall_ms": 0.6960708946078431,
+          "max_wall_ms": 2.1671,
+          "p95_upper_wall_ms": 2.097152
+        },
+        "scheduler_admission": {
+          "count": 2601,
+          "total_wall_ms": 304.7536,
+          "mean_wall_ms": 0.1171678585159554,
+          "max_wall_ms": 0.5285,
+          "p95_upper_wall_ms": 0.524288
+        },
+        "scheduler_apply": {
+          "count": 2601,
+          "total_wall_ms": 1552.5117,
+          "mean_wall_ms": 0.5968903114186851,
+          "max_wall_ms": 28.4975,
+          "p95_upper_wall_ms": 2.097152
+        },
+        "scheduler_mutation_build": {
+          "count": 2601,
+          "total_wall_ms": 6567.8429,
+          "mean_wall_ms": 2.525122222222222,
+          "max_wall_ms": 429.8539,
+          "p95_upper_wall_ms": 1.048576
+        },
+        "scheduler_checkpoint": {
+          "count": 464,
+          "total_wall_ms": 0.1036,
+          "mean_wall_ms": 0.00022327586206896552,
+          "max_wall_ms": 0.0024,
+          "p95_upper_wall_ms": 0.000512
+        },
+        "scheduler_install": {
+          "count": 2601,
+          "total_wall_ms": 390.8609,
+          "mean_wall_ms": 0.15027331795463283,
+          "max_wall_ms": 5.7039,
+          "p95_upper_wall_ms": 0.524288
+        },
+        "scheduler_materialize": {
+          "count": 27,
+          "total_wall_ms": 5922.5382,
+          "mean_wall_ms": 219.35326666666666,
+          "max_wall_ms": 429.8532,
+          "p95_upper_wall_ms": 536.870912
+        },
+        "scheduler_delta_clone": {
+          "count": 2574,
+          "total_wall_ms": 644.5652,
+          "mean_wall_ms": 0.2504138306138306,
+          "max_wall_ms": 8.1095,
+          "p95_upper_wall_ms": 0.524288
+        },
+        "scheduler_delta_between": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_wall_ms": null,
+          "max_wall_ms": 0.0,
+          "p95_upper_wall_ms": null
+        },
+        "scheduler_publish": {
+          "count": 12130,
+          "total_wall_ms": 45.9852,
+          "mean_wall_ms": 0.003791030502885408,
+          "max_wall_ms": 0.9294,
+          "p95_upper_wall_ms": 0.032768
+        },
+        "journal_request_clone": {
+          "count": 2988,
+          "total_wall_ms": 11063.6998,
+          "mean_wall_ms": 3.7027107764390896,
+          "max_wall_ms": 875.8169,
+          "p95_upper_wall_ms": 1.048576
+        },
+        "journal_queue": {
+          "count": 9584,
+          "total_wall_ms": 13294.6328,
+          "mean_wall_ms": 1.3871695325542572,
+          "max_wall_ms": 586.3711,
+          "p95_upper_wall_ms": 0.131072
+        },
+        "journal_operation": {
+          "count": 9584,
+          "total_wall_ms": 9766.5248,
+          "mean_wall_ms": 1.0190447412353922,
+          "max_wall_ms": 609.0805,
+          "p95_upper_wall_ms": 1.048576
+        },
+        "journal_validate": {
+          "count": 2988,
+          "total_wall_ms": 1818.2955,
+          "mean_wall_ms": 0.6085326305220884,
+          "max_wall_ms": 130.618,
+          "p95_upper_wall_ms": 0.262144
+        },
+        "journal_serialize": {
+          "count": 2989,
+          "total_wall_ms": 3341.2746,
+          "mean_wall_ms": 1.1178570090331215,
+          "max_wall_ms": 212.0052,
+          "p95_upper_wall_ms": 1.048576
+        },
+        "journal_compress": {
+          "count": 2989,
+          "total_wall_ms": 786.6884,
+          "mean_wall_ms": 0.2631945132151221,
+          "max_wall_ms": 31.7928,
+          "p95_upper_wall_ms": 0.524288
+        },
+        "bot_worker_start": {
+          "count": 4,
+          "total_wall_ms": 576.2656,
+          "mean_wall_ms": 144.0664,
+          "max_wall_ms": 147.0105,
+          "p95_upper_wall_ms": 268.435456
+        },
+        "bot_request_clone": {
+          "count": 3266,
+          "total_wall_ms": 626.9751,
+          "mean_wall_ms": 0.19197033067973057,
+          "max_wall_ms": 1.433,
+          "p95_upper_wall_ms": 0.524288
+        },
+        "bot_state_restore": {
+          "count": 0,
+          "total_wall_ms": 0.0,
+          "mean_wall_ms": null,
+          "max_wall_ms": 0.0,
+          "p95_upper_wall_ms": null
+        }
+      },
+      "scope": "whole run including startup/warmup; nested cumulative wall times include waits and must not be summed",
+      "p95": "power-of-two nanosecond histogram upper bound, not exact sample P95",
+      "worker_roundtrip": "pipe send, Python decode/decision/encode, output receive; not interpreter-only CPU time",
+      "worker_acquire": "affinity-slot wait plus cold process startup when needed",
+      "measurement_deltas": {
+        "directory_wait": {
+          "count": 3770,
+          "total_wall_ms": 1.5218999999999996
+        },
+        "room_wait": {
+          "count": 3770,
+          "total_wall_ms": 90.67660000000001
+        },
+        "room_held": {
+          "count": 3771,
+          "total_wall_ms": 27984.2269
+        },
+        "venue_wait": {
+          "count": 0,
+          "total_wall_ms": 0.0
+        },
+        "venue_compute": {
+          "count": 0,
+          "total_wall_ms": 0.0
+        },
+        "venue_commit": {
+          "count": 0,
+          "total_wall_ms": 0.0
+        },
+        "venue_fallback": {
+          "count": 0,
+          "total_wall_ms": 0.0
+        },
+        "order_prepare": {
+          "count": 106,
+          "total_wall_ms": 13.126800000000003
+        },
+        "order_apply": {
+          "count": 106,
+          "total_wall_ms": 126.14550000000003
+        },
+        "order_receipt": {
+          "count": 106,
+          "total_wall_ms": 0.8361999999999989
+        },
+        "order_journal": {
+          "count": 106,
+          "total_wall_ms": 14.729800000000012
+        },
+        "order_publish": {
+          "count": 106,
+          "total_wall_ms": 0.5598999999999998
+        },
+        "bot_state_copy": {
+          "count": 6907,
+          "total_wall_ms": 2435.8687
+        },
+        "bot_blocking_wait": {
+          "count": 6907,
+          "total_wall_ms": 592.8308
+        },
+        "bot_turn": {
+          "count": 6906,
+          "total_wall_ms": 98440.37279999998
+        },
+        "bot_observation": {
+          "count": 6907,
+          "total_wall_ms": 11664.055499999999
+        },
+        "bot_event_prefilter": {
+          "count": 0,
+          "total_wall_ms": 0.0
+        },
+        "bot_event_skip": {
+          "count": 0,
+          "total_wall_ms": 0.0
+        },
+        "bot_trigger": {
+          "count": 6907,
+          "total_wall_ms": 583.0253
+        },
+        "bot_evaluate": {
+          "count": 1224,
+          "total_wall_ms": 85917.71500000003
+        },
+        "bot_worker_acquire": {
+          "count": 1225,
+          "total_wall_ms": 59278.9872
+        },
+        "bot_wire_encode": {
+          "count": 1226,
+          "total_wall_ms": 2692.5812
+        },
+        "bot_worker_roundtrip": {
+          "count": 1224,
+          "total_wall_ms": 20600.675600000002
+        },
+        "bot_wire_decode": {
+          "count": 1224,
+          "total_wall_ms": 1317.2711999999997
+        },
+        "scheduler_admission": {
+          "count": 903,
+          "total_wall_ms": 188.3068
+        },
+        "scheduler_apply": {
+          "count": 903,
+          "total_wall_ms": 881.3566000000001
+        },
+        "scheduler_mutation_build": {
+          "count": 904,
+          "total_wall_ms": 4095.3200999999995
+        },
+        "scheduler_checkpoint": {
+          "count": 132,
+          "total_wall_ms": 0.0455
+        },
+        "scheduler_install": {
+          "count": 904,
+          "total_wall_ms": 253.12490000000003
+        },
+        "scheduler_materialize": {
+          "count": 11,
+          "total_wall_ms": 3762.736
+        },
+        "scheduler_delta_clone": {
+          "count": 893,
+          "total_wall_ms": 332.269
+        },
+        "scheduler_delta_between": {
+          "count": 0,
+          "total_wall_ms": 0.0
+        },
+        "scheduler_publish": {
+          "count": 3771,
+          "total_wall_ms": 10.834299999999999
+        },
+        "journal_request_clone": {
+          "count": 905,
+          "total_wall_ms": 7976.796200000001
+        },
+        "journal_queue": {
+          "count": 1712,
+          "total_wall_ms": 10924.5487
+        },
+        "journal_operation": {
+          "count": 1712,
+          "total_wall_ms": 6648.862399999999
+        },
+        "journal_validate": {
+          "count": 905,
+          "total_wall_ms": 1305.8375999999998
+        },
+        "journal_serialize": {
+          "count": 905,
+          "total_wall_ms": 2351.8493000000003
+        },
+        "journal_compress": {
+          "count": 905,
+          "total_wall_ms": 506.9822
+        },
+        "bot_worker_start": {
+          "count": 0,
+          "total_wall_ms": 0.0
+        },
+        "bot_request_clone": {
+          "count": 1225,
+          "total_wall_ms": 407.35360000000003
+        },
+        "bot_state_restore": {
+          "count": 0,
+          "total_wall_ms": 0.0
+        }
+      },
+      "measurement_delta_scope": "counter snapshot after warmup through final paused metrics; includes final quiescence; P95/max remain whole-run values"
+    },
+    "rate": 0.7092688218979688
+  },
+  "cases": [
+    {
+      "label": "A1",
+      "version": "before",
+      "server_sha256": "6edeb907fbc0f7edfed62d159dea3e9769bc75ab9eb7143b53e6cb05eb7acee5",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "steps_per_wall_second": 0.7487384471869719,
+      "qualified": {
+        "order_p95_under_250ms": false,
+        "configured_step_rate": false,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\abba-A1\\bots-1000\\report.json",
+      "latency": {
+        "view": {
+          "count": 53,
+          "p50_ms": 20.790300000044226,
+          "p95_ms": 431.49029999995037,
+          "max_ms": 597.6122000001851
+        },
+        "place": {
+          "count": 24,
+          "p50_ms": 20.578599999907965,
+          "p95_ms": 2138.5694000000512,
+          "max_ms": 2146.3463000000047
+        },
+        "cancel": {
+          "count": 24,
+          "p50_ms": 16.17390000001251,
+          "p95_ms": 49.25450000018827,
+          "max_ms": 76.99800000000323
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 129711,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 13000,
+          "p95_ms": 41000,
+          "max_ms": 42000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 3,
+          "max": 4
+        },
+        "instances_behind_closed_bars": 439
+      },
+      "resource_measurement": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 112,
+        "average_logical_cores": 2.0963905893791273,
+        "peak_sampled_rss_mib": 3926.1484375
+      },
+      "compiler_samples": 0,
+      "peer_server_samples": 0,
+      "diagnostics": {
+        "stages": {
+          "directory_wait": {
+            "count": 10409,
+            "total_wall_ms": 5.2352,
+            "mean_wall_ms": 0.0005029493707368623,
+            "max_wall_ms": 0.0142,
+            "p95_upper_wall_ms": 0.002048
+          },
+          "room_wait": {
+            "count": 10409,
+            "total_wall_ms": 182.1473,
+            "mean_wall_ms": 0.01749902007877798,
+            "max_wall_ms": 51.4699,
+            "p95_upper_wall_ms": 0.002048
+          },
+          "room_held": {
+            "count": 10409,
+            "total_wall_ms": 43446.2929,
+            "mean_wall_ms": 4.173916120664809,
+            "max_wall_ms": 2288.8647,
+            "p95_upper_wall_ms": 8.388608
+          },
+          "venue_wait": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_compute": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_commit": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_fallback": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "order_prepare": {
+            "count": 1375,
+            "total_wall_ms": 143.2437,
+            "mean_wall_ms": 0.10417723636363636,
+            "max_wall_ms": 0.3013,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "order_apply": {
+            "count": 1375,
+            "total_wall_ms": 893.3893,
+            "mean_wall_ms": 0.6497376727272727,
+            "max_wall_ms": 3.4701,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "order_receipt": {
+            "count": 1375,
+            "total_wall_ms": 12.6759,
+            "mean_wall_ms": 0.009218836363636363,
+            "max_wall_ms": 0.1581,
+            "p95_upper_wall_ms": 0.032768
+          },
+          "order_journal": {
+            "count": 1375,
+            "total_wall_ms": 218.7606,
+            "mean_wall_ms": 0.1590986181818182,
+            "max_wall_ms": 1.9907,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "order_publish": {
+            "count": 1375,
+            "total_wall_ms": 7.5183,
+            "mean_wall_ms": 0.0054678545454545455,
+            "max_wall_ms": 0.0324,
+            "p95_upper_wall_ms": 0.016384
+          },
+          "bot_state_copy": {
+            "count": 13093,
+            "total_wall_ms": 4213.9082,
+            "mean_wall_ms": 0.32184435958145574,
+            "max_wall_ms": 1.4434,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "bot_blocking_wait": {
+            "count": 13093,
+            "total_wall_ms": 921.3551,
+            "mean_wall_ms": 0.07037005269991599,
+            "max_wall_ms": 0.7423,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "bot_turn": {
+            "count": 13093,
+            "total_wall_ms": 274348.0596,
+            "mean_wall_ms": 20.953796654700987,
+            "max_wall_ms": 808.0814,
+            "p95_upper_wall_ms": 134.217728
+          },
+          "bot_observation": {
+            "count": 13093,
+            "total_wall_ms": 14129.7988,
+            "mean_wall_ms": 1.0791872603681358,
+            "max_wall_ms": 3.332,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "bot_event_prefilter": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "bot_event_skip": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "bot_trigger": {
+            "count": 13093,
+            "total_wall_ms": 1014.6806,
+            "mean_wall_ms": 0.07749794546704346,
+            "max_wall_ms": 0.3475,
+            "p95_upper_wall_ms": 0.131072
+          },
+          "bot_evaluate": {
+            "count": 2746,
+            "total_wall_ms": 258807.2144,
+            "mean_wall_ms": 94.24880349599418,
+            "max_wall_ms": 807.1982,
+            "p95_upper_wall_ms": 536.870912
+          },
+          "bot_worker_acquire": {
+            "count": 2746,
+            "total_wall_ms": 185099.6488,
+            "mean_wall_ms": 67.40700975965039,
+            "max_wall_ms": 785.142,
+            "p95_upper_wall_ms": 268.435456
+          },
+          "bot_wire_encode": {
+            "count": 2746,
+            "total_wall_ms": 3857.1208,
+            "mean_wall_ms": 1.4046324836125275,
+            "max_wall_ms": 3.7508,
+            "p95_upper_wall_ms": 4.194304
+          },
+          "bot_worker_roundtrip": {
+            "count": 2746,
+            "total_wall_ms": 64478.2866,
+            "mean_wall_ms": 23.480803568827387,
+            "max_wall_ms": 96.5656,
+            "p95_upper_wall_ms": 134.217728
+          },
+          "bot_wire_decode": {
+            "count": 2746,
+            "total_wall_ms": 2411.9732,
+            "mean_wall_ms": 0.8783587764020393,
+            "max_wall_ms": 2.4874,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "scheduler_admission": {
+            "count": 2200,
+            "total_wall_ms": 332.5241,
+            "mean_wall_ms": 0.15114731818181817,
+            "max_wall_ms": 0.5702,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "scheduler_apply": {
+            "count": 2200,
+            "total_wall_ms": 1717.5883,
+            "mean_wall_ms": 0.7807219545454546,
+            "max_wall_ms": 28.7232,
+            "p95_upper_wall_ms": 4.194304
+          },
+          "scheduler_mutation_build": {
+            "count": 2200,
+            "total_wall_ms": 7067.5281,
+            "mean_wall_ms": 3.212512772727273,
+            "max_wall_ms": 440.1138,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "scheduler_checkpoint": {
+            "count": 434,
+            "total_wall_ms": 0.1353,
+            "mean_wall_ms": 0.0003117511520737327,
+            "max_wall_ms": 0.0092,
+            "p95_upper_wall_ms": 0.001024
+          },
+          "scheduler_install": {
+            "count": 2200,
+            "total_wall_ms": 372.5669,
+            "mean_wall_ms": 0.1693485909090909,
+            "max_wall_ms": 5.9818,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "scheduler_materialize": {
+            "count": 22,
+            "total_wall_ms": 6333.4119,
+            "mean_wall_ms": 287.88235909090906,
+            "max_wall_ms": 440.1132,
+            "p95_upper_wall_ms": 536.870912
+          },
+          "scheduler_delta_clone": {
+            "count": 2178,
+            "total_wall_ms": 733.3064,
+            "mean_wall_ms": 0.33668797061524336,
+            "max_wall_ms": 8.864,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "scheduler_delta_between": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "scheduler_publish": {
+            "count": 10409,
+            "total_wall_ms": 63.2473,
+            "mean_wall_ms": 0.006076212892689019,
+            "max_wall_ms": 0.8814,
+            "p95_upper_wall_ms": 0.065536
+          },
+          "journal_request_clone": {
+            "count": 2587,
+            "total_wall_ms": 9771.2781,
+            "mean_wall_ms": 3.777069230769231,
+            "max_wall_ms": 779.8743,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "journal_queue": {
+            "count": 9204,
+            "total_wall_ms": 18492.9856,
+            "mean_wall_ms": 2.0092335506301606,
+            "max_wall_ms": 589.5098,
+            "p95_upper_wall_ms": 0.131072
+          },
+          "journal_operation": {
+            "count": 9204,
+            "total_wall_ms": 10691.5603,
+            "mean_wall_ms": 1.1616210669274227,
+            "max_wall_ms": 598.8426,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "journal_validate": {
+            "count": 2587,
+            "total_wall_ms": 2042.5413,
+            "mean_wall_ms": 0.7895405102435252,
+            "max_wall_ms": 131.7606,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "journal_serialize": {
+            "count": 2588,
+            "total_wall_ms": 3502.9977,
+            "mean_wall_ms": 1.3535539799072642,
+            "max_wall_ms": 211.5889,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "journal_compress": {
+            "count": 2588,
+            "total_wall_ms": 662.6284,
+            "mean_wall_ms": 0.2560387944358578,
+            "max_wall_ms": 31.6552,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "bot_worker_start": {
+            "count": 4,
+            "total_wall_ms": 48.8776,
+            "mean_wall_ms": 12.2194,
+            "max_wall_ms": 16.9683,
+            "p95_upper_wall_ms": 33.554432
+          },
+          "bot_request_clone": {
+            "count": 2746,
+            "total_wall_ms": 567.5491,
+            "mean_wall_ms": 0.20668211944646758,
+            "max_wall_ms": 1.3855,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "bot_state_restore": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          }
+        },
+        "scope": "whole run including startup/warmup; nested cumulative wall times include waits and must not be summed",
+        "p95": "power-of-two nanosecond histogram upper bound, not exact sample P95",
+        "worker_roundtrip": "pipe send, Python decode/decision/encode, output receive; not interpreter-only CPU time",
+        "worker_acquire": "affinity-slot wait plus cold process startup when needed",
+        "measurement_deltas": {
+          "directory_wait": {
+            "count": 3953,
+            "total_wall_ms": 1.7348999999999997,
+            "mean_wall_ms": 0.0004388818618770553
+          },
+          "room_wait": {
+            "count": 3954,
+            "total_wall_ms": 118.3441,
+            "mean_wall_ms": 0.029930222559433485
+          },
+          "room_held": {
+            "count": 3955,
+            "total_wall_ms": 26296.346,
+            "mean_wall_ms": 6.648886472819217
+          },
+          "venue_wait": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "venue_compute": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "venue_commit": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "venue_fallback": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "order_prepare": {
+            "count": 113,
+            "total_wall_ms": 13.149000000000001,
+            "mean_wall_ms": 0.11636283185840708
+          },
+          "order_apply": {
+            "count": 113,
+            "total_wall_ms": 114.93690000000004,
+            "mean_wall_ms": 1.017140707964602
+          },
+          "order_receipt": {
+            "count": 113,
+            "total_wall_ms": 0.8818999999999999,
+            "mean_wall_ms": 0.007804424778761061
+          },
+          "order_journal": {
+            "count": 113,
+            "total_wall_ms": 20.324900000000014,
+            "mean_wall_ms": 0.17986637168141606
+          },
+          "order_publish": {
+            "count": 113,
+            "total_wall_ms": 0.5980999999999996,
+            "mean_wall_ms": 0.005292920353982298
+          },
+          "bot_state_copy": {
+            "count": 6696,
+            "total_wall_ms": 2292.6079,
+            "mean_wall_ms": 0.34238469235364394
+          },
+          "bot_blocking_wait": {
+            "count": 6696,
+            "total_wall_ms": 542.4594,
+            "mean_wall_ms": 0.08101245519713261
+          },
+          "bot_turn": {
+            "count": 6696,
+            "total_wall_ms": 123859.07189999998,
+            "mean_wall_ms": 18.497471908602147
+          },
+          "bot_observation": {
+            "count": 6696,
+            "total_wall_ms": 9176.144400000001,
+            "mean_wall_ms": 1.3703919354838712
+          },
+          "bot_event_prefilter": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "bot_event_skip": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "bot_trigger": {
+            "count": 6696,
+            "total_wall_ms": 522.038,
+            "mean_wall_ms": 0.0779626642771804
+          },
+          "bot_evaluate": {
+            "count": 1263,
+            "total_wall_ms": 113943.32809999998,
+            "mean_wall_ms": 90.21641179730798
+          },
+          "bot_worker_acquire": {
+            "count": 1263,
+            "total_wall_ms": 80790.89839999999,
+            "mean_wall_ms": 63.96745716547901
+          },
+          "bot_wire_encode": {
+            "count": 1263,
+            "total_wall_ms": 2079.5401,
+            "mean_wall_ms": 1.6465083927157562
+          },
+          "bot_worker_roundtrip": {
+            "count": 1263,
+            "total_wall_ms": 28338.3764,
+            "mean_wall_ms": 22.437352652414887
+          },
+          "bot_wire_decode": {
+            "count": 1263,
+            "total_wall_ms": 1177.8065,
+            "mean_wall_ms": 0.9325467141726048
+          },
+          "scheduler_admission": {
+            "count": 1002,
+            "total_wall_ms": 168.86049999999997,
+            "mean_wall_ms": 0.16852345309381234
+          },
+          "scheduler_apply": {
+            "count": 1002,
+            "total_wall_ms": 875.0229999999999,
+            "mean_wall_ms": 0.8732764471057883
+          },
+          "scheduler_mutation_build": {
+            "count": 1002,
+            "total_wall_ms": 4254.326500000001,
+            "mean_wall_ms": 4.245834830339322
+          },
+          "scheduler_checkpoint": {
+            "count": 202,
+            "total_wall_ms": 0.0714,
+            "mean_wall_ms": 0.0003534653465346535
+          },
+          "scheduler_install": {
+            "count": 1003,
+            "total_wall_ms": 204.8875,
+            "mean_wall_ms": 0.20427467597208374
+          },
+          "scheduler_materialize": {
+            "count": 10,
+            "total_wall_ms": 3923.5496000000003,
+            "mean_wall_ms": 392.35496
+          },
+          "scheduler_delta_clone": {
+            "count": 992,
+            "total_wall_ms": 330.40200000000004,
+            "mean_wall_ms": 0.33306653225806454
+          },
+          "scheduler_delta_between": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "scheduler_publish": {
+            "count": 3955,
+            "total_wall_ms": 12.964500000000001,
+            "mean_wall_ms": 0.0032780025284450064
+          },
+          "journal_request_clone": {
+            "count": 1004,
+            "total_wall_ms": 6818.329099999999,
+            "mean_wall_ms": 6.791164442231075
+          },
+          "journal_queue": {
+            "count": 1889,
+            "total_wall_ms": 13082.9251,
+            "mean_wall_ms": 6.925847061937533
+          },
+          "journal_operation": {
+            "count": 1889,
+            "total_wall_ms": 6641.442299999999,
+            "mean_wall_ms": 3.5158508734780303
+          },
+          "journal_validate": {
+            "count": 1004,
+            "total_wall_ms": 1357.7397,
+            "mean_wall_ms": 1.3523303784860559
+          },
+          "journal_serialize": {
+            "count": 1004,
+            "total_wall_ms": 2322.9476999999997,
+            "mean_wall_ms": 2.3136929282868524
+          },
+          "journal_compress": {
+            "count": 1004,
+            "total_wall_ms": 424.9483,
+            "mean_wall_ms": 0.4232552788844622
+          },
+          "bot_worker_start": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "bot_request_clone": {
+            "count": 1263,
+            "total_wall_ms": 300.23079999999993,
+            "mean_wall_ms": 0.23771243072050668
+          },
+          "bot_state_restore": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          }
+        },
+        "measurement_delta_scope": "counter snapshot after warmup through final paused metrics; includes final quiescence; P95/max remain whole-run values"
+      },
+      "errors": [],
+      "bot_errors": null,
+      "prewarm": {
+        "scope": "real gateway fills before bot startup; computation/account state initializes afterwards; not historic Pine trading or restart qualification",
+        "iterations": 384,
+        "elapsed_seconds": 26.33924920000004,
+        "closed_bars_by_period": {
+          "10000": 192,
+          "15000": 128,
+          "30000": 64
+        }
+      }
+    },
+    {
+      "label": "B1",
+      "version": "candidate",
+      "server_sha256": "0bf6740061a09f83ad92cf2398acece2d7ab1cc76462335d13034b8b52238721",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "steps_per_wall_second": 1.0075362096423273,
+      "qualified": {
+        "order_p95_under_250ms": false,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": true,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\abba-B1\\bots-1000\\report.json",
+      "latency": {
+        "view": {
+          "count": 56,
+          "p50_ms": 19.198299999970914,
+          "p95_ms": 143.21770000015022,
+          "max_ms": 242.07099999966886
+        },
+        "place": {
+          "count": 46,
+          "p50_ms": 19.261099999766884,
+          "p95_ms": 517.8765999999086,
+          "max_ms": 839.1802000001007
+        },
+        "cancel": {
+          "count": 46,
+          "p50_ms": 17.709300000205985,
+          "p95_ms": 40.70129999990968,
+          "max_ms": 455.4123000002619
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130828,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 8000,
+          "p95_ms": 20000,
+          "max_ms": 21000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "instances_behind_closed_bars": 238
+      },
+      "resource_measurement": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 112,
+        "average_logical_cores": 2.396901054614384,
+        "peak_sampled_rss_mib": 3742.43359375
+      },
+      "compiler_samples": 0,
+      "peer_server_samples": 0,
+      "diagnostics": {
+        "stages": {
+          "directory_wait": {
+            "count": 16427,
+            "total_wall_ms": 7.3642,
+            "mean_wall_ms": 0.00044829853290314725,
+            "max_wall_ms": 0.1697,
+            "p95_upper_wall_ms": 0.002048
+          },
+          "room_wait": {
+            "count": 16427,
+            "total_wall_ms": 195.3993,
+            "mean_wall_ms": 0.01189500821817739,
+            "max_wall_ms": 10.056,
+            "p95_upper_wall_ms": 0.002048
+          },
+          "room_held": {
+            "count": 16427,
+            "total_wall_ms": 31548.1778,
+            "mean_wall_ms": 1.9205075668107385,
+            "max_wall_ms": 849.1388,
+            "p95_upper_wall_ms": 4.194304
+          },
+          "venue_wait": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_compute": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_commit": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_fallback": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "order_prepare": {
+            "count": 1468,
+            "total_wall_ms": 144.8419,
+            "mean_wall_ms": 0.09866614441416895,
+            "max_wall_ms": 0.3555,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "order_apply": {
+            "count": 1468,
+            "total_wall_ms": 907.5875,
+            "mean_wall_ms": 0.6182476158038147,
+            "max_wall_ms": 9.9046,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "order_receipt": {
+            "count": 1468,
+            "total_wall_ms": 12.0933,
+            "mean_wall_ms": 0.008237942779291555,
+            "max_wall_ms": 0.0683,
+            "p95_upper_wall_ms": 0.032768
+          },
+          "order_journal": {
+            "count": 1468,
+            "total_wall_ms": 213.2735,
+            "mean_wall_ms": 0.1452816757493188,
+            "max_wall_ms": 2.162,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "order_publish": {
+            "count": 1468,
+            "total_wall_ms": 7.8677,
+            "mean_wall_ms": 0.005359468664850137,
+            "max_wall_ms": 0.1044,
+            "p95_upper_wall_ms": 0.016384
+          },
+          "bot_state_copy": {
+            "count": 31528,
+            "total_wall_ms": 7078.7896,
+            "mean_wall_ms": 0.22452390256280133,
+            "max_wall_ms": 1.316,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "bot_blocking_wait": {
+            "count": 31528,
+            "total_wall_ms": 2531.1718,
+            "mean_wall_ms": 0.08028329738645014,
+            "max_wall_ms": 0.8053,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "bot_turn": {
+            "count": 31525,
+            "total_wall_ms": 379677.044,
+            "mean_wall_ms": 12.043681015067406,
+            "max_wall_ms": 844.8795,
+            "p95_upper_wall_ms": 134.217728
+          },
+          "bot_observation": {
+            "count": 31528,
+            "total_wall_ms": 34069.666,
+            "mean_wall_ms": 1.0806161507231669,
+            "max_wall_ms": 2.8597,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "bot_event_prefilter": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "bot_event_skip": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "bot_trigger": {
+            "count": 31528,
+            "total_wall_ms": 2143.2103,
+            "mean_wall_ms": 0.0679779973357016,
+            "max_wall_ms": 0.3162,
+            "p95_upper_wall_ms": 0.131072
+          },
+          "bot_evaluate": {
+            "count": 4528,
+            "total_wall_ms": 342477.8322,
+            "mean_wall_ms": 75.63556364840989,
+            "max_wall_ms": 844.603,
+            "p95_upper_wall_ms": 268.435456
+          },
+          "bot_worker_acquire": {
+            "count": 4530,
+            "total_wall_ms": 246121.6513,
+            "mean_wall_ms": 54.331490353200884,
+            "max_wall_ms": 831.7141,
+            "p95_upper_wall_ms": 268.435456
+          },
+          "bot_wire_encode": {
+            "count": 4530,
+            "total_wall_ms": 5999.7376,
+            "mean_wall_ms": 1.324445386313466,
+            "max_wall_ms": 3.3568,
+            "p95_upper_wall_ms": 4.194304
+          },
+          "bot_worker_roundtrip": {
+            "count": 4528,
+            "total_wall_ms": 82151.0259,
+            "mean_wall_ms": 18.14289441254417,
+            "max_wall_ms": 102.4116,
+            "p95_upper_wall_ms": 67.108864
+          },
+          "bot_wire_decode": {
+            "count": 4528,
+            "total_wall_ms": 3570.0458,
+            "mean_wall_ms": 0.7884376766784452,
+            "max_wall_ms": 2.8091,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "scheduler_admission": {
+            "count": 3807,
+            "total_wall_ms": 528.0346,
+            "mean_wall_ms": 0.1387009718938797,
+            "max_wall_ms": 0.447,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "scheduler_apply": {
+            "count": 3807,
+            "total_wall_ms": 2065.4062,
+            "mean_wall_ms": 0.5425285526661413,
+            "max_wall_ms": 16.2611,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "scheduler_mutation_build": {
+            "count": 3807,
+            "total_wall_ms": 8086.5006,
+            "mean_wall_ms": 2.124113632781718,
+            "max_wall_ms": 418.8822,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "scheduler_checkpoint": {
+            "count": 526,
+            "total_wall_ms": 0.1407,
+            "mean_wall_ms": 0.00026749049429657795,
+            "max_wall_ms": 0.0042,
+            "p95_upper_wall_ms": 0.000512
+          },
+          "scheduler_install": {
+            "count": 3807,
+            "total_wall_ms": 3028.2724,
+            "mean_wall_ms": 0.7954484896243762,
+            "max_wall_ms": 189.5267,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "scheduler_materialize": {
+            "count": 38,
+            "total_wall_ms": 7881.7745,
+            "mean_wall_ms": 207.41511842105263,
+            "max_wall_ms": 418.8808,
+            "p95_upper_wall_ms": 536.870912
+          },
+          "scheduler_delta_clone": {
+            "count": 519,
+            "total_wall_ms": 203.8783,
+            "mean_wall_ms": 0.39282909441233144,
+            "max_wall_ms": 8.9353,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "scheduler_delta_between": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "scheduler_publish": {
+            "count": 16427,
+            "total_wall_ms": 62.0379,
+            "mean_wall_ms": 0.0037765812382053936,
+            "max_wall_ms": 0.2052,
+            "p95_upper_wall_ms": 0.032768
+          },
+          "journal_request_clone": {
+            "count": 4194,
+            "total_wall_ms": 7.7787,
+            "mean_wall_ms": 0.0018547210300429186,
+            "max_wall_ms": 0.97,
+            "p95_upper_wall_ms": 0.008192
+          },
+          "journal_queue": {
+            "count": 11160,
+            "total_wall_ms": 7192.1937,
+            "mean_wall_ms": 0.6444618010752687,
+            "max_wall_ms": 293.2838,
+            "p95_upper_wall_ms": 0.131072
+          },
+          "journal_operation": {
+            "count": 11160,
+            "total_wall_ms": 7258.3594,
+            "mean_wall_ms": 0.6503906272401434,
+            "max_wall_ms": 310.2865,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "journal_validate": {
+            "count": 4194,
+            "total_wall_ms": 1952.8529,
+            "mean_wall_ms": 0.4656301621363853,
+            "max_wall_ms": 100.3428,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "journal_serialize": {
+            "count": 4195,
+            "total_wall_ms": 3677.0809,
+            "mean_wall_ms": 0.8765389511323003,
+            "max_wall_ms": 181.0127,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "journal_compress": {
+            "count": 4195,
+            "total_wall_ms": 918.191,
+            "mean_wall_ms": 0.21887747318235995,
+            "max_wall_ms": 27.2245,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "bot_worker_start": {
+            "count": 4,
+            "total_wall_ms": 43.001,
+            "mean_wall_ms": 10.75025,
+            "max_wall_ms": 13.7157,
+            "p95_upper_wall_ms": 16.777216
+          },
+          "bot_request_clone": {
+            "count": 4531,
+            "total_wall_ms": 897.6627,
+            "mean_wall_ms": 0.19811580225115868,
+            "max_wall_ms": 1.247,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "bot_state_restore": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          }
+        },
+        "scope": "whole run including startup/warmup; nested cumulative wall times include waits and must not be summed",
+        "p95": "power-of-two nanosecond histogram upper bound, not exact sample P95",
+        "worker_roundtrip": "pipe send, Python decode/decision/encode, output receive; not interpreter-only CPU time",
+        "worker_acquire": "affinity-slot wait plus cold process startup when needed",
+        "measurement_deltas": {
+          "directory_wait": {
+            "count": 7410,
+            "total_wall_ms": 3.3485000000000005,
+            "mean_wall_ms": 0.00045188933873144407
+          },
+          "room_wait": {
+            "count": 7411,
+            "total_wall_ms": 118.42070000000001,
+            "mean_wall_ms": 0.01597904466333828
+          },
+          "room_held": {
+            "count": 7412,
+            "total_wall_ms": 18545.9701,
+            "mean_wall_ms": 2.5021546276308686
+          },
+          "venue_wait": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "venue_compute": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "venue_commit": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "venue_fallback": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "order_prepare": {
+            "count": 187,
+            "total_wall_ms": 20.463200000000015,
+            "mean_wall_ms": 0.10942887700534767
+          },
+          "order_apply": {
+            "count": 187,
+            "total_wall_ms": 172.76789999999994,
+            "mean_wall_ms": 0.9238925133689836
+          },
+          "order_receipt": {
+            "count": 187,
+            "total_wall_ms": 1.272499999999999,
+            "mean_wall_ms": 0.006804812834224594
+          },
+          "order_journal": {
+            "count": 187,
+            "total_wall_ms": 28.725600000000014,
+            "mean_wall_ms": 0.153612834224599
+          },
+          "order_publish": {
+            "count": 187,
+            "total_wall_ms": 0.9908999999999999,
+            "mean_wall_ms": 0.005298930481283422
+          },
+          "bot_state_copy": {
+            "count": 21203,
+            "total_wall_ms": 5064.517,
+            "mean_wall_ms": 0.23885851058812432
+          },
+          "bot_blocking_wait": {
+            "count": 21203,
+            "total_wall_ms": 1947.5612,
+            "mean_wall_ms": 0.09185309625996321
+          },
+          "bot_turn": {
+            "count": 21200,
+            "total_wall_ms": 178182.8044,
+            "mean_wall_ms": 8.404849264150943
+          },
+          "bot_observation": {
+            "count": 21203,
+            "total_wall_ms": 26717.649899999997,
+            "mean_wall_ms": 1.260088190350422
+          },
+          "bot_event_prefilter": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "bot_event_skip": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "bot_trigger": {
+            "count": 21203,
+            "total_wall_ms": 1455.2830000000004,
+            "mean_wall_ms": 0.06863571192755744
+          },
+          "bot_evaluate": {
+            "count": 2370,
+            "total_wall_ms": 149314.8463,
+            "mean_wall_ms": 63.00204485232068
+          },
+          "bot_worker_acquire": {
+            "count": 2372,
+            "total_wall_ms": 104079.8439,
+            "mean_wall_ms": 43.87851766441822
+          },
+          "bot_wire_encode": {
+            "count": 2372,
+            "total_wall_ms": 3745.1770000000006,
+            "mean_wall_ms": 1.5789110455311977
+          },
+          "bot_worker_roundtrip": {
+            "count": 2370,
+            "total_wall_ms": 36283.03309999999,
+            "mean_wall_ms": 15.309296666666663
+          },
+          "bot_wire_decode": {
+            "count": 2370,
+            "total_wall_ms": 2205.3855,
+            "mean_wall_ms": 0.9305424050632911
+          },
+          "scheduler_admission": {
+            "count": 1909,
+            "total_wall_ms": 337.28939999999994,
+            "mean_wall_ms": 0.17668381351492926
+          },
+          "scheduler_apply": {
+            "count": 1909,
+            "total_wall_ms": 1186.9521,
+            "mean_wall_ms": 0.6217664222105814
+          },
+          "scheduler_mutation_build": {
+            "count": 1909,
+            "total_wall_ms": 4591.7047,
+            "mean_wall_ms": 2.405293190151912
+          },
+          "scheduler_checkpoint": {
+            "count": 197,
+            "total_wall_ms": 0.06,
+            "mean_wall_ms": 0.00030456852791878173
+          },
+          "scheduler_install": {
+            "count": 1910,
+            "total_wall_ms": 1991.0733999999998,
+            "mean_wall_ms": 1.0424468062827223
+          },
+          "scheduler_materialize": {
+            "count": 19,
+            "total_wall_ms": 4493.841600000001,
+            "mean_wall_ms": 236.51797894736845
+          },
+          "scheduler_delta_clone": {
+            "count": 193,
+            "total_wall_ms": 97.4157,
+            "mean_wall_ms": 0.5047445595854922
+          },
+          "scheduler_delta_between": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "scheduler_publish": {
+            "count": 7412,
+            "total_wall_ms": 14.967500000000001,
+            "mean_wall_ms": 0.002019360496492175
+          },
+          "journal_request_clone": {
+            "count": 1910,
+            "total_wall_ms": 2.6781999999999995,
+            "mean_wall_ms": 0.001402198952879581
+          },
+          "journal_queue": {
+            "count": 3071,
+            "total_wall_ms": 4851.5938,
+            "mean_wall_ms": 1.579809117551286
+          },
+          "journal_operation": {
+            "count": 3071,
+            "total_wall_ms": 4246.7094,
+            "mean_wall_ms": 1.3828425268642135
+          },
+          "journal_validate": {
+            "count": 1910,
+            "total_wall_ms": 1209.9394000000002,
+            "mean_wall_ms": 0.6334761256544503
+          },
+          "journal_serialize": {
+            "count": 1910,
+            "total_wall_ms": 2327.8943,
+            "mean_wall_ms": 1.218792827225131
+          },
+          "journal_compress": {
+            "count": 1910,
+            "total_wall_ms": 579.6689,
+            "mean_wall_ms": 0.30349157068062826
+          },
+          "bot_worker_start": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "bot_request_clone": {
+            "count": 2373,
+            "total_wall_ms": 588.3237999999999,
+            "mean_wall_ms": 0.2479240623683101
+          },
+          "bot_state_restore": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          }
+        },
+        "measurement_delta_scope": "counter snapshot after warmup through final paused metrics; includes final quiescence; P95/max remain whole-run values"
+      },
+      "errors": [],
+      "bot_errors": null,
+      "prewarm": {
+        "scope": "real gateway fills before bot startup; computation/account state initializes afterwards; not historic Pine trading or restart qualification",
+        "iterations": 384,
+        "elapsed_seconds": 25.678650099999686,
+        "closed_bars_by_period": {
+          "10000": 192,
+          "15000": 128,
+          "30000": 64
+        }
+      }
+    },
+    {
+      "label": "B2",
+      "version": "candidate",
+      "server_sha256": "0bf6740061a09f83ad92cf2398acece2d7ab1cc76462335d13034b8b52238721",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "steps_per_wall_second": 1.017257792004791,
+      "qualified": {
+        "order_p95_under_250ms": false,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": true,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\abba-B2\\bots-1000\\report.json",
+      "latency": {
+        "view": {
+          "count": 56,
+          "p50_ms": 20.14069999995627,
+          "p95_ms": 42.1782000003077,
+          "max_ms": 147.44529999961742
+        },
+        "place": {
+          "count": 47,
+          "p50_ms": 19.10020000013901,
+          "p95_ms": 511.73889999972744,
+          "max_ms": 584.1118000003007
+        },
+        "cancel": {
+          "count": 46,
+          "p50_ms": 16.307399999732297,
+          "p95_ms": 47.38420000012411,
+          "max_ms": 467.6068999997369
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130836,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 7000,
+          "p95_ms": 20000,
+          "max_ms": 21000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "instances_behind_closed_bars": 230
+      },
+      "resource_measurement": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 112,
+        "average_logical_cores": 2.4996034074903517,
+        "peak_sampled_rss_mib": 3754.54296875
+      },
+      "compiler_samples": 0,
+      "peer_server_samples": 0,
+      "diagnostics": {
+        "stages": {
+          "directory_wait": {
+            "count": 15999,
+            "total_wall_ms": 7.4801,
+            "mean_wall_ms": 0.0004675354709669354,
+            "max_wall_ms": 0.0597,
+            "p95_upper_wall_ms": 0.002048
+          },
+          "room_wait": {
+            "count": 15999,
+            "total_wall_ms": 182.6966,
+            "mean_wall_ms": 0.0114192512032002,
+            "max_wall_ms": 6.3353,
+            "p95_upper_wall_ms": 0.002048
+          },
+          "room_held": {
+            "count": 15999,
+            "total_wall_ms": 32106.8552,
+            "mean_wall_ms": 2.0068038752422024,
+            "max_wall_ms": 733.6462,
+            "p95_upper_wall_ms": 4.194304
+          },
+          "venue_wait": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_compute": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_commit": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_fallback": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "order_prepare": {
+            "count": 1468,
+            "total_wall_ms": 153.3637,
+            "mean_wall_ms": 0.10447118528610354,
+            "max_wall_ms": 0.3613,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "order_apply": {
+            "count": 1468,
+            "total_wall_ms": 864.2329,
+            "mean_wall_ms": 0.5887145095367847,
+            "max_wall_ms": 2.9824,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "order_receipt": {
+            "count": 1468,
+            "total_wall_ms": 11.5218,
+            "mean_wall_ms": 0.007848637602179838,
+            "max_wall_ms": 0.1775,
+            "p95_upper_wall_ms": 0.016384
+          },
+          "order_journal": {
+            "count": 1468,
+            "total_wall_ms": 211.9311,
+            "mean_wall_ms": 0.14436723433242504,
+            "max_wall_ms": 2.3765,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "order_publish": {
+            "count": 1468,
+            "total_wall_ms": 7.875,
+            "mean_wall_ms": 0.005364441416893733,
+            "max_wall_ms": 0.3054,
+            "p95_upper_wall_ms": 0.016384
+          },
+          "bot_state_copy": {
+            "count": 29425,
+            "total_wall_ms": 6732.4879,
+            "mean_wall_ms": 0.22880162786745964,
+            "max_wall_ms": 1.0814,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "bot_blocking_wait": {
+            "count": 29425,
+            "total_wall_ms": 2578.1373,
+            "mean_wall_ms": 0.08761724044180119,
+            "max_wall_ms": 0.5992,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "bot_turn": {
+            "count": 29425,
+            "total_wall_ms": 394304.8239,
+            "mean_wall_ms": 13.400333862361938,
+            "max_wall_ms": 1004.0071,
+            "p95_upper_wall_ms": 134.217728
+          },
+          "bot_observation": {
+            "count": 29425,
+            "total_wall_ms": 36282.8747,
+            "mean_wall_ms": 1.2330628615123194,
+            "max_wall_ms": 3.7834,
+            "p95_upper_wall_ms": 4.194304
+          },
+          "bot_event_prefilter": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "bot_event_skip": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "bot_trigger": {
+            "count": 29425,
+            "total_wall_ms": 2062.9039,
+            "mean_wall_ms": 0.07010718436703484,
+            "max_wall_ms": 0.3624,
+            "p95_upper_wall_ms": 0.131072
+          },
+          "bot_evaluate": {
+            "count": 4471,
+            "total_wall_ms": 354848.4963,
+            "mean_wall_ms": 79.36669566092597,
+            "max_wall_ms": 1002.263,
+            "p95_upper_wall_ms": 268.435456
+          },
+          "bot_worker_acquire": {
+            "count": 4471,
+            "total_wall_ms": 255333.0327,
+            "mean_wall_ms": 57.10870782822635,
+            "max_wall_ms": 977.4702,
+            "p95_upper_wall_ms": 268.435456
+          },
+          "bot_wire_encode": {
+            "count": 4471,
+            "total_wall_ms": 6693.5656,
+            "mean_wall_ms": 1.497107045403713,
+            "max_wall_ms": 3.6558,
+            "p95_upper_wall_ms": 4.194304
+          },
+          "bot_worker_roundtrip": {
+            "count": 4471,
+            "total_wall_ms": 84053.6184,
+            "mean_wall_ms": 18.79973571907851,
+            "max_wall_ms": 118.0169,
+            "p95_upper_wall_ms": 67.108864
+          },
+          "bot_wire_decode": {
+            "count": 4471,
+            "total_wall_ms": 3690.8971,
+            "mean_wall_ms": 0.82551936926862,
+            "max_wall_ms": 2.6127,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "scheduler_admission": {
+            "count": 3703,
+            "total_wall_ms": 527.8632,
+            "mean_wall_ms": 0.14255014852822037,
+            "max_wall_ms": 1.2252,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "scheduler_apply": {
+            "count": 3703,
+            "total_wall_ms": 2214.1408,
+            "mean_wall_ms": 0.5979316230083715,
+            "max_wall_ms": 22.8935,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "scheduler_mutation_build": {
+            "count": 3703,
+            "total_wall_ms": 8594.3774,
+            "mean_wall_ms": 2.3209228733459355,
+            "max_wall_ms": 333.5891,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "scheduler_checkpoint": {
+            "count": 538,
+            "total_wall_ms": 0.1412,
+            "mean_wall_ms": 0.000262453531598513,
+            "max_wall_ms": 0.002,
+            "p95_upper_wall_ms": 0.000512
+          },
+          "scheduler_install": {
+            "count": 3703,
+            "total_wall_ms": 3268.8283,
+            "mean_wall_ms": 0.8827513637591142,
+            "max_wall_ms": 142.0796,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "scheduler_materialize": {
+            "count": 38,
+            "total_wall_ms": 8348.1585,
+            "mean_wall_ms": 219.68838157894737,
+            "max_wall_ms": 333.5886,
+            "p95_upper_wall_ms": 536.870912
+          },
+          "scheduler_delta_clone": {
+            "count": 532,
+            "total_wall_ms": 245.3989,
+            "mean_wall_ms": 0.4612761278195489,
+            "max_wall_ms": 5.8291,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "scheduler_delta_between": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "scheduler_publish": {
+            "count": 15999,
+            "total_wall_ms": 62.4791,
+            "mean_wall_ms": 0.0039051878242390148,
+            "max_wall_ms": 0.2797,
+            "p95_upper_wall_ms": 0.032768
+          },
+          "journal_request_clone": {
+            "count": 4090,
+            "total_wall_ms": 7.6559,
+            "mean_wall_ms": 0.0018718581907090465,
+            "max_wall_ms": 0.888,
+            "p95_upper_wall_ms": 0.008192
+          },
+          "journal_queue": {
+            "count": 11075,
+            "total_wall_ms": 6586.6937,
+            "mean_wall_ms": 0.594735322799097,
+            "max_wall_ms": 222.4365,
+            "p95_upper_wall_ms": 0.131072
+          },
+          "journal_operation": {
+            "count": 11075,
+            "total_wall_ms": 7597.1703,
+            "mean_wall_ms": 0.6859747449209932,
+            "max_wall_ms": 298.1785,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "journal_validate": {
+            "count": 4090,
+            "total_wall_ms": 2039.2298,
+            "mean_wall_ms": 0.4985891931540342,
+            "max_wall_ms": 101.3812,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "journal_serialize": {
+            "count": 4091,
+            "total_wall_ms": 3890.0013,
+            "mean_wall_ms": 0.9508680762649718,
+            "max_wall_ms": 170.9781,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "journal_compress": {
+            "count": 4091,
+            "total_wall_ms": 1024.1556,
+            "mean_wall_ms": 0.2503435834759228,
+            "max_wall_ms": 24.1379,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "bot_worker_start": {
+            "count": 4,
+            "total_wall_ms": 44.7655,
+            "mean_wall_ms": 11.191375,
+            "max_wall_ms": 14.9686,
+            "p95_upper_wall_ms": 16.777216
+          },
+          "bot_request_clone": {
+            "count": 4471,
+            "total_wall_ms": 995.1294,
+            "mean_wall_ms": 0.222574233952136,
+            "max_wall_ms": 2.0966,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "bot_state_restore": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          }
+        },
+        "scope": "whole run including startup/warmup; nested cumulative wall times include waits and must not be summed",
+        "p95": "power-of-two nanosecond histogram upper bound, not exact sample P95",
+        "worker_roundtrip": "pipe send, Python decode/decision/encode, output receive; not interpreter-only CPU time",
+        "worker_acquire": "affinity-slot wait plus cold process startup when needed",
+        "measurement_deltas": {
+          "directory_wait": {
+            "count": 7467,
+            "total_wall_ms": 3.2028,
+            "mean_wall_ms": 0.0004289272800321414
+          },
+          "room_wait": {
+            "count": 7467,
+            "total_wall_ms": 116.64989999999999,
+            "mean_wall_ms": 0.015622057051024506
+          },
+          "room_held": {
+            "count": 7468,
+            "total_wall_ms": 19018.000200000002,
+            "mean_wall_ms": 2.5465988484199253
+          },
+          "venue_wait": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "venue_compute": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "venue_commit": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "venue_fallback": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "order_prepare": {
+            "count": 188,
+            "total_wall_ms": 20.838300000000004,
+            "mean_wall_ms": 0.11084202127659576
+          },
+          "order_apply": {
+            "count": 188,
+            "total_wall_ms": 189.82819999999992,
+            "mean_wall_ms": 1.009724468085106
+          },
+          "order_receipt": {
+            "count": 188,
+            "total_wall_ms": 1.383000000000001,
+            "mean_wall_ms": 0.007356382978723409
+          },
+          "order_journal": {
+            "count": 188,
+            "total_wall_ms": 29.916999999999973,
+            "mean_wall_ms": 0.15913297872340412
+          },
+          "order_publish": {
+            "count": 188,
+            "total_wall_ms": 1.0480999999999998,
+            "mean_wall_ms": 0.005574999999999999
+          },
+          "bot_state_copy": {
+            "count": 20060,
+            "total_wall_ms": 4583.7527,
+            "mean_wall_ms": 0.22850212861415753
+          },
+          "bot_blocking_wait": {
+            "count": 20060,
+            "total_wall_ms": 1968.2052999999999,
+            "mean_wall_ms": 0.09811591724825523
+          },
+          "bot_turn": {
+            "count": 20065,
+            "total_wall_ms": 186813.8488,
+            "mean_wall_ms": 9.310433531024172
+          },
+          "bot_observation": {
+            "count": 20060,
+            "total_wall_ms": 28934.5372,
+            "mean_wall_ms": 1.4423996610169492
+          },
+          "bot_event_prefilter": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "bot_event_skip": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "bot_trigger": {
+            "count": 20060,
+            "total_wall_ms": 1395.0874999999996,
+            "mean_wall_ms": 0.06954573778664006
+          },
+          "bot_evaluate": {
+            "count": 2430,
+            "total_wall_ms": 155654.3357,
+            "mean_wall_ms": 64.05528218106996
+          },
+          "bot_worker_acquire": {
+            "count": 2429,
+            "total_wall_ms": 108433.34720000002,
+            "mean_wall_ms": 44.64114746809388
+          },
+          "bot_wire_encode": {
+            "count": 2429,
+            "total_wall_ms": 4361.3688,
+            "mean_wall_ms": 1.7955408810209963
+          },
+          "bot_worker_roundtrip": {
+            "count": 2430,
+            "total_wall_ms": 36913.894400000005,
+            "mean_wall_ms": 15.190903045267492
+          },
+          "bot_wire_decode": {
+            "count": 2430,
+            "total_wall_ms": 2299.382,
+            "mean_wall_ms": 0.9462477366255144
+          },
+          "scheduler_admission": {
+            "count": 1941,
+            "total_wall_ms": 341.4501,
+            "mean_wall_ms": 0.1759145285935085
+          },
+          "scheduler_apply": {
+            "count": 1941,
+            "total_wall_ms": 1261.2331000000001,
+            "mean_wall_ms": 0.6497852138073159
+          },
+          "scheduler_mutation_build": {
+            "count": 1942,
+            "total_wall_ms": 5059.097299999999,
+            "mean_wall_ms": 2.6050964469618947
+          },
+          "scheduler_checkpoint": {
+            "count": 202,
+            "total_wall_ms": 0.055499999999999994,
+            "mean_wall_ms": 0.0002747524752475247
+          },
+          "scheduler_install": {
+            "count": 1942,
+            "total_wall_ms": 2147.7834000000003,
+            "mean_wall_ms": 1.105964675592173
+          },
+          "scheduler_materialize": {
+            "count": 21,
+            "total_wall_ms": 4944.6792,
+            "mean_wall_ms": 235.46091428571427
+          },
+          "scheduler_delta_clone": {
+            "count": 200,
+            "total_wall_ms": 114.00569999999999,
+            "mean_wall_ms": 0.5700284999999999
+          },
+          "scheduler_delta_between": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "scheduler_publish": {
+            "count": 7468,
+            "total_wall_ms": 15.471000000000004,
+            "mean_wall_ms": 0.002071638993036958
+          },
+          "journal_request_clone": {
+            "count": 1943,
+            "total_wall_ms": 2.5483000000000002,
+            "mean_wall_ms": 0.001311528564076171
+          },
+          "journal_queue": {
+            "count": 3121,
+            "total_wall_ms": 4056.6014999999998,
+            "mean_wall_ms": 1.2997761935277155
+          },
+          "journal_operation": {
+            "count": 3121,
+            "total_wall_ms": 4830.5352,
+            "mean_wall_ms": 1.547752387055431
+          },
+          "journal_validate": {
+            "count": 1943,
+            "total_wall_ms": 1325.7164,
+            "mean_wall_ms": 0.6823038600102934
+          },
+          "journal_serialize": {
+            "count": 1943,
+            "total_wall_ms": 2657.9358,
+            "mean_wall_ms": 1.3679546062789503
+          },
+          "journal_compress": {
+            "count": 1943,
+            "total_wall_ms": 686.5019,
+            "mean_wall_ms": 0.3533205867215646
+          },
+          "bot_worker_start": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "bot_request_clone": {
+            "count": 2425,
+            "total_wall_ms": 674.5464,
+            "mean_wall_ms": 0.2781634639175258
+          },
+          "bot_state_restore": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          }
+        },
+        "measurement_delta_scope": "counter snapshot after warmup through final paused metrics; includes final quiescence; P95/max remain whole-run values"
+      },
+      "errors": [],
+      "bot_errors": null,
+      "prewarm": {
+        "scope": "real gateway fills before bot startup; computation/account state initializes afterwards; not historic Pine trading or restart qualification",
+        "iterations": 384,
+        "elapsed_seconds": 25.77896920000012,
+        "closed_bars_by_period": {
+          "10000": 192,
+          "15000": 128,
+          "30000": 64
+        }
+      }
+    },
+    {
+      "label": "A2",
+      "version": "before",
+      "server_sha256": "6edeb907fbc0f7edfed62d159dea3e9769bc75ab9eb7143b53e6cb05eb7acee5",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "prewarm_candles_sha256": "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "steps_per_wall_second": 0.8746146662229406,
+      "qualified": {
+        "order_p95_under_250ms": false,
+        "configured_step_rate": false,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\abba-A2\\bots-1000\\report.json",
+      "latency": {
+        "view": {
+          "count": 57,
+          "p50_ms": 20.125200000165933,
+          "p95_ms": 79.88160000013522,
+          "max_ms": 248.79490000012083
+        },
+        "place": {
+          "count": 32,
+          "p50_ms": 23.524699999597942,
+          "p95_ms": 1128.9349999997285,
+          "max_ms": 1206.024399999933
+        },
+        "cancel": {
+          "count": 31,
+          "p50_ms": 19.919599999866477,
+          "p95_ms": 55.39930000031745,
+          "max_ms": 63.875199999984034
+        }
+      },
+      "pine": {
+        "instances": 1000,
+        "initialized": 1000,
+        "evaluated_bars": 130190,
+        "observed": 1000,
+        "lag_sim_ms": {
+          "count": 1000,
+          "p50_ms": 12000,
+          "p95_ms": 43000,
+          "max_ms": 45000
+        },
+        "closed_bar_backlog": {
+          "count": 1000,
+          "p50": 0,
+          "p95": 2,
+          "max": 2
+        },
+        "instances_behind_closed_bars": 399
+      },
+      "resource_measurement": {
+        "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+        "samples": 113,
+        "average_logical_cores": 2.2659106943152394,
+        "peak_sampled_rss_mib": 4062.60546875
+      },
+      "compiler_samples": 0,
+      "peer_server_samples": 0,
+      "diagnostics": {
+        "stages": {
+          "directory_wait": {
+            "count": 13071,
+            "total_wall_ms": 5.7283,
+            "mean_wall_ms": 0.00043824496978042997,
+            "max_wall_ms": 0.0721,
+            "p95_upper_wall_ms": 0.002048
+          },
+          "room_wait": {
+            "count": 13071,
+            "total_wall_ms": 192.205,
+            "mean_wall_ms": 0.01470468977124933,
+            "max_wall_ms": 5.6266,
+            "p95_upper_wall_ms": 0.002048
+          },
+          "room_held": {
+            "count": 13071,
+            "total_wall_ms": 40383.2087,
+            "mean_wall_ms": 3.0895270981562235,
+            "max_wall_ms": 1570.8754,
+            "p95_upper_wall_ms": 4.194304
+          },
+          "venue_wait": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_compute": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_commit": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_fallback": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "order_prepare": {
+            "count": 1424,
+            "total_wall_ms": 144.7785,
+            "mean_wall_ms": 0.10167029494382022,
+            "max_wall_ms": 0.3405,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "order_apply": {
+            "count": 1424,
+            "total_wall_ms": 761.2883,
+            "mean_wall_ms": 0.5346125702247191,
+            "max_wall_ms": 2.1843,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "order_receipt": {
+            "count": 1424,
+            "total_wall_ms": 9.9795,
+            "mean_wall_ms": 0.007008075842696629,
+            "max_wall_ms": 0.2304,
+            "p95_upper_wall_ms": 0.016384
+          },
+          "order_journal": {
+            "count": 1424,
+            "total_wall_ms": 186.5666,
+            "mean_wall_ms": 0.13101587078651686,
+            "max_wall_ms": 3.4387,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "order_publish": {
+            "count": 1424,
+            "total_wall_ms": 6.8997,
+            "mean_wall_ms": 0.004845294943820225,
+            "max_wall_ms": 0.1641,
+            "p95_upper_wall_ms": 0.016384
+          },
+          "bot_state_copy": {
+            "count": 17443,
+            "total_wall_ms": 3863.122,
+            "mean_wall_ms": 0.22147119188213038,
+            "max_wall_ms": 1.1179,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "bot_blocking_wait": {
+            "count": 17443,
+            "total_wall_ms": 1274.9202,
+            "mean_wall_ms": 0.07309064954422978,
+            "max_wall_ms": 0.7341,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "bot_turn": {
+            "count": 17443,
+            "total_wall_ms": 310692.0715,
+            "mean_wall_ms": 17.811848391905063,
+            "max_wall_ms": 1100.8786,
+            "p95_upper_wall_ms": 134.217728
+          },
+          "bot_observation": {
+            "count": 17443,
+            "total_wall_ms": 19365.9964,
+            "mean_wall_ms": 1.1102445909533911,
+            "max_wall_ms": 5.0544,
+            "p95_upper_wall_ms": 4.194304
+          },
+          "bot_event_prefilter": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "bot_event_skip": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "bot_trigger": {
+            "count": 17443,
+            "total_wall_ms": 1143.1351,
+            "mean_wall_ms": 0.06553546408301324,
+            "max_wall_ms": 0.2728,
+            "p95_upper_wall_ms": 0.131072
+          },
+          "bot_evaluate": {
+            "count": 3707,
+            "total_wall_ms": 289595.0557,
+            "mean_wall_ms": 78.12113722686809,
+            "max_wall_ms": 1100.5499,
+            "p95_upper_wall_ms": 268.435456
+          },
+          "bot_worker_acquire": {
+            "count": 3707,
+            "total_wall_ms": 209679.9738,
+            "mean_wall_ms": 56.563251632047475,
+            "max_wall_ms": 1076.7862,
+            "p95_upper_wall_ms": 268.435456
+          },
+          "bot_wire_encode": {
+            "count": 3707,
+            "total_wall_ms": 5251.791,
+            "mean_wall_ms": 1.4167226868087404,
+            "max_wall_ms": 4.0878,
+            "p95_upper_wall_ms": 4.194304
+          },
+          "bot_worker_roundtrip": {
+            "count": 3707,
+            "total_wall_ms": 68171.3947,
+            "mean_wall_ms": 18.389909549500945,
+            "max_wall_ms": 106.9479,
+            "p95_upper_wall_ms": 67.108864
+          },
+          "bot_wire_decode": {
+            "count": 3707,
+            "total_wall_ms": 2711.6589,
+            "mean_wall_ms": 0.7314968707850014,
+            "max_wall_ms": 2.0499,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "scheduler_admission": {
+            "count": 3002,
+            "total_wall_ms": 391.0419,
+            "mean_wall_ms": 0.13026045969353764,
+            "max_wall_ms": 0.4912,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "scheduler_apply": {
+            "count": 3002,
+            "total_wall_ms": 1797.9641,
+            "mean_wall_ms": 0.5989220852764824,
+            "max_wall_ms": 17.1352,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "scheduler_mutation_build": {
+            "count": 3002,
+            "total_wall_ms": 6825.5029,
+            "mean_wall_ms": 2.273651865423051,
+            "max_wall_ms": 372.2897,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "scheduler_checkpoint": {
+            "count": 485,
+            "total_wall_ms": 0.1141,
+            "mean_wall_ms": 0.0002352577319587629,
+            "max_wall_ms": 0.0021,
+            "p95_upper_wall_ms": 0.000512
+          },
+          "scheduler_install": {
+            "count": 3002,
+            "total_wall_ms": 503.0186,
+            "mean_wall_ms": 0.16756115922718187,
+            "max_wall_ms": 6.2094,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "scheduler_materialize": {
+            "count": 31,
+            "total_wall_ms": 6101.9436,
+            "mean_wall_ms": 196.83689032258064,
+            "max_wall_ms": 372.2887,
+            "p95_upper_wall_ms": 536.870912
+          },
+          "scheduler_delta_clone": {
+            "count": 2971,
+            "total_wall_ms": 722.6,
+            "mean_wall_ms": 0.24321777179400875,
+            "max_wall_ms": 7.4911,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "scheduler_delta_between": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "scheduler_publish": {
+            "count": 13071,
+            "total_wall_ms": 56.5666,
+            "mean_wall_ms": 0.004327641343432025,
+            "max_wall_ms": 0.4634,
+            "p95_upper_wall_ms": 0.032768
+          },
+          "journal_request_clone": {
+            "count": 3389,
+            "total_wall_ms": 10261.8012,
+            "mean_wall_ms": 3.0279732074358217,
+            "max_wall_ms": 673.4135,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "journal_queue": {
+            "count": 10155,
+            "total_wall_ms": 7147.9483,
+            "mean_wall_ms": 0.7038846184145741,
+            "max_wall_ms": 280.2864,
+            "p95_upper_wall_ms": 0.131072
+          },
+          "journal_operation": {
+            "count": 10155,
+            "total_wall_ms": 8006.5196,
+            "mean_wall_ms": 0.7884312752338749,
+            "max_wall_ms": 288.4041,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "journal_validate": {
+            "count": 3389,
+            "total_wall_ms": 1428.6832,
+            "mean_wall_ms": 0.4215648273827088,
+            "max_wall_ms": 84.3884,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "journal_serialize": {
+            "count": 3390,
+            "total_wall_ms": 2827.2831,
+            "mean_wall_ms": 0.834006814159292,
+            "max_wall_ms": 102.912,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "journal_compress": {
+            "count": 3390,
+            "total_wall_ms": 812.9876,
+            "mean_wall_ms": 0.2398193510324484,
+            "max_wall_ms": 19.3591,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "bot_worker_start": {
+            "count": 4,
+            "total_wall_ms": 36.5453,
+            "mean_wall_ms": 9.136325,
+            "max_wall_ms": 12.209,
+            "p95_upper_wall_ms": 16.777216
+          },
+          "bot_request_clone": {
+            "count": 3707,
+            "total_wall_ms": 745.8423,
+            "mean_wall_ms": 0.20119835446452658,
+            "max_wall_ms": 1.7748,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "bot_state_restore": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          }
+        },
+        "scope": "whole run including startup/warmup; nested cumulative wall times include waits and must not be summed",
+        "p95": "power-of-two nanosecond histogram upper bound, not exact sample P95",
+        "worker_roundtrip": "pipe send, Python decode/decision/encode, output receive; not interpreter-only CPU time",
+        "worker_acquire": "affinity-slot wait plus cold process startup when needed",
+        "measurement_deltas": {
+          "directory_wait": {
+            "count": 5342,
+            "total_wall_ms": 2.237,
+            "mean_wall_ms": 0.00041875701984275555
+          },
+          "room_wait": {
+            "count": 5342,
+            "total_wall_ms": 133.57070000000002,
+            "mean_wall_ms": 0.02500387495320105
+          },
+          "room_held": {
+            "count": 5342,
+            "total_wall_ms": 25699.7546,
+            "mean_wall_ms": 4.810886297266941
+          },
+          "venue_wait": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "venue_compute": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "venue_commit": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "venue_fallback": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "order_prepare": {
+            "count": 149,
+            "total_wall_ms": 18.402800000000013,
+            "mean_wall_ms": 0.12350872483221485
+          },
+          "order_apply": {
+            "count": 149,
+            "total_wall_ms": 152.8596,
+            "mean_wall_ms": 1.025903355704698
+          },
+          "order_receipt": {
+            "count": 149,
+            "total_wall_ms": 1.0176999999999996,
+            "mean_wall_ms": 0.006830201342281877
+          },
+          "order_journal": {
+            "count": 149,
+            "total_wall_ms": 24.611699999999985,
+            "mean_wall_ms": 0.16517919463087238
+          },
+          "order_publish": {
+            "count": 149,
+            "total_wall_ms": 0.7664,
+            "mean_wall_ms": 0.005143624161073826
+          },
+          "bot_state_copy": {
+            "count": 9310,
+            "total_wall_ms": 2341.0132999999996,
+            "mean_wall_ms": 0.25145148227712133
+          },
+          "bot_blocking_wait": {
+            "count": 9310,
+            "total_wall_ms": 758.8763,
+            "mean_wall_ms": 0.08151195488721805
+          },
+          "bot_turn": {
+            "count": 9326,
+            "total_wall_ms": 141519.73350000003,
+            "mean_wall_ms": 15.17475160840661
+          },
+          "bot_observation": {
+            "count": 9310,
+            "total_wall_ms": 13625.5498,
+            "mean_wall_ms": 1.4635391836734695
+          },
+          "bot_event_prefilter": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "bot_event_skip": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "bot_trigger": {
+            "count": 9310,
+            "total_wall_ms": 637.9562,
+            "mean_wall_ms": 0.06852375939849624
+          },
+          "bot_evaluate": {
+            "count": 1852,
+            "total_wall_ms": 126884.36690000002,
+            "mean_wall_ms": 68.51207715982723
+          },
+          "bot_worker_acquire": {
+            "count": 1849,
+            "total_wall_ms": 88172.50090000001,
+            "mean_wall_ms": 47.68658783126015
+          },
+          "bot_wire_encode": {
+            "count": 1849,
+            "total_wall_ms": 3528.8219,
+            "mean_wall_ms": 1.9085029204975663
+          },
+          "bot_worker_roundtrip": {
+            "count": 1852,
+            "total_wall_ms": 30047.957800000004,
+            "mean_wall_ms": 16.224599244060478
+          },
+          "bot_wire_decode": {
+            "count": 1852,
+            "total_wall_ms": 1691.7829,
+            "mean_wall_ms": 0.9134896868250539
+          },
+          "scheduler_admission": {
+            "count": 1419,
+            "total_wall_ms": 258.8432,
+            "mean_wall_ms": 0.18241240310077522
+          },
+          "scheduler_apply": {
+            "count": 1419,
+            "total_wall_ms": 1093.7552,
+            "mean_wall_ms": 0.7707929527836505
+          },
+          "scheduler_mutation_build": {
+            "count": 1419,
+            "total_wall_ms": 4226.148000000001,
+            "mean_wall_ms": 2.978257928118394
+          },
+          "scheduler_checkpoint": {
+            "count": 199,
+            "total_wall_ms": 0.05559999999999999,
+            "mean_wall_ms": 0.00027939698492462304
+          },
+          "scheduler_install": {
+            "count": 1419,
+            "total_wall_ms": 348.98749999999995,
+            "mean_wall_ms": 0.24593904157857643
+          },
+          "scheduler_materialize": {
+            "count": 16,
+            "total_wall_ms": 3823.0684999999994,
+            "mean_wall_ms": 238.94178124999996
+          },
+          "scheduler_delta_clone": {
+            "count": 1403,
+            "total_wall_ms": 402.5641,
+            "mean_wall_ms": 0.2869309337134711
+          },
+          "scheduler_delta_between": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "scheduler_publish": {
+            "count": 5342,
+            "total_wall_ms": 14.0165,
+            "mean_wall_ms": 0.002623830026207413
+          },
+          "journal_request_clone": {
+            "count": 1420,
+            "total_wall_ms": 7376.8704,
+            "mean_wall_ms": 5.194979154929578
+          },
+          "journal_queue": {
+            "count": 2412,
+            "total_wall_ms": 4848.1005000000005,
+            "mean_wall_ms": 2.009991915422886
+          },
+          "journal_operation": {
+            "count": 2412,
+            "total_wall_ms": 5098.1451,
+            "mean_wall_ms": 2.113658830845771
+          },
+          "journal_validate": {
+            "count": 1420,
+            "total_wall_ms": 948.9593,
+            "mean_wall_ms": 0.6682811971830985
+          },
+          "journal_serialize": {
+            "count": 1420,
+            "total_wall_ms": 1925.3578000000002,
+            "mean_wall_ms": 1.3558857746478874
+          },
+          "journal_compress": {
+            "count": 1420,
+            "total_wall_ms": 549.7777000000001,
+            "mean_wall_ms": 0.38716739436619724
+          },
+          "bot_worker_start": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          },
+          "bot_request_clone": {
+            "count": 1836,
+            "total_wall_ms": 521.1603,
+            "mean_wall_ms": 0.28385637254901963
+          },
+          "bot_state_restore": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null
+          }
+        },
+        "measurement_delta_scope": "counter snapshot after warmup through final paused metrics; includes final quiescence; P95/max remain whole-run values"
+      },
+      "errors": [],
+      "bot_errors": null,
+      "prewarm": {
+        "scope": "real gateway fills before bot startup; computation/account state initializes afterwards; not historic Pine trading or restart qualification",
+        "iterations": 384,
+        "elapsed_seconds": 24.677626099999998,
+        "closed_bars_by_period": {
+          "10000": 192,
+          "15000": 128,
+          "30000": 64
+        }
+      }
+    }
+  ],
+  "same_initial_candles": true,
+  "same_recipe": true,
+  "controls_passed": true,
+  "average_steps_per_wall_second": {
+    "before": 0.8116765567049562,
+    "candidate": 1.012397000823559
+  },
+  "observed_throughput_increase_percent": 24.7291168459316,
+  "phase_means": {
+    "before": {
+      "room_held": {
+        "mean_total_wall_ms": 25998.050300000003,
+        "mean_ms_per_call": 5.729886385043079
+      },
+      "journal_request_clone": {
+        "mean_total_wall_ms": 7097.599749999999,
+        "mean_ms_per_call": 5.993071798580326
+      },
+      "scheduler_materialize": {
+        "mean_total_wall_ms": 3873.30905,
+        "mean_ms_per_call": 315.648370625
+      },
+      "journal_queue": {
+        "mean_total_wall_ms": 8965.5128,
+        "mean_ms_per_call": 4.467919488680209
+      },
+      "journal_serialize": {
+        "mean_total_wall_ms": 2124.15275,
+        "mean_ms_per_call": 1.8347893514673699
+      },
+      "journal_validate": {
+        "mean_total_wall_ms": 1153.3495,
+        "mean_ms_per_call": 1.0103057878345771
+      },
+      "journal_compress": {
+        "mean_total_wall_ms": 487.36300000000006,
+        "mean_ms_per_call": 0.4052113366253297
+      },
+      "scheduler_install": {
+        "mean_total_wall_ms": 276.9375,
+        "mean_ms_per_call": 0.2251068587753301
+      },
+      "scheduler_publish": {
+        "mean_total_wall_ms": 13.4905,
+        "mean_ms_per_call": 0.0029509162773262098
+      },
+      "bot_worker_acquire": {
+        "mean_total_wall_ms": 84481.69965,
+        "mean_ms_per_call": 55.82702249836958
+      },
+      "bot_worker_roundtrip": {
+        "mean_total_wall_ms": 29193.167100000002,
+        "mean_ms_per_call": 19.330975948237683
+      }
+    },
+    "candidate": {
+      "room_held": {
+        "mean_total_wall_ms": 18781.98515,
+        "mean_ms_per_call": 2.524376738025397
+      },
+      "journal_request_clone": {
+        "mean_total_wall_ms": 2.61325,
+        "mean_ms_per_call": 0.0013568637584778758
+      },
+      "scheduler_materialize": {
+        "mean_total_wall_ms": 4719.2604,
+        "mean_ms_per_call": 235.98944661654136
+      },
+      "journal_queue": {
+        "mean_total_wall_ms": 4454.09765,
+        "mean_ms_per_call": 1.4397926555395006
+      },
+      "journal_serialize": {
+        "mean_total_wall_ms": 2492.91505,
+        "mean_ms_per_call": 1.2933737167520407
+      },
+      "journal_validate": {
+        "mean_total_wall_ms": 1267.8279000000002,
+        "mean_ms_per_call": 0.6578899928323718
+      },
+      "journal_compress": {
+        "mean_total_wall_ms": 633.0853999999999,
+        "mean_ms_per_call": 0.3284060787010964
+      },
+      "scheduler_install": {
+        "mean_total_wall_ms": 2069.4284,
+        "mean_ms_per_call": 1.0742057409374477
+      },
+      "scheduler_publish": {
+        "mean_total_wall_ms": 15.219250000000002,
+        "mean_ms_per_call": 0.0020454997447645665
+      },
+      "bot_worker_acquire": {
+        "mean_total_wall_ms": 106256.59555000001,
+        "mean_ms_per_call": 44.25983256625605
+      },
+      "bot_worker_roundtrip": {
+        "mean_total_wall_ms": 36598.463749999995,
+        "mean_ms_per_call": 15.250099855967077
+      }
+    }
+  },
+  "checks": {
+    "test-workspace": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\test-workspace.log",
+      "summaries": [
+        "Finished `test` profile [unoptimized] target(s) in 0.27s",
+        "test result: ok. 327 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 87.43s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 266 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 29.50s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ],
+      "failure": false
+    },
+    "clippy": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\clippy.log",
+      "summaries": [
+        "Finished `dev` profile [unoptimized] target(s) in 28.85s"
+      ],
+      "failure": false
+    },
+    "check-default": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\check-default.log",
+      "summaries": [
+        "Finished `dev` profile [unoptimized] target(s) in 12.45s"
+      ],
+      "failure": false
+    },
+    "test-postgres": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\test-postgres.log",
+      "summaries": [
+        "Finished `test` profile [unoptimized] target(s) in 0.26s",
+        "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 258 filtered out; finished in 3.31s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ],
+      "failure": false
+    },
+    "fixed-before": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\fixed-before.log",
+      "summaries": [
+        "Ran 1 test in 23.099s",
+        "OK"
+      ],
+      "failure": false
+    },
+    "fixed-candidate": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\fixed-candidate.log",
+      "summaries": [
+        "Ran 1 test in 26.193s",
+        "OK"
+      ],
+      "failure": false
+    },
+    "http-candidate": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\http-candidate.log",
+      "summaries": [
+        "Ran 9 tests in 13.649s",
+        "OK"
+      ],
+      "failure": false
+    },
+    "python-candidate": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\python-candidate.log",
+      "summaries": [
+        "Ran 23 tests in 3.200s",
+        "OK"
+      ],
+      "failure": false
+    }
+  },
+  "fixed_execution_equivalence": {
+    "identical_complete_receipts": true,
+    "steps": 59,
+    "canonical_sha256": "48c26aa5e50e9a8417e8ce7de464eb4cff0a511f65288bb686e0d3a15024ecfa",
+    "scope": "3 exact bundled sources; fixed manual real partial fills and closes; not async throughput"
+  },
+  "frozen_source_manifest": {
+    "original": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\original-hashes.json",
+    "before": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\before-hashes.json",
+    "candidate": "E:\\projects\\MarketForge\\.local\\pine-state-profile-20261012\\candidate-hashes.json"
+  },
+  "limitations": [
+    "Four asynchronous runs with identical starting history and recipe, but divergent subsequent market/trade trajectories; this is an observed throughput comparison, not deterministic complete-work speedup.",
+    "Nested cumulative wall counters include parallel waits and final quiescence; do not add them or treat queue time as CPU. Whole-run P95 upper bounds include cold startup.",
+    "Three bundled qualified incremental sources and 692 input sets; not arbitrary community strategies or interpreter version 0.3.2.",
+    "Capacity uses memory storage; PostgreSQL is checked for correctness/recovery separately, not thousand-bot throughput.",
+    "Summed process working sets double-count shared pages; short windows do not qualify long-term memory or history continuation.",
+    "Full scheduler materialization, full transcript responses, host polling and worker-affinity queues remain. History default 512 / maximum 2048 unchanged."
+  ],
+  "retained_failed_attempts": [
+    "rejected-build.json summarizes the captured compiler error; rejected source is retained in after-hashes.json. Moved idempotency fingerprint access was repaired in candidate snapshot before benchmarking.",
+    "test-workspace-python-path-failure.log: Python3 resolved to the WindowsApps placeholder (exit 9009). Rerun with the repository virtual environment on the test process PATH and PostgreSQL required.",
+    "python-candidate-public-env-failure.log forced external-session tests rejected public runtime; rerun with frozen private runtime, no skip."
+  ],
+  "current_frozen_source_matches": {
+    "files": 135,
+    "all_equal": true
+  },
+  "postgres_test_cluster_stopped": true
+}

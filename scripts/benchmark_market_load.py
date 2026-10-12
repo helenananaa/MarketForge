@@ -87,7 +87,7 @@ def observation_freshness(scheduler, market_time_ms):
     lags=[]
     for agent in scheduler["agents"]:
         data=agent.get("kind_state",{}).get("Plugin",{}).get("data")
-        observation=data.get("last_observation") if isinstance(data,dict) else None
+        observation=data.get("_host_observation",data.get("last_observation")) if isinstance(data,dict) else None
         if observation is not None:
             lags.append(market_time_ms-observation[1])
     return {"definition":"paused final durable snapshot; simulation time lag, not wall-clock latency",
@@ -184,7 +184,8 @@ def run_case(args,count):
                         (output/"metrics.txt").write_bytes(response.read())
                     saved=client.room_bots(room)
                     save(output/"scheduler.json",saved)
-                    final["active_bots"]=sum(a["kind_state"]["Plugin"]["data"].get("last_observation") is not None for a in saved["agents"])
+                    final["active_bots"]=sum(isinstance(data,dict) and data.get("_host_observation",data.get("last_observation")) is not None
+                                             for a in saved["agents"] for data in [a["kind_state"]["Plugin"]["data"]])
                     final["observation_freshness"]=observation_freshness(saved,final["clock"]["clock"]["market_time_ms"])
                 except Exception as e:errors.append({"kind":"final_receipt","error":str(e)})
             save(output/"samples.json",{"clock":samples,"latencies":latencies,"memory":resources,"errors":errors})

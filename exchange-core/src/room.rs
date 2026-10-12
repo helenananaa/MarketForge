@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -21,6 +22,22 @@ use crate::{
 
 const SYSTEM_LIQUIDATION_ORDER_ID_BASE: OrderId = 9_000_000_000_000_000_000;
 const SYSTEM_LIQUIDATION_ORDER_ID_STRIDE: OrderId = 1_000;
+
+struct EventHashWriter(Sha256);
+impl EventHashWriter {
+    fn value(&mut self, value: &(impl serde::Serialize + ?Sized)) -> bool {
+        serde_json::to_writer(self, value).is_ok()
+    }
+}
+impl std::io::Write for EventHashWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.update(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct RoomManager {
@@ -47,19 +64,44 @@ impl RoomManager {
         instrument: &str,
         account_id: AccountId,
     ) -> Result<Vec<crate::observation::BotAccountEvent>, RoomManagerError> {
-        let mut by_command = BTreeMap::<u64, Vec<crate::observation::BotAccountEvent>>::new();
+        Ok(self
+            .bot_account_event_map(room_id, instrument, Some(account_id), None)?
+            .remove(&account_id)
+            .unwrap_or_default())
+    }
+
+    fn bot_account_event_map(
+        &self,
+        room_id: &str,
+        instrument: &str,
+        only: Option<AccountId>,
+        selected: Option<&[usize]>,
+    ) -> Result<BTreeMap<AccountId, Vec<crate::observation::BotAccountEvent>>, RoomManagerError>
+    {
+        let mut by_account =
+            BTreeMap::<AccountId, BTreeMap<u64, Vec<crate::observation::BotAccountEvent>>>::new();
         if let Some(restored) = self.restored_bot_accounts.get(room_id) {
-            for event in restored
-                .iter()
-                .filter(|e| e.instrument_id == instrument && e.account.account_id() == account_id)
-            {
-                by_command
+            for event in restored.iter().filter(|e| {
+                e.instrument_id == instrument && only.is_none_or(|id| e.account.account_id() == id)
+            }) {
+                by_account
+                    .entry(event.account.account_id())
+                    .or_default()
                     .entry(event.command_seq)
                     .or_default()
                     .push(event.clone());
             }
         }
-        for execution in self.execution_history_from(room_id, 0)? {
+        let all = self.execution_history_from(room_id, 0)?;
+        let executions: Box<dyn Iterator<Item = &ActorExecution>> = match selected {
+            Some(indices) => Box::new(
+                indices
+                    .iter()
+                    .filter_map(|i| self.executions.get(room_id)?.at(*i)),
+            ),
+            None => Box::new(all),
+        };
+        for execution in executions {
             if execution.instrument_id != instrument {
                 continue;
             }
@@ -69,7 +111,7 @@ impl RoomManager {
                     for event in &r.clearing_events {
                         let crate::SpotClearingEvent::TradeSettled { buyer, seller, .. } = event;
                         for a in [buyer, seller] {
-                            if a.account_id == account_id {
+                            if only.is_none_or(|id| a.account_id == id) {
                                 snapshots.push(AccountSnapshot::Spot(a.clone()));
                             }
                         }
@@ -81,14 +123,14 @@ impl RoomManager {
                         match event {
                             PerpClearingEvent::TradeSettled { buyer, seller, .. } => {
                                 for a in [buyer, seller] {
-                                    if a.account_id == account_id {
+                                    if only.is_none_or(|id| a.account_id == id) {
                                         snapshots.push(AccountSnapshot::Perp(a.clone()));
                                     }
                                 }
                             }
                             PerpClearingEvent::FundingSettled { snapshot, .. }
                             | PerpClearingEvent::MarginStatusChanged { snapshot, .. } => {
-                                if snapshot.account_id == account_id {
+                                if only.is_none_or(|id| snapshot.account_id == id) {
                                     snapshots.push(AccountSnapshot::Perp(snapshot.clone()));
                                 }
                             }
@@ -104,7 +146,7 @@ impl RoomManager {
                                     )
                                     .chain(socialized_loss_allocations.iter().map(|a| &a.snapshot))
                                 {
-                                    if a.account_id == account_id {
+                                    if only.is_none_or(|id| a.account_id == id) {
                                         snapshots.push(AccountSnapshot::Perp(a.clone()));
                                     }
                                 }
@@ -114,24 +156,95 @@ impl RoomManager {
                 }
                 _ => {}
             }
-            if !snapshots.is_empty() {
-                by_command.insert(
-                    execution.command_seq,
-                    snapshots
-                        .into_iter()
-                        .map(|account| crate::observation::BotAccountEvent {
-                            instrument_id: instrument.to_string(),
-                            command_seq: execution.command_seq,
-                            market_time_ms: execution.market_time_ms,
-                            account: account.into(),
-                        })
-                        .collect(),
+            let mut groups = BTreeMap::<AccountId, Vec<crate::observation::BotAccountEvent>>::new();
+            for account in snapshots {
+                let account: crate::observation::BotAccountFrame = account.into();
+                groups.entry(account.account_id()).or_default().push(
+                    crate::observation::BotAccountEvent {
+                        instrument_id: instrument.to_string(),
+                        command_seq: execution.command_seq,
+                        market_time_ms: execution.market_time_ms,
+                        account,
+                    },
                 );
+            }
+            for (account, events) in groups {
+                by_account
+                    .entry(account)
+                    .or_default()
+                    .insert(execution.command_seq, events);
             }
         }
         // Retain one overflow marker so consumers cannot mistake a bounded
         // accounting stream for complete history.
-        let result = by_command.into_values().flatten().take(4097).collect();
+        let result = by_account
+            .into_iter()
+            .map(|(account, by_command)| {
+                (
+                    account,
+                    by_command.into_values().flatten().take(4097).collect(),
+                )
+            })
+            .collect();
+        Ok(result)
+    }
+
+    fn bot_account_execution_index(
+        &self,
+        room_id: &str,
+        instrument: &str,
+    ) -> Result<BTreeMap<AccountId, Vec<usize>>, RoomManagerError> {
+        let mut result = BTreeMap::<AccountId, Vec<usize>>::new();
+        for (index, execution) in self.execution_history_from(room_id, 0)?.enumerate() {
+            if execution.instrument_id != instrument {
+                continue;
+            }
+            let mut accounts = BTreeSet::new();
+            match &execution.result {
+                ActorExecutionResult::Accepted(MarketExecution::Spot(r)) => {
+                    for event in &r.clearing_events {
+                        let crate::SpotClearingEvent::TradeSettled { buyer, seller, .. } = event;
+                        accounts.extend([buyer.account_id, seller.account_id]);
+                    }
+                }
+                ActorExecutionResult::Accepted(MarketExecution::Perp(r)) => {
+                    for event in &r.clearing_events {
+                        use crate::PerpClearingEvent;
+                        match event {
+                            PerpClearingEvent::TradeSettled { buyer, seller, .. } => {
+                                accounts.extend([buyer.account_id, seller.account_id]);
+                            }
+                            PerpClearingEvent::FundingSettled { snapshot, .. }
+                            | PerpClearingEvent::MarginStatusChanged { snapshot, .. } => {
+                                accounts.insert(snapshot.account_id);
+                            }
+                            PerpClearingEvent::LiquidationSettled {
+                                snapshot,
+                                auto_deleveraging_allocations,
+                                socialized_loss_allocations,
+                                ..
+                            } => {
+                                accounts.insert(snapshot.account_id);
+                                accounts.extend(
+                                    auto_deleveraging_allocations
+                                        .iter()
+                                        .map(|a| a.snapshot.account_id),
+                                );
+                                accounts.extend(
+                                    socialized_loss_allocations
+                                        .iter()
+                                        .map(|a| a.snapshot.account_id),
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+            for account in accounts {
+                result.entry(account).or_default().push(index);
+            }
+        }
         Ok(result)
     }
     /// A borrow-scoped observation wave: public data is built once per market.
@@ -143,6 +256,7 @@ impl RoomManager {
             public: BTreeMap::new(),
             history: BTreeMap::new(),
             shared_public: None,
+            shared_history: None,
         }
     }
 
@@ -153,6 +267,7 @@ impl RoomManager {
             rooms: self,
             room_id,
             public: Mutex::default(),
+            history: Mutex::default(),
         }
     }
 
@@ -1572,12 +1687,15 @@ impl RoomManager {
     }
 }
 
+type ObservationHistoryCache = BTreeMap<String, Arc<Mutex<ObservationHistory>>>;
+
 pub struct RoomObservationBatch<'a> {
     rooms: &'a RoomManager,
     room_id: &'a str,
     public: BTreeMap<String, crate::ParticipantObservation>,
-    history: BTreeMap<String, ObservationHistory>,
+    history: ObservationHistoryCache,
     shared_public: Option<&'a Mutex<PublicObservationCache>>,
+    shared_history: Option<&'a Mutex<ObservationHistoryCache>>,
 }
 
 type PublicObservationCell =
@@ -1588,12 +1706,14 @@ pub struct NativeObservationWave {
     rooms: RoomManager,
     room_id: String,
     public: Mutex<PublicObservationCache>,
+    history: Mutex<ObservationHistoryCache>,
 }
 
 impl NativeObservationWave {
     pub fn batch(&self) -> RoomObservationBatch<'_> {
         let mut batch = self.rooms.observation_batch(&self.room_id);
         batch.shared_public = Some(&self.public);
+        batch.shared_history = Some(&self.history);
         batch
     }
 }
@@ -1606,6 +1726,9 @@ struct ObservationHistory {
     candles: BTreeMap<u64, Vec<crate::Candle>>,
     volume: Option<u128>,
     accounts: BTreeMap<AccountId, ObservationAccountHistory>,
+    account_events: Option<BTreeMap<AccountId, Vec<crate::observation::BotAccountEvent>>>,
+    account_execution_index: Option<BTreeMap<AccountId, Vec<usize>>>,
+    candle_stamps: BTreeMap<(u64, usize), [u8; 32]>,
 }
 
 #[derive(Default)]
@@ -1615,6 +1738,25 @@ struct ObservationAccountHistory {
 }
 
 impl ObservationHistory {
+    fn prepare_candles(
+        &mut self,
+        interval: u64,
+        market_time_ms: u64,
+    ) -> Result<(), RoomManagerError> {
+        if !self.candles.contains_key(&interval) {
+            let timed = self
+                .receipts
+                .iter()
+                .map(|r| crate::TimedTrade::from_trade(r.market_time_ms, &r.trade))
+                .collect::<Vec<_>>();
+            let mut candles = crate::aggregate_candles(&timed, interval, market_time_ms)
+                .map_err(RoomManagerError::Candle)?;
+            candles.retain(|bar| bar.is_final);
+            self.candles.insert(interval, candles);
+        }
+        Ok(())
+    }
+
     fn new(receipts: Vec<crate::observation::BotTradeReceipt>, complete: bool) -> Self {
         let mut volume = Some(0u128);
         let mut accounts = BTreeMap::<AccountId, ObservationAccountHistory>::new();
@@ -1639,11 +1781,194 @@ impl ObservationHistory {
             candles: BTreeMap::new(),
             volume,
             accounts,
+            account_events: None,
+            account_execution_index: None,
+            candle_stamps: BTreeMap::new(),
         }
     }
 }
 
 impl RoomObservationBatch<'_> {
+    fn prepare_account_events(
+        &self,
+        instrument: &str,
+        account: AccountId,
+        history: &mut ObservationHistory,
+    ) -> Result<(), RoomManagerError> {
+        if history
+            .account_events
+            .as_ref()
+            .is_some_and(|events| events.contains_key(&account))
+        {
+            return Ok(());
+        }
+        if history.account_execution_index.is_none() {
+            history.account_execution_index = Some(
+                self.rooms
+                    .bot_account_execution_index(self.room_id, instrument)?,
+            );
+        }
+        let indices = history
+            .account_execution_index
+            .as_ref()
+            .unwrap()
+            .get(&account)
+            .map_or(&[][..], Vec::as_slice);
+        let events = self
+            .rooms
+            .bot_account_event_map(self.room_id, instrument, Some(account), Some(indices))?
+            .remove(&account)
+            .unwrap_or_default();
+        history
+            .account_events
+            .get_or_insert_with(BTreeMap::new)
+            .insert(account, events);
+        Ok(())
+    }
+    fn history_for(
+        &mut self,
+        instrument: &str,
+    ) -> Result<Arc<Mutex<ObservationHistory>>, RoomManagerError> {
+        let mut shared = self.shared_history.map(|cache| cache.lock().unwrap());
+        let cache = shared.as_deref_mut().unwrap_or(&mut self.history);
+        if !cache.contains_key(instrument) {
+            let (receipts, complete) = self.rooms.bot_trade_history(self.room_id, instrument)?;
+            cache.insert(
+                instrument.to_owned(),
+                Arc::new(Mutex::new(ObservationHistory::new(receipts, complete))),
+            );
+        }
+        Ok(cache[instrument].clone())
+    }
+
+    /// Conservative content check before copying bars/fills into an observation.
+    /// Only frozen waves may use this; every history digest includes the supplied
+    /// prefix and completeness. Serialization failure disables the optimization.
+    #[allow(clippy::too_many_arguments)]
+    pub fn bot_event_stamp(
+        &mut self,
+        instrument: &str,
+        account: AccountId,
+        request: Option<crate::bots::BotMarketDataRequest>,
+        related: &[String],
+        intervals: &[u64],
+        account_events: bool,
+        filter: crate::bots::BotEventFilter,
+    ) -> Result<(Option<[u8; 32]>, u64), RoomManagerError> {
+        if filter.interval_ms == Some(0) {
+            return Err(RoomManagerError::Candle(
+                crate::CandleError::InvalidInterval,
+            ));
+        }
+        let mut writer = EventHashWriter(Sha256::new());
+        let mut time = 0;
+        for instrument in std::iter::once(instrument).chain(related.iter().map(String::as_str)) {
+            // No history or related copies; public data is shared for this wave.
+            let view = self.shared_bot_observation(instrument, account, None, &[])?;
+            time = view.public.market_time_ms;
+            if !writer.value(&(
+                instrument,
+                view.public.status,
+                filter.interval_ms.map(|i| time / i),
+            )) {
+                return Ok((None, time));
+            }
+            if filter.account
+                && !writer.value(&(
+                    &view.own_account,
+                    &view.own_orders,
+                    &view.position_protections,
+                    &view.risk,
+                    &view.public.perp_price,
+                ))
+            {
+                return Ok((None, time));
+            }
+            let Some(request) = request else { continue };
+            if request.validate().is_err() {
+                return Err(RoomManagerError::Candle(
+                    crate::CandleError::InvalidInterval,
+                ));
+            }
+            let history = self.history_for(instrument)?;
+            let mut history = history.lock().unwrap();
+            history.prepare_candles(request.interval_ms, time)?;
+            if account_events {
+                self.prepare_account_events(instrument, account, &mut history)?;
+            }
+            let events = history
+                .account_events
+                .as_ref()
+                .and_then(|m| m.get(&account))
+                .map_or(&[][..], Vec::as_slice);
+            let indices = history
+                .accounts
+                .get(&account)
+                .map_or(&[][..], |a| a.receipt_indices.as_slice());
+            let truncated = !history.complete
+                || history.candles[&request.interval_ms].len() > request.max_bars
+                || indices.len() > 4096
+                || (account_events && events.len() > 4096);
+            if !writer.value(&(request.interval_ms, truncated)) {
+                return Ok((None, time));
+            }
+            if filter.account {
+                if !writer.value(&events[..events.len().min(4096)]) {
+                    return Ok((None, time));
+                }
+                for &index in &indices[indices.len().saturating_sub(4096)..] {
+                    // Includes both fees: conservative extra wakes are harmless.
+                    let receipt = &history.receipts[index];
+                    if !writer.value(&(
+                        &receipt.trade,
+                        receipt.market_time_ms,
+                        receipt.buyer_fee,
+                        receipt.seller_fee,
+                    )) {
+                        return Ok((None, time));
+                    }
+                }
+                let conditions = if account_events {
+                    let room = self.rooms.simulation_room(self.room_id)?;
+                    let venue = room.venue_id_for_instrument(instrument).unwrap();
+                    room.exchange(&venue)
+                        .map_err(RoomManagerError::Simulation)?
+                        .conditional_orders(instrument, account)
+                } else {
+                    vec![]
+                };
+                if !writer.value(&conditions) {
+                    return Ok((None, time));
+                }
+            }
+            if filter.closed_bars {
+                for interval in std::iter::once(&request.interval_ms).chain(intervals.iter()) {
+                    history.prepare_candles(*interval, time)?;
+                    let key = (*interval, request.max_bars);
+                    if !history.candle_stamps.contains_key(&key) {
+                        let candles = &history.candles[interval];
+                        let mut digest = EventHashWriter(Sha256::new());
+                        if !digest.value(&(
+                            interval,
+                            history.complete,
+                            candles.len() > request.max_bars,
+                            &candles[candles.len().saturating_sub(request.max_bars)..],
+                        )) {
+                            return Ok((None, time));
+                        }
+                        history
+                            .candle_stamps
+                            .insert(key, digest.0.finalize().into());
+                    }
+                    if !writer.value(&history.candle_stamps[&key]) {
+                        return Ok((None, time));
+                    }
+                }
+            }
+        }
+        Ok((Some(writer.0.finalize().into()), time))
+    }
+
     pub fn enrich_data(
         &mut self,
         view: &mut crate::ParticipantObservation,
@@ -1663,11 +1988,16 @@ impl RoomObservationBatch<'_> {
         let mut peers = peers;
         for observation in std::iter::once(&mut *view).chain(peers.iter_mut()) {
             if account_events && let Some(data) = &mut observation.bot_market_data {
-                data.account_events = self.rooms.bot_account_events(
-                    self.room_id,
-                    &observation.instrument_id,
-                    account_id,
-                )?;
+                let history = self.history_for(&observation.instrument_id)?;
+                let mut history = history.lock().unwrap();
+                self.prepare_account_events(&observation.instrument_id, account_id, &mut history)?;
+                data.account_events = history
+                    .account_events
+                    .as_ref()
+                    .unwrap()
+                    .get(&account_id)
+                    .cloned()
+                    .unwrap_or_default();
                 if data.account_events.len() > 4096 {
                     data.truncated = true;
                     data.account_events.truncate(4096);
@@ -1747,30 +2077,9 @@ impl RoomObservationBatch<'_> {
                 crate::CandleError::InvalidInterval,
             ));
         }
-        if !self.history.contains_key(instrument_id) {
-            let (receipts, complete) = self.rooms.bot_trade_history(self.room_id, instrument_id)?;
-            self.history.insert(
-                instrument_id.to_string(),
-                ObservationHistory::new(receipts, complete),
-            );
-        }
-        let history = self
-            .history
-            .get_mut(instrument_id)
-            .expect("inserted history");
-        if !history.candles.contains_key(&request.interval_ms) {
-            let timed = history
-                .receipts
-                .iter()
-                .map(|receipt| {
-                    crate::TimedTrade::from_trade(receipt.market_time_ms, &receipt.trade)
-                })
-                .collect::<Vec<_>>();
-            let mut candles = crate::aggregate_candles(&timed, request.interval_ms, market_time_ms)
-                .map_err(RoomManagerError::Candle)?;
-            candles.retain(|bar| bar.is_final);
-            history.candles.insert(request.interval_ms, candles);
-        }
+        let history = self.history_for(instrument_id)?;
+        let mut history = history.lock().unwrap();
+        history.prepare_candles(request.interval_ms, market_time_ms)?;
         let candles = &history.candles[&request.interval_ms];
         let own = history.accounts.get(&account_id);
         let external_volume_qty = history
@@ -2005,6 +2314,7 @@ mod tests {
 
     include!("order_protection_tests.rs");
     include!("room_incremental_risk_tests.rs");
+    include!("room_bot_event_tests.rs");
 
     #[test]
     fn moving_execution_owners_preserves_all_room_state_and_rejects_overlap() {
@@ -2555,7 +2865,7 @@ mod tests {
                 }
             }
             assert_eq!(batch.history.len(), 1);
-            assert_eq!(batch.history["V-BTC-SPOT"].candles.len(), 3);
+            assert_eq!(batch.history["V-BTC-SPOT"].lock().unwrap().candles.len(), 3);
         }
         let view = manager
             .bot_observation("history", "V-BTC-SPOT", 20, Some(request))
@@ -2687,9 +2997,18 @@ mod tests {
                 .bot_observation("cached-history", "V-BTC-SPOT", 20, Some(request))
                 .unwrap()
         );
-        assert_eq!(batch.history["V-BTC-SPOT"].receipts.len(), 4202);
+        assert_eq!(
+            batch.history["V-BTC-SPOT"].lock().unwrap().receipts.len(),
+            4202
+        );
         // The fallback retains the exact filtered sum if the cached total is unavailable.
-        batch.history.get_mut("V-BTC-SPOT").unwrap().volume = None;
+        batch
+            .history
+            .get_mut("V-BTC-SPOT")
+            .unwrap()
+            .lock()
+            .unwrap()
+            .volume = None;
         assert_eq!(
             batch
                 .bot_observation("V-BTC-SPOT", 20, Some(request), &[])
@@ -2697,6 +3016,8 @@ mod tests {
             view
         );
         let mut conflict = batch.history["V-BTC-SPOT"]
+            .lock()
+            .unwrap()
             .receipts
             .first()
             .unwrap()
@@ -2713,7 +3034,7 @@ mod tests {
                 .bot_observation("cached-history", "V-BTC-SPOT", 20, Some(request))
                 .unwrap()
         );
-        assert!(!batch.history["V-BTC-SPOT"].complete);
+        assert!(!batch.history["V-BTC-SPOT"].lock().unwrap().complete);
     }
 
     #[test]

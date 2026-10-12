@@ -1,0 +1,1237 @@
+{
+  "date": "2026-10-11",
+  "head_at_closeout": "b4ce7dcde55ba09aff79b8294984d183a63f6e5c",
+  "scope": "diagnostic builds; assumed horizon distributions; three bundled qualified sources with 692 distinct input sets; no community-library or long-history capacity claim",
+  "source_sha256": {
+    "scripts/benchmark_strategy_runtime.py": "d204ee8ce448d06204234ac0867f309a0dc8c932cae2091995b2df40932a8beb",
+    "scripts/process_tree_metrics.py": "803c92fc0d622cf44856c51260d692f7cfc11a1940be4932abb9554555971b70",
+    "exchange-server/src/bench_execution_timing.rs": "ef676204b1e60cf7fa4c25f5b39e4f88d75be542fd8febb2a877b76656140b2f",
+    "exchange-server/src/bot_workers.rs": "3a42ac1554c7db5100c0267e5ca2fe4f72c4c54b1617dfcccdddddd164f95a23",
+    "exchange-server/src/realtime.rs": "34fa78d4a8e91ce054cf107cebace59c637a04cc41e3edc62df7c6c681446bec"
+  },
+  "cases": {
+    "mixed-real-time-final": {
+      "server_sha256": "fb971dbb348a90e827700703e8dea247847ec19eba6517cb81d6944fb0209d50",
+      "recipe_sha256": "e11784fecc4ae449a695b9cda44642a9e7076e21d1e3a9a40777d01fdedb6698",
+      "measurement_seconds": 30.0,
+      "steps_per_wall_second": 0.9714029457231611,
+      "latency": {
+        "view": {
+          "count": 58,
+          "p50_ms": 7.418900000629947,
+          "p95_ms": 19.946899999922607,
+          "max_ms": 20.94280000164872
+        },
+        "place": {
+          "count": 57,
+          "p50_ms": 16.78340000216849,
+          "p95_ms": 18.41730000160169,
+          "max_ms": 18.767100002150983
+        },
+        "cancel": {
+          "count": 56,
+          "p50_ms": 14.818700001342222,
+          "p95_ms": 16.23749999998836,
+          "max_ms": 16.836199996760115
+        }
+      },
+      "errors": [],
+      "language_groups": {
+        "native": {
+          "instances": 38,
+          "initialized": 38,
+          "evaluated_bars": 0,
+          "observed": 38,
+          "lag_sim_ms": {
+            "count": 38,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 1000,
+          "initialized": 1000,
+          "evaluated_bars": 1000,
+          "observed": 1000,
+          "lag_sim_ms": {
+            "count": 1000,
+            "p50_ms": 26000,
+            "p95_ms": 26000,
+            "max_ms": 26000
+          },
+          "closed_bar_backlog": {
+            "count": 1000,
+            "p50": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "instances_behind_closed_bars": 0
+        }
+      },
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": false,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "process_tree": {
+        "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+        "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+        "peak_sampled_rss_mib": 297.640625,
+        "peak_processes": 10,
+        "average_logical_cores": 0.32783682418865306,
+        "seen_pids": [
+          2756,
+          14712,
+          29040,
+          31112,
+          32632,
+          37144,
+          38200,
+          43952,
+          45076,
+          46836
+        ],
+        "per_process": {
+          "32632": {
+            "first_elapsed": 0.035913899999286514,
+            "first_cpu_seconds": 0.0,
+            "peak_rss_bytes": 148996096,
+            "last_elapsed": 36.88954109999759,
+            "last_cpu_seconds": 6.515625,
+            "average_logical_cores_while_sampled": 0.17679738725962638
+          },
+          "45076": {
+            "first_elapsed": 0.035913899999286514,
+            "first_cpu_seconds": 0.015625,
+            "peak_rss_bytes": 7806976,
+            "last_elapsed": 36.88954109999759,
+            "last_cpu_seconds": 0.015625,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "38200": {
+            "first_elapsed": 1.3985624999986612,
+            "first_cpu_seconds": 0.03125,
+            "peak_rss_bytes": 34209792,
+            "last_elapsed": 36.88954109999759,
+            "last_cpu_seconds": 1.265625,
+            "average_logical_cores_while_sampled": 0.03477996518247703
+          },
+          "14712": {
+            "first_elapsed": 1.3985624999986612,
+            "first_cpu_seconds": 0.0,
+            "peak_rss_bytes": 4370432,
+            "last_elapsed": 36.88954109999759,
+            "last_cpu_seconds": 0.0,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "2756": {
+            "first_elapsed": 1.3985624999986612,
+            "first_cpu_seconds": 0.03125,
+            "peak_rss_bytes": 34795520,
+            "last_elapsed": 36.88954109999759,
+            "last_cpu_seconds": 1.40625,
+            "average_logical_cores_while_sampled": 0.03874223969693644
+          },
+          "31112": {
+            "first_elapsed": 1.3985624999986612,
+            "first_cpu_seconds": 0.015625,
+            "peak_rss_bytes": 4354048,
+            "last_elapsed": 36.88954109999759,
+            "last_cpu_seconds": 0.015625,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "29040": {
+            "first_elapsed": 1.3985624999986612,
+            "first_cpu_seconds": 0.0625,
+            "peak_rss_bytes": 35106816,
+            "last_elapsed": 36.88954109999759,
+            "last_cpu_seconds": 1.46875,
+            "average_logical_cores_while_sampled": 0.03962274514459409
+          },
+          "43952": {
+            "first_elapsed": 1.3985624999986612,
+            "first_cpu_seconds": 0.015625,
+            "peak_rss_bytes": 33898496,
+            "last_elapsed": 36.88954109999759,
+            "last_cpu_seconds": 1.375,
+            "average_logical_cores_while_sampled": 0.03830198697310762
+          },
+          "46836": {
+            "first_elapsed": 1.3985624999986612,
+            "first_cpu_seconds": 0.015625,
+            "peak_rss_bytes": 4354048,
+            "last_elapsed": 36.88954109999759,
+            "last_cpu_seconds": 0.015625,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "37144": {
+            "first_elapsed": 1.3985624999986612,
+            "first_cpu_seconds": 0.015625,
+            "peak_rss_bytes": 4349952,
+            "last_elapsed": 36.88954109999759,
+            "last_cpu_seconds": 0.015625,
+            "average_logical_cores_while_sampled": 0.0
+          }
+        },
+        "compiler_nonempty_samples": 134,
+        "other_server_nonempty_samples": 0,
+        "errors": []
+      },
+      "workload": {
+        "period_instances": {
+          "60000": 600,
+          "300000": 300,
+          "3600000": 100
+        },
+        "ideal_bar_updates_per_sim_second": 11.027777777777779,
+        "distinct_inputs": 692,
+        "scope": "ideal steady bar rate assumes nonempty bars; excludes account wakes, host polling, cold starts and rebuilds",
+        "timing": "common exchange candle boundaries retained; parameter diversity does not inject execution jitter"
+      },
+      "start_step": 3590,
+      "pine_profile": "mixed-horizon",
+      "diagnostics": {
+        "stages": {
+          "directory_wait": {
+            "count": 6800,
+            "total_wall_ms": 2.2954,
+            "mean_wall_ms": 0.0003375588235294118,
+            "max_wall_ms": 0.0065,
+            "p95_upper_wall_ms": 0.002048
+          },
+          "room_wait": {
+            "count": 6800,
+            "total_wall_ms": 39.5136,
+            "mean_wall_ms": 0.005810823529411765,
+            "max_wall_ms": 1.6894,
+            "p95_upper_wall_ms": 0.002048
+          },
+          "room_held": {
+            "count": 6800,
+            "total_wall_ms": 2878.2281,
+            "mean_wall_ms": 0.4232688382352941,
+            "max_wall_ms": 1177.2923,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "venue_wait": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_compute": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_commit": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_fallback": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "order_prepare": {
+            "count": 243,
+            "total_wall_ms": 14.1225,
+            "mean_wall_ms": 0.058117283950617285,
+            "max_wall_ms": 0.3303,
+            "p95_upper_wall_ms": 0.131072
+          },
+          "order_apply": {
+            "count": 243,
+            "total_wall_ms": 165.8921,
+            "mean_wall_ms": 0.6826835390946502,
+            "max_wall_ms": 1.7261,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "order_receipt": {
+            "count": 243,
+            "total_wall_ms": 2.0306,
+            "mean_wall_ms": 0.008356378600823045,
+            "max_wall_ms": 0.0252,
+            "p95_upper_wall_ms": 0.016384
+          },
+          "order_journal": {
+            "count": 243,
+            "total_wall_ms": 34.1607,
+            "mean_wall_ms": 0.14057901234567902,
+            "max_wall_ms": 1.299,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "order_publish": {
+            "count": 243,
+            "total_wall_ms": 1.9718,
+            "mean_wall_ms": 0.00811440329218107,
+            "max_wall_ms": 0.0268,
+            "p95_upper_wall_ms": 0.016384
+          },
+          "bot_state_copy": {
+            "count": 35658,
+            "total_wall_ms": 408.8273,
+            "mean_wall_ms": 0.01146523360816647,
+            "max_wall_ms": 0.3095,
+            "p95_upper_wall_ms": 0.032768
+          },
+          "bot_blocking_wait": {
+            "count": 35658,
+            "total_wall_ms": 1018.95,
+            "mean_wall_ms": 0.028575635201076897,
+            "max_wall_ms": 0.5762,
+            "p95_upper_wall_ms": 0.131072
+          },
+          "bot_turn": {
+            "count": 35658,
+            "total_wall_ms": 29035.2604,
+            "mean_wall_ms": 0.8142705816366593,
+            "max_wall_ms": 133.4031,
+            "p95_upper_wall_ms": 4.194304
+          },
+          "bot_observation": {
+            "count": 35658,
+            "total_wall_ms": 3101.857,
+            "mean_wall_ms": 0.08698909080711201,
+            "max_wall_ms": 0.9408,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "bot_trigger": {
+            "count": 35658,
+            "total_wall_ms": 472.4071,
+            "mean_wall_ms": 0.013248278086263951,
+            "max_wall_ms": 0.3825,
+            "p95_upper_wall_ms": 0.032768
+          },
+          "bot_evaluate": {
+            "count": 2000,
+            "total_wall_ms": 25417.0092,
+            "mean_wall_ms": 12.7085046,
+            "max_wall_ms": 133.2988,
+            "p95_upper_wall_ms": 67.108864
+          },
+          "bot_worker_acquire": {
+            "count": 2000,
+            "total_wall_ms": 18900.7487,
+            "mean_wall_ms": 9.450374349999999,
+            "max_wall_ms": 131.8071,
+            "p95_upper_wall_ms": 67.108864
+          },
+          "bot_wire_encode": {
+            "count": 2000,
+            "total_wall_ms": 328.0795,
+            "mean_wall_ms": 0.16403975,
+            "max_wall_ms": 0.6852,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "bot_worker_roundtrip": {
+            "count": 2000,
+            "total_wall_ms": 5876.2791,
+            "mean_wall_ms": 2.93813955,
+            "max_wall_ms": 100.2023,
+            "p95_upper_wall_ms": 8.388608
+          },
+          "bot_wire_decode": {
+            "count": 2000,
+            "total_wall_ms": 94.3235,
+            "mean_wall_ms": 0.04716175,
+            "max_wall_ms": 0.2609,
+            "p95_upper_wall_ms": 0.131072
+          }
+        },
+        "scope": "whole run including startup/warmup; nested cumulative wall times include waits and must not be summed",
+        "p95": "power-of-two nanosecond histogram upper bound, not exact sample P95",
+        "worker_roundtrip": "pipe send, Python decode/decision/encode, output receive; not interpreter-only CPU time",
+        "worker_acquire": "affinity-slot wait plus cold process startup when needed"
+      },
+      "input_activity": {
+        "V-BTC-SPOT:60000": {
+          "closed_bars": 1,
+          "latest_open_ms": 3540000,
+          "market_time_ms": 3626000
+        },
+        "V-BTC-SPOT:300000": {
+          "closed_bars": 1,
+          "latest_open_ms": 3300000,
+          "market_time_ms": 3626000
+        },
+        "V-BTC-SPOT:3600000": {
+          "closed_bars": 1,
+          "latest_open_ms": 0,
+          "market_time_ms": 3626000
+        }
+      },
+      "storage": "in-memory durable journal; not PostgreSQL",
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\mixed-real-time-final\\bots-1000\\report.json",
+      "pine_execution_activity": {
+        "instances_with_order_records": 0,
+        "instances_with_fills": 0,
+        "authoritative_fill_receipts": 0
+      },
+      "performance_evidence_accepted": false
+    },
+    "diverse-short-real-time-clean": {
+      "server_sha256": "fb971dbb348a90e827700703e8dea247847ec19eba6517cb81d6944fb0209d50",
+      "recipe_sha256": "5ed711d6b716c85616e2aec0784732a9b51dfee9fb9a2e04cf09dd2a38612971",
+      "measurement_seconds": 60.0,
+      "steps_per_wall_second": 0.9868828515960145,
+      "latency": {
+        "view": {
+          "count": 116,
+          "p50_ms": 17.199399997480214,
+          "p95_ms": 19.831999998132233,
+          "max_ms": 37.967800002661534
+        },
+        "place": {
+          "count": 112,
+          "p50_ms": 17.16830000077607,
+          "p95_ms": 36.951100002625026,
+          "max_ms": 127.67019999591867
+        },
+        "cancel": {
+          "count": 112,
+          "p50_ms": 14.71280000259867,
+          "p95_ms": 17.040800004906487,
+          "max_ms": 27.98849999817321
+        }
+      },
+      "errors": [],
+      "language_groups": {
+        "native": {
+          "instances": 38,
+          "initialized": 38,
+          "evaluated_bars": 0,
+          "observed": 38,
+          "lag_sim_ms": {
+            "count": 38,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 1000,
+          "initialized": 1000,
+          "evaluated_bars": 4002,
+          "observed": 1000,
+          "lag_sim_ms": {
+            "count": 1000,
+            "p50_ms": 6000,
+            "p95_ms": 6000,
+            "max_ms": 6000
+          },
+          "closed_bar_backlog": {
+            "count": 1000,
+            "p50": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "instances_behind_closed_bars": 0
+        }
+      },
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "process_tree": {
+        "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+        "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+        "peak_sampled_rss_mib": 411.828125,
+        "peak_processes": 10,
+        "average_logical_cores": 0.5102489146009859,
+        "seen_pids": [
+          12052,
+          17972,
+          29080,
+          32336,
+          32428,
+          38472,
+          39432,
+          43680,
+          45392,
+          45844
+        ],
+        "per_process": {
+          "43680": {
+            "first_elapsed": 0.031594300002325326,
+            "first_cpu_seconds": 0.0,
+            "peak_rss_bytes": 244252672,
+            "last_elapsed": 65.6848530999996,
+            "last_cpu_seconds": 17.5625,
+            "average_logical_cores_while_sampled": 0.26750385770646207
+          },
+          "32336": {
+            "first_elapsed": 0.031594300002325326,
+            "first_cpu_seconds": 0.015625,
+            "peak_rss_bytes": 7802880,
+            "last_elapsed": 65.6848530999996,
+            "last_cpu_seconds": 0.015625,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "39432": {
+            "first_elapsed": 0.30489339999621734,
+            "first_cpu_seconds": 0.0,
+            "peak_rss_bytes": 4349952,
+            "last_elapsed": 65.6848530999996,
+            "last_cpu_seconds": 0.0,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "38472": {
+            "first_elapsed": 0.30489339999621734,
+            "first_cpu_seconds": 0.015625,
+            "peak_rss_bytes": 4345856,
+            "last_elapsed": 65.6848530999996,
+            "last_cpu_seconds": 0.015625,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "32428": {
+            "first_elapsed": 0.30489339999621734,
+            "first_cpu_seconds": 0.0,
+            "peak_rss_bytes": 4349952,
+            "last_elapsed": 65.6848530999996,
+            "last_cpu_seconds": 0.0,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "45392": {
+            "first_elapsed": 0.30489339999621734,
+            "first_cpu_seconds": 0.125,
+            "peak_rss_bytes": 39288832,
+            "last_elapsed": 65.6848530999996,
+            "last_cpu_seconds": 3.46875,
+            "average_logical_cores_while_sampled": 0.05114334752335167
+          },
+          "12052": {
+            "first_elapsed": 0.30489339999621734,
+            "first_cpu_seconds": 0.0,
+            "peak_rss_bytes": 4349952,
+            "last_elapsed": 65.6848530999996,
+            "last_cpu_seconds": 0.0,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "17972": {
+            "first_elapsed": 0.30489339999621734,
+            "first_cpu_seconds": 0.140625,
+            "peak_rss_bytes": 40398848,
+            "last_elapsed": 65.6848530999996,
+            "last_cpu_seconds": 4.078125,
+            "average_logical_cores_while_sampled": 0.06022487652282533
+          },
+          "45844": {
+            "first_elapsed": 0.30489339999621734,
+            "first_cpu_seconds": 0.125,
+            "peak_rss_bytes": 41353216,
+            "last_elapsed": 65.6848530999996,
+            "last_cpu_seconds": 4.1875,
+            "average_logical_cores_while_sampled": 0.06213677736481978
+          },
+          "29080": {
+            "first_elapsed": 0.30489339999621734,
+            "first_cpu_seconds": 0.15625,
+            "peak_rss_bytes": 41676800,
+            "last_elapsed": 65.6848530999996,
+            "last_cpu_seconds": 4.1875,
+            "average_logical_cores_while_sampled": 0.06165880215432117
+          }
+        },
+        "compiler_nonempty_samples": 0,
+        "other_server_nonempty_samples": 0,
+        "errors": []
+      },
+      "workload": {
+        "period_instances": {
+          "10000": 334,
+          "15000": 333,
+          "30000": 333
+        },
+        "ideal_bar_updates_per_sim_second": 66.7,
+        "distinct_inputs": 692,
+        "scope": "ideal steady bar rate assumes nonempty bars; excludes account wakes, host polling, cold starts and rebuilds",
+        "timing": "common exchange candle boundaries retained; parameter diversity does not inject execution jitter"
+      },
+      "start_step": 0,
+      "pine_profile": "diverse-short",
+      "diagnostics": {
+        "stages": {
+          "directory_wait": {
+            "count": 17350,
+            "total_wall_ms": 5.4864,
+            "mean_wall_ms": 0.00031621902017291067,
+            "max_wall_ms": 0.0274,
+            "p95_upper_wall_ms": 0.001024
+          },
+          "room_wait": {
+            "count": 17350,
+            "total_wall_ms": 128.5867,
+            "mean_wall_ms": 0.007411337175792507,
+            "max_wall_ms": 3.3895,
+            "p95_upper_wall_ms": 0.001024
+          },
+          "room_held": {
+            "count": 17350,
+            "total_wall_ms": 5673.1913,
+            "mean_wall_ms": 0.3269850893371758,
+            "max_wall_ms": 162.4839,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "venue_wait": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_compute": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_commit": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_fallback": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "order_prepare": {
+            "count": 443,
+            "total_wall_ms": 29.389,
+            "mean_wall_ms": 0.06634085778781038,
+            "max_wall_ms": 0.7257,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "order_apply": {
+            "count": 443,
+            "total_wall_ms": 316.8309,
+            "mean_wall_ms": 0.7151939051918735,
+            "max_wall_ms": 2.5634,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "order_receipt": {
+            "count": 443,
+            "total_wall_ms": 3.714,
+            "mean_wall_ms": 0.008383747178329572,
+            "max_wall_ms": 0.043,
+            "p95_upper_wall_ms": 0.016384
+          },
+          "order_journal": {
+            "count": 443,
+            "total_wall_ms": 61.771,
+            "mean_wall_ms": 0.13943792325056434,
+            "max_wall_ms": 1.9731,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "order_publish": {
+            "count": 443,
+            "total_wall_ms": 3.1941,
+            "mean_wall_ms": 0.007210158013544018,
+            "max_wall_ms": 0.0292,
+            "p95_upper_wall_ms": 0.016384
+          },
+          "bot_state_copy": {
+            "count": 65266,
+            "total_wall_ms": 1137.9535,
+            "mean_wall_ms": 0.017435624980847608,
+            "max_wall_ms": 0.2036,
+            "p95_upper_wall_ms": 0.065536
+          },
+          "bot_blocking_wait": {
+            "count": 65266,
+            "total_wall_ms": 1794.9873,
+            "mean_wall_ms": 0.027502639965678914,
+            "max_wall_ms": 0.5617,
+            "p95_upper_wall_ms": 0.131072
+          },
+          "bot_turn": {
+            "count": 65266,
+            "total_wall_ms": 83680.6268,
+            "mean_wall_ms": 1.2821473171329636,
+            "max_wall_ms": 183.8748,
+            "p95_upper_wall_ms": 8.388608
+          },
+          "bot_observation": {
+            "count": 65266,
+            "total_wall_ms": 8692.3336,
+            "mean_wall_ms": 0.13318318266785156,
+            "max_wall_ms": 1.2355,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "bot_trigger": {
+            "count": 65266,
+            "total_wall_ms": 893.675,
+            "mean_wall_ms": 0.013692810958232464,
+            "max_wall_ms": 0.324,
+            "p95_upper_wall_ms": 0.032768
+          },
+          "bot_evaluate": {
+            "count": 5042,
+            "total_wall_ms": 74021.4319,
+            "mean_wall_ms": 14.680966263387544,
+            "max_wall_ms": 183.2932,
+            "p95_upper_wall_ms": 67.108864
+          },
+          "bot_worker_acquire": {
+            "count": 5042,
+            "total_wall_ms": 54534.7737,
+            "mean_wall_ms": 10.816099504165015,
+            "max_wall_ms": 178.3492,
+            "p95_upper_wall_ms": 67.108864
+          },
+          "bot_wire_encode": {
+            "count": 5042,
+            "total_wall_ms": 1085.2662,
+            "mean_wall_ms": 0.21524518048393493,
+            "max_wall_ms": 0.8443,
+            "p95_upper_wall_ms": 0.524288
+          },
+          "bot_worker_roundtrip": {
+            "count": 5042,
+            "total_wall_ms": 17185.1259,
+            "mean_wall_ms": 3.408394664815549,
+            "max_wall_ms": 84.8259,
+            "p95_upper_wall_ms": 8.388608
+          },
+          "bot_wire_decode": {
+            "count": 5042,
+            "total_wall_ms": 474.1112,
+            "mean_wall_ms": 0.0940323681078937,
+            "max_wall_ms": 0.5543,
+            "p95_upper_wall_ms": 0.262144
+          }
+        },
+        "scope": "whole run including startup/warmup; nested cumulative wall times include waits and must not be summed",
+        "p95": "power-of-two nanosecond histogram upper bound, not exact sample P95",
+        "worker_roundtrip": "pipe send, Python decode/decision/encode, output receive; not interpreter-only CPU time",
+        "worker_acquire": "affinity-slot wait plus cold process startup when needed"
+      },
+      "input_activity": {
+        "V-BTC-SPOT:10000": {
+          "closed_bars": 6,
+          "latest_open_ms": 50000,
+          "market_time_ms": 66000
+        },
+        "V-BTC-SPOT:15000": {
+          "closed_bars": 4,
+          "latest_open_ms": 45000,
+          "market_time_ms": 66000
+        },
+        "V-BTC-SPOT:30000": {
+          "closed_bars": 2,
+          "latest_open_ms": 30000,
+          "market_time_ms": 66000
+        }
+      },
+      "storage": "in-memory durable journal; not PostgreSQL",
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\diverse-short-real-time-clean\\bots-1000\\report.json",
+      "pine_execution_activity": {
+        "instances_with_order_records": 20,
+        "instances_with_fills": 20,
+        "authoritative_fill_receipts": 20
+      },
+      "performance_evidence_accepted": true
+    },
+    "mixed-accelerated-final": {
+      "server_sha256": "fb971dbb348a90e827700703e8dea247847ec19eba6517cb81d6944fb0209d50",
+      "recipe_sha256": "a70839834317ba0d69aa339445d95b327e48acc1010a04e56973ef3b00aae089",
+      "measurement_seconds": 30.0,
+      "steps_per_wall_second": 30.740702046487822,
+      "latency": {
+        "view": {
+          "count": 58,
+          "p50_ms": 4.634299999452196,
+          "p95_ms": 30.73679999943124,
+          "max_ms": 50.74530000274535
+        },
+        "place": {
+          "count": 55,
+          "p50_ms": 17.36739999614656,
+          "p95_ms": 94.53210000356194,
+          "max_ms": 129.74270000268007
+        },
+        "cancel": {
+          "count": 55,
+          "p50_ms": 14.241799995943438,
+          "p95_ms": 27.476399998704437,
+          "max_ms": 65.315499996359
+        }
+      },
+      "errors": [],
+      "language_groups": {
+        "native": {
+          "instances": 38,
+          "initialized": 38,
+          "evaluated_bars": 0,
+          "observed": 38,
+          "lag_sim_ms": {
+            "count": 38,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 1000,
+          "initialized": 1000,
+          "evaluated_bars": 12422,
+          "observed": 1000,
+          "lag_sim_ms": {
+            "count": 1000,
+            "p50_ms": 52000,
+            "p95_ms": 1085000,
+            "max_ms": 1102000
+          },
+          "closed_bar_backlog": {
+            "count": 1000,
+            "p50": 0,
+            "p95": 1,
+            "max": 1
+          },
+          "instances_behind_closed_bars": 278
+        }
+      },
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": false,
+        "configured_40_steps_per_second": false,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "recent_nonempty_input": true,
+        "no_input_feed_errors": true,
+        "all_horizon_groups_exercised": true,
+        "compiler_quiet": false,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": true
+      },
+      "process_tree": {
+        "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+        "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+        "peak_sampled_rss_mib": 704.84375,
+        "peak_processes": 10,
+        "average_logical_cores": 3.892290726318665,
+        "seen_pids": [
+          3864,
+          10824,
+          12108,
+          16224,
+          35464,
+          36056,
+          37216,
+          39880,
+          45028,
+          47208
+        ],
+        "per_process": {
+          "39880": {
+            "first_elapsed": 0.03911630000220612,
+            "first_cpu_seconds": 0.046875,
+            "peak_rss_bytes": 485105664,
+            "last_elapsed": 37.3053132999994,
+            "last_cpu_seconds": 101.71875,
+            "average_logical_cores_while_sampled": 2.728260010003373
+          },
+          "10824": {
+            "first_elapsed": 0.03911630000220612,
+            "first_cpu_seconds": 0.015625,
+            "peak_rss_bytes": 7806976,
+            "last_elapsed": 37.3053132999994,
+            "last_cpu_seconds": 0.015625,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "37216": {
+            "first_elapsed": 1.4175169000009191,
+            "first_cpu_seconds": 0.0,
+            "peak_rss_bytes": 4345856,
+            "last_elapsed": 37.3053132999994,
+            "last_cpu_seconds": 0.0,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "16224": {
+            "first_elapsed": 1.4175169000009191,
+            "first_cpu_seconds": 0.015625,
+            "peak_rss_bytes": 58740736,
+            "last_elapsed": 37.3053132999994,
+            "last_cpu_seconds": 11.203125,
+            "average_logical_cores_while_sampled": 0.3117354956906876
+          },
+          "45028": {
+            "first_elapsed": 1.4175169000009191,
+            "first_cpu_seconds": 0.0,
+            "peak_rss_bytes": 55996416,
+            "last_elapsed": 37.3053132999994,
+            "last_cpu_seconds": 10.375,
+            "average_logical_cores_while_sampled": 0.2890954876237662
+          },
+          "47208": {
+            "first_elapsed": 1.4175169000009191,
+            "first_cpu_seconds": 0.0,
+            "peak_rss_bytes": 4366336,
+            "last_elapsed": 37.3053132999994,
+            "last_cpu_seconds": 0.0,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "35464": {
+            "first_elapsed": 1.4175169000009191,
+            "first_cpu_seconds": 0.015625,
+            "peak_rss_bytes": 56049664,
+            "last_elapsed": 37.3053132999994,
+            "last_cpu_seconds": 10.5625,
+            "average_logical_cores_while_sampled": 0.2938847200994611
+          },
+          "12108": {
+            "first_elapsed": 1.4175169000009191,
+            "first_cpu_seconds": 0.0,
+            "peak_rss_bytes": 4349952,
+            "last_elapsed": 37.3053132999994,
+            "last_cpu_seconds": 0.0,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "3864": {
+            "first_elapsed": 1.4175169000009191,
+            "first_cpu_seconds": 0.015625,
+            "peak_rss_bytes": 4341760,
+            "last_elapsed": 37.3053132999994,
+            "last_cpu_seconds": 0.015625,
+            "average_logical_cores_while_sampled": 0.0
+          },
+          "36056": {
+            "first_elapsed": 1.4175169000009191,
+            "first_cpu_seconds": 0.015625,
+            "peak_rss_bytes": 58580992,
+            "last_elapsed": 37.3053132999994,
+            "last_cpu_seconds": 11.3125,
+            "average_logical_cores_while_sampled": 0.31478318908431163
+          }
+        },
+        "compiler_nonempty_samples": 133,
+        "other_server_nonempty_samples": 0,
+        "errors": []
+      },
+      "workload": {
+        "period_instances": {
+          "60000": 600,
+          "300000": 300,
+          "3600000": 100
+        },
+        "ideal_bar_updates_per_sim_second": 11.027777777777779,
+        "distinct_inputs": 692,
+        "scope": "ideal steady bar rate assumes nonempty bars; excludes account wakes, host polling, cold starts and rebuilds",
+        "timing": "common exchange candle boundaries retained; parameter diversity does not inject execution jitter"
+      },
+      "start_step": 3590,
+      "pine_profile": "mixed-horizon",
+      "diagnostics": {
+        "stages": {
+          "directory_wait": {
+            "count": 64922,
+            "total_wall_ms": 17.0596,
+            "mean_wall_ms": 0.00026277070946674475,
+            "max_wall_ms": 0.1051,
+            "p95_upper_wall_ms": 0.001024
+          },
+          "room_wait": {
+            "count": 64922,
+            "total_wall_ms": 1109.805,
+            "mean_wall_ms": 0.0170944364006038,
+            "max_wall_ms": 4.8142,
+            "p95_upper_wall_ms": 0.001024
+          },
+          "room_held": {
+            "count": 64922,
+            "total_wall_ms": 23623.4903,
+            "mean_wall_ms": 0.3638749622624072,
+            "max_wall_ms": 1139.333,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "venue_wait": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_compute": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_commit": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "venue_fallback": {
+            "count": 0,
+            "total_wall_ms": 0.0,
+            "mean_wall_ms": null,
+            "max_wall_ms": 0.0,
+            "p95_upper_wall_ms": null
+          },
+          "order_prepare": {
+            "count": 955,
+            "total_wall_ms": 365.667,
+            "mean_wall_ms": 0.3828973821989529,
+            "max_wall_ms": 1.3856,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "order_apply": {
+            "count": 955,
+            "total_wall_ms": 530.9957,
+            "mean_wall_ms": 0.5560164397905759,
+            "max_wall_ms": 1.7169,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "order_receipt": {
+            "count": 955,
+            "total_wall_ms": 8.1136,
+            "mean_wall_ms": 0.008495916230366492,
+            "max_wall_ms": 0.3206,
+            "p95_upper_wall_ms": 0.016384
+          },
+          "order_journal": {
+            "count": 955,
+            "total_wall_ms": 151.6128,
+            "mean_wall_ms": 0.15875685863874348,
+            "max_wall_ms": 3.7661,
+            "p95_upper_wall_ms": 0.262144
+          },
+          "order_publish": {
+            "count": 955,
+            "total_wall_ms": 5.1414,
+            "mean_wall_ms": 0.0053836649214659684,
+            "max_wall_ms": 0.0548,
+            "p95_upper_wall_ms": 0.016384
+          },
+          "bot_state_copy": {
+            "count": 220714,
+            "total_wall_ms": 4476.0895,
+            "mean_wall_ms": 0.020280043404586934,
+            "max_wall_ms": 0.6084,
+            "p95_upper_wall_ms": 0.065536
+          },
+          "bot_blocking_wait": {
+            "count": 220714,
+            "total_wall_ms": 5782.3424,
+            "mean_wall_ms": 0.02619834899462653,
+            "max_wall_ms": 0.8833,
+            "p95_upper_wall_ms": 0.131072
+          },
+          "bot_turn": {
+            "count": 220714,
+            "total_wall_ms": 317889.5558,
+            "mean_wall_ms": 1.4402781690332285,
+            "max_wall_ms": 120.7663,
+            "p95_upper_wall_ms": 8.388608
+          },
+          "bot_observation": {
+            "count": 220714,
+            "total_wall_ms": 148400.4307,
+            "mean_wall_ms": 0.67236528131428,
+            "max_wall_ms": 5.8456,
+            "p95_upper_wall_ms": 2.097152
+          },
+          "bot_trigger": {
+            "count": 220714,
+            "total_wall_ms": 4109.918,
+            "mean_wall_ms": 0.018621011807135025,
+            "max_wall_ms": 0.7133,
+            "p95_upper_wall_ms": 0.065536
+          },
+          "bot_evaluate": {
+            "count": 12775,
+            "total_wall_ms": 164994.7218,
+            "mean_wall_ms": 12.915438105675147,
+            "max_wall_ms": 120.5904,
+            "p95_upper_wall_ms": 33.554432
+          },
+          "bot_worker_acquire": {
+            "count": 12775,
+            "total_wall_ms": 109209.9069,
+            "mean_wall_ms": 8.54872069667319,
+            "max_wall_ms": 118.4951,
+            "p95_upper_wall_ms": 33.554432
+          },
+          "bot_wire_encode": {
+            "count": 12775,
+            "total_wall_ms": 3942.1415,
+            "mean_wall_ms": 0.30858250489236794,
+            "max_wall_ms": 1.1996,
+            "p95_upper_wall_ms": 1.048576
+          },
+          "bot_worker_roundtrip": {
+            "count": 12775,
+            "total_wall_ms": 47282.6929,
+            "mean_wall_ms": 3.701189268101761,
+            "max_wall_ms": 88.8939,
+            "p95_upper_wall_ms": 8.388608
+          },
+          "bot_wire_decode": {
+            "count": 12775,
+            "total_wall_ms": 1760.7463,
+            "mean_wall_ms": 0.13782749902152644,
+            "max_wall_ms": 0.7401,
+            "p95_upper_wall_ms": 0.524288
+          }
+        },
+        "scope": "whole run including startup/warmup; nested cumulative wall times include waits and must not be summed",
+        "p95": "power-of-two nanosecond histogram upper bound, not exact sample P95",
+        "worker_roundtrip": "pipe send, Python decode/decision/encode, output receive; not interpreter-only CPU time",
+        "worker_acquire": "affinity-slot wait plus cold process startup when needed"
+      },
+      "input_activity": {
+        "V-BTC-SPOT:60000": {
+          "closed_bars": 19,
+          "latest_open_ms": 4620000,
+          "market_time_ms": 4702000
+        },
+        "V-BTC-SPOT:300000": {
+          "closed_bars": 4,
+          "latest_open_ms": 4200000,
+          "market_time_ms": 4702000
+        },
+        "V-BTC-SPOT:3600000": {
+          "closed_bars": 1,
+          "latest_open_ms": 0,
+          "market_time_ms": 4702000
+        }
+      },
+      "storage": "in-memory durable journal; not PostgreSQL",
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\mixed-accelerated-final\\bots-1000\\report.json",
+      "pine_execution_activity": {
+        "instances_with_order_records": 28,
+        "instances_with_fills": 7,
+        "authoritative_fill_receipts": 9
+      },
+      "performance_evidence_accepted": false
+    }
+  },
+  "checks": {
+    "test-realtime": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\test-realtime.log",
+      "summary": [
+        "Finished `test` profile [unoptimized] target(s) in 34.87s",
+        "test result: ok. 23 passed; 0 failed; 1 ignored; 0 measured; 241 filtered out; finished in 1.92s"
+      ]
+    },
+    "test-histogram": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\test-histogram.log",
+      "summary": [
+        "Finished `test` profile [unoptimized] target(s) in 0.32s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 264 filtered out; finished in 0.00s"
+      ]
+    },
+    "test-workers-python-path": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\test-workers-python-path.log",
+      "summary": [
+        "Finished `test` profile [unoptimized] target(s) in 0.37s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 264 filtered out; finished in 2.10s"
+      ]
+    },
+    "test-python": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\test-python.log",
+      "summary": [
+        "Ran 9 tests in 3.897s"
+      ]
+    },
+    "clippy": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\clippy.log",
+      "summary": [
+        "Finished `dev` profile [unoptimized] target(s) in 7.62s"
+      ]
+    },
+    "check-default": {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\check-default.log",
+      "summary": [
+        "Finished `dev` profile [unoptimized] target(s) in 17.26s"
+      ]
+    }
+  },
+  "limitations": [
+    "Metrics include startup/warmup, nested wall intervals and scheduling waits; cumulative stage times must not be summed as CPU usage.",
+    "P95 metrics are histogram upper bounds; bot turn excludes pending external dispatch wait and durable commit, so it is not end-to-end decision latency.",
+    "Mixed profiles advance an empty simulation to step 3590 and cross one shared hour boundary; they have very short computation histories and no long-horizon convergence qualification.",
+    "Real gateway feed and native trading do not establish Pine signal/transaction coverage; per-case Pine order/fill activity is reported separately.",
+    "The three short-sample market trajectories differ; compare descriptive evidence, not a fixed-work optimization speedup.",
+    "In-memory journal only; no PostgreSQL capacity or production account acceptance."
+  ],
+  "retained_failures": [
+    {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\boundary-smoke.log",
+      "reason": "UTF-8 receipt opened using Windows default GBK; fixed explicit encoding and repeated."
+    },
+    {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\test-workers.log",
+      "reason": "Python3 alias used without repository venv on PATH; repeated with venv PATH, passed."
+    },
+    {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\diverse-short-real-time\\bots-1000\\report.json",
+      "reason": "Potential overlap with accelerated run tail; excluded from capacity evidence and repeated serially."
+    },
+    {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\mixed-accelerated\\bots-1000\\report.json",
+      "reason": "Potential overlap with previous run; excluded and repeated serially."
+    },
+    {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\mixed-real-time-clean\\bots-1000\\report.json",
+      "reason": "Compiler/other benchmark activity recorded; rejected, retained, repeated."
+    },
+    {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\mixed-accelerated-clean\\bots-1000\\report.json",
+      "reason": "Compiler/other benchmark activity recorded; rejected, retained, repeated."
+    },
+    {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\mixed-real-time-final\\bots-1000\\report.json",
+      "reason": "Serial run but external cargo test activity recorded; diagnostic observations retained, capacity evidence rejected."
+    },
+    {
+      "receipt": "E:\\projects\\MarketForge\\.local\\pine-workload-diagnostics-20261011\\mixed-accelerated-final\\bots-1000\\report.json",
+      "reason": "Serial run but external cargo test activity recorded; diagnostic observations retained, capacity evidence rejected."
+    }
+  ]
+}

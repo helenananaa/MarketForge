@@ -10,6 +10,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::{
+    bot_dispatch::{CURSOR, Trigger},
+    bot_workers::{WorkerConfig, WorkerPool},
+};
 use exchange_core::{
     AgentTemplate, BOT_PROTOCOL_VERSION, BotConfig, BotDecisionRequest, BotDecisionResponse,
     BotDescriptor, BotError, BotFactory, BotRegistry, MAX_BOT_ACTIONS, OrderAction,
@@ -17,11 +21,12 @@ use exchange_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 
 pub const BOT_PLUGIN_DIR_ENV: &str = "MARKETFORGE_BOT_PLUGIN_DIR";
-const MAX_MESSAGE_BYTES: usize = 1_048_576;
-const MAX_REQUEST_BYTES: usize = 4 * MAX_MESSAGE_BYTES;
-const MAX_STDERR_BYTES: usize = 65_536;
+pub(super) const MAX_MESSAGE_BYTES: usize = 1_048_576;
+pub(super) const MAX_REQUEST_BYTES: usize = 4 * MAX_MESSAGE_BYTES;
+pub(super) const MAX_STDERR_BYTES: usize = 65_536;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -38,8 +43,15 @@ pub struct ProcessBotManifest {
     pub additional_intervals_parameter: Option<String>,
     #[serde(default)]
     pub account_events: bool,
+    /// Experimental host prefilter; disabled until the workload is qualified.
+    #[serde(default)]
+    pub host_event_prefilter: bool,
     #[serde(default)]
     pub compatible_versions: Vec<String>,
+    #[serde(default)]
+    pub(super) decision_trigger: Trigger,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) worker_pool: Option<WorkerConfig>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -56,6 +68,8 @@ fn default_timeout() -> u64 {
 struct ProcessBotFactory {
     manifest: ProcessBotManifest,
     directory: PathBuf,
+    pool: Option<Arc<WorkerPool>>,
+    event_prefilter_enabled: bool,
 }
 
 /// Read sorted <root>/<package>/bot.json manifests once at startup.
@@ -128,9 +142,20 @@ pub fn load_bot_plugins(root: &Path) -> Result<BotRegistry, BotError> {
                 "account events and intervals require market_data".into(),
             ));
         }
+        manifest
+            .decision_trigger
+            .validate(manifest.market_data.is_some())?;
+        if let Some(config) = &manifest.worker_pool {
+            config.validate()?;
+        }
+        let pool = manifest.worker_pool.clone().map(WorkerPool::new);
+        let event_prefilter_enabled = manifest.host_event_prefilter
+            || std::env::var("MARKETFORGE_EXPERIMENTAL_EVENT_PREFILTER").as_deref() == Ok("1");
         registry.register(ProcessBotFactory {
             manifest,
             directory,
+            pool,
+            event_prefilter_enabled,
         })?;
     }
     Ok(registry)
@@ -144,6 +169,47 @@ pub fn bot_registry_from_env() -> Result<BotRegistry, BotError> {
 }
 
 impl BotFactory for ProcessBotFactory {
+    fn supports_instance_reuse(&self) -> bool {
+        // Retaining the exact expected state has a memory cost. Only opt-in
+        // eligible event hosts reuse this adapter, after the scheduler's guards.
+        self.event_filter().is_some()
+    }
+    fn event_filter(&self) -> Option<exchange_core::bots::BotEventFilter> {
+        if !self.event_prefilter_enabled {
+            return None;
+        }
+        match self.manifest.decision_trigger {
+            crate::bot_dispatch::Trigger::Events {
+                closed_bars,
+                book: false,
+                account,
+                interval_ms,
+            } => Some(exchange_core::bots::BotEventFilter {
+                closed_bars,
+                account,
+                interval_ms,
+            }),
+            _ => None,
+        }
+    }
+    fn decision_is_due(
+        &self,
+        template: &AgentTemplate,
+        state: &PersistedAgentKindState,
+        observation: &ParticipantObservation,
+    ) -> Result<bool, BotError> {
+        let AgentTemplate::Plugin(config) = template else {
+            return Err(BotError("process bot requires Plugin config".into()));
+        };
+        let PersistedAgentKindState::Plugin { data, .. } = state else {
+            return Ok(true);
+        };
+        let mut config = config.clone();
+        config.config = self.manifest.bot.validate_config(&config.config)?;
+        self.manifest
+            .decision_trigger
+            .due(&config, data, observation)
+    }
     fn supports_plugin_version(&self, version: &str) -> bool {
         self.manifest.bot.version == version
             || self
@@ -241,13 +307,30 @@ impl BotFactory for ProcessBotFactory {
 struct ProcessBot {
     factory: ProcessBotFactory,
     config: BotConfig,
-    state: Value,
+    state: Arc<Value>,
 }
 impl ScheduledBot for ProcessBot {
     fn decide(
         &mut self,
         observation: &ParticipantObservation,
     ) -> Result<Vec<OrderAction>, BotError> {
+        if !self
+            .factory
+            .manifest
+            .decision_trigger
+            .due(&self.config, &self.state, observation)?
+        {
+            return Ok(vec![]);
+        }
+        let cursor = self.factory.manifest.decision_trigger.fingerprint(
+            &self.config,
+            &self.state,
+            observation,
+        )?;
+        #[cfg(feature = "bench-execution-timing")]
+        let request_clone_timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::BOT_REQUEST_CLONE,
+        );
         let request = BotDecisionRequest {
             protocol_version: BOT_PROTOCOL_VERSION.into(),
             plugin_id: self.config.plugin_id.clone(),
@@ -256,9 +339,11 @@ impl ScheduledBot for ProcessBot {
             participant: self.config.participant.clone(),
             seed: self.config.seed,
             config: self.config.config.clone(),
-            state: self.state.clone(),
+            state: self.state.as_ref().clone(),
             observation: observation.clone(),
         };
+        #[cfg(feature = "bench-execution-timing")]
+        drop(request_clone_timer);
         let response = self.factory.exchange(&request)?;
         if response.protocol_version != BOT_PROTOCOL_VERSION
             || response.plugin_id != self.config.plugin_id
@@ -273,7 +358,18 @@ impl ScheduledBot for ProcessBot {
         if response.actions.len() > MAX_BOT_ACTIONS {
             return Err(BotError("bot exceeded action limit".into()));
         }
-        self.state = response.state;
+        let mut next = response.state;
+        if let Some(cursor) = cursor {
+            let state = next
+                .as_object_mut()
+                .ok_or_else(|| BotError("event-driven worker state must be an object".into()))?;
+            state.insert(CURSOR.into(), Value::String(cursor));
+            state.insert(
+                "_host_observation".into(),
+                serde_json::json!([observation.step, observation.market_time_ms]),
+            );
+        }
+        self.state = next.into();
         Ok(response.actions)
     }
     fn snapshot(&self) -> PersistedAgentKindState {
@@ -282,6 +378,35 @@ impl ScheduledBot for ProcessBot {
             plugin_version: self.config.plugin_version.clone(),
             state_version: self.config.state_version,
             data: self.state.clone(),
+        }
+    }
+    fn prepare_reused_call(&mut self, state: &PersistedAgentKindState) -> Result<(), BotError> {
+        #[cfg(feature = "bench-execution-timing")]
+        let _timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::BOT_STATE_RESTORE,
+        );
+        match state {
+            PersistedAgentKindState::Plugin {
+                plugin_id,
+                plugin_version,
+                state_version,
+                data,
+            } if plugin_id == &self.config.plugin_id
+                && plugin_version == &self.config.plugin_version
+                && *state_version == self.config.state_version =>
+            {
+                self.state = data.clone();
+                Ok(())
+            }
+            _ => Err(BotError("cached plugin state identity mismatch".into())),
+        }
+    }
+    fn take_snapshot(&mut self) -> PersistedAgentKindState {
+        PersistedAgentKindState::Plugin {
+            plugin_id: self.config.plugin_id.clone(),
+            plugin_version: self.config.plugin_version.clone(),
+            state_version: self.config.state_version,
+            data: std::mem::take(&mut self.state),
         }
     }
     fn execution_feedback(
@@ -297,12 +422,12 @@ impl ScheduledBot for ProcessBot {
     }
 }
 
-fn bot_io(error: impl std::fmt::Display) -> BotError {
+pub(super) fn bot_io(error: impl std::fmt::Display) -> BotError {
     BotError(error.to_string())
 }
 
 /// Kill/reap even when an IO error or malformed message ends the exchange.
-struct ManagedChild(Child);
+pub(super) struct ManagedChild(pub(super) Child);
 impl Drop for ManagedChild {
     fn drop(&mut self) {
         #[cfg(unix)]
@@ -318,32 +443,44 @@ impl Drop for ManagedChild {
     }
 }
 
+pub(super) fn process_command(directory: &Path, args: &[String]) -> Command {
+    let mut command = Command::new(&args[0]);
+    command
+        .args(&args[1..])
+        .current_dir(directory)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_clear();
+    // Interpreter lookup and Windows process startup; backend credentials are not inherited.
+    for key in ["PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"] {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
+    }
+    #[cfg(feature = "bench-execution-timing")]
+    if let Some(value) = std::env::var_os("PINE_BENCH_PY_TRACE_DIR") {
+        command.env("PINE_BENCH_PY_TRACE_DIR", value);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    command
+}
+
 impl ProcessBotFactory {
     fn exchange(&self, request: &BotDecisionRequest) -> Result<BotDecisionResponse, BotError> {
+        if let Some(pool) = &self.pool {
+            return pool.exchange(&self.directory, &self.manifest, request);
+        }
         let mut input = serde_json::to_vec(request).map_err(bot_io)?;
         input.push(b'\n');
         if input.len() > MAX_REQUEST_BYTES {
             return Err(BotError("bot request exceeds size limit".into()));
         }
-        let mut command = Command::new(&self.manifest.command[0]);
-        command
-            .args(&self.manifest.command[1..])
-            .current_dir(&self.directory)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .env_clear();
-        // Interpreter lookup and Windows process startup; backend credentials are not inherited.
-        for key in ["PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"] {
-            if let Some(value) = std::env::var_os(key) {
-                command.env(key, value);
-            }
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
+        let mut command = process_command(&self.directory, &self.manifest.command);
         let mut child = ManagedChild(command.spawn().map_err(bot_io)?);
         let mut stdin = child.0.stdin.take().unwrap();
         let stdout = child.0.stdout.take().unwrap();
@@ -723,6 +860,373 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
             assert!(error.to_string().contains(message), "{error}");
             assert_eq!(bot.snapshot(), before);
         }
+    }
+
+    fn worker_package(program: &str, workers: usize, timeout_ms: u64) -> Package {
+        let package = Package::new(program, timeout_ms);
+        let path = package.0.join("test/bot.json");
+        let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        manifest["worker_pool"] =
+            serde_json::json!({"workers": workers, "command": manifest["command"]});
+        fs::write(path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        package
+    }
+
+    #[test]
+    fn event_prefilter_is_opt_in_and_bypasses_book_and_every_tick_plugins() {
+        let package = Package::new("", 1000);
+        let manifest: ProcessBotManifest =
+            serde_json::from_slice(&fs::read(package.0.join("test/bot.json")).unwrap()).unwrap();
+        assert!(!manifest.host_event_prefilter);
+        let mut factory = ProcessBotFactory {
+            manifest,
+            directory: package.0.clone(),
+            pool: None,
+            event_prefilter_enabled: false,
+        };
+        factory.manifest.decision_trigger = Trigger::Events {
+            closed_bars: false,
+            book: false,
+            account: true,
+            interval_ms: None,
+        };
+        assert!(factory.event_filter().is_none());
+        assert!(!factory.supports_instance_reuse());
+        factory.event_prefilter_enabled = true;
+        assert!(factory.event_filter().unwrap().account);
+        assert!(factory.supports_instance_reuse());
+        factory.manifest.decision_trigger = Trigger::Events {
+            closed_bars: false,
+            book: true,
+            account: true,
+            interval_ms: None,
+        };
+        assert!(factory.event_filter().is_none());
+        assert!(!factory.supports_instance_reuse());
+        factory.manifest.decision_trigger = Trigger::EveryTick;
+        assert!(factory.event_filter().is_none());
+        assert!(!factory.supports_instance_reuse());
+    }
+
+    const WORKER: &str = r#"import json,sys,os
+for line in sys.stdin:
+ e=json.loads(line);r=e['request'];state=r['state'] or {}
+ response=dict(protocol_version=r['protocol_version'],plugin_id=r['plugin_id'],plugin_version=r['plugin_version'],state_version=r['state_version'],actions=[],state=dict(calls=state.get('calls',0)+1,pid=os.getpid()))
+ print(json.dumps(dict(protocol='bot.worker.v1',id=e['id'],response=response)),flush=True)
+"#;
+
+    #[test]
+    fn cached_process_bot_releases_payload_and_restores_committed_state() {
+        let package = worker_package(WORKER, 1, 5000);
+        let registry = package.registry();
+        let mut bot = registry
+            .create(&template(), &template().initial_state())
+            .unwrap();
+        bot.decide(&observation()).unwrap();
+        let committed = bot.take_snapshot();
+        let data = |state: PersistedAgentKindState| match state {
+            PersistedAgentKindState::Plugin { data, .. } => data,
+            _ => panic!(),
+        };
+        assert_eq!(data(committed.clone())["calls"], 1);
+        assert!(data(bot.snapshot()).is_null());
+        bot.prepare_reused_call(&committed).unwrap();
+        bot.decide(&observation()).unwrap();
+        assert_eq!(data(bot.take_snapshot())["calls"], 2);
+        // A rejected speculative result must not leak into the next invocation.
+        bot.prepare_reused_call(&committed).unwrap();
+        bot.decide(&observation()).unwrap();
+        assert_eq!(data(bot.take_snapshot())["calls"], 2);
+        let mut mismatched = committed;
+        let PersistedAgentKindState::Plugin { state_version, .. } = &mut mismatched else {
+            unreachable!()
+        };
+        *state_version += 1;
+        assert!(bot.prepare_reused_call(&mismatched).is_err());
+        assert!(data(bot.snapshot()).is_null());
+    }
+
+    #[test]
+    fn delta_transport_reconstructs_appends_and_rejected_host_state_without_worker_output() {
+        let transport_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../bot-plugins/pine-strategy/transport.py");
+        let path_literal = serde_json::to_string(&transport_path.to_string_lossy()).unwrap();
+        let program = format!(
+            "import importlib.util\nspec=importlib.util.spec_from_file_location('transport',{path_literal})\nm=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)\ndecoder=m.RequestDecoder()\n{}",
+            WORKER
+                .replace("r=e['request']", "r=decoder.decode(e)")
+                .replace(
+                    "pid=os.getpid()",
+                    "pid=os.getpid(),history=state.get('history',[]),delta=('request_delta' in e)"
+                )
+        );
+        let package = worker_package(&program, 1, 5000);
+        let path = package.0.join("test/bot.json");
+        let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        manifest["worker_pool"]["delta_requests"] = Value::Bool(true);
+        fs::write(path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let registry = package.registry();
+        let mut state = template().initial_state();
+        let PersistedAgentKindState::Plugin { data, .. } = &mut state else {
+            unreachable!()
+        };
+        *data = serde_json::json!({"calls":0,"history":(0..500).collect::<Vec<_>>()}).into();
+        let mut bot = registry.create(&template(), &state).unwrap();
+        bot.decide(&observation()).unwrap();
+        let PersistedAgentKindState::Plugin { data: first, .. } = bot.snapshot() else {
+            unreachable!()
+        };
+        assert_eq!(first["delta"], false);
+        let mut next = bot.snapshot();
+        let PersistedAgentKindState::Plugin { data, .. } = &mut next else {
+            unreachable!()
+        };
+        Arc::make_mut(data)["history"]
+            .as_array_mut()
+            .unwrap()
+            .push(Value::from(500));
+        let mut bot = registry.create(&template(), &next).unwrap();
+        bot.decide(&observation()).unwrap();
+        let PersistedAgentKindState::Plugin { data: second, .. } = bot.snapshot() else {
+            unreachable!()
+        };
+        assert_eq!(second["delta"], true);
+        assert_eq!(second["calls"], 2);
+        assert_eq!(second["history"].as_array().unwrap().len(), 501);
+        // Roll back to the pre-decision durable state; never infer calls=3
+        // from a worker's previous response or from its transport cache.
+        let mut bot = registry.create(&template(), &state).unwrap();
+        bot.decide(&observation()).unwrap();
+        let PersistedAgentKindState::Plugin { data: restored, .. } = bot.snapshot() else {
+            unreachable!()
+        };
+        assert_eq!(restored["calls"], 1);
+        assert_eq!(restored["history"].as_array().unwrap().len(), 500);
+        assert_eq!(restored["pid"], first["pid"]);
+    }
+
+    #[test]
+    fn affinity_retains_each_instance_process_across_concurrent_waves_and_restore() {
+        let package = worker_package(
+            &WORKER.replace(
+                "e=json.loads(line)",
+                "import time;time.sleep(.02);e=json.loads(line)",
+            ),
+            3,
+            5000,
+        );
+        let path = package.0.join("test/bot.json");
+        let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        manifest["worker_pool"]["instance_affinity"] = Value::Bool(true);
+        fs::write(path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let registry = package.registry();
+        let mut saved = Vec::new();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(24));
+        let jobs: Vec<_> = (0..24)
+            .map(|index| {
+                let registry = registry.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let AgentTemplate::Plugin(mut config) = template() else {
+                        unreachable!()
+                    };
+                    config.participant.participant_id = format!("affinity-{index}");
+                    let template = AgentTemplate::Plugin(config);
+                    let mut bot = registry
+                        .create(&template, &template.initial_state())
+                        .unwrap();
+                    barrier.wait();
+                    bot.decide(&observation()).unwrap();
+                    (template, bot.snapshot())
+                })
+            })
+            .collect();
+        for job in jobs {
+            saved.push(job.join().unwrap());
+        }
+        let pids: std::collections::BTreeSet<_> = saved
+            .iter()
+            .map(|(_, state)| {
+                let PersistedAgentKindState::Plugin { data, .. } = state else {
+                    unreachable!()
+                };
+                data["pid"].as_u64().unwrap()
+            })
+            .collect();
+        assert_eq!(pids.len(), 3);
+        // Change completion order and recreate every host runtime. Routing is
+        // per instance, not the last idle worker or host runtime allocation.
+        let jobs: Vec<_> = saved
+            .into_iter()
+            .rev()
+            .map(|(template, state)| {
+                let registry = registry.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let mut bot = registry.create(&template, &state).unwrap();
+                    barrier.wait();
+                    bot.decide(&observation()).unwrap();
+                    let PersistedAgentKindState::Plugin { data: before, .. } = state else {
+                        unreachable!()
+                    };
+                    let PersistedAgentKindState::Plugin { data: after, .. } = bot.snapshot() else {
+                        unreachable!()
+                    };
+                    assert_eq!(before["pid"], after["pid"]);
+                    assert_eq!(after["calls"], 2);
+                })
+            })
+            .collect();
+        for job in jobs {
+            job.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn persistent_worker_interleaves_instances_and_restores_only_supplied_durable_state() {
+        let package = worker_package(WORKER, 1, 1000);
+        let registry = package.registry();
+        let mut first = registry
+            .create(
+                &template(),
+                &exchange_core::PersistedAgent::from_template(template()).kind_state,
+            )
+            .unwrap();
+        first.decide(&observation()).unwrap();
+        let saved = first.snapshot();
+        let mut second = registry
+            .create(
+                &template(),
+                &exchange_core::PersistedAgent::from_template(template()).kind_state,
+            )
+            .unwrap();
+        second.decide(&observation()).unwrap();
+        let mut restored = registry.create(&template(), &saved).unwrap();
+        restored.decide(&observation()).unwrap();
+        let data = |state: PersistedAgentKindState| match state {
+            PersistedAgentKindState::Plugin { data, .. } => data,
+            _ => panic!(),
+        };
+        let a = data(saved);
+        let b = data(second.snapshot());
+        let c = data(restored.snapshot());
+        assert_eq!(a["pid"], b["pid"]);
+        assert_eq!(a["pid"], c["pid"]);
+        assert_eq!(b["calls"], 1);
+        assert_eq!(c["calls"], 2);
+    }
+
+    #[test]
+    fn persistent_timeout_and_wrong_response_identity_leave_state_unchanged() {
+        for program in [
+            "import time;time.sleep(2)",
+            &WORKER.replace("id=e['id']", "id=e['id']+1"),
+        ] {
+            let package = worker_package(program, 1, 100);
+            let registry = package.registry();
+            let mut bot = registry
+                .create(
+                    &template(),
+                    &exchange_core::PersistedAgent::from_template(template()).kind_state,
+                )
+                .unwrap();
+            let before = bot.snapshot();
+            assert!(bot.decide(&observation()).is_err());
+            assert_eq!(before, bot.snapshot());
+        }
+    }
+
+    #[test]
+    fn persistent_pool_bounds_processes_under_concurrent_instances() {
+        let program = WORKER.replace(
+            "e=json.loads(line)",
+            "import time;time.sleep(.03);e=json.loads(line)",
+        );
+        let package = worker_package(&program, 2, 5000);
+        let registry = package.registry();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(12));
+        let jobs: Vec<_> = (0..12)
+            .map(|_| {
+                let registry = registry.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let mut bot = registry
+                        .create(&template(), &template().initial_state())
+                        .unwrap();
+                    barrier.wait();
+                    bot.decide(&observation()).unwrap();
+                    let PersistedAgentKindState::Plugin { data, .. } = bot.snapshot() else {
+                        panic!()
+                    };
+                    assert_eq!(data["calls"], 1);
+                    data["pid"].as_u64().unwrap()
+                })
+            })
+            .collect();
+        let pids: std::collections::BTreeSet<_> =
+            jobs.into_iter().map(|job| job.join().unwrap()).collect();
+        assert_eq!(pids.len(), 2);
+    }
+
+    #[test]
+    fn persistent_invalid_inner_identity_and_unbounded_output_fail_closed() {
+        for program in [
+            WORKER.replace("plugin_id=r['plugin_id']", "plugin_id='wrong'"),
+            "print('x' * 1048577,flush=True)".into(),
+            "import sys,time;sys.stderr.write('x'*65537);sys.stderr.flush();time.sleep(2)".into(),
+        ] {
+            let package = worker_package(&program, 1, 1000);
+            let registry = package.registry();
+            let mut bot = registry
+                .create(&template(), &template().initial_state())
+                .unwrap();
+            let before = bot.snapshot();
+            assert!(bot.decide(&observation()).is_err());
+            assert_eq!(before, bot.snapshot());
+        }
+    }
+
+    #[test]
+    fn event_driven_process_never_starts_for_unchanged_input_after_restore() {
+        let package = Package::new(
+            r#"import json,sys
+r=json.loads(sys.stdin.readline());print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin_id'],plugin_version=r['plugin_version'],state_version=r['state_version'],actions=[],state=dict(calls=(r['state'] or {}).get('calls',0)+1))))
+"#,
+            1000,
+        );
+        let path = package.0.join("test/bot.json");
+        let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        manifest["decision_trigger"] =
+            serde_json::json!({"kind":"events","book":true,"account":true});
+        fs::write(path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let registry = package.registry();
+        let mut bot = registry
+            .create(
+                &template(),
+                &exchange_core::PersistedAgent::from_template(template()).kind_state,
+            )
+            .unwrap();
+        let mut view = observation();
+        bot.decide(&view).unwrap();
+        let saved = bot.snapshot();
+        fs::write(
+            package.0.join("test/bot.py"),
+            "raise RuntimeError('must not execute')",
+        )
+        .unwrap();
+        let registry = package.registry();
+        let mut restored = registry.create(&template(), &saved).unwrap();
+        view.market_time_ms += 1000;
+        view.step += 1;
+        assert!(
+            !registry
+                .decision_is_due(&template(), &saved, &view)
+                .unwrap()
+        );
+        assert!(restored.decide(&view).unwrap().is_empty());
+        assert_eq!(restored.snapshot(), saved);
+        view.book.asks.clear();
+        assert!(restored.decide(&view).is_err());
     }
 
     #[test]

@@ -573,6 +573,18 @@ impl DerefMut for StateGuard {
     }
 }
 impl StateGuard {
+    /// Read the current immutable market under the same room lock as scheduler
+    /// selection. Scheduler-only writes keep this identity; every market write
+    /// publishes a new identity. Unpublished writes must use their own snapshot.
+    pub(super) fn market_snapshot(&self) -> Arc<RoomManager> {
+        match self {
+            Self::Room(guard) if !guard.market_changed => {
+                guard.runtime.published.read().unwrap().clone()
+            }
+            _ => Arc::new(self.rooms.clone()),
+        }
+    }
+
     /// A scheduler-only commit cannot mutate the market snapshot. Keep summary
     /// publication, but don't replace a reader's identical immutable room tree.
     pub(super) fn scheduler_mut(
@@ -595,6 +607,10 @@ impl Drop for GlobalGuard {
 }
 impl Drop for RoomGuard {
     fn drop(&mut self) {
+        #[cfg(feature = "bench-execution-timing")]
+        let _timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::SCHEDULER_PUBLISH,
+        );
         if self.changed {
             let app = self.state.as_ref().unwrap();
             debug_assert_eq!(
@@ -618,6 +634,48 @@ impl Drop for RoomGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn market_snapshot_identity_survives_scheduler_writes_but_not_market_writes() {
+        let spec: exchange_core::population::BackgroundMarket = serde_json::from_str(include_str!(
+            "../../scripts/fixtures/microstructure_market.json"
+        ))
+        .unwrap();
+        let room = spec.scenario.room_id.clone();
+        let mut app = AppState::new("http://localhost");
+        app.rooms.create_room(spec.scenario).unwrap();
+        app.schedulers.insert(
+            room.clone(),
+            exchange_core::SchedulerState::new(
+                room.clone(),
+                spec.agents,
+                exchange_core::SchedulerMode::Manual,
+            ),
+        );
+        let store = StateStore::new(app);
+        let original = store.lock_room(&room).await.market_snapshot();
+        {
+            let mut guard = store.lock_room(&room).await;
+            guard.scheduler_mut(&room).unwrap().revision += 1;
+            assert!(Arc::ptr_eq(&original, &guard.market_snapshot()));
+        }
+        assert!(Arc::ptr_eq(
+            &original,
+            &store.lock_room(&room).await.market_snapshot()
+        ));
+        let old_step = original.clock(&room).unwrap().step();
+        {
+            let mut guard = store.lock_room(&room).await;
+            guard.rooms.advance_clock(&room, 1).unwrap();
+            let pending = guard.market_snapshot();
+            assert!(!Arc::ptr_eq(&original, &pending));
+            assert_eq!(pending.clock(&room).unwrap().step(), old_step + 1);
+        }
+        let committed = store.lock_room(&room).await.market_snapshot();
+        assert!(!Arc::ptr_eq(&original, &committed));
+        assert_eq!(committed.clock(&room).unwrap().step(), old_step + 1);
+        assert_eq!(original.clock(&room).unwrap().step(), old_step);
+    }
 
     #[tokio::test]
     async fn order_id_reservations_return_unused_tails_without_reusing_committed_ids() {

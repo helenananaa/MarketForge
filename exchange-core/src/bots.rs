@@ -203,6 +203,16 @@ pub trait ScheduledBot: Send {
         self.decide(&observation.to_owned_observation())
     }
     fn snapshot(&self) -> PersistedAgentKindState;
+    /// Restore state released by `take_snapshot` before a cached instance runs.
+    /// The scheduler supplies the exact committed state after validating reuse.
+    fn prepare_reused_call(&mut self, _state: &PersistedAgentKindState) -> Result<(), BotError> {
+        Ok(())
+    }
+    /// Transfer a decision's state to the scheduler. Native bots retain their
+    /// normal snapshot behavior; transport adapters may release large payloads.
+    fn take_snapshot(&mut self) -> PersistedAgentKindState {
+        self.snapshot()
+    }
     fn execution_feedback(&mut self, _action: &OrderAction, _execution: &crate::GatewayExecution) {}
 }
 
@@ -292,7 +302,7 @@ pub fn record_bot_execution(
     let receipt = serde_json::json!({"key": key, "instrument_id": execution.instrument_id,
         "command_seq": execution.execution.command_seq, "market_time_ms": execution.execution.market_time_ms,
         "order_id": order_id, "action": execution.action, "accepted": error.is_none(), "error": error});
-    if let Some(object) = data.as_object_mut() {
+    if let Some(object) = Arc::make_mut(data).as_object_mut() {
         let receipts = object
             .entry("_host_receipts")
             .or_insert_with(|| serde_json::json!([]));
@@ -336,8 +346,28 @@ pub(crate) fn unrestricted_policy() -> impl BotExecutionPolicy {
     UnrestrictedBotPolicy
 }
 
+/// An opt-in conservative prefilter. Book-driven and per-tick bots bypass it.
+#[derive(Clone, Copy, Debug)]
+pub struct BotEventFilter {
+    pub closed_bars: bool,
+    pub account: bool,
+    pub interval_ms: Option<u64>,
+}
+
 pub trait BotFactory: Send + Sync {
     fn descriptor(&self) -> &BotDescriptor;
+    fn event_filter(&self) -> Option<BotEventFilter> {
+        None
+    }
+    /// Pure host scheduling policy. Defaults preserve legacy per-tick execution.
+    fn decision_is_due(
+        &self,
+        _template: &AgentTemplate,
+        _state: &PersistedAgentKindState,
+        _observation: &ParticipantObservation,
+    ) -> Result<bool, BotError> {
+        Ok(true)
+    }
     fn supports_plugin_version(&self, version: &str) -> bool {
         self.descriptor().version == version
     }
@@ -380,6 +410,11 @@ pub struct BotRegistry {
     factories: Arc<BTreeMap<String, Arc<dyn BotFactory>>>,
 }
 impl BotRegistry {
+    pub fn event_filter(&self, template: &AgentTemplate) -> Option<BotEventFilter> {
+        self.factories
+            .get(template.bot_id())
+            .and_then(|f| f.event_filter())
+    }
     pub fn account_events(&self, template: &AgentTemplate) -> bool {
         self.factories
             .get(template.bot_id())
@@ -434,6 +469,18 @@ impl BotRegistry {
         self.factories
             .get(template.bot_id())
             .is_some_and(|factory| factory.supports_native_batching())
+    }
+
+    pub fn decision_is_due(
+        &self,
+        template: &AgentTemplate,
+        state: &PersistedAgentKindState,
+        observation: &ParticipantObservation,
+    ) -> Result<bool, BotError> {
+        self.factories
+            .get(template.bot_id())
+            .ok_or_else(|| BotError(format!("unknown bot: {}", template.bot_id())))?
+            .decision_is_due(template, state, observation)
     }
 
     /// Identity check only; never calls factory/plugin code in the writer lane.
@@ -575,7 +622,7 @@ mod tests {
             plugin_id: "test".into(),
             plugin_version: "1".into(),
             state_version: 1,
-            data: serde_json::json!({}),
+            data: serde_json::json!({}).into(),
         };
         assert!(
             validate_bot_orders("primary", &[], std::slice::from_ref(&action), &state).is_err()

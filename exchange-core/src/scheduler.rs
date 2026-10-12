@@ -824,7 +824,7 @@ mod tests {
                 plugin_id: self.config.plugin_id.clone(),
                 plugin_version: self.config.plugin_version.clone(),
                 state_version: 1,
-                data: serde_json::json!({"count":self.count}),
+                data: serde_json::json!({"count":self.count}).into(),
             }
         }
     }
