@@ -97,6 +97,11 @@ pub struct SpotAccountStore {
     config: SpotClearingConfig,
 }
 
+/// Persistent raw inputs for the last successful venue synchronization. Unlike
+/// reservation dirtiness, this baseline is not cleared by reservation reconciliation.
+#[derive(Clone, Debug)]
+pub(crate) struct SpotBalanceState(SharedMap<AccountId, SpotAccount>);
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct SpotOrderReservation {
     account_id: AccountId,
@@ -108,6 +113,24 @@ struct SpotOrderReservation {
 }
 
 impl SpotAccountStore {
+    pub(crate) fn balance_state(&self) -> SpotBalanceState {
+        SpotBalanceState(self.accounts.clone())
+    }
+
+    pub(crate) fn changed_balance_accounts(&self, before: &SpotBalanceState) -> Vec<AccountId> {
+        before
+            .0
+            .diff(&self.accounts)
+            .map(|change| {
+                use im::ordmap::DiffItem;
+                match change {
+                    DiffItem::Add(id, _) | DiffItem::Remove(id, _) => *id,
+                    DiffItem::Update { new: (id, _), .. } => *id,
+                }
+            })
+            .collect()
+    }
+
     pub fn new(config: SpotClearingConfig) -> Self {
         Self {
             reservation_changes: crate::account::ReservationChanges::default(),

@@ -69,6 +69,7 @@ impl Session {
                         .additional_intervals(&prior.template)
                         .map_err(|e| e.to_string())?,
                     account_events: registry.account_events(&prior.template),
+                    event_filter: registry.event_filter(&prior.template),
                 }),
             };
             let mut view = observations

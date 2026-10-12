@@ -29,6 +29,17 @@ pub struct SpotTradingEngine {
 }
 
 impl SpotTradingEngine {
+    pub(crate) fn balance_state(&self) -> crate::spot::SpotBalanceState {
+        self.accounts.balance_state()
+    }
+
+    pub(crate) fn changed_balance_accounts(
+        &self,
+        before: &crate::spot::SpotBalanceState,
+    ) -> Vec<AccountId> {
+        self.accounts.changed_balance_accounts(before)
+    }
+
     pub(crate) fn book(&self) -> &OrderBook {
         &self.book
     }

@@ -29,6 +29,24 @@ type MarketReservations =
     crate::shared_map::SharedMap<AccountId, std::sync::Arc<BTreeMap<String, Money>>>;
 type ReservationAmounts = BTreeMap<AccountId, std::sync::Arc<BTreeMap<String, Money>>>;
 
+// A single changed account cannot use the quarter-population sparse path below
+// eight accounts. Avoid maintaining persistent baselines for those tiny ledgers.
+const MIN_ACCOUNT_SCOPE_BASELINE: usize = 8;
+
+#[derive(Clone, Debug)]
+struct SpotVenueSyncState {
+    wallet: crate::account::VenueWalletState,
+    accounts: crate::spot::SpotBalanceState,
+}
+
+#[derive(Clone, Debug)]
+struct VenueValidationState {
+    wallet: crate::account::VenueWalletState,
+    // Revisit permitted underfunding even when cash does not change: closing a
+    // funding/hedge position can remove the exception that previously allowed it.
+    underfunded: BTreeSet<AccountId>,
+}
+
 fn ordered_available_balance<'a>(
     cursor: &mut std::iter::Peekable<
         impl Iterator<Item = (AccountId, &'a crate::VenueAssetBalance)>,
@@ -68,6 +86,10 @@ pub struct MarketActor {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ExchangeActor {
+    #[serde(skip)]
+    spot_sync_baselines: BTreeMap<InstrumentId, SpotVenueSyncState>,
+    #[serde(skip)]
+    venue_validation_baseline: Option<VenueValidationState>,
     #[serde(skip)]
     margin_liquidation_baselines: BTreeMap<String, BTreeSet<AccountId>>,
     #[serde(default)]
@@ -179,6 +201,8 @@ impl ExchangeActor {
         }
 
         Ok(Self {
+            spot_sync_baselines: BTreeMap::new(),
+            venue_validation_baseline: None,
             margin_liquidation_baselines: BTreeMap::new(),
             room_id,
             venue_rules: VenueRuleEngine::new(config.venue_rules.clone())
@@ -237,6 +261,8 @@ impl ExchangeActor {
         markets.insert(actor.config().instrument_id().to_string(), actor);
 
         Ok(Self {
+            spot_sync_baselines: BTreeMap::new(),
+            venue_validation_baseline: None,
             margin_liquidation_baselines: BTreeMap::new(),
             room_id,
             venue_rules: VenueRuleEngine::new(config.venue_rules.clone())
@@ -907,6 +933,8 @@ impl ExchangeActor {
 
     pub(crate) fn normalize_after_restore(&mut self) -> Result<(), ClearingError> {
         let mut staged = self.clone();
+        staged.spot_sync_baselines.clear();
+        staged.venue_validation_baseline = None;
         staged
             .venue_rules
             .normalize_after_restore(staged.next_command_seq, staged.clock.step())?;
@@ -966,6 +994,8 @@ impl ExchangeActor {
         self.venue_accounts.invalidate_margin_changes();
         self.venue_accounts.reservation_changes.invalidate();
         let instrument_id = self.primary_instrument_id().to_string();
+        self.spot_sync_baselines.remove(&instrument_id);
+        self.venue_validation_baseline = None;
         self.markets
             .get_mut(&instrument_id)
             .expect("validated exchange config must have a primary market")
@@ -985,6 +1015,8 @@ impl ExchangeActor {
     ) -> Result<&mut MarketActor, ActorRejectReason> {
         self.venue_accounts.invalidate_margin_changes();
         self.venue_accounts.reservation_changes.invalidate();
+        self.spot_sync_baselines.remove(instrument_id);
+        self.venue_validation_baseline = None;
         self.markets
             .get_mut(instrument_id)
             .ok_or_else(|| ActorRejectReason::InstrumentNotFound {
@@ -1813,19 +1845,57 @@ impl ExchangeActor {
         if market.kind() == MarketKind::Perp {
             return self.sync_perp_cross_margin_group(&instrument.quote_asset);
         }
-        let AccountSnapshots::Spot(accounts) = market.account_snapshots() else {
+        let MarketEngine::Spot(engine) = &market.engine else {
             return Err(ClearingError::WrongMarketKind);
         };
-        let account_reservations = accounts
-            .into_iter()
-            .map(|account| {
-                (
-                    account.account_id,
-                    account.reserved_cash,
-                    account.reserved_position,
-                )
+        let cache_scope = self.venue_accounts.account_count() >= MIN_ACCOUNT_SCOPE_BASELINE;
+        let mut affected = self
+            .spot_sync_baselines
+            .get(instrument_id)
+            .filter(|_| cache_scope)
+            .map(|before| {
+                let mut ids: BTreeSet<_> = self
+                    .venue_accounts
+                    .changed_wallet_accounts(&before.wallet)
+                    .into_iter()
+                    .collect();
+                ids.extend(engine.changed_balance_accounts(&before.accounts));
+                ids
+            });
+        if crate::risk_scope::full_scan_reference()
+            || affected.as_ref().is_some_and(|ids| {
+                !crate::risk_scope::sparse(ids.len(), self.venue_accounts.account_count())
             })
-            .collect::<Vec<_>>();
+        {
+            affected = None;
+        }
+        #[cfg(test)]
+        if tests::FULL_ACCOUNT_SCOPE_REFERENCE.get() {
+            affected = None;
+        }
+        let account_reservations = if let Some(ids) = &affected {
+            ids.iter()
+                .filter_map(|&id| {
+                    engine
+                        .reservation_balance(id)
+                        .map(|(cash, position)| (id, cash, position))
+                })
+                .collect::<Vec<_>>()
+        } else {
+            let AccountSnapshots::Spot(accounts) = market.account_snapshots() else {
+                unreachable!("spot market");
+            };
+            accounts
+                .into_iter()
+                .map(|account| {
+                    (
+                        account.account_id,
+                        account.reserved_cash,
+                        account.reserved_position,
+                    )
+                })
+                .collect()
+        };
 
         let merge = account_reservations.len() >= self.venue_accounts.account_count() / 4
             && account_reservations
@@ -1840,6 +1910,8 @@ impl ExchangeActor {
             .balances_for_asset(&instrument.base_asset)
             .peekable();
         for (account_id, own_quote_reservation, own_base_reservation) in account_reservations {
+            #[cfg(test)]
+            tests::SPOT_SCOPE_VISITS.set(tests::SPOT_SCOPE_VISITS.get() + 1);
             let quote_available = if merge {
                 ordered_available_balance(&mut quote, account_id)
             } else {
@@ -1871,6 +1943,23 @@ impl ExchangeActor {
                 .get_mut(instrument_id)
                 .ok_or(ClearingError::AccountNotFound)?
                 .sync_venue_balances(account_id, quote_balance, base_balance)?;
+        }
+        // Establish/advance the baseline only after every balance and reservation
+        // check succeeds. Each market keeps its own wallet root, so a peer's
+        // clearing or transfer remains visible until this market synchronizes.
+        let MarketEngine::Spot(engine) = &self.markets[instrument_id].engine else {
+            unreachable!("spot market");
+        };
+        if cache_scope {
+            self.spot_sync_baselines.insert(
+                instrument_id.to_owned(),
+                SpotVenueSyncState {
+                    wallet: self.venue_accounts.wallet_state(),
+                    accounts: engine.balance_state(),
+                },
+            );
+        } else {
+            self.spot_sync_baselines.remove(instrument_id);
         }
         Ok(())
     }
@@ -2616,6 +2705,7 @@ impl ExchangeActor {
         Ok(())
     }
 
+    #[cfg(test)]
     fn funding_liability_accounts(&self) -> std::collections::BTreeSet<(AccountId, String)> {
         self.funding_liability_accounts_for(None)
     }
@@ -2690,28 +2780,78 @@ impl ExchangeActor {
         self.venue_accounts.available_balance(account_id, asset_id)
     }
 
-    fn validate_venue_after_clearing(&self) -> Result<(), ClearingError> {
+    fn validate_venue_after_clearing(&mut self) -> Result<(), ClearingError> {
         #[cfg(test)]
         if tests::SNAPSHOT_VENUE_REFERENCE.get() {
             return self.validate_venue_after_clearing_reference();
         }
-        // Check every raw balance. Only an underfunded balance can need the
-        // funding-liability exception; ordinary orders avoid building either
-        // public snapshots or an all-position liability projection.
+        let cache_scope = self.venue_accounts.account_count() >= MIN_ACCOUNT_SCOPE_BASELINE;
+        let mut affected = self
+            .venue_validation_baseline
+            .as_ref()
+            .filter(|_| cache_scope)
+            .map(|before| {
+                let mut ids = before.underfunded.clone();
+                ids.extend(self.venue_accounts.changed_wallet_accounts(&before.wallet));
+                ids
+            });
+        if crate::risk_scope::full_scan_reference()
+            || affected.as_ref().is_some_and(|ids| {
+                !crate::risk_scope::sparse(ids.len(), self.venue_accounts.account_count())
+            })
+        {
+            affected = None;
+        }
+        #[cfg(test)]
+        if tests::FULL_ACCOUNT_SCOPE_REFERENCE.get() {
+            affected = None;
+        }
+        let underfunded = self.validate_venue_balances_for(affected.as_ref())?;
+        self.venue_validation_baseline = cache_scope.then(|| VenueValidationState {
+            wallet: self.venue_accounts.wallet_state(),
+            underfunded,
+        });
+        Ok(())
+    }
+
+    fn validate_venue_balances_for(
+        &self,
+        affected: Option<&BTreeSet<AccountId>>,
+    ) -> Result<BTreeSet<AccountId>, ClearingError> {
+        // Successful baselines prove untouched raw balances. Unknown/restored
+        // inputs take the full pass; previous liability exceptions are always
+        // included in sparse passes and re-evaluated against current positions.
         let mut liabilities = None;
-        for (account, asset, balance) in self.venue_accounts.balance_entries() {
+        let mut underfunded = BTreeSet::new();
+        let mut check = |account, asset: &str, balance: &crate::VenueAssetBalance| {
+            #[cfg(test)]
+            tests::VENUE_SCOPE_VISITS.set(tests::VENUE_SCOPE_VISITS.get() + 1);
             if balance.reserved < 0 {
                 return Err(ClearingError::InsufficientAvailableBalance);
             }
-            if balance.total < balance.reserved
-                && !liabilities
-                    .get_or_insert_with(|| self.funding_liability_accounts())
+            if balance.total < balance.reserved {
+                if !liabilities
+                    .get_or_insert_with(|| self.funding_liability_accounts_for(affected))
                     .contains(&(account, asset.to_string()))
-            {
-                return Err(ClearingError::InsufficientAvailableBalance);
+                {
+                    return Err(ClearingError::InsufficientAvailableBalance);
+                }
+                underfunded.insert(account);
+            }
+            Ok(())
+        };
+        if let Some(ids) = affected {
+            for &id in ids {
+                for (account, asset, balance) in self.venue_accounts.balance_entries_for(id) {
+                    check(account, asset, balance)?;
+                }
+            }
+        } else {
+            for (account, asset, balance) in self.venue_accounts.balance_entries() {
+                check(account, asset, balance)?;
             }
         }
-        Ok(())
+        Ok(underfunded)
     }
 
     #[cfg(test)]
@@ -3515,7 +3655,11 @@ include!("conditional_orders_actor.rs");
 #[cfg(test)]
 mod tests {
     include!("incremental_risk_tests.rs");
+    include!("account_scope_tests.rs");
     thread_local! {
+        pub(super) static SPOT_SCOPE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+        pub(super) static VENUE_SCOPE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+        pub(super) static FULL_ACCOUNT_SCOPE_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
         pub(super) static FULL_POST_RESERVATION_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
         pub(super) static FULL_RESERVATION_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
         pub(super) static SCALAR_MARGIN_REFERENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -4555,28 +4699,28 @@ mod tests {
         actor
             .apply_to_instrument("V-USD-PERP", limit(4, 20, Side::Buy, 10000, 1))
             .unwrap();
-        let assert_same = |actor: &ExchangeActor| {
+        let assert_same = |actor: &mut ExchangeActor| {
             assert_eq!(
                 actor.validate_venue_after_clearing(),
                 actor.validate_venue_after_clearing_reference()
             );
         };
-        assert_same(&actor);
+        assert_same(&mut actor);
         actor
             .venue_accounts
             .apply_signed_delta(10, "USD", -200_000)
             .unwrap();
-        assert_same(&actor);
+        assert_same(&mut actor);
         assert!(actor.validate_venue_after_clearing().is_ok());
         actor.venue_accounts.set_balance(99, "USD", -1);
-        assert_same(&actor);
+        assert_same(&mut actor);
         assert!(actor.validate_venue_after_clearing().is_err());
-        let restored: ExchangeActor = serde_json::from_value(canonical_actor(&actor)).unwrap();
-        assert_same(&restored);
+        let mut restored: ExchangeActor = serde_json::from_value(canonical_actor(&actor)).unwrap();
+        assert_same(&mut restored);
         let mut malformed = canonical_actor(&actor);
         malformed["venue_accounts"]["balances"]["10"]["USD"]["reserved"] = serde_json::json!(-1);
-        let malformed: ExchangeActor = serde_json::from_value(malformed).unwrap();
-        assert_same(&malformed);
+        let mut malformed: ExchangeActor = serde_json::from_value(malformed).unwrap();
+        assert_same(&mut malformed);
         assert!(malformed.validate_venue_after_clearing().is_err());
     }
 

@@ -1,0 +1,998 @@
+{
+  "manifest": {
+    "started_utc": "2026-10-12T03:48:44.047359+00:00",
+    "baseline_commit": "2b8d7b76dc65ce722fdb1a4b4910a2217b73f8ad",
+    "binaries": {
+      "before": {
+        "path": "E:\\projects\\MarketForge\\.local\\account-scope-optimization\\before-formatted.exe",
+        "sha256": "691fb9c721cce2a5d2a64b8efac11874e6542cfe0effcf0266414b19492505a8"
+      },
+      "after": {
+        "path": "E:\\projects\\MarketForge\\.local\\account-scope-optimization\\after-final.exe",
+        "sha256": "1739593828b52dc6553df35471a43c0e68c1c896fbb4e4fcc06420f348e353c0"
+      }
+    },
+    "driver_sha256": "71a19831fe893d07a07dbde5072005c52f0cd6940663440af488cefadde642ab",
+    "host": {
+      "platform": "Windows-11-10.0.26200-SP0",
+      "logical_cpus": 32
+    },
+    "sequence": [
+      "before",
+      "after",
+      "after",
+      "before",
+      "before",
+      "after",
+      "after",
+      "before"
+    ]
+  },
+  "exact_state_and_receipts_equal": true,
+  "comparisons": [
+    {
+      "accounts": 1,
+      "kind": "perp",
+      "workload": "place_cancel",
+      "receipt_sha256": "ff54dd9ad83dbb071b65655cee1cb8c02210ee4d3a1a768efa4dc2620435d1be",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 10.95,
+            "min": 10.0,
+            "max": 11.399999999999999
+          },
+          "p95_us": {
+            "median": 14.65,
+            "min": 13.7,
+            "max": 20.5
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 10.85,
+            "min": 10.1,
+            "max": 12.1
+          },
+          "p95_us": {
+            "median": 17.9,
+            "min": 14.7,
+            "max": 23.6
+          },
+          "round_samples": 8
+        },
+        "speedup": 1.0092165898617511
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 10.0,
+            "min": 9.0,
+            "max": 10.5
+          },
+          "p95_us": {
+            "median": 12.700000000000001,
+            "min": 10.200000000000001,
+            "max": 15.400000000000002
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 9.9,
+            "min": 9.1,
+            "max": 11.0
+          },
+          "p95_us": {
+            "median": 12.05,
+            "min": 10.1,
+            "max": 15.5
+          },
+          "round_samples": 8
+        },
+        "speedup": 1.0101010101010102
+      }
+    },
+    {
+      "accounts": 1,
+      "kind": "spot",
+      "workload": "place_cancel",
+      "receipt_sha256": "64977c7a2a4064b161e1f2f253aaf75205da50c872752a695056768e75458cb2",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 6.55,
+            "min": 6.2,
+            "max": 8.0
+          },
+          "p95_us": {
+            "median": 11.8,
+            "min": 7.4,
+            "max": 19.3
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 6.85,
+            "min": 6.0,
+            "max": 8.0
+          },
+          "p95_us": {
+            "median": 11.100000000000001,
+            "min": 7.6,
+            "max": 18.6
+          },
+          "round_samples": 8
+        },
+        "speedup": 0.9562043795620438
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 6.35,
+            "min": 6.0,
+            "max": 7.9
+          },
+          "p95_us": {
+            "median": 11.799999999999999,
+            "min": 6.7,
+            "max": 18.5
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 6.8,
+            "min": 5.9,
+            "max": 8.1
+          },
+          "p95_us": {
+            "median": 10.55,
+            "min": 6.6000000000000005,
+            "max": 22.2
+          },
+          "round_samples": 8
+        },
+        "speedup": 0.9338235294117647
+      }
+    },
+    {
+      "accounts": 100,
+      "kind": "perp",
+      "workload": "maker_taker",
+      "receipt_sha256": "5b628c8042a3d568c09b8f3aa3977bfb7f27982a22c66b0b28692bc8ed3818be",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 15.0,
+            "min": 14.600000000000001,
+            "max": 16.3
+          },
+          "p95_us": {
+            "median": 17.9,
+            "min": 16.099999999999998,
+            "max": 19.1
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 15.0,
+            "min": 14.600000000000001,
+            "max": 15.9
+          },
+          "p95_us": {
+            "median": 18.25,
+            "min": 16.4,
+            "max": 20.299999999999997
+          },
+          "round_samples": 8
+        },
+        "speedup": 1.0
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 17.900000000000002,
+            "min": 17.6,
+            "max": 19.5
+          },
+          "p95_us": {
+            "median": 29.15,
+            "min": 27.0,
+            "max": 33.699999999999996
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 18.0,
+            "min": 17.4,
+            "max": 19.0
+          },
+          "p95_us": {
+            "median": 29.049999999999997,
+            "min": 25.299999999999997,
+            "max": 33.300000000000004
+          },
+          "round_samples": 8
+        },
+        "speedup": 0.9944444444444446
+      }
+    },
+    {
+      "accounts": 100,
+      "kind": "perp",
+      "workload": "place_cancel",
+      "receipt_sha256": "8f903a9906ee0f084e22f37a6424becee121006215b608c0cca00abadccc05e7",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 13.8,
+            "min": 13.4,
+            "max": 15.1
+          },
+          "p95_us": {
+            "median": 18.25,
+            "min": 17.0,
+            "max": 22.4
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 14.05,
+            "min": 13.6,
+            "max": 14.600000000000001
+          },
+          "p95_us": {
+            "median": 18.35,
+            "min": 17.200000000000003,
+            "max": 21.6
+          },
+          "round_samples": 8
+        },
+        "speedup": 0.9822064056939501
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 12.8,
+            "min": 12.4,
+            "max": 14.0
+          },
+          "p95_us": {
+            "median": 14.55,
+            "min": 13.6,
+            "max": 17.099999999999998
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 13.05,
+            "min": 12.5,
+            "max": 13.6
+          },
+          "p95_us": {
+            "median": 14.95,
+            "min": 14.0,
+            "max": 15.7
+          },
+          "round_samples": 8
+        },
+        "speedup": 0.9808429118773946
+      }
+    },
+    {
+      "accounts": 100,
+      "kind": "spot",
+      "workload": "maker_taker",
+      "receipt_sha256": "139ae3e7fc1706e18e24e8402b2519e673318da6e666e4db0aeb90cd43faedd4",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 13.65,
+            "min": 13.299999999999999,
+            "max": 13.9
+          },
+          "p95_us": {
+            "median": 16.85,
+            "min": 15.9,
+            "max": 17.3
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 11.0,
+            "min": 10.5,
+            "max": 11.8
+          },
+          "p95_us": {
+            "median": 12.5,
+            "min": 11.1,
+            "max": 14.399999999999999
+          },
+          "round_samples": 8
+        },
+        "speedup": 1.240909090909091
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 15.2,
+            "min": 15.0,
+            "max": 15.6
+          },
+          "p95_us": {
+            "median": 19.65,
+            "min": 19.0,
+            "max": 21.0
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 12.65,
+            "min": 12.2,
+            "max": 13.299999999999999
+          },
+          "p95_us": {
+            "median": 19.85,
+            "min": 18.3,
+            "max": 20.400000000000002
+          },
+          "round_samples": 8
+        },
+        "speedup": 1.2015810276679841
+      }
+    },
+    {
+      "accounts": 100,
+      "kind": "spot",
+      "workload": "place_cancel",
+      "receipt_sha256": "9e63f91a3ceabbaa08adcbc79f449a6231401111a2257ed9b6ec0bcd5443402a",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 13.15,
+            "min": 12.799999999999999,
+            "max": 13.4
+          },
+          "p95_us": {
+            "median": 15.1,
+            "min": 13.8,
+            "max": 16.3
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 10.3,
+            "min": 9.799999999999999,
+            "max": 11.3
+          },
+          "p95_us": {
+            "median": 12.85,
+            "min": 12.0,
+            "max": 19.400000000000002
+          },
+          "round_samples": 8
+        },
+        "speedup": 1.2766990291262135
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 12.9,
+            "min": 12.5,
+            "max": 13.200000000000001
+          },
+          "p95_us": {
+            "median": 14.25,
+            "min": 13.4,
+            "max": 15.299999999999999
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 10.049999999999999,
+            "min": 9.6,
+            "max": 11.1
+          },
+          "p95_us": {
+            "median": 12.4,
+            "min": 10.6,
+            "max": 16.6
+          },
+          "round_samples": 8
+        },
+        "speedup": 1.283582089552239
+      }
+    },
+    {
+      "accounts": 1000,
+      "kind": "perp",
+      "workload": "maker_taker",
+      "receipt_sha256": "62bfceedddc3ef82e1913ba506f41d30125431e2d0d122eec1f1c056d2a98b7a",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 22.65,
+            "min": 22.3,
+            "max": 23.3
+          },
+          "p95_us": {
+            "median": 26.05,
+            "min": 25.299999999999997,
+            "max": 29.3
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 17.55,
+            "min": 17.0,
+            "max": 18.099999999999998
+          },
+          "p95_us": {
+            "median": 19.65,
+            "min": 18.7,
+            "max": 20.8
+          },
+          "round_samples": 8
+        },
+        "speedup": 1.2905982905982905
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 25.9,
+            "min": 25.5,
+            "max": 26.7
+          },
+          "p95_us": {
+            "median": 37.599999999999994,
+            "min": 34.1,
+            "max": 40.1
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 20.9,
+            "min": 19.8,
+            "max": 21.5
+          },
+          "p95_us": {
+            "median": 33.150000000000006,
+            "min": 31.5,
+            "max": 34.7
+          },
+          "round_samples": 8
+        },
+        "speedup": 1.2392344497607655
+      }
+    },
+    {
+      "accounts": 1000,
+      "kind": "perp",
+      "workload": "place_cancel",
+      "receipt_sha256": "28dc6b5c1536186838ae2addfb3ce050f59f946a7ad62f8b7b57785665741abc",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 21.3,
+            "min": 20.7,
+            "max": 21.900000000000002
+          },
+          "p95_us": {
+            "median": 26.15,
+            "min": 25.0,
+            "max": 29.099999999999998
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 16.15,
+            "min": 15.8,
+            "max": 17.200000000000003
+          },
+          "p95_us": {
+            "median": 21.0,
+            "min": 18.4,
+            "max": 22.6
+          },
+          "round_samples": 8
+        },
+        "speedup": 1.3188854489164088
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 20.2,
+            "min": 19.599999999999998,
+            "max": 20.9
+          },
+          "p95_us": {
+            "median": 21.950000000000003,
+            "min": 21.4,
+            "max": 24.0
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 15.05,
+            "min": 14.7,
+            "max": 16.099999999999998
+          },
+          "p95_us": {
+            "median": 16.8,
+            "min": 15.8,
+            "max": 17.5
+          },
+          "round_samples": 8
+        },
+        "speedup": 1.3421926910299002
+      }
+    },
+    {
+      "accounts": 1000,
+      "kind": "spot",
+      "workload": "maker_taker",
+      "receipt_sha256": "ec20b6890258dfbcf8d12965dbf403671cc803c9387340f0656867408efeb596",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 64.35,
+            "min": 62.9,
+            "max": 66.2
+          },
+          "p95_us": {
+            "median": 69.2,
+            "min": 67.5,
+            "max": 74.7
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 13.200000000000001,
+            "min": 12.9,
+            "max": 13.6
+          },
+          "p95_us": {
+            "median": 14.5,
+            "min": 14.0,
+            "max": 15.6
+          },
+          "round_samples": 8
+        },
+        "speedup": 4.874999999999999
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 66.05,
+            "min": 65.0,
+            "max": 68.10000000000001
+          },
+          "p95_us": {
+            "median": 74.10000000000001,
+            "min": 70.0,
+            "max": 76.0
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 14.75,
+            "min": 14.600000000000001,
+            "max": 15.299999999999999
+          },
+          "p95_us": {
+            "median": 21.1,
+            "min": 19.1,
+            "max": 22.5
+          },
+          "round_samples": 8
+        },
+        "speedup": 4.477966101694915
+      }
+    },
+    {
+      "accounts": 1000,
+      "kind": "spot",
+      "workload": "place_cancel",
+      "receipt_sha256": "07ae881c034b7804f1a16b5644a3ba320f7375f34c031dfa89774bea5f23cd37",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 64.85,
+            "min": 62.5,
+            "max": 67.19999999999999
+          },
+          "p95_us": {
+            "median": 70.75,
+            "min": 66.69999999999999,
+            "max": 71.9
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 12.05,
+            "min": 11.600000000000001,
+            "max": 12.6
+          },
+          "p95_us": {
+            "median": 14.0,
+            "min": 13.299999999999999,
+            "max": 15.400000000000002
+          },
+          "round_samples": 8
+        },
+        "speedup": 5.381742738589211
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 64.4,
+            "min": 61.9,
+            "max": 66.69999999999999
+          },
+          "p95_us": {
+            "median": 70.0,
+            "min": 65.7,
+            "max": 71.0
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 11.8,
+            "min": 11.399999999999999,
+            "max": 12.5
+          },
+          "p95_us": {
+            "median": 13.6,
+            "min": 13.200000000000001,
+            "max": 14.9
+          },
+          "round_samples": 8
+        },
+        "speedup": 5.457627118644068
+      }
+    },
+    {
+      "accounts": 10000,
+      "kind": "perp",
+      "workload": "maker_taker",
+      "receipt_sha256": "f9a29d545894191d739cbc7c0a60d1d1e4616fbe09528c768ece0308aa5a9786",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 114.55000000000001,
+            "min": 107.5,
+            "max": 116.39999999999999
+          },
+          "p95_us": {
+            "median": 138.05,
+            "min": 134.6,
+            "max": 148.5
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 18.95,
+            "min": 18.5,
+            "max": 19.700000000000003
+          },
+          "p95_us": {
+            "median": 21.35,
+            "min": 20.299999999999997,
+            "max": 22.2
+          },
+          "round_samples": 8
+        },
+        "speedup": 6.044854881266492
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 120.25,
+            "min": 112.30000000000001,
+            "max": 122.39999999999999
+          },
+          "p95_us": {
+            "median": 143.75,
+            "min": 140.4,
+            "max": 148.70000000000002
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 22.7,
+            "min": 22.099999999999998,
+            "max": 23.4
+          },
+          "p95_us": {
+            "median": 33.550000000000004,
+            "min": 30.1,
+            "max": 35.4
+          },
+          "round_samples": 8
+        },
+        "speedup": 5.297356828193832
+      }
+    },
+    {
+      "accounts": 10000,
+      "kind": "perp",
+      "workload": "place_cancel",
+      "receipt_sha256": "b84da798291329556aa52bf70a2d332398a489556a3d81b6514e8d4b2a411d7e",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 114.9,
+            "min": 112.1,
+            "max": 118.2
+          },
+          "p95_us": {
+            "median": 136.85000000000002,
+            "min": 128.70000000000002,
+            "max": 147.2
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 17.950000000000003,
+            "min": 17.6,
+            "max": 18.2
+          },
+          "p95_us": {
+            "median": 22.549999999999997,
+            "min": 19.9,
+            "max": 26.599999999999998
+          },
+          "round_samples": 8
+        },
+        "speedup": 6.401114206128133
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 112.8,
+            "min": 109.9,
+            "max": 115.60000000000001
+          },
+          "p95_us": {
+            "median": 129.54999999999998,
+            "min": 123.7,
+            "max": 144.5
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 16.65,
+            "min": 16.3,
+            "max": 16.900000000000002
+          },
+          "p95_us": {
+            "median": 18.5,
+            "min": 17.8,
+            "max": 19.8
+          },
+          "round_samples": 8
+        },
+        "speedup": 6.774774774774775
+      }
+    },
+    {
+      "accounts": 10000,
+      "kind": "spot",
+      "workload": "maker_taker",
+      "receipt_sha256": "ec5d1b6d6e33d736cb535ef775b1ab0e4be7f3b46206ab894444507137ca3608",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 991.7,
+            "min": 970.1999999999999,
+            "max": 1029.8
+          },
+          "p95_us": {
+            "median": 1161.65,
+            "min": 1134.6,
+            "max": 1233.3000000000002
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 14.3,
+            "min": 13.6,
+            "max": 14.9
+          },
+          "p95_us": {
+            "median": 15.5,
+            "min": 14.8,
+            "max": 19.2
+          },
+          "round_samples": 8
+        },
+        "speedup": 69.34965034965035
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 999.95,
+            "min": 967.1,
+            "max": 1025.6
+          },
+          "p95_us": {
+            "median": 1192.4,
+            "min": 1118.1,
+            "max": 1241.0
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 16.1,
+            "min": 15.400000000000002,
+            "max": 16.6
+          },
+          "p95_us": {
+            "median": 22.8,
+            "min": 21.5,
+            "max": 30.0
+          },
+          "round_samples": 8
+        },
+        "speedup": 62.10869565217391
+      }
+    },
+    {
+      "accounts": 10000,
+      "kind": "spot",
+      "workload": "place_cancel",
+      "receipt_sha256": "b40156a5dab2841be3a704cdacb71323726863bdcb3402c0fb0381df12d9fa7c",
+      "first": {
+        "before": {
+          "median_us": {
+            "median": 988.1,
+            "min": 974.8,
+            "max": 1011.3
+          },
+          "p95_us": {
+            "median": 1151.65,
+            "min": 1137.0,
+            "max": 1274.2
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 13.4,
+            "min": 13.200000000000001,
+            "max": 13.6
+          },
+          "p95_us": {
+            "median": 15.149999999999999,
+            "min": 14.8,
+            "max": 16.099999999999998
+          },
+          "round_samples": 8
+        },
+        "speedup": 73.73880597014926
+      },
+      "second": {
+        "before": {
+          "median_us": {
+            "median": 991.55,
+            "min": 955.9,
+            "max": 1007.6
+          },
+          "p95_us": {
+            "median": 1181.45,
+            "min": 1139.5,
+            "max": 1282.5
+          },
+          "round_samples": 8
+        },
+        "after": {
+          "median_us": {
+            "median": 13.1,
+            "min": 13.1,
+            "max": 13.4
+          },
+          "p95_us": {
+            "median": 14.8,
+            "min": 14.2,
+            "max": 15.8
+          },
+          "round_samples": 8
+        },
+        "speedup": 75.69083969465649
+      }
+    }
+  ],
+  "limits": [
+    "Fixed core work, not HTTP/PG/bot capacity or long-run qualification.",
+    "Statistics are medians of per-case run medians/P95s, not pooled latency percentiles.",
+    "Timings exclude setup, assertions, final state/receipt serialization and hashing.",
+    "Growing history and every command/trade count are identical before and after."
+  ],
+  "source_sha256": {
+    "exchange-core/src/account.rs": "73e41293480e97b136c6c22f8165a6fe98f57bcf9fa48f5c02b6616b63cc7ddb",
+    "exchange-core/src/actor.rs": "7b1cadc223ee0db21a4253a1db4086582e47da9ba749c2f75edd3e9befc9a4f1",
+    "exchange-core/src/spot.rs": "b8bb426a3ac016ce0bf8275f317487024dd489acb1bd0c47e54a904686dd0a0c",
+    "exchange-core/src/trading.rs": "a54927be983d67eecbab90444447970d73cd9e49c92d5ec6c9c84182d4409fad",
+    "exchange-core/src/account_scope_tests.rs": "67280c1373ce1b49a4960864115057ff1dc36678103802af14e8d2a9c725514a",
+    "exchange-core/examples/benchmark_account_scope.rs": "71a19831fe893d07a07dbde5072005c52f0cd6940663440af488cefadde642ab",
+    "exchange-server/src/risk_benchmark_realtime.rs": "23fe388e37f799ca73fe97a2a28feb0c8d8b2f93d921e39da13b7f5f49c42ed3",
+    "scripts/benchmark_account_scope.py": "d2016a71fcef587fb45aeef3d3a204810ff9e4f2c6cd11473a54d556e7a93f60"
+  },
+  "tracked_patch_sha256": "89437fc853a1403940258f703da9b863ff36e97bc504b454094a05f464899fce",
+  "validation": {
+    "workspace_all_features_with_required_postgres": {
+      "passed": 614,
+      "failed": 0,
+      "ignored": 15,
+      "log": "E:\\projects\\MarketForge\\.local\\account-scope-optimization\\workspace-postgres.log",
+      "sha256": "8d6e5cc799500e25fca4749200694e5c430fd045761236369a86ad9986001df5"
+    },
+    "new_account_scope_regressions": 4,
+    "clippy_all_targets_all_features_warnings_denied": {
+      "passed": true,
+      "log_sha256": "ebbb9bb72c0a42d3f131e52b7a5d595143d029446c6fbf60ab40b3f82693bab1"
+    },
+    "cargo_fmt_check": true,
+    "git_diff_check": true,
+    "postgres": {
+      "dedicated_port": 55442,
+      "fsync": "on",
+      "synchronous_commit": "on",
+      "full_page_writes": "on",
+      "task_cluster_stopped": true
+    }
+  },
+  "implementation": {
+    "spot_sync": "Independent per-market persistent wallet/account roots; diff changed inputs after reservation reconciliation; unknown and dense scopes scan all accounts.",
+    "venue_validation": "Last successful wallet root plus all previously permitted underfunded accounts; revisit liability exceptions even without a wallet change; cache advances only on success.",
+    "recovery": "Derived roots are omitted from serialization and cleared after restore or opaque market mutation; restored inputs rebuild full baselines.",
+    "tiny_ledgers": "Fewer than 8 venue accounts retain direct full scans and do not maintain scope baselines.",
+    "diagnostic_build_fix": "Baseline risk-benchmark feature lacked ObservationRequest.event_filter; one-line registry field added to restore all-feature build."
+  },
+  "earlier_attempts": {
+    "initial_cache_candidate": {
+      "summary": "E:\\projects\\MarketForge\\.local\\account-scope-optimization\\abba\\summary.json",
+      "single_account_spot_cancel_us": [
+        6.45,
+        7.65
+      ],
+      "superseded_by": "tiny-ledger direct-scan fallback"
+    },
+    "test_environment": [
+      "First PowerShell wrapper stopped on native cargo stderr; wrapper repaired.",
+      "First complete run had 11 plugin failures because system python3 resolved to the Windows Store alias (exit 9009); project .venv/Scripts PATH fixed the test environment. Earlier logs retained."
+    ]
+  },
+  "boundaries": [
+    "MarketForge sources only; unrelated staged strategy-library work untouched.",
+    "Validation preceded the scoped commit; no push, deployment or user-database modification.",
+    "Single-account spot cancellation median is 6.35 -> 6.80 us (+7.1%); run ranges overlap. No universal acceleration claim.",
+    "100-account perp cancellation is 12.80 -> 13.05 us; small-scale parity/slight regression retained.",
+    "Requested fixed core comparison completed; HTTP/bot live throughput, long-run RSS and production capacity were not measured."
+  ]
+}

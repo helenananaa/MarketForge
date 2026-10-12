@@ -74,6 +74,7 @@ pub struct VenueAccountStore {
     balances: crate::shared_map::SharedMap<AccountId, Arc<BTreeMap<AssetId, VenueAssetBalance>>>,
 }
 
+#[derive(Clone, Debug)]
 pub(crate) struct VenueWalletState {
     balances: crate::shared_map::SharedMap<AccountId, Arc<BTreeMap<AssetId, VenueAssetBalance>>>,
 }
@@ -250,6 +251,20 @@ impl VenueAccountStore {
                 .iter()
                 .map(move |(asset, balance)| (account, asset.as_str(), balance))
         })
+    }
+
+    pub(crate) fn balance_entries_for(
+        &self,
+        account: AccountId,
+    ) -> impl Iterator<Item = (AccountId, &str, &VenueAssetBalance)> {
+        self.balances
+            .get(&account)
+            .into_iter()
+            .flat_map(move |balances| {
+                balances
+                    .iter()
+                    .map(move |(asset, balance)| (account, asset.as_str(), balance))
+            })
     }
 
     /// Account-key order, with arithmetic deferred until a requested account
