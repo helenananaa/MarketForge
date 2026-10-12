@@ -389,19 +389,13 @@ impl Host {
         broker::feedback(&mut state, &views, config)?;
         let mut actions = Vec::new();
         if bars.len() > previous.len() {
-            let mut frames = state
-                .get("accounts")
-                .map(array)
-                .transpose()?
-                .cloned()
-                .unwrap_or_default();
+            let mut frames = take_array(&mut state, "accounts")?;
             for (index, bar) in bars.iter().enumerate().skip(previous.len()) {
                 let cutoff = (index != bars.len() - 1)
                     .then(|| number(&data["candles"][index]["close_time_ms"], 0))
                     .transpose()?;
                 frames.push(broker::frame(observation, config, &state, bar, cutoff)?);
             }
-            state["accounts"] = json!(frames);
             let mut requests = BTreeMap::new();
             for view in &views {
                 let stream = &view["bot_market_data"];
@@ -444,14 +438,8 @@ impl Host {
                         "committed requested-data history changed or disappeared",
                     ));
                 }
-                state["providers"][key] = json!(stream);
             }
-            let mut evaluations = state
-                .get("evaluations")
-                .map(array)
-                .transpose()?
-                .cloned()
-                .unwrap_or_default();
+            let mut evaluations = take_array(&mut state, "evaluations")?;
             for index in previous.len()..bars.len() {
                 let cutoff = number(&data["candles"][index]["close_time_ms"], 0)?;
                 let mut counts = BTreeMap::new();
@@ -468,7 +456,9 @@ impl Host {
                 }
                 evaluations.push(json!({"time":cutoff,"providers":counts}));
             }
-            state["evaluations"] = json!(evaluations);
+            for (key, stream) in requests {
+                state["providers"][key] = Value::Array(stream);
+            }
             let settings = json!({"config":config, "seed":input["seed"], "tick":observation["instrument"]["tick_size"], "primary":observation["instrument_id"]});
             let slot = self.session(&format!("{identity}:{}", input["seed"]))?;
             let mut slot = slot.lock().map_err(io)?;
@@ -607,7 +597,9 @@ impl Host {
                 .filter(|v| v["bar_index"].as_u64().unwrap() < previous.len() as u64)
                 .cloned()
                 .collect();
-            if !previous.is_empty() && digest(&json!(prefix))? != text(&state["intents_digest"])? {
+            if !previous.is_empty()
+                && digest(&Value::Array(prefix))? != text(&state["intents_digest"])?
+            {
                 return Err(error("previous Pine intents changed during reconstruction"));
             }
             let latest: Vec<_> = array(&intents)?
@@ -615,6 +607,11 @@ impl Host {
                 .filter(|v| v["bar_index"].as_u64() == Some(bars.len() as u64 - 1))
                 .cloned()
                 .collect();
+            // These arrays were taken from the one mutable working state.
+            // Return ownership after runtime inputs have been read, avoiding
+            // two extra complete-history copies per bar close.
+            state["accounts"] = Value::Array(frames);
+            state["evaluations"] = Value::Array(evaluations);
             actions.extend(broker::translate(
                 &latest,
                 program.program.strategy_settings.pyramiding_limit,
@@ -622,10 +619,9 @@ impl Host {
                 config,
                 &mut state,
             )?);
-            state["bars"] = json!(bars);
             state["evaluated_bars"] = json!(bars.len());
             state["last_bar_time"] = bars.last().unwrap()["time"].clone();
-            state["last_intents"] = json!(latest);
+            state["last_intents"] = Value::Array(latest);
             state["intents_digest"] = json!(digest(&intents)?);
             state["last_actions"] = json!(actions);
             state["skipped_bar_decisions"] = json!(
@@ -639,6 +635,7 @@ impl Host {
                         (bars.len() - previous.len() - 1) as u64
                     }
             );
+            state["bars"] = Value::Array(bars);
             cached.transcript = json!({"bars":state["bars"],"accounts":state["accounts"],"providers":state["providers"],"evaluations":state["evaluations"]});
             *slot = Some(cached);
         }
@@ -670,6 +667,16 @@ impl Host {
             return Err(error("Pine decision timed out"));
         }
         Ok((actions, state))
+    }
+}
+
+/// Called only on the owned speculative working copy. Failed decisions leave
+/// the committed input untouched, including malformed restored array fields.
+fn take_array(state: &mut Value, field: &str) -> Result<Vec<Value>, BotError> {
+    match state.as_object_mut().unwrap().remove(field) {
+        None => Ok(Vec::new()),
+        Some(Value::Array(values)) => Ok(values),
+        Some(_) => Err(error("expected array")),
     }
 }
 

@@ -37,11 +37,13 @@ pub fn python_json_len(value: &Value, spaced: bool) -> Result<usize, BotError> {
         }
         Value::String(s) => string_len(s),
         Value::Number(n) => {
-            let number = n.to_string();
-            if n.is_f64() {
-                python_float(&number)?.len()
+            if let Some(number) = n.as_u64() {
+                number.checked_ilog10().unwrap_or(0) as usize + 1
+            } else if let Some(number) = n.as_i64() {
+                // unsigned_abs also handles i64::MIN without overflow.
+                number.unsigned_abs().checked_ilog10().unwrap_or(0) as usize + 2
             } else {
-                number.len()
+                python_float(&n.to_string())?.len()
             }
         }
         Value::Array(a) => {
@@ -217,6 +219,33 @@ mod tests {
             encoded_len(&value).unwrap(),
             serde_json::to_vec(&value).unwrap().len()
         );
+    }
+    #[test]
+    fn integer_lengths_match_wire_at_every_decimal_boundary() {
+        let mut values = vec![serde_json::json!(i64::MIN), serde_json::json!(u64::MAX)];
+        for power in 0..20 {
+            let center = 10u64.pow(power);
+            for number in [center - 1, center, center + 1] {
+                values.push(serde_json::json!(number));
+                if let Ok(signed) = i64::try_from(number) {
+                    values.push(serde_json::json!(-signed));
+                }
+            }
+        }
+        values.extend([
+            serde_json::json!(0.0),
+            serde_json::json!(-0.0),
+            serde_json::json!(1.0),
+        ]);
+        for value in values {
+            for spaced in [false, true] {
+                assert_eq!(
+                    python_json_len(&value, spaced).unwrap(),
+                    python_json(&value, spaced).unwrap().len(),
+                    "{value}"
+                );
+            }
+        }
     }
     #[test]
     fn python_float_formatting_boundaries_preserve_shortest_digits() {

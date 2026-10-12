@@ -10,7 +10,7 @@ use serde::{
 use serde_json::{Value, value::RawValue};
 use std::{
     cell::RefCell,
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{Arc, Weak},
 };
 
@@ -27,13 +27,24 @@ struct Entry {
 #[derive(Clone, Debug, Default)]
 pub(super) struct Cache {
     entries: BTreeMap<usize, Entry>,
+    recency: BTreeSet<(u64, usize)>,
     bytes: usize,
     clock: u64,
 }
 
 impl Cache {
     fn get(&mut self, data: &Arc<Value>) -> Result<Arc<RawValue>, JournalError> {
-        self.clock = self.clock.wrapping_add(1);
+        if self.clock == u64::MAX {
+            // Preserve LRU order even if the logical access counter wraps.
+            let keys: Vec<_> = self.recency.iter().map(|(_, key)| *key).collect();
+            self.recency.clear();
+            for (touched, key) in keys.into_iter().enumerate() {
+                self.entries.get_mut(&key).unwrap().touched = touched as u64;
+                self.recency.insert((touched as u64, key));
+            }
+            self.clock = self.entries.len() as u64;
+        }
+        self.clock += 1;
         let key = Arc::as_ptr(data) as usize;
         if let Some(entry) = self.entries.get_mut(&key)
             && entry
@@ -41,47 +52,37 @@ impl Cache {
                 .upgrade()
                 .is_some_and(|source| Arc::ptr_eq(&source, data))
         {
+            self.recency.remove(&(entry.touched, key));
             entry.touched = self.clock;
+            self.recency.insert((entry.touched, key));
             return Ok(entry.json.clone());
         }
-        // Only bytes emitted by the recovery-range checked serializer become
-        // raw fragments. Pointer reuse cannot reuse expired state; copy-on-write
-        // updates have a different live identity.
-        let checked = RecoveryJson::encode(data)?;
-        let json: Arc<RawValue> =
-            RawValue::from_string(String::from_utf8(checked.0).expect("serde JSON is UTF-8"))
-                .map_err(JournalError::Serialize)?
-                .into();
+        // This fragment is already a serde_json::Value: its numbers have the
+        // recovery representation's i64/u64/f64 range. to_raw_value emits JSON
+        // directly, without reparsing a string we just serialized. The enclosing
+        // typed mutation still uses RecoveryJson's i128/u128 range checks.
+        // Weak identity also prevents reuse after expiration or a COW update.
+        let json: Arc<RawValue> = serde_json::value::to_raw_value(data.as_ref())
+            .map_err(JournalError::Serialize)?
+            .into();
         if let Some(old) = self.entries.remove(&key) {
+            self.recency.remove(&(old.touched, key));
             self.bytes -= old.json.get().len();
         }
         let size = json.get().len();
         if size > MAX_BYTES {
             return Ok(json);
         }
-        if self.entries.len().is_multiple_of(64)
-            || self.bytes.saturating_add(size) > MAX_BYTES
-            || self.entries.len() >= MAX_ENTRIES
-        {
-            self.entries.retain(|_, entry| {
-                if entry.source.strong_count() == 0 {
-                    self.bytes -= entry.json.get().len();
-                    false
-                } else {
-                    true
-                }
-            });
-        }
+        // A retained journal may keep every source alive. Scanning the whole
+        // cache for expired entries and an LRU victim on each saturated miss
+        // made insertion quadratic in the working set. Evict by ordered access
+        // index instead; dead entries are bounded by the same limits.
         while self.bytes.saturating_add(size) > MAX_BYTES || self.entries.len() >= MAX_ENTRIES {
-            let key = *self
-                .entries
-                .iter()
-                .min_by_key(|(_, entry)| entry.touched)
-                .unwrap()
-                .0;
+            let (_, key) = self.recency.pop_first().unwrap();
             self.bytes -= self.entries.remove(&key).unwrap().json.get().len();
         }
         self.bytes += size;
+        self.recency.insert((self.clock, key));
         self.entries.insert(
             key,
             Entry {
@@ -533,6 +534,8 @@ mod tests {
         // modelling allocator address reuse without relying on the allocator.
         let next = Arc::new(serde_json::json!({"cash": 49}));
         cache.entries.clear();
+        cache.recency.clear();
+        cache.recency.insert((0, Arc::as_ptr(&next) as usize));
         cache.bytes = encoded.get().len();
         cache.entries.insert(
             Arc::as_ptr(&next) as usize,
@@ -543,6 +546,47 @@ mod tests {
             },
         );
         assert_eq!(cache.get(&next).unwrap().get(), "{\"cash\":49}");
+        assert_eq!(cache.recency.len(), cache.entries.len());
+    }
+
+    #[test]
+    fn saturated_cache_evicts_least_recent_after_hits_and_counter_rollover() {
+        let mut cache = Cache::default();
+        let values: Vec<_> = (0..MAX_ENTRIES + 2)
+            .map(|n| Arc::new(serde_json::json!({"n":n})))
+            .collect();
+        for value in &values[..MAX_ENTRIES] {
+            cache.get(value).unwrap();
+        }
+        let first = cache.get(&values[0]).unwrap();
+        cache.clock = u64::MAX;
+        cache.get(&values[MAX_ENTRIES]).unwrap();
+        assert!(Arc::ptr_eq(&first, &cache.get(&values[0]).unwrap()));
+        assert!(
+            !cache
+                .entries
+                .contains_key(&(Arc::as_ptr(&values[1]) as usize))
+        );
+        cache.get(&values[MAX_ENTRIES + 1]).unwrap();
+        assert!(
+            !cache
+                .entries
+                .contains_key(&(Arc::as_ptr(&values[2]) as usize))
+        );
+        assert_eq!(cache.recency.len(), MAX_ENTRIES);
+        assert_eq!(cache.entries.len(), MAX_ENTRIES);
+        assert_eq!(
+            cache.bytes,
+            cache
+                .entries
+                .values()
+                .map(|e| e.json.get().len())
+                .sum::<usize>()
+        );
+        for (touched, key) in &cache.recency {
+            assert_eq!(cache.entries[key].touched, *touched);
+        }
+        assert_eq!(cache.get(&values[1]).unwrap().get(), "{\"n\":1}");
     }
 
     #[test]
