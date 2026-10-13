@@ -904,7 +904,7 @@ impl<'a> HistoryRequirementCollector<'a> {
             }
             HirHistoryOffset::Dynamic(offset) => {
                 match constant_hir_int_with_symbols(offset, &self.const_symbols) {
-                    Some(offset) if offset >= 0 => {
+                    Some(offset) if u32::try_from(offset).is_ok() => {
                         self.record_constant_history(series_id, offset as u32)
                     }
                     _ => self.record_dynamic_history(series_id),
@@ -969,7 +969,10 @@ impl<'a> HistoryRequirementCollector<'a> {
         match call_arg(args, length_arg, "length")
             .and_then(|arg| constant_hir_int_with_symbols(arg, &self.const_symbols))
         {
-            Some(length) if length > 0 => self.record_constant_history(series_id, length as u32),
+            Some(length) if length > 0 && u32::try_from(length).is_ok() => {
+                self.record_constant_history(series_id, length as u32)
+            }
+            Some(length) if length > 0 => self.record_dynamic_history(series_id),
             Some(_) => {}
             None if call_arg(args, length_arg, "length").is_some() => {
                 self.record_dynamic_history(series_id)
@@ -988,7 +991,10 @@ impl<'a> HistoryRequirementCollector<'a> {
         match call_arg(args, length_arg, "length")
             .and_then(|arg| constant_hir_int_with_symbols(arg, &self.const_symbols))
         {
-            Some(length) if length > 0 => self.record_constant_history(series_id, length as u32),
+            Some(length) if length > 0 && u32::try_from(length).is_ok() => {
+                self.record_constant_history(series_id, length as u32)
+            }
+            Some(length) if length > 0 => self.record_dynamic_history(series_id),
             Some(_) => {}
             None => self.record_dynamic_history(series_id),
         }
@@ -1019,9 +1025,10 @@ impl<'a> HistoryRequirementCollector<'a> {
         };
 
         match length.and_then(|arg| constant_hir_int_with_symbols(arg, &self.const_symbols)) {
-            Some(length) if length > 0 => {
+            Some(length) if length > 0 && u32::try_from(length).is_ok() => {
                 self.record_constant_history(series_id, (length as u32).saturating_sub(1))
             }
+            Some(length) if length > 0 => self.record_dynamic_history(series_id),
             Some(_) => {}
             None => self.record_dynamic_history(series_id),
         }

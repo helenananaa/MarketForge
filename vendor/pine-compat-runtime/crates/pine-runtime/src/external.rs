@@ -68,6 +68,9 @@ pub struct ExternalOrderIntent {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ExternalExecution {
+    /// Absolute bar index of the first retained feedback frame.
+    pub base: usize,
+    pub previous_time: Option<i64>,
     pub frames: Vec<ExternalAccountFrame>,
     pub passes: Option<Vec<Vec<ExternalPass>>>,
     pub active_pass: Option<(usize, ExternalPass)>,
@@ -156,6 +159,8 @@ impl HistoricalRuntime<'_> {
         }
         self.validate_external_feedback(&frames, &passes)?;
         self.external_execution = Some(ExternalExecution {
+            base: 0,
+            previous_time: None,
             frames,
             passes,
             active_pass: None,
@@ -255,7 +260,7 @@ impl HistoricalRuntime<'_> {
             .as_mut()
             .ok_or_else(|| external_error("external mode is not active"))?;
         if self.execution_failed
-            || state.frames.len() != self.bars
+            || state.base.checked_add(state.frames.len()) != Some(self.bars)
             || state.passes.is_some() != passes.is_some()
             || state
                 .passes
@@ -266,8 +271,10 @@ impl HistoricalRuntime<'_> {
             || state
                 .frames
                 .last()
+                .map(|f| f.time)
+                .or(state.previous_time)
                 .zip(frames.first())
-                .is_some_and(|(old, new)| old.time >= new.time)
+                .is_some_and(|(old, new)| old >= new.time)
         {
             return Err(external_error(
                 "invalid incremental external feedback boundary",
@@ -289,6 +296,42 @@ impl HistoricalRuntime<'_> {
             return Err(external_error(error));
         }
         Ok(&state.intents)
+    }
+
+    /// A closed-bar host may consume new intents and discard already executed
+    /// feedback. Calculation histories are retained independently in the VM.
+    pub fn take_external_intents(&mut self) -> Result<Vec<ExternalOrderIntent>, RuntimeError> {
+        self.external_intents()?;
+        Ok(std::mem::take(
+            &mut self.external_execution.as_mut().unwrap().intents,
+        ))
+    }
+
+    pub fn compact_external_feedback(&mut self) -> Result<(), RuntimeError> {
+        let state = self
+            .external_execution
+            .as_mut()
+            .ok_or_else(|| external_error("external mode is not active"))?;
+        if self.execution_failed
+            || state.active_pass.is_some()
+            || state.base.checked_add(state.frames.len()) != Some(self.bars)
+            || state.passes.as_ref().is_some_and(|groups| {
+                groups
+                    .last()
+                    .is_some_and(|g| g.last().is_none_or(|p| !p.confirmed))
+            })
+        {
+            return Err(external_error(
+                "checkpoint requires a completed confirmed boundary",
+            ));
+        }
+        state.previous_time = state.frames.last().map(|f| f.time).or(state.previous_time);
+        state.frames.clear();
+        if let Some(groups) = &mut state.passes {
+            groups.clear();
+        }
+        state.base = self.bars;
+        Ok(())
     }
 
     pub(crate) fn external_value(&mut self, name: &str) -> Option<PineValue> {
@@ -314,7 +357,11 @@ impl HistoricalRuntime<'_> {
             .active_pass
             .as_ref()
             .map(|(_, pass)| &pass.account)
-            .or_else(|| state.frames.get(self.bars))
+            .or_else(|| {
+                self.bars
+                    .checked_sub(state.base)
+                    .and_then(|i| state.frames.get(i))
+            })
         else {
             state.error = Some("missing account feedback".into());
             return Some(PineValue::Na);

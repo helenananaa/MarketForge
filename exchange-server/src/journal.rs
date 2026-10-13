@@ -7426,6 +7426,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    include!("journal/pg_scheduler_fixture_tests.rs");
+
     use super::*;
     use exchange_core::{
         InstrumentConfig, MarketConfig, NewOrder, SpotClearingConfig, SpotMarketConfig,
@@ -7471,6 +7473,7 @@ mod tests {
                     }],
                 })
                 .collect(),
+            pine_changes: Vec::new(),
         };
         vec![
             PendingJournalMutation::new(

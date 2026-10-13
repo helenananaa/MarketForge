@@ -5,6 +5,8 @@ use crate::scheduler_delta::{AgentDelta, SchedulerDelta};
 use exchange_core::{BotError, BotExecutionPolicy, PersistedAgent, SchedulerPhase, SchedulerState};
 mod wake_index;
 use wake_index::WakeIndex;
+mod commit_trace;
+pub(super) use commit_trace::CommitTrace;
 
 #[cfg(feature = "risk-benchmark")]
 #[path = "risk_benchmark_realtime.rs"]
@@ -74,6 +76,8 @@ pub(super) struct Decision {
     pub prior: SharedAgent,
     pub next: Arc<exchange_core::PersistedAgentKindState>,
     pub actions: Arc<[OrderAction]>,
+    pub state_hint: Option<crate::scheduler_delta::PineStateHint>,
+    pub trace_id: Option<u64>,
 }
 
 struct ObservationRequest {
@@ -91,6 +95,8 @@ struct CachedBot {
     request: Arc<ObservationRequest>,
     bot: Box<dyn exchange_core::ScheduledBot>,
     event_stamp: Option<[u8; 32]>,
+    #[cfg(feature = "bench-execution-timing")]
+    screen_submitted_at: Option<Instant>,
 }
 
 impl CachedBot {
@@ -179,6 +185,30 @@ pub(super) enum Work {
 }
 
 impl Work {
+    pub(super) fn state_hints(
+        &self,
+        scheduler: &SchedulerState,
+    ) -> BTreeMap<usize, crate::scheduler_delta::PineStateHint> {
+        let decisions: &[Decision] = match self {
+            Self::Clock(_) => return BTreeMap::new(),
+            Self::Bot { decision, .. } => std::slice::from_ref(decision),
+            Self::Bots { decisions, .. } => decisions,
+        };
+        if !decisions.iter().any(|d| d.state_hint.is_some()) {
+            return BTreeMap::new();
+        }
+        let index = DecisionIndex::new(&scheduler.agents);
+        decisions
+            .iter()
+            .filter_map(|decision| {
+                let hint = decision.state_hint.as_ref()?;
+                index
+                    .find_pending(scheduler, &decision.prior, &BTreeMap::new())
+                    .map(|index| (index, hint.clone()))
+            })
+            .collect()
+    }
+
     pub fn is_current(&self, scheduler: &SchedulerState) -> bool {
         let control = match self {
             Self::Clock(control) | Self::Bot { control, .. } | Self::Bots { control, .. } => {
@@ -240,24 +270,33 @@ impl Work {
         }
     }
 
-    pub fn apply_state_only(
+    pub fn apply_state_only_traced(
         self,
         scheduler: &SchedulerState,
         step: u64,
+        trace: &mut CommitTrace,
     ) -> Result<SchedulerDelta, exchange_core::SchedulerError> {
         assert!(self.is_state_only());
-        let changes = self.apply_agents(scheduler, |decision, index| {
-            // Preserve validation even for a bot that returned no orders.
-            decision.prior.requires_instrument()?;
-            Ok(AgentDelta {
-                index,
-                kind_state: Arc::unwrap_or_clone(decision.next),
-                unfinished_actions: Vec::new(),
-            })
-        })?;
+        let mut discarded = CommitTrace::default();
+        let changes = self.apply_agents(
+            scheduler,
+            |decision, index| {
+                // Preserve validation even for a bot that returned no orders.
+                decision.prior.requires_instrument()?;
+                trace.state(decision.trace_id);
+                Ok(AgentDelta {
+                    index,
+                    kind_state: Arc::unwrap_or_clone(decision.next),
+                    unfinished_actions: Vec::new(),
+                })
+            },
+            &mut discarded,
+        )?;
+        trace.extend(discarded);
         Ok(finish_delta(scheduler, changes, step))
     }
 
+    #[cfg(test)]
     pub fn apply(
         self,
         rooms: &mut RoomManager,
@@ -266,7 +305,27 @@ impl Work {
         policy: &mut ServerBotPolicy,
         submissions: &mut BTreeMap<u64, (String, AccountId)>,
     ) -> Result<SchedulerDelta, exchange_core::SchedulerError> {
+        self.apply_traced(
+            rooms,
+            next_order_id,
+            scheduler,
+            policy,
+            submissions,
+            &mut CommitTrace::default(),
+        )
+    }
+
+    pub fn apply_traced(
+        self,
+        rooms: &mut RoomManager,
+        next_order_id: &mut u64,
+        scheduler: &SchedulerState,
+        policy: &mut ServerBotPolicy,
+        submissions: &mut BTreeMap<u64, (String, AccountId)>,
+        trace: &mut CommitTrace,
+    ) -> Result<SchedulerDelta, exchange_core::SchedulerError> {
         use exchange_core::SchedulerError;
+        let mut discarded = CommitTrace::default();
         let changes = if matches!(self, Self::Clock(_)) {
             let previous = rooms
                 .execution_history_len(&scheduler.room_id)
@@ -284,18 +343,24 @@ impl Work {
             }
             BTreeMap::new()
         } else {
-            self.apply_agents(scheduler, |decision, index| {
-                apply_decision(
-                    rooms,
-                    next_order_id,
-                    &scheduler.room_id,
-                    policy,
-                    submissions,
-                    decision,
-                    index,
-                )
-            })?
+            self.apply_agents(
+                scheduler,
+                |decision, index| {
+                    apply_decision(
+                        rooms,
+                        next_order_id,
+                        &scheduler.room_id,
+                        policy,
+                        submissions,
+                        decision,
+                        index,
+                        trace,
+                    )
+                },
+                &mut discarded,
+            )?
         };
+        trace.extend(discarded);
         let step = rooms
             .clock(&scheduler.room_id)
             .map_err(SchedulerError::Room)?
@@ -307,6 +372,7 @@ impl Work {
         self,
         scheduler: &SchedulerState,
         mut apply: impl FnMut(Decision, usize) -> Result<AgentDelta, exchange_core::SchedulerError>,
+        discarded: &mut CommitTrace,
     ) -> Result<BTreeMap<usize, AgentDelta>, exchange_core::SchedulerError> {
         let mut changes = BTreeMap::new();
         match self {
@@ -321,6 +387,7 @@ impl Work {
                         || control.stop.load(Ordering::Acquire)
                         || control.epoch.load(Ordering::Acquire) != epoch
                     {
+                        discarded.discard(decision.trace_id, "stale_epoch_or_disabled");
                         continue;
                     }
                     let position = match &index {
@@ -336,6 +403,8 @@ impl Work {
                     };
                     if let Some(position) = position {
                         changes.insert(position, apply(decision, position)?);
+                    } else {
+                        discarded.discard(decision.trace_id, "stale_predecessor");
                     }
                 }
             }
@@ -374,9 +443,11 @@ fn finish_delta(
                     || prior.unfinished_actions != change.unfinished_actions
             })
             .collect(),
+        pine_changes: Vec::new(),
     }
 }
 
+#[allow(clippy::too_many_arguments)] // Transaction collaborators and its buffered receipt are explicit.
 fn apply_decision(
     rooms: &mut RoomManager,
     next_order_id: &mut u64,
@@ -385,6 +456,7 @@ fn apply_decision(
     submissions: &mut BTreeMap<u64, (String, AccountId)>,
     decision: Decision,
     index: usize,
+    trace: &mut CommitTrace,
 ) -> Result<AgentDelta, exchange_core::SchedulerError> {
     use exchange_core::SchedulerError;
     if decision.actions.len() > exchange_core::MAX_BOT_ACTIONS {
@@ -395,7 +467,7 @@ fn apply_decision(
     let config = decision.prior.config();
     let instrument = decision.prior.requires_instrument()?.to_string();
     let mut next = Arc::unwrap_or_clone(decision.next);
-    for action in decision.actions.iter() {
+    for (action_index, action) in decision.actions.iter().enumerate() {
         let (target, resolved) = exchange_core::bots::resolve_bot_order(&instrument, action)
             .map_err(SchedulerError::Bot)?;
         if order_action_allocates_id(action) && *next_order_id >= SYSTEM_LIQUIDATION_ORDER_ID_BASE {
@@ -431,6 +503,7 @@ fn apply_decision(
             .map_err(SchedulerError::Gateway)?;
         *next_order_id = gateway.next_order_id();
         exchange_core::bots::record_bot_execution(&mut next, action, &execution);
+        trace.action(decision.trace_id, action_index, &execution.execution);
         submissions.insert(
             execution.execution.command_seq,
             (execution.participant_id.clone(), execution.account_id),
@@ -438,6 +511,9 @@ fn apply_decision(
         if let Some(observation) = observation {
             policy.after_action(&execution, &observation.book);
         }
+    }
+    if decision.actions.is_empty() {
+        trace.state(decision.trace_id);
     }
     Ok(AgentDelta {
         index,
@@ -483,6 +559,9 @@ async fn next_wake<T: Send + 'static>(
     }
 }
 
+#[path = "realtime_shutdown.rs"]
+mod shutdown;
+
 pub(super) async fn run(
     shared: SharedState,
     room_id: RoomId,
@@ -517,7 +596,7 @@ pub(super) async fn run(
         .clone();
     loop {
         if control.stop.load(Ordering::Acquire) || !shared.lifecycle.is_accepting_durable_writes() {
-            return Ok(());
+            break;
         }
         let wake = if clock_due && writer.is_empty() && (prefer_clock || ready_decisions.is_empty())
         {
@@ -562,15 +641,34 @@ pub(super) async fn run(
                         in_flight.remove(&id);
                     }
                     if control.stop.load(Ordering::Acquire) || epoch != current_epoch {
+                        if let Ok((decision, _)) = &result {
+                            commit_trace::discard(
+                                decision.trace_id,
+                                "epoch_changed_before_admission",
+                            );
+                        } else if result.is_err() {
+                            // A pre-ID error can arrive across an epoch/stop
+                            // change. The trace auditor cannot see it otherwise.
+                            crate::bot_runtime_diagnostics::shutdown_failed();
+                        }
                         continue;
                     }
                     match result {
                         Ok((decision, cached)) => {
                             if let Some(index) = screened {
+                                #[cfg(feature = "bench-execution-timing")]
+                                let submitted_at = cached
+                                    .as_ref()
+                                    .and_then(|cached| cached.screen_submitted_at);
                                 if let Some(cached) = cached {
                                     instances.insert(id.clone(), cached);
                                 }
                                 if !skipped {
+                                    #[cfg(feature = "bench-execution-timing")]
+                                    if let Some(started) = submitted_at {
+                                        crate::bench_execution_timing::BOT_SCREEN_PREFIFO
+                                            .record(started);
+                                    }
                                     pending_external.push(index, id);
                                 }
                             } else {
@@ -603,7 +701,7 @@ pub(super) async fn run(
                         .status(&room_id)
                         .map_err(|e| format!("{e:?}"))?
                     {
-                        MarketStatus::Closed => return Ok(()),
+                        MarketStatus::Closed => break,
                         MarketStatus::Paused => {
                             *lifecycle.lock().unwrap() = AgentWorkerLifecycle::Paused;
                             continue;
@@ -792,6 +890,7 @@ pub(super) async fn run(
                         Some(decision)
                     } else {
                         in_flight.remove(decision.prior.template.participant_id());
+                        commit_trace::discard(decision.trace_id, "epoch_changed_in_ready_queue");
                         None
                     }
                 })
@@ -823,6 +922,23 @@ pub(super) async fn run(
             .await?;
         }
     }
+    // Every successful loop exit (stop, global shutdown, or closed market)
+    // reaches the same diagnostic drain. An early Err is marked by the worker.
+    if crate::bot_runtime_diagnostics::shutdown_requested() {
+        let drained = shutdown::drain(
+            &mut writer,
+            &mut decisions,
+            &mut completed_results,
+            &mut ready_decisions,
+            commit_trace::discard,
+        )
+        .await;
+        drained?;
+        if !failed.is_empty() {
+            return Err("trace shutdown follows contained bot/commit errors".into());
+        }
+    }
+    Ok(())
 }
 
 struct CommitCompletion {
@@ -877,12 +993,17 @@ async fn commit_wave(
     }
     if let Err((status, body)) = result {
         if status != StatusCode::BAD_REQUEST {
+            for decision in &wave {
+                commit_trace::failed(decision.trace_id, "unrecoverable_batch_failure");
+            }
             return Err(body.0.error);
         }
         // No part of the failed wave was committed. Retrying its members
         // preserves each bot's atomicity and existing error isolation.
-        for decision in wave {
+        let mut pending = wave.into_iter();
+        while let Some(decision) = pending.next() {
             let id = decision.prior.template.participant_id().to_string();
+            let trace_id = decision.trace_id;
             let result = commit_realtime_work(
                 shared.clone(),
                 room_id.clone(),
@@ -894,7 +1015,11 @@ async fn commit_wave(
             )
             .await;
             if let Err((status, body)) = result {
+                commit_trace::failed(trace_id, "individual_transaction_failed");
                 if status != StatusCode::BAD_REQUEST {
+                    for decision in pending {
+                        commit_trace::failed(decision.trace_id, "batch_aborted");
+                    }
                     return Err(body.0.error);
                 }
                 let error = body.0.error;
@@ -919,11 +1044,18 @@ fn spawn_event_screening(
     // One small blocking batch checks immutable event inputs before any worker
     // permit is acquired. No plugin hook/decision runs here, and unchanged
     // candidates neither enter the worker FIFO nor produce journal revisions.
+    #[cfg(feature = "bench-execution-timing")]
+    let screen_submitted_at = Instant::now();
     decisions.spawn_blocking(move || {
         let mut observations = frozen.batch();
         inputs
             .into_iter()
             .map(|(index, prior, cached)| {
+                #[cfg(feature = "bench-execution-timing")]
+                let cached = CachedBot {
+                    screen_submitted_at: Some(screen_submitted_at),
+                    ..cached
+                };
                 let id = prior.template.participant_id().to_owned();
                 let mut skipped = false;
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -957,6 +1089,8 @@ fn spawn_event_screening(
                             next: prior.kind_state.clone(),
                             actions: Arc::default(),
                             prior,
+                            state_hint: None,
+                            trace_id: None,
                         },
                         Some(cached),
                     ))
@@ -1002,12 +1136,13 @@ impl ObservationWaveCache {
         let _timer = crate::bench_execution_timing::Timer::start(
             &crate::bench_execution_timing::BOT_WAVE_BUILD,
         );
-        let wave = Arc::new(
-            snapshot
-                .as_ref()
-                .clone()
-                .into_native_observation_wave(room_id.to_owned()),
-        );
+        let rooms = snapshot.as_ref().clone();
+        let wave = Arc::new(match &self.current {
+            Some((_, previous)) => {
+                rooms.into_native_observation_wave_after(room_id.to_owned(), previous)
+            }
+            None => rooms.into_native_observation_wave(room_id.to_owned()),
+        });
         self.current = Some((snapshot, wave.clone()));
         wave
     }
@@ -1170,11 +1305,8 @@ fn spawn_decision_batch(
             .map(|(prior, mut cached)| {
                 let id = prior.template.participant_id().to_string();
                 #[cfg(feature = "bench-execution-timing")]
-                let _turn_timer = (!native).then(|| {
-                    crate::bench_execution_timing::Timer::start(
-                        &crate::bench_execution_timing::BOT_TURN,
-                    )
-                });
+                let _turn_timer =
+                    (!native).then(crate::bench_execution_timing::BotTurnTimer::start);
                 let mut skipped = false;
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     #[cfg(all(test, feature = "memory-diagnostics"))]
@@ -1228,6 +1360,8 @@ fn spawn_decision_batch(
                                     next: prior.kind_state.clone(),
                                     actions: Arc::default(),
                                     prior,
+                                    state_hint: None,
+                                    trace_id: None,
                                 },
                                 cached,
                             ));
@@ -1236,6 +1370,19 @@ fn spawn_decision_batch(
                     } else {
                         None
                     };
+                    let mut effective_history = request.history;
+                    if !native
+                        && let Some(cursors) = registry
+                            .checkpoint_history_cursors(&prior.template, &prior.kind_state)
+                            .map_err(|e| e.to_string())?
+                    {
+                        let max_bars = observations
+                            .checkpoint_window_max_bars(&cursors)
+                            .map_err(|e| e.to_string())?;
+                        if let Some(history) = &mut effective_history {
+                            history.max_bars = max_bars;
+                        }
+                    }
                     #[cfg(feature = "bench-execution-timing")]
                     let observation_timer = (!native).then(|| {
                         crate::bench_execution_timing::Timer::start(
@@ -1249,7 +1396,7 @@ fn spawn_decision_batch(
                                     .shared_bot_observation(
                                         instrument,
                                         prior.config().account_id,
-                                        request.history,
+                                        effective_history,
                                         &request.related,
                                     )
                                     .map_err(|e| format!("{e:?}"))?,
@@ -1259,14 +1406,14 @@ fn spawn_decision_batch(
                                 .bot_observation(
                                     instrument,
                                     prior.config().account_id,
-                                    request.history,
+                                    effective_history,
                                     &request.related,
                                 )
                                 .map_err(|e| format!("{e:?}"))?;
                             observations
                                 .enrich_data(
                                     &mut view,
-                                    request.history,
+                                    effective_history,
                                     &request.related,
                                     &request.intervals,
                                     request.account_events,
@@ -1302,6 +1449,8 @@ fn spawn_decision_batch(
                                 next: prior.kind_state.clone(),
                                 actions: Arc::default(),
                                 prior,
+                                state_hint: None,
+                                trace_id: None,
                             },
                             cached,
                         ));
@@ -1391,9 +1540,12 @@ fn compute_decision_input(
             .create(&prior.template, &prior.kind_state)
             .map_err(|e| e.to_string())?,
     };
-    let actions = match observation {
-        DecisionObservation::Owned(view) => bot.decide(&view),
-        DecisionObservation::Shared(view) => bot.decide_shared(&view),
+    if registry.supports_native_batching(&prior.template) {
+        crate::bot_runtime_diagnostics::record_route("native", None);
+    }
+    let actions = match &observation {
+        DecisionObservation::Owned(view) => bot.decide(view),
+        DecisionObservation::Shared(view) => bot.decide_shared(view),
     }
     .map_err(|e| e.to_string())?;
     if actions.len() > exchange_core::MAX_BOT_ACTIONS {
@@ -1407,6 +1559,9 @@ fn compute_decision_input(
         &next,
     )
     .map_err(|e| e.to_string())?;
+    let state_hint = crate::scheduler_delta::PineStateHint::prepare(&prior.kind_state, &next);
+    let trace_id = crate::bot_runtime_diagnostics::next_decision_id();
+    commit_trace::decision(trace_id, &prior, &next, &observation, actions.len());
     // Speculative state is reusable ONLY after exact equality with committed state.
     // A failed journal write, rejected action, stale epoch or config change forces restore.
     let cached = reusable.then(|| CachedBot {
@@ -1416,12 +1571,16 @@ fn compute_decision_input(
         request,
         bot,
         event_stamp: None,
+        #[cfg(feature = "bench-execution-timing")]
+        screen_submitted_at: None,
     });
     Ok((
         Decision {
             prior,
             next,
             actions: actions.into(),
+            state_hint,
+            trace_id,
         },
         cached,
     ))

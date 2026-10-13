@@ -3,6 +3,7 @@ pub mod actor;
 pub mod agents;
 pub mod bot_risk;
 pub mod bots;
+pub mod candle_history_proof;
 pub mod candles;
 pub mod clock;
 pub mod engine;
@@ -24,6 +25,8 @@ pub mod market_events;
 mod market_microstructure_integration_tests;
 pub mod model;
 pub mod observation;
+#[cfg(feature = "bench-observation-timing")]
+pub mod observation_timing;
 pub mod participant;
 pub mod performance;
 pub mod perp;
@@ -60,6 +63,10 @@ pub use agents::{
     AgentTemplate, CancelAtStepConfig, CancelAtStepTrader, ContinuousMarketMaker,
     ContinuousMmConfig, DcaTrader, DcaTraderConfig, GridTrader, GridTraderConfig, NoiseTrader,
     NoiseTraderConfig, PersistedAgentKindState,
+};
+pub use candle_history_proof::{
+    CANDLE_HISTORY_PROOF_VERSION, CandleHistoryProof, candle_history_append, candle_history_hex,
+    candle_history_parse, candle_history_seed,
 };
 pub use candles::{
     CANDLE_SCHEMA_VERSION, Candle, CandleError, Ticker, TimedTrade, aggregate_candles,

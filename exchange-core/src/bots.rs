@@ -11,6 +11,17 @@ use crate::{
 pub const BOT_PROTOCOL_VERSION: &str = "bot.v1";
 pub const BOT_CONFIG_VERSION: u16 = 1;
 pub const MAX_BOT_ACTIONS: usize = 64;
+pub const MAX_BOT_MARKET_DATA_BARS: usize = 4096;
+
+/// A committed consumer cursor. The host must authenticate its digest against
+/// the complete authoritative history before reducing an observation window.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BotHistoryCursor {
+    pub instrument_id: String,
+    pub interval_ms: u64,
+    pub count: u64,
+    pub digest: [u8; 32],
+}
 
 /// Optional, bounded public history requested by an installed factory.
 #[derive(Clone, Copy, Debug)]
@@ -21,7 +32,7 @@ pub struct BotMarketDataRequest {
 
 impl BotMarketDataRequest {
     pub fn validate(&self) -> Result<(), BotError> {
-        if self.interval_ms == 0 || !(1..=4096).contains(&self.max_bars) {
+        if self.interval_ms == 0 || !(1..=MAX_BOT_MARKET_DATA_BARS).contains(&self.max_bars) {
             return Err(BotError("invalid bot market data bounds".into()));
         }
         Ok(())
@@ -389,6 +400,15 @@ pub trait BotFactory: Send + Sync {
     ) -> Result<Option<BotMarketDataRequest>, BotError> {
         Ok(None)
     }
+    /// Optional committed cursors for a runtime that supports authenticated
+    /// suffixes. Unlike static observation metadata, this is read every turn.
+    fn checkpoint_history_cursors(
+        &self,
+        _template: &AgentTemplate,
+        _state: &PersistedAgentKindState,
+    ) -> Result<Option<Vec<BotHistoryCursor>>, BotError> {
+        Ok(None)
+    }
     fn related_instruments(&self, _template: &AgentTemplate) -> Result<Vec<String>, BotError> {
         Ok(vec![])
     }
@@ -576,6 +596,56 @@ impl BotRegistry {
             request.validate()?;
         }
         Ok(request)
+    }
+
+    pub fn checkpoint_history_cursors(
+        &self,
+        template: &AgentTemplate,
+        state: &PersistedAgentKindState,
+    ) -> Result<Option<Vec<BotHistoryCursor>>, BotError> {
+        let factory = self
+            .factories
+            .get(template.bot_id())
+            .ok_or_else(|| BotError(format!("unknown bot: {}", template.bot_id())))?;
+        let Some(cursors) = factory.checkpoint_history_cursors(template, state)? else {
+            return Ok(None);
+        };
+        let Some(history) = self.market_data_request(template)? else {
+            return Err(BotError("checkpoint cursors require market data".into()));
+        };
+        let primary = template
+            .config()
+            .instrument_id
+            .as_deref()
+            .ok_or_else(|| BotError("checkpoint cursors require an instrument".into()))?;
+        let instruments = std::iter::once(primary.to_string())
+            .chain(self.related_instruments(template)?)
+            .collect::<std::collections::BTreeSet<_>>();
+        let intervals = std::iter::once(history.interval_ms)
+            .chain(self.additional_intervals(template)?)
+            .collect::<std::collections::BTreeSet<_>>();
+        let expected = instruments
+            .iter()
+            .flat_map(|instrument| {
+                intervals
+                    .iter()
+                    .map(move |interval| (instrument.clone(), *interval))
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let actual = cursors
+            .iter()
+            .map(|cursor| (cursor.instrument_id.clone(), cursor.interval_ms))
+            .collect::<std::collections::BTreeSet<_>>();
+        if cursors.is_empty()
+            || cursors.len() > 16
+            || actual.len() != cursors.len()
+            || actual != expected
+        {
+            return Err(BotError(
+                "checkpoint cursors must cover every requested stream exactly once".into(),
+            ));
+        }
+        Ok(Some(cursors))
     }
 }
 

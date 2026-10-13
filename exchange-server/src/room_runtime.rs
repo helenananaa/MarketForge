@@ -107,10 +107,12 @@ pub(super) struct RoomGuard {
     state: OwnedMutexGuard<Option<AppState>>,
     runtime: Arc<RoomRuntime>,
     _coordination: Option<OwnedRwLockWriteGuard<()>>,
+    _state_only_coordination: Option<OwnedRwLockReadGuard<()>>,
     _directory: Arc<OwnedRwLockReadGuard<Directory>>,
     changed: bool,
     market_changed: bool,
     dispatch_patch: Option<(u64, Vec<usize>)>,
+    publication_time: Option<Arc<AtomicU64>>,
     #[cfg(feature = "bench-execution-timing")]
     timing_started: Instant,
 }
@@ -205,10 +207,12 @@ impl VenueOrderGuard {
             state,
             runtime: self.runtime.clone(),
             _coordination: None,
+            _state_only_coordination: None,
             _directory: self.directory.clone(),
             changed: false,
             market_changed: false,
             dispatch_patch: None,
+            publication_time: None,
             #[cfg(feature = "bench-execution-timing")]
             timing_started: Instant::now(),
         })
@@ -248,10 +252,12 @@ impl StateStore {
                     state,
                     runtime,
                     _coordination: Some(coordination),
+                    _state_only_coordination: None,
                     _directory: directory,
                     changed: false,
                     market_changed: false,
                     dispatch_patch: None,
+                    publication_time: None,
                     #[cfg(feature = "bench-execution-timing")]
                     timing_started: Instant::now(),
                 }),
@@ -281,9 +287,9 @@ impl StateStore {
         }
         let snapshot = runtime.published.read().unwrap().rooms.clone();
         let simulation = snapshot.simulation_room(room).ok()?;
-        if simulation.venue_ids().len() < 2 {
-            return None;
-        }
+        // One venue still benefits when strategy-only progress owns the commit
+        // lane: prepare from its immutable market while retaining this venue's
+        // FIFO. Fork/merge checks retain the room-wide automation fallback.
         let instrument = instrument.map(str::to_owned).unwrap_or_else(|| {
             simulation
                 .primary_exchange()
@@ -380,10 +386,12 @@ impl StateStore {
                 state,
                 runtime,
                 _coordination: Some(coordination),
+                _state_only_coordination: None,
                 _directory: Arc::new(directory),
                 changed: false,
                 market_changed: false,
                 dispatch_patch: None,
+                publication_time: None,
                 #[cfg(feature = "bench-execution-timing")]
                 timing_started: Instant::now(),
             });
@@ -391,6 +399,36 @@ impl StateStore {
         // Creation and lazy leased-room acquisition must coordinate the directory.
         drop(directory);
         self.lock().await
+    }
+
+    /// Strategy-only progress shares the market coordination fence with venue
+    /// preparation. Its durable append and installation still own the same
+    /// commit mutex, and training/unknown rooms use the exclusive path.
+    pub(super) async fn lock_scheduler_only(&self, room: &str) -> Option<StateGuard> {
+        let directory = Arc::new(self.directory.clone().read_owned().await);
+        let runtime = directory.rooms.get(room)?.clone();
+        #[cfg(feature = "bench-execution-timing")]
+        let started = Instant::now();
+        let coordination = runtime.coordination.clone().read_owned().await;
+        if runtime.summary.read().unwrap().has_training {
+            return None;
+        }
+        let state = runtime.state.clone().lock_owned().await;
+        #[cfg(feature = "bench-execution-timing")]
+        bench_execution_timing::ROOM_WAIT.record(started);
+        Some(StateGuard::Room(RoomGuard {
+            state,
+            runtime,
+            _coordination: None,
+            _state_only_coordination: Some(coordination),
+            _directory: directory,
+            changed: false,
+            market_changed: false,
+            dispatch_patch: None,
+            publication_time: None,
+            #[cfg(feature = "bench-execution-timing")]
+            timing_started: Instant::now(),
+        }))
     }
 
     pub(super) async fn lock(&self) -> StateGuard {
@@ -688,6 +726,10 @@ impl Drop for GlobalGuard {
 }
 impl Drop for RoomGuard {
     fn drop(&mut self) {
+        debug_assert!(
+            self._state_only_coordination.is_none() || !self.market_changed,
+            "strategy-only coordination must never install a market mutation"
+        );
         #[cfg(feature = "bench-execution-timing")]
         let _timer = crate::bench_execution_timing::Timer::start(
             &crate::bench_execution_timing::SCHEDULER_PUBLISH,
@@ -712,7 +754,16 @@ impl Drop for RoomGuard {
                     self.dispatch_patch.as_ref(),
                 ),
             };
-            let previous = std::mem::replace(&mut *self.runtime.published.write().unwrap(), next);
+            let mut published = self.runtime.published.write().unwrap();
+            let previous = std::mem::replace(&mut *published, next);
+            if let Some(receipt) = &self.publication_time
+                && let Some(now) = crate::bot_runtime_diagnostics::trace_wall_us()
+            {
+                // Sample while the new snapshot is still behind the write
+                // guard: no observer can finish work before its clock anchor.
+                receipt.store(now, Ordering::Release);
+            }
+            drop(published);
             drop(previous);
             *self.runtime.summary.write().unwrap() = summary;
         }
@@ -721,9 +772,378 @@ impl Drop for RoomGuard {
     }
 }
 
+pub(super) struct PublicationReceipt(Arc<AtomicU64>);
+impl PublicationReceipt {
+    pub(super) fn wall_us(&self) -> Option<u64> {
+        let value = self.0.load(Ordering::Acquire);
+        (value != u64::MAX).then_some(value)
+    }
+}
+impl StateGuard {
+    pub(super) fn publication_receipt(&mut self) -> Option<PublicationReceipt> {
+        if !crate::bot_runtime_diagnostics::trace_enabled() {
+            return None;
+        }
+        let Self::Room(room) = self else {
+            return None;
+        };
+        let receipt = room
+            .publication_time
+            .get_or_insert_with(|| Arc::new(AtomicU64::new(u64::MAX)));
+        Some(PublicationReceipt(receipt.clone()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn single_venue_scenario() -> ScenarioConfig {
+        let mut scenario = crate::venue_order_tests::scenario();
+        scenario.extra_markets.clear();
+        scenario
+    }
+
+    fn single_venue_app() -> AppState {
+        let scenario = single_venue_scenario();
+        let room = scenario.room_id.clone();
+        let mut app = AppState::new("http://localhost");
+        app.rooms.create_room(scenario).unwrap();
+        app.schedulers.insert(
+            room.clone(),
+            exchange_core::SchedulerState::new(
+                room,
+                Vec::new(),
+                exchange_core::SchedulerMode::Manual,
+            ),
+        );
+        app
+    }
+
+    #[tokio::test]
+    async fn single_venue_prepares_real_order_during_strategy_progress_but_waits_to_install() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+
+        let store = StateStore::new(single_venue_app());
+        let room = "venue-test";
+        assert_eq!(
+            store
+                .read_room(room)
+                .await
+                .rooms
+                .simulation_room(room)
+                .unwrap()
+                .venue_ids()
+                .len(),
+            1
+        );
+        let mut progress = store.lock_scheduler_only(room).await.unwrap();
+        let scheduler = progress.scheduler_mut(room).unwrap();
+        let base = scheduler.revision;
+        scheduler.revision += 1;
+        progress.dispatch_patch_applied(base, Vec::new());
+
+        // Polling proves readiness without a timing threshold. The ordinary
+        // single-venue route used to return None at this point.
+        let mut context = Context::from_waker(Waker::noop());
+        let mut prepare = std::pin::pin!(store.venue_order(room, None));
+        let Poll::Ready(Some(owner)) = prepare.as_mut().poll(&mut context) else {
+            panic!(
+                "single venue preparation must enter while strategy state owns the commit mutex"
+            );
+        };
+        assert_eq!(owner.instrument, "A-0");
+        let mut candidate = owner
+            .predecessor
+            .fork_venue_order(room, &owner.instrument)
+            .unwrap()
+            .unwrap();
+        let mut execution = OrderGateway::new(&mut candidate, 100)
+            .submit_action(GatewayRequest {
+                participant_id: "human".into(),
+                room_id: room.into(),
+                instrument_id: Some(owner.instrument.clone()),
+                account_id: 20,
+                action: OrderAction::PlaceLimit {
+                    side: exchange_core::Side::Buy,
+                    price_tick: 100,
+                    qty: 2,
+                },
+            })
+            .unwrap();
+        assert!(matches!(
+            execution.execution.result,
+            ActorExecutionResult::Accepted(_)
+        ));
+        assert!(
+            store
+                .read_room(room)
+                .await
+                .rooms
+                .book_snapshot_for(room, "A-0")
+                .unwrap()
+                .bids
+                .is_empty()
+        );
+
+        let mut commit = std::pin::pin!(owner.commit_lock());
+        assert!(
+            commit.as_mut().poll(&mut context).is_pending(),
+            "prepared orders cannot overtake strategy installation"
+        );
+        drop(progress);
+        let Poll::Ready(mut install) = commit.as_mut().poll(&mut context) else {
+            panic!("the next ordered commit must become available");
+        };
+        assert_eq!(install.schedulers[room].revision, base + 1);
+        assert!(
+            install
+                .rooms
+                .merge_venue_order(&owner.predecessor, candidate, &mut execution.execution)
+                .unwrap()
+        );
+        drop(install);
+        let published = store.read_dispatch(room).await.unwrap();
+        assert_eq!(published.dispatch.unwrap().revision, base + 1);
+        assert!(
+            !published
+                .rooms
+                .book_snapshot_for(room, "A-0")
+                .unwrap()
+                .bids
+                .is_empty()
+        );
+        assert!(
+            owner
+                .predecessor
+                .book_snapshot_for(room, "A-0")
+                .unwrap()
+                .bids
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn single_venue_waiters_keep_fifo_even_when_later_waiter_is_polled_first() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+
+        let store = StateStore::new(single_venue_app());
+        let first = store.venue_order("venue-test", Some("A-0")).await.unwrap();
+        let mut context = Context::from_waker(Waker::noop());
+        let mut second = std::pin::pin!(store.venue_order("venue-test", Some("A-0")));
+        let mut third = std::pin::pin!(store.venue_order("venue-test", Some("A-0")));
+        assert!(second.as_mut().poll(&mut context).is_pending());
+        assert!(third.as_mut().poll(&mut context).is_pending());
+        let previous_seq = first
+            .predecessor
+            .simulation_room("venue-test")
+            .unwrap()
+            .next_command_seq();
+        {
+            let mut installed = first.commit_lock().await;
+            installed
+                .rooms
+                .apply_to_instrument(
+                    "venue-test",
+                    "A-0",
+                    Command::CancelOrder(CancelOrder { order_id: 999 }),
+                )
+                .unwrap();
+        }
+        drop(first);
+        assert!(
+            third.as_mut().poll(&mut context).is_pending(),
+            "later same-venue requests cannot steal the first waiter slot"
+        );
+        let Poll::Ready(Some(second_owner)) = second.as_mut().poll(&mut context) else {
+            panic!("first queued venue request must acquire next");
+        };
+        assert_eq!(
+            second_owner
+                .predecessor
+                .simulation_room("venue-test")
+                .unwrap()
+                .next_command_seq(),
+            previous_seq + 1,
+            "the first waiter must refresh its predecessor after the preceding commit"
+        );
+        assert!(third.as_mut().poll(&mut context).is_pending());
+        drop(second_owner);
+        assert!(matches!(
+            third.as_mut().poll(&mut context),
+            Poll::Ready(Some(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn single_venue_automation_and_training_still_require_coordinated_order_path() {
+        let mut scenario = serde_json::to_value(single_venue_scenario()).unwrap();
+        scenario["market"] = serde_json::json!({"Perp": {
+            "instrument": {"instrument_id": "A-0", "venue_id": "A", "symbol": "A-0",
+                "base_asset": "BASE", "quote_asset": "QUOTE", "tick_size": 1, "lot_size": 1},
+            "clearing": {"maker_fee_ppm": 0, "taker_fee_ppm": 0, "leverage": 5},
+            "risk": {}, "initial_mark_price_tick": 100
+        }});
+        scenario["accounts"] =
+            serde_json::json!([{"Basic": {"account_id": 20, "cash_balance": 1000}}]);
+        let mut automated = AppState::new("http://localhost");
+        automated
+            .rooms
+            .create_room(serde_json::from_value(scenario).unwrap())
+            .unwrap();
+        let armed = automated
+            .rooms
+            .apply_to_instrument(
+                "venue-test",
+                "A-0",
+                Command::SetConditionalOrder {
+                    account_id: 20,
+                    key: "dormant".into(),
+                    spec: Some(Box::new(
+                        exchange_core::conditional_orders::ConditionalOrderSpec {
+                            side: exchange_core::Side::Buy,
+                            position_side: Default::default(),
+                            qty: 1,
+                            trigger_price_tick: 200,
+                            above: true,
+                            trigger: Default::default(),
+                            limit_price_tick: Some(100),
+                            protection: None,
+                        },
+                    )),
+                },
+            )
+            .unwrap();
+        assert!(matches!(armed.result, ActorExecutionResult::Accepted(_)));
+        let automated = shared_state(automated);
+        let owner = automated
+            .app
+            .venue_order("venue-test", Some("A-0"))
+            .await
+            .unwrap();
+        assert!(
+            owner
+                .predecessor
+                .fork_venue_order("venue-test", "A-0")
+                .unwrap()
+                .is_none()
+        );
+        drop(owner);
+
+        let mut training = single_venue_app();
+        let run = exchange_core::TrainingRun::new(
+            exchange_core::TrainingSpec::low_slippage_buy(
+                "single-venue-training",
+                single_venue_scenario(),
+                Vec::new(),
+                20,
+                1,
+                10,
+                100,
+            )
+            .unwrap(),
+        );
+        training.training_runs.insert(run.spec.run_id.clone(), run);
+        let training = shared_state(training);
+        assert!(
+            training
+                .app
+                .venue_order("venue-test", Some("A-0"))
+                .await
+                .is_none()
+        );
+        assert!(
+            training
+                .app
+                .lock_scheduler_only("venue-test")
+                .await
+                .is_none()
+        );
+
+        let request = SubmitOrderRequest {
+            participant_id: "human".into(),
+            instrument_id: Some("A-0".into()),
+            account_id: 20,
+            action: OrderAction::PlaceLimit {
+                side: exchange_core::Side::Buy,
+                price_tick: 100,
+                qty: 1,
+            },
+        };
+        for shared in [&automated, &training] {
+            let before = shared.app.read_room("venue-test").await.rooms;
+            assert!(
+                crate::venue_orders::submit(
+                    shared,
+                    &HeaderMap::new(),
+                    "venue-test",
+                    Some("A-0"),
+                    &request
+                )
+                .await
+                .unwrap()
+                .is_none()
+            );
+            let after = shared.app.read_room("venue-test").await.rooms;
+            assert!(
+                Arc::ptr_eq(&before, &after),
+                "fallback must not publish a speculative order"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn strategy_only_progress_keeps_market_preparation_open_and_commit_ordered() {
+        let spec: exchange_core::population::BackgroundMarket = serde_json::from_str(include_str!(
+            "../../scripts/fixtures/microstructure_market.json"
+        ))
+        .unwrap();
+        let room = spec.scenario.room_id.clone();
+        let mut app = AppState::new("http://localhost");
+        app.rooms.create_room(spec.scenario).unwrap();
+        app.schedulers.insert(
+            room.clone(),
+            exchange_core::SchedulerState::new(
+                room.clone(),
+                spec.agents,
+                exchange_core::SchedulerMode::Manual,
+            ),
+        );
+        let store = StateStore::new(app);
+        let runtime = store.directory.read().await.rooms[&room].clone();
+        let before = store.read_dispatch(&room).await.unwrap();
+        let mut progress = store.lock_scheduler_only(&room).await.unwrap();
+        assert!(
+            runtime.coordination.try_read().is_ok(),
+            "venue preparation stays available"
+        );
+        assert!(
+            runtime.coordination.try_write().is_err(),
+            "market-wide mutations stay fenced"
+        );
+        assert!(
+            runtime.state.try_lock().is_err(),
+            "all installations remain ordered"
+        );
+        let scheduler = progress.scheduler_mut(&room).unwrap();
+        let base = scheduler.revision;
+        scheduler.revision += 1;
+        progress.dispatch_patch_applied(base, vec![]);
+        let pending = store.read_dispatch(&room).await.unwrap();
+        assert!(Arc::ptr_eq(
+            before.dispatch.as_ref().unwrap(),
+            pending.dispatch.as_ref().unwrap()
+        ));
+        drop(progress);
+        let after = store.read_dispatch(&room).await.unwrap();
+        assert_eq!(after.dispatch.unwrap().revision, base + 1);
+        assert!(Arc::ptr_eq(&before.rooms, &after.rooms));
+        assert!(runtime.coordination.try_write().is_ok());
+        assert!(runtime.state.try_lock().is_ok());
+        assert!(store.lock_scheduler_only("missing").await.is_none());
+    }
 
     #[tokio::test]
     async fn market_snapshot_identity_survives_scheduler_writes_but_not_market_writes() {

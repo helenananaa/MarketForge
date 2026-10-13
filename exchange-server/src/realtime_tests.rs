@@ -14,6 +14,7 @@ struct Gate {
     created: AtomicUsize,
     reuse: AtomicBool,
     native: AtomicBool,
+    panic_after_gate: AtomicBool,
     decided: Mutex<BTreeMap<String, usize>>,
 }
 
@@ -86,7 +87,7 @@ impl ScheduledBot for Bot {
         if self.id == "fail" {
             return Err(BotError("controlled timeout".into()));
         }
-        if self.id == "panic" {
+        if self.id == "panic" || self.gate.panic_after_gate.load(Ordering::Acquire) {
             panic!("controlled bot panic");
         }
         if let PersistedAgentKindState::Plugin { data, .. } = &mut self.state {
@@ -104,6 +105,9 @@ impl ScheduledBot for Bot {
 }
 
 include!("realtime_pipeline_tests.rs");
+
+#[path = "realtime_trace_shutdown_tests.rs"]
+mod trace_shutdown;
 
 fn template(room: &str, id: &str) -> AgentTemplate {
     AgentTemplate::Plugin(BotConfig {
@@ -681,6 +685,8 @@ fn work(
             prior: prior.clone().into(),
             next: Arc::new(next),
             actions: actions.into(),
+            state_hint: None,
+            trace_id: None,
         }),
     }
 }
@@ -1298,6 +1304,9 @@ async fn realtime_empty_wave_keeps_market_snapshot_and_replays_checkpoint_and_de
     let room = "state-only";
     let (shared, _, mut store) = setup(room).await;
     let (control, mut priors) = prepare_wave(&shared, room).await;
+    // Keep this existing 102-turn test across the candidate full boundary,
+    // starting from a real durable full state at a later revision.
+    cadence::seed_durable_revision(&shared, room, MAX_SCHEDULER_DELTA_TAIL - 50).await;
     let before = store.load_recovery().unwrap();
     let frozen = shared.app.read_room(room).await.rooms;
     let ids_before = shared
@@ -1437,6 +1446,9 @@ async fn realtime_empty_commit_failure_rolls_back_and_cancelled_retry_finishes()
     let room = "empty-durability";
     let (shared, _, mut store) = setup(room).await;
     let (control, priors) = prepare_wave(&shared, room).await;
+    // Failure/cancellation at the last delta revision must not consume the
+    // forced full checkpoint. The successful retry commits it exactly once.
+    cadence::seed_durable_revision(&shared, room, MAX_SCHEDULER_DELTA_TAIL).await;
     let gate = Arc::new(Gate::default());
     let _release = ReleaseOnDrop(gate.clone());
     shared.app.lock_room(room).await.journal =
@@ -1490,6 +1502,10 @@ async fn realtime_empty_commit_failure_rolls_back_and_cancelled_retry_finishes()
     let after = store.load_recovery().unwrap();
     assert_eq!(after.mutations.len(), before.mutations.len() + 1);
     assert_eq!(after.executions.len(), before.executions.len());
+    assert!(matches!(
+        after.mutations.last().unwrap().mutation,
+        RoomMutation::SchedulerProgress { .. }
+    ));
     assert_eq!(
         scheduler_states_from_recovery(&after).unwrap()[room],
         shared.app.lock_room(room).await.schedulers[room]
@@ -1500,3 +1516,6 @@ async fn realtime_empty_commit_failure_rolls_back_and_cancelled_retry_finishes()
     ));
     shutdown(&shared).await;
 }
+
+#[path = "scheduler_cadence_tests.rs"]
+mod cadence;

@@ -80,6 +80,18 @@ pub fn encoded_len(value: &impl serde::Serialize) -> Result<usize, BotError> {
 }
 
 fn string(value: &str, out: &mut String) -> Result<(), BotError> {
+    // JSON leaves these bytes unchanged. Avoid allocating a temporary encoded
+    // String for ordinary field names and ASCII values; all escaping continues
+    // through the existing encoder below.
+    if value
+        .bytes()
+        .all(|byte| byte.is_ascii() && byte >= b' ' && !matches!(byte, b'"' | b'\\'))
+    {
+        out.push('"');
+        out.push_str(value);
+        out.push('"');
+        return Ok(());
+    }
     // Preserve JSON escapes and encode non-ASCII exactly as ensure_ascii=True.
     for ch in serde_json::to_string(value).map_err(io)?.chars() {
         if ch.is_ascii() {
@@ -94,54 +106,91 @@ fn string(value: &str, out: &mut String) -> Result<(), BotError> {
 }
 
 pub fn python_json(value: &Value, spaced: bool) -> Result<String, BotError> {
-    fn write(v: &Value, spaced: bool, out: &mut String) -> Result<(), BotError> {
-        let comma = if spaced { ", " } else { "," };
-        let colon = if spaced { ": " } else { ":" };
-        match v {
-            Value::Null => out.push_str("null"),
-            Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-            Value::String(s) => string(s, out)?,
-            Value::Number(n) => {
-                let mut number = n.to_string();
-                if n.is_f64() {
-                    let f = n.as_f64().ok_or_else(|| error("non-finite Pine state"))?;
-                    if !f.is_finite() {
-                        return Err(error("non-finite Pine state"));
-                    }
-                    number = python_float(&number)?;
-                }
-                out.push_str(&number);
-            }
-            Value::Array(a) => {
-                out.push('[');
-                for (index, value) in a.iter().enumerate() {
-                    if index > 0 {
-                        out.push_str(comma);
-                    }
-                    write(value, spaced, out)?;
-                }
-                out.push(']');
-            }
-            Value::Object(o) => {
+    let mut out = String::new();
+    write_python_json(value, spaced, &mut out)?;
+    Ok(out)
+}
+
+/// Borrow a composite object without constructing temporary owned Value trees.
+/// The leaf writer is identical to the persisted Python-compatible encoder.
+#[derive(Clone, Copy)]
+pub enum PythonJsonRef<'a> {
+    Value(&'a Value),
+    String(&'a str),
+    Object(&'a [(&'a str, PythonJsonRef<'a>)]),
+}
+
+pub fn python_json_ref(value: PythonJsonRef<'_>, spaced: bool) -> Result<String, BotError> {
+    fn write(value: PythonJsonRef<'_>, spaced: bool, out: &mut String) -> Result<(), BotError> {
+        match value {
+            PythonJsonRef::Value(value) => write_python_json(value, spaced, out),
+            PythonJsonRef::String(value) => string(value, out),
+            PythonJsonRef::Object(fields) => {
+                let mut fields: Vec<_> = fields.iter().collect();
+                fields.sort_by(|a, b| a.0.cmp(b.0));
                 out.push('{');
-                let mut entries: Vec<_> = o.iter().collect();
-                entries.sort_by(|a, b| a.0.cmp(b.0));
-                for (index, (key, value)) in entries.into_iter().enumerate() {
+                for (index, (key, value)) in fields.into_iter().enumerate() {
                     if index > 0 {
-                        out.push_str(comma);
+                        out.push_str(if spaced { ", " } else { "," });
                     }
                     string(key, out)?;
-                    out.push_str(colon);
-                    write(value, spaced, out)?;
+                    out.push_str(if spaced { ": " } else { ":" });
+                    write(*value, spaced, out)?;
                 }
                 out.push('}');
+                Ok(())
             }
         }
-        Ok(())
     }
     let mut out = String::new();
     write(value, spaced, &mut out)?;
     Ok(out)
+}
+
+fn write_python_json(v: &Value, spaced: bool, out: &mut String) -> Result<(), BotError> {
+    let comma = if spaced { ", " } else { "," };
+    let colon = if spaced { ": " } else { ":" };
+    match v {
+        Value::Null => out.push_str("null"),
+        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Value::String(s) => string(s, out)?,
+        Value::Number(n) => {
+            let mut number = n.to_string();
+            if n.is_f64() {
+                let f = n.as_f64().ok_or_else(|| error("non-finite Pine state"))?;
+                if !f.is_finite() {
+                    return Err(error("non-finite Pine state"));
+                }
+                number = python_float(&number)?;
+            }
+            out.push_str(&number);
+        }
+        Value::Array(a) => {
+            out.push('[');
+            for (index, value) in a.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(comma);
+                }
+                write_python_json(value, spaced, out)?;
+            }
+            out.push(']');
+        }
+        Value::Object(o) => {
+            out.push('{');
+            let mut entries: Vec<_> = o.iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            for (index, (key, value)) in entries.into_iter().enumerate() {
+                if index > 0 {
+                    out.push_str(comma);
+                }
+                string(key, out)?;
+                out.push_str(colon);
+                write_python_json(value, spaced, out)?;
+            }
+            out.push('}');
+        }
+    }
+    Ok(())
 }
 
 // Reformat shortest round-trip digits without performing another rounded
@@ -265,3 +314,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "json_compat_ascii_tests.rs"]
+mod ascii_fastpath_tests;

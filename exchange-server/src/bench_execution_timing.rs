@@ -4,6 +4,10 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
+#[cfg(windows)]
+#[path = "bench_thread_cpu.rs"]
+mod thread_cpu;
+
 pub(crate) struct Counter {
     count: AtomicU64,
     nanos: AtomicU64,
@@ -64,6 +68,25 @@ impl Drop for Timer {
     }
 }
 
+// This wrapper is only used inside one synchronous spawn_blocking turn.
+// Never replace the ordinary Timer in an async scope with this wrapper.
+pub(crate) struct BotTurnTimer {
+    // Drop the CPU probe before the existing wall timer records its duration.
+    #[cfg(windows)]
+    _cpu: thread_cpu::TurnCpu,
+    _wall: Timer,
+}
+impl BotTurnTimer {
+    pub(crate) fn start() -> Self {
+        let wall = Timer::start(&BOT_TURN);
+        Self {
+            #[cfg(windows)]
+            _cpu: thread_cpu::TurnCpu::start(),
+            _wall: wall,
+        }
+    }
+}
+
 pub(crate) static DIRECTORY_WAIT: Counter = Counter::new();
 pub(crate) static ROOM_WAIT: Counter = Counter::new();
 pub(crate) static ROOM_HELD: Counter = Counter::new();
@@ -111,7 +134,24 @@ pub(crate) static BOT_STATE_RESTORE: Counter = Counter::new();
 pub(crate) static BOT_INPROCESS_CALL: Counter = Counter::new();
 pub(crate) static BOT_INPROCESS_REBUILD: Counter = Counter::new();
 pub(crate) static BOT_INPROCESS_APPEND: Counter = Counter::new();
+pub(crate) static BOT_PINE_INPUT_VALUE: Counter = Counter::new();
+pub(crate) static BOT_PINE_REQUEST_LENGTH: Counter = Counter::new();
+pub(crate) static BOT_PINE_SOURCE_CHECK: Counter = Counter::new();
+pub(crate) static BOT_PINE_WORKING_CLONE: Counter = Counter::new();
+pub(crate) static BOT_PINE_AUDIT: Counter = Counter::new();
+pub(crate) static BOT_PINE_SEAL: Counter = Counter::new();
+pub(crate) static BOT_PINE_BROKER_FEEDBACK: Counter = Counter::new();
+pub(crate) static BOT_PINE_BROKER_FRAME: Counter = Counter::new();
+pub(crate) static BOT_PINE_BROKER_TRANSLATE: Counter = Counter::new();
+pub(crate) static BOT_PINE_BROKER_REPLACEMENTS: Counter = Counter::new();
+pub(crate) static BOT_PINE_VM_EXECUTE: Counter = Counter::new();
+pub(crate) static BOT_PINE_VM_CHECKPOINT: Counter = Counter::new();
+pub(crate) static BOT_PINE_STAMP_CLONE: Counter = Counter::new();
+pub(crate) static BOT_PINE_RESPONSE_LENGTH: Counter = Counter::new();
+pub(crate) static PINE_DELTA_HINT_PREPARE: Counter = Counter::new();
 pub(crate) static BOT_DISPATCH_QUEUE: Counter = Counter::new();
+// Screen submission through successful pre-FIFO admission, including compute.
+pub(crate) static BOT_SCREEN_PREFIFO: Counter = Counter::new();
 pub(crate) static BOT_QUEUE_DISCARD: Counter = Counter::new();
 pub(crate) static JOURNAL_FULL_VALIDATE: Counter = Counter::new();
 pub(crate) static JOURNAL_FULL_SERIALIZE: Counter = Counter::new();
@@ -142,6 +182,8 @@ pub(crate) fn trace(stage: &str, id: &str, market_time_ms: u64, elapsed_us: u64)
 
 pub(crate) fn append_metrics(body: &mut String) {
     use std::io::Write;
+    #[cfg(windows)]
+    thread_cpu::append_metrics(body);
     if let Some(Some(writer)) = TRACE.get()
         && let Ok(mut writer) = writer.lock()
     {
@@ -196,7 +238,26 @@ pub(crate) fn append_metrics(body: &mut String) {
         ("bot_inprocess_call", &BOT_INPROCESS_CALL),
         ("bot_inprocess_rebuild", &BOT_INPROCESS_REBUILD),
         ("bot_inprocess_append", &BOT_INPROCESS_APPEND),
+        ("bot_pine_input_value", &BOT_PINE_INPUT_VALUE),
+        ("bot_pine_request_length", &BOT_PINE_REQUEST_LENGTH),
+        ("bot_pine_source_check", &BOT_PINE_SOURCE_CHECK),
+        ("bot_pine_working_clone", &BOT_PINE_WORKING_CLONE),
+        ("bot_pine_audit", &BOT_PINE_AUDIT),
+        ("bot_pine_seal", &BOT_PINE_SEAL),
+        ("bot_pine_broker_feedback", &BOT_PINE_BROKER_FEEDBACK),
+        ("bot_pine_broker_frame", &BOT_PINE_BROKER_FRAME),
+        ("bot_pine_broker_translate", &BOT_PINE_BROKER_TRANSLATE),
+        (
+            "bot_pine_broker_replacements",
+            &BOT_PINE_BROKER_REPLACEMENTS,
+        ),
+        ("bot_pine_vm_execute", &BOT_PINE_VM_EXECUTE),
+        ("bot_pine_vm_checkpoint", &BOT_PINE_VM_CHECKPOINT),
+        ("bot_pine_stamp_clone", &BOT_PINE_STAMP_CLONE),
+        ("bot_pine_response_length", &BOT_PINE_RESPONSE_LENGTH),
+        ("pine_delta_hint_prepare", &PINE_DELTA_HINT_PREPARE),
         ("bot_dispatch_queue", &BOT_DISPATCH_QUEUE),
+        ("bot_screen_prefifo", &BOT_SCREEN_PREFIFO),
         ("bot_queue_discard", &BOT_QUEUE_DISCARD),
         ("journal_full_validate", &JOURNAL_FULL_VALIDATE),
         ("journal_full_serialize", &JOURNAL_FULL_SERIALIZE),
@@ -228,11 +289,47 @@ pub(crate) fn append_metrics(body: &mut String) {
             );
         }
     }
+    for (site, count, wait_nanos, held_nanos) in exchange_core::observation_timing::snapshot() {
+        for (phase, nanos) in [("wait", wait_nanos), ("held", held_nanos)] {
+            for (suffix, value) in [("samples_total", count), ("nanos_total", nanos)] {
+                super::append_prometheus_metric(
+                    body,
+                    &format!("marketforge_bench_history_{site}_{phase}_{suffix}"),
+                    "Benchmark-only completed history cell lock scopes; elapsed wall time, not CPU.",
+                    "counter",
+                    value,
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Counter;
+
+    #[test]
+    fn custom_samples_preserve_the_legacy_elapsed_phase_metric_contract() {
+        let mut metrics = String::new();
+        super::append_metrics(&mut metrics);
+        let values: std::collections::BTreeMap<_, _> = metrics
+            .lines()
+            .filter(|line| line.starts_with("marketforge_bench_"))
+            .map(|line| line.split_once(' ').unwrap())
+            .collect();
+        // The unchanged benchmark decoder treats count_total as an elapsed
+        // phase with mandatory nanos_total and max_nanos. Custom paired and
+        // history samples have different schemas and must not masquerade as it.
+        for key in values.keys() {
+            if let Some(phase) = key.strip_suffix("_count_total") {
+                assert!(values.contains_key(format!("{phase}_nanos_total").as_str()));
+                assert!(values.contains_key(format!("{phase}_max_nanos").as_str()));
+            }
+        }
+        assert!(values.contains_key("marketforge_bench_history_prefilter_wait_samples_total"));
+        #[cfg(windows)]
+        assert!(values.contains_key("marketforge_bench_bot_turn_cpu_paired_samples_total"));
+    }
 
     #[test]
     fn elapsed_histogram_bounds_a_known_tail_and_handles_empty_and_extreme_samples() {

@@ -8,6 +8,8 @@ mod cache;
 mod compatibility;
 mod constant_values;
 mod history;
+mod input_history;
+pub use input_history::specialize_integer_input_history;
 pub mod legacy;
 mod lowering;
 mod modules;

@@ -6,6 +6,7 @@ trades may differ: fixed execution/recovery equality is a separate check.
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import statistics
@@ -13,10 +14,72 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+DRIVER_INPUTS = (
+    'scripts/benchmark_pine_dispatch_checkpoint.py',
+    'scripts/benchmark_strategy_runtime.py', 'scripts/benchmark_market_load.py',
+    'scripts/process_tree_metrics.py', 'scripts/bot_runtime_receipts.py',
+    'scripts/background_market.py', 'scripts/microstructure_market.py',
+    'scripts/behavior_market.py', 'scripts/linked_market.py',
+    'scripts/market_arrival_feedback.py', 'scripts/validate_behavior_market_live.py',
+    'scripts/fixtures/background_market.json',
+    'python/marketforge/__init__.py', 'python/marketforge/batch.py',
+)
+MEASUREMENT_VALIDITY = (
+    'full_requested_duration_observed', 'process_sampling_complete',
+    'no_harness_errors', 'metric_window_captured',
+)
 
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def frozen_inputs(binaries, plugin_dirs, root=ROOT):
+    """Freeze the driver import closure, recipe fixture, and full plugin file set."""
+    def file_hash(path):
+        return digest(path) if path.is_file() else None
+    return {
+        'binary_sha256': {version: file_hash(path) for version, path in binaries.items()},
+        'driver_sha256': {name: file_hash(root / name) for name in DRIVER_INPUTS},
+        'plugin_sha256': {version: {str(path.relative_to(directory)): digest(path)
+            for path in directory.rglob('*') if path.is_file() and '__pycache__' not in path.parts}
+            for version, directory in plugin_dirs.items()},
+    }
+
+
+def changed_inputs(frozen, binaries, plugin_dirs, root=ROOT):
+    current = frozen_inputs(binaries, plugin_dirs, root)
+    return [name for name, values in frozen.items() if current[name] != values]
+
+
+def comparison_invariants(rows, population):
+    """Measurement validity is separate from a valid but inadequate capacity result."""
+    checks = {
+        'all_reports': bool(rows) and all(not row.get('failure') and row['exit_code'] == 0 for row in rows),
+        'same_recipe': len({row.get('recipe_sha256') for row in rows}) == 1,
+        'same_complete_initial_history': len({row.get('prewarm_candles_sha256') for row in rows}) == 1,
+        'compiler_quiet': all((row.get('process_tree') or {}).get('compiler_nonempty_samples') == 0 for row in rows) if population == 'pine' else None,
+        'no_other_benchmark_server': all((row.get('process_tree') or {}).get('other_server_nonempty_samples') == 0 for row in rows) if population == 'pine' else None,
+    }
+    for name in MEASUREMENT_VALIDITY:
+        checks[name] = (bool(rows) and all(isinstance(row.get('qualified'), dict)
+            and row['qualified'].get(name) is True for row in rows)) if population == 'pine' else None
+    return checks
+
+
+def pine_measurement_phases(diagnostics, required_stage):
+    """Missing scheduled snapshots cannot turn into cumulative phase measurements."""
+    phases = diagnostics.get('measurement_deltas')
+    if not isinstance(phases, dict) or required_stage not in phases:
+        raise ValueError('scheduled measurement phase deltas are unavailable')
+    for stage in phases.values():
+        if (not isinstance(stage, dict) or type(stage.get('count')) is not int or stage['count'] < 0
+                or type(stage.get('total_wall_ms')) not in (int, float)
+                or not math.isfinite(stage['total_wall_ms']) or stage['total_wall_ms'] < 0):
+            raise ValueError('scheduled measurement phase deltas are invalid or reset')
+    if phases[required_stage]['count'] == 0:
+        raise ValueError('requested runtime has no scheduled measurement phase samples')
+    return phases
 
 
 def actual_worker_queue(path):
@@ -50,36 +113,51 @@ def main():
     parser.add_argument('--after-plugin-dir', type=Path, help='candidate plugin code/runtime')
     parser.add_argument('--counts', type=int, default=1000)
     parser.add_argument('--seconds', type=float, default=30)
+    parser.add_argument('--interval-ms', type=int, default=1000, help='identical Pine clock target in both versions')
     parser.add_argument('--native', action='store_true', help='also compare the 1000 native bot / 25ms workload')
     parser.add_argument('--host-trace', action='store_true', help='pair actual Pine worker calls with queue timestamps')
     parser.add_argument('--python-trace', action='store_true', help='profile the same worker phases in both versions')
     parser.add_argument('--write-profile', action='store_true', help='record native per-order server spans in both versions')
     parser.add_argument('--in-process-after', action='store_true', help='enable qualified Rust Pine only in candidate runs')
     parser.add_argument('--in-process-before', action='store_true', help='enable qualified Rust Pine in baseline runs')
+    parser.add_argument('--pine-vm-checkpoint-after', action='store_true', help='enable compact VM checkpoints in candidate runs')
     args = parser.parse_args()
+    if args.pine_vm_checkpoint_after and not args.in_process_after:
+        parser.error('VM checkpoints require --in-process-after')
     args.output.mkdir(parents=True, exist_ok=False)
     binaries = {'before': args.before.resolve(), 'after': args.after.resolve()}
-    hashes = {version: digest(path) for version, path in binaries.items()}
     plugin_dirs = {'before': (args.before_plugin_dir or args.plugin_dir).resolve(),
                    'after': (args.after_plugin_dir or args.plugin_dir).resolve()}
-    plugin_hashes = {version: {str(p.relative_to(directory)): digest(p)
-                             for p in directory.rglob('*') if p.is_file() and '__pycache__' not in p.parts}
-                     for version, directory in plugin_dirs.items()}
+    frozen = frozen_inputs(binaries, plugin_dirs)
+    if any(value is None for name in ('binary_sha256', 'driver_sha256') for value in frozen[name].values()):
+        parser.error('a required frozen binary or driver input is missing')
+    hashes, plugin_hashes = frozen['binary_sha256'], frozen['plugin_sha256']
+    (args.output / 'frozen-inputs.json').write_text(json.dumps(frozen, indent=2), encoding='utf-8')
     results = []
     from benchmark_strategy_runtime import diagnostic_metrics
     for population in (['pine', 'native'] if args.native else ['pine']):
         for ordinal, version in enumerate(('before', 'after', 'after', 'before'), 1):
             label = f'{population}-{ordinal:02d}-{version}'
             directory = args.output / label
+            changes = changed_inputs(frozen, binaries, plugin_dirs)
+            if changes:
+                results.append({'label': label, 'version': version, 'population': population,
+                    'exit_code': None, 'attempted': False,
+                    'failure': 'frozen inputs changed before case: ' + ', '.join(changes)})
+                (args.output / 'cases.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
+                print(json.dumps(results[-1]), flush=True)
+                continue
             if population == 'pine':
                 flags = ['--population', 'pine', '--pine-profile', 'diverse-short',
                          '--sustained-input', '--prewarm-bars', '64', '--warmup', '20',
                          '--counts', str(args.counts), '--seconds', str(args.seconds),
-                         '--interval-ms', '1000', '--require-diagnostics',
+                         '--interval-ms', str(args.interval_ms), '--require-diagnostics',
                          '--plugin-dir', str(plugin_dirs[version])]
                 script = 'benchmark_strategy_runtime.py'
                 if (args.in_process_after and version == 'after') or (args.in_process_before and version == 'before'):
                     flags += ['--pine-in-process']
+                if version == 'after' and args.pine_vm_checkpoint_after:
+                    flags += ['--pine-vm-checkpoint']
             else:
                 flags = ['--counts', '1000', '--warmup', '5', '--seconds', str(args.seconds),
                          '--interval-ms', '25', '--max-memory-mib', '4096']
@@ -109,8 +187,19 @@ def main():
                 if 'failure' in report:
                     result['failure'] = report['failure']
                 else:
-                    diagnostics = report.get('diagnostics') or diagnostic_metrics(path / 'metrics.txt')
-                    phases = diagnostics.get('measurement_deltas') or diagnostics.get('stages', {})
+                    diagnostics = report.get('diagnostics') or {}
+                    if population == 'pine':
+                        required_stage = ('bot_inprocess_call' if
+                            ((version == 'after' and args.in_process_after) or
+                             (version == 'before' and args.in_process_before)) else 'bot_worker_roundtrip')
+                        try:
+                            phases = pine_measurement_phases(diagnostics, required_stage)
+                        except ValueError as error:
+                            phases = {}
+                            result['failure'] = str(error)
+                    else:
+                        diagnostics = diagnostics or diagnostic_metrics(path / 'metrics.txt')
+                        phases = diagnostics.get('stages', {})
                     result.update(server_sha256=report['server_sha256'], recipe_sha256=report['recipe_sha256'],
                                   prewarm_candles_sha256=digest(path / 'prewarm-candles.json') if population == 'pine' else None,
                                   steps_per_wall_second=report['steps_per_wall_second'], latency=report['latency'],
@@ -128,6 +217,10 @@ def main():
                         result['failure'] = 'measured binary hash changed'
             else:
                 result['failure'] = 'no final report'
+            changes = changed_inputs(frozen, binaries, plugin_dirs)
+            if changes:
+                result['failure'] = '; '.join(filter(None, (result.get('failure'),
+                    'frozen inputs changed during case: ' + ', '.join(changes))))
             results.append(result)
             (args.output / 'cases.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
             print(json.dumps({k: result.get(k) for k in ('label', 'steps_per_wall_second', 'qualified', 'failure')}), flush=True)
@@ -135,13 +228,7 @@ def main():
     aggregates = {}
     for population in {r['population'] for r in results}:
         rows = [r for r in results if r['population'] == population]
-        invariants[population] = {
-            'all_reports': all(not r.get('failure') and r['exit_code'] == 0 for r in rows),
-            'same_recipe': len({r.get('recipe_sha256') for r in rows}) == 1,
-            'same_complete_initial_history': len({r.get('prewarm_candles_sha256') for r in rows}) == 1,
-            'compiler_quiet': all((r.get('process_tree') or {}).get('compiler_nonempty_samples') == 0 for r in rows) if population == 'pine' else None,
-            'no_other_benchmark_server': all((r.get('process_tree') or {}).get('other_server_nonempty_samples') == 0 for r in rows) if population == 'pine' else None,
-        }
+        invariants[population] = comparison_invariants(rows, population)
         aggregates[population] = {}
         for version in binaries:
             group = [r for r in rows if r['version'] == version and not r.get('failure')]
@@ -157,16 +244,15 @@ def main():
                     metrics['actual_worker_queue_p95_ms'] = [r['actual_worker_dispatch_queue']['p95_ms'] for r in group]
             aggregates[population][version] = {key: {'median': statistics.median(v), 'min': min(v), 'max': max(v)}
                                                for key, v in metrics.items()}
-    assert all(digest(binaries[v]) == hashes[v] for v in binaries), 'binary changed during comparison'
-    assert all(digest(plugin_dirs[v] / p) == h for v, files in plugin_hashes.items()
-               for p, h in files.items()), 'plugin inputs changed'
+    final_changes = changed_inputs(frozen, binaries, plugin_dirs)
     result = {'cases': results, 'invariants': invariants, 'aggregates': aggregates,
               'binary_sha256': hashes, 'plugin_sha256': plugin_hashes,
+              'driver_sha256': frozen['driver_sha256'], 'final_input_changes': final_changes,
               'plugin_dirs': {v: str(p) for v, p in plugin_dirs.items()},
               'scope': 'All attempted serial ABBA runs retained. Per-run percentile medians, not pooled requests. Short diagnostic memory-journal windows; no production, long-duration or PostgreSQL capacity claim.'}
     (args.output / 'summary.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps({'invariants': invariants, 'aggregates': aggregates}, indent=2), flush=True)
-    if not all(all(v is not False for v in checks.values()) for checks in invariants.values()):
+    if final_changes or not all(all(v is not False for v in checks.values()) for checks in invariants.values()):
         raise SystemExit('comparison provenance or run validity failed; receipts retained')
 
 

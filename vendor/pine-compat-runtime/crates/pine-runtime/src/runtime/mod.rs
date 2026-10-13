@@ -10,6 +10,7 @@ mod display_value;
 pub(crate) mod drawing_history;
 pub(crate) mod execution;
 pub(crate) mod expressions;
+pub(crate) mod external_checkpoint;
 pub(crate) mod historical;
 mod historical_dataset;
 pub use historical_dataset::HistoricalDataset;

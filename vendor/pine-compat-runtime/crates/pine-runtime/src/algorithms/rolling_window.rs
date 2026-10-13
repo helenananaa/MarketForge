@@ -76,6 +76,58 @@ pub(crate) enum RisingFallingMode {
 }
 
 impl RollingWindowState {
+    pub(crate) fn external_checkpoint(&self) -> serde_json::Value {
+        use crate::runtime::external_checkpoint::{float, optional_float};
+        serde_json::json!({
+            "values": self.values.iter().copied().map(optional_float).collect::<Vec<_>>(),
+            "sum": float(self.sum), "na": self.na_count, "nonzero": self.nonzero_count,
+            "changes": self.change_count, "invalid": self.constant_certificate_invalid,
+            "open": self.open_bar, "previous_sum": float(self.prev_sum),
+            "previous_na": self.prev_na_count, "previous_nonzero": self.prev_nonzero_count,
+            "previous_changes": self.prev_change_count,
+            "evicted": self.evicted.iter().copied().map(optional_float).collect::<Vec<_>>()
+        })
+    }
+
+    pub(crate) fn restore_external_checkpoint(
+        value: &serde_json::Value,
+    ) -> Result<Self, crate::RuntimeError> {
+        use crate::runtime::external_checkpoint::{
+            array, boolean, optional_usize, read_float, read_optional_float, usize_field,
+        };
+        let mut values = SharedDeque::default();
+        for value in array(&value["values"])? {
+            values.push_back(read_optional_float(value)?);
+        }
+        let mut evicted = SharedDeque::default();
+        for value in array(&value["evicted"])? {
+            evicted.push_back(read_optional_float(value)?);
+        }
+        let result = Self {
+            values,
+            evicted,
+            sum: read_float(&value["sum"])?,
+            na_count: usize_field(&value["na"])?,
+            nonzero_count: usize_field(&value["nonzero"])?,
+            change_count: usize_field(&value["changes"])?,
+            constant_certificate_invalid: boolean(&value["invalid"])?,
+            open_bar: optional_usize(&value["open"])?,
+            prev_sum: read_float(&value["previous_sum"])?,
+            prev_na_count: usize_field(&value["previous_na"])?,
+            prev_nonzero_count: usize_field(&value["previous_nonzero"])?,
+            prev_change_count: usize_field(&value["previous_changes"])?,
+        };
+        if result.na_count > result.values.len()
+            || result.nonzero_count > result.values.len()
+            || result.change_count >= result.values.len().max(1)
+        {
+            return Err(crate::external::external_error(
+                "invalid rolling checkpoint counters",
+            ));
+        }
+        Ok(result)
+    }
+
     pub(crate) fn retained_values(&self) -> usize {
         self.values.len() + self.evicted.len()
     }

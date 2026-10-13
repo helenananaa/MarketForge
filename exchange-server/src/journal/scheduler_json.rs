@@ -1,5 +1,5 @@
 //! Derived, bounded encoding cache for immutable plugin JSON. Journal records
-//! still contain the complete original state with the same checked JSON schema.
+//! Full states use the original checked JSON schema; v2 Pine deltas encode tails.
 use super::{JournalError, RecoveryJson, RoomMutation};
 use crate::scheduler_delta::{AgentDelta, SchedulerDelta};
 use exchange_core::{PersistedAgent, PersistedAgentKindState, SchedulerState};
@@ -11,11 +11,84 @@ use serde_json::{Value, value::RawValue};
 use std::{
     cell::RefCell,
     collections::{BTreeMap, BTreeSet},
-    sync::{Arc, Weak},
+    io::Write,
+    sync::{Arc, Weak, mpsc},
 };
 
 const MAX_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ENTRIES: usize = 4096;
+const MAX_ENCODING_WORKERS: usize = 4;
+const MIN_PARALLEL_MISSES: usize = 32;
+const PREFETCH_FRAGMENT_BYTES: usize = 256 * 1024;
+// Each worker has one queued fragment and one active bounded encoding. Allow
+// two buffers for conversion to RawValue, plus the caller's current fragment:
+// (4 * 3 + 1) * 256 KiB < 4 MiB. This bounds prefetch payload storage only;
+// the existing cache, final mutation bytes and allocator overhead are separate.
+const PREFETCH_BUFFER_BUDGET: usize = 4 * 1024 * 1024;
+const _: () =
+    assert!((MAX_ENCODING_WORKERS * 3 + 1) * PREFETCH_FRAGMENT_BYTES <= PREFETCH_BUFFER_BUDGET);
+
+type FragmentResult = (usize, Option<Arc<RawValue>>);
+
+struct BoundedJson {
+    bytes: Vec<u8>,
+}
+
+impl Write for BoundedJson {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if bytes.len() > PREFETCH_FRAGMENT_BYTES - self.bytes.len() {
+            return Err(std::io::Error::other("Pine JSON prefetch limit"));
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn bounded_fragment(value: &Value) -> Option<Arc<RawValue>> {
+    let mut writer = BoundedJson {
+        bytes: Vec::with_capacity(PREFETCH_FRAGMENT_BYTES),
+    };
+    // Stop during encoding, before an oversized value can allocate an unbounded
+    // speculative result. The unchanged serial path handles these values.
+    serde_json::to_writer(&mut writer, value).ok()?;
+    let json = String::from_utf8(writer.bytes).ok()?;
+    // Safe checked construction; never forge a RawValue or bypass JSON syntax.
+    RawValue::from_string(json).ok().map(Arc::from)
+}
+
+struct PreparedFragments {
+    sources: Arc<Vec<Arc<Value>>>,
+    next: usize,
+    receivers: Vec<mpsc::Receiver<FragmentResult>>,
+}
+
+impl PreparedFragments {
+    fn take(&mut self, data: &Arc<Value>) -> Option<Arc<RawValue>> {
+        if self.receivers.is_empty()
+            || !self
+                .sources
+                .get(self.next)
+                .is_some_and(|source| Arc::ptr_eq(source, data))
+        {
+            return None;
+        }
+        let index = self.next;
+        self.next += 1;
+        match self.receivers[index % self.receivers.len()].recv() {
+            Ok((found, fragment)) if found == index => fragment,
+            _ => {
+                // A failed worker or unexpected result disables speculation.
+                // Dropping every receiver also unblocks workers waiting to send.
+                self.receivers.clear();
+                None
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 struct Entry {
@@ -33,7 +106,26 @@ pub(super) struct Cache {
 }
 
 impl Cache {
+    fn contains(&self, data: &Arc<Value>) -> bool {
+        self.entries
+            .get(&(Arc::as_ptr(data) as usize))
+            .is_some_and(|entry| {
+                entry
+                    .source
+                    .upgrade()
+                    .is_some_and(|source| Arc::ptr_eq(&source, data))
+            })
+    }
+
     fn get(&mut self, data: &Arc<Value>) -> Result<Arc<RawValue>, JournalError> {
+        self.get_prepared(data, None)
+    }
+
+    fn get_prepared(
+        &mut self,
+        data: &Arc<Value>,
+        prepared: Option<Arc<RawValue>>,
+    ) -> Result<Arc<RawValue>, JournalError> {
         if self.clock == u64::MAX {
             // Preserve LRU order even if the logical access counter wraps.
             let keys: Vec<_> = self.recency.iter().map(|(_, key)| *key).collect();
@@ -62,9 +154,12 @@ impl Cache {
         // directly, without reparsing a string we just serialized. The enclosing
         // typed mutation still uses RecoveryJson's i128/u128 range checks.
         // Weak identity also prevents reuse after expiration or a COW update.
-        let json: Arc<RawValue> = serde_json::value::to_raw_value(data.as_ref())
-            .map_err(JournalError::Serialize)?
-            .into();
+        let json: Arc<RawValue> = match prepared {
+            Some(json) => json,
+            None => serde_json::value::to_raw_value(data.as_ref())
+                .map_err(JournalError::Serialize)?
+                .into(),
+        };
         if let Some(old) = self.entries.remove(&key) {
             self.recency.remove(&(old.touched, key));
             self.bytes -= old.json.get().len();
@@ -107,11 +202,12 @@ pub(super) fn encode(
             state.agents.iter().any(|agent| is_pine(&agent.kind_state))
         }
         RoomMutation::SchedulerDelta { delta, .. } => {
-            delta
-                .state
-                .agents
-                .iter()
-                .any(|agent| is_pine(&agent.kind_state))
+            !delta.pine_changes.is_empty()
+                || delta
+                    .state
+                    .agents
+                    .iter()
+                    .any(|agent| is_pine(&agent.kind_state))
                 || delta.changes.iter().any(|agent| is_pine(&agent.kind_state))
         }
         _ => false,
@@ -119,18 +215,144 @@ pub(super) fn encode(
     if !has_pine {
         return RecoveryJson::encode(mutation);
     }
+    let workers = if matches!(mutation, RoomMutation::SchedulerProgress { .. }) {
+        std::thread::available_parallelism()
+            .map_or(1, std::num::NonZeroUsize::get)
+            .min(MAX_ENCODING_WORKERS)
+    } else {
+        1
+    };
+    encode_with_workers(mutation, cache, workers)
+}
+
+fn missing_sources(mutation: &RoomMutation, cache: &Cache) -> Vec<Arc<Value>> {
+    let RoomMutation::SchedulerProgress { state, .. } = mutation else {
+        return Vec::new();
+    };
+    let mut seen = BTreeSet::new();
+    let mut sources = Vec::new();
+    for agent in &state.agents {
+        if let PersistedAgentKindState::Plugin {
+            plugin_id, data, ..
+        } = &agent.kind_state
+            && plugin_id == "pine.strategy"
+            && !cache.contains(data)
+            && seen.insert(Arc::as_ptr(data) as usize)
+        {
+            sources.push(data.clone());
+            // Bound the plan itself as well as the encoded result pipeline.
+            if sources.len() == MAX_ENTRIES {
+                break;
+            }
+        }
+    }
+    sources
+}
+
+fn encode_with_workers(
+    mutation: &RoomMutation,
+    cache: &mut Cache,
+    workers: usize,
+) -> Result<RecoveryJson, JournalError> {
+    let workers = workers.min(MAX_ENCODING_WORKERS);
+    let sources = if workers > 1 {
+        missing_sources(mutation, cache)
+    } else {
+        Vec::new()
+    };
+    if sources.len() < MIN_PARALLEL_MISSES {
+        return encode_cached(mutation, cache, None);
+    }
+    let sources = Arc::new(sources);
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(workers);
+        let mut receivers = Vec::with_capacity(workers);
+        let mut start_failed = false;
+        for worker in 0..workers {
+            #[cfg(test)]
+            if parallel_tests::fail_start(worker) {
+                start_failed = true;
+                break;
+            }
+            let (sender, receiver) = mpsc::sync_channel(1);
+            let sources = sources.clone();
+            #[cfg(test)]
+            let panic_worker = parallel_tests::panic_worker(worker);
+            let handle = std::thread::Builder::new()
+                .name(format!("pine-json-{worker}"))
+                .spawn_scoped(scope, move || {
+                    // Do not let a speculative encoder panic kill the sole
+                    // journal worker. A closed result channel selects fallback.
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        #[cfg(test)]
+                        if panic_worker {
+                            panic!("injected Pine JSON worker failure");
+                        }
+                        for index in (worker..sources.len()).step_by(workers) {
+                            let fragment = bounded_fragment(&sources[index]);
+                            if sender.send((index, fragment)).is_err() {
+                                break;
+                            }
+                        }
+                    }));
+                });
+            match handle {
+                Ok(handle) => {
+                    #[cfg(test)]
+                    parallel_tests::started();
+                    handles.push(handle);
+                    receivers.push(receiver);
+                }
+                Err(_) => {
+                    start_failed = true;
+                    break;
+                }
+            }
+        }
+        let result = if start_failed {
+            // Cancellation must precede joining: an encoder can be blocked on
+            // its single-slot channel while no consumer has started yet.
+            drop(receivers);
+            None
+        } else {
+            let prepared = RefCell::new(PreparedFragments {
+                sources,
+                next: 0,
+                receivers,
+            });
+            let result = encode_cached(mutation, cache, Some(&prepared));
+            // Also cancels unread fragments after any outer range-check error.
+            drop(prepared);
+            Some(result)
+        };
+        for handle in handles {
+            // The closure catches encoding panics. Explicitly join every child
+            // nevertheless, so scope never propagates an unjoined child panic.
+            let _ = handle.join();
+        }
+        result.unwrap_or_else(|| encode_cached(mutation, cache, None))
+    })
+}
+
+fn encode_cached(
+    mutation: &RoomMutation,
+    cache: &mut Cache,
+    prepared: Option<&RefCell<PreparedFragments>>,
+) -> Result<RecoveryJson, JournalError> {
     // RefCell allows serde's shared Serialize receiver to access this one-call
     // exclusive cache borrow. It is neither shared across threads nor durable.
     let cache = RefCell::new(cache);
     RecoveryJson::encode(&Mutation {
         mutation,
         cache: &cache,
+        prepared,
     })
 }
 
 struct Mutation<'a, 'b> {
     mutation: &'a RoomMutation,
     cache: &'a RefCell<&'b mut Cache>,
+    prepared: Option<&'a RefCell<PreparedFragments>>,
 }
 impl Serialize for Mutation<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -149,6 +371,7 @@ impl Serialize for Mutation<'_, '_> {
                     &State {
                         state,
                         cache: self.cache,
+                        prepared: self.prepared,
                     },
                 )?;
                 if let Some(training) = training {
@@ -185,6 +408,7 @@ impl Serialize for Mutation<'_, '_> {
 struct State<'a, 'b> {
     state: &'a SchedulerState,
     cache: &'a RefCell<&'b mut Cache>,
+    prepared: Option<&'a RefCell<PreparedFragments>>,
 }
 impl Serialize for State<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -217,6 +441,7 @@ impl Serialize for State<'_, '_> {
             &Agents {
                 agents,
                 cache: self.cache,
+                prepared: self.prepared,
             },
         )?;
         s.end()
@@ -226,6 +451,7 @@ impl Serialize for State<'_, '_> {
 struct Agents<'a, 'b> {
     agents: &'a [PersistedAgent],
     cache: &'a RefCell<&'b mut Cache>,
+    prepared: Option<&'a RefCell<PreparedFragments>>,
 }
 impl Serialize for Agents<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -253,6 +479,7 @@ impl Serialize for Agents<'_, '_> {
                 kind_state: Kind {
                     state: kind_state,
                     cache: self.cache,
+                    prepared: self.prepared,
                 },
                 unfinished_actions,
             })?;
@@ -264,6 +491,7 @@ impl Serialize for Agents<'_, '_> {
 struct Kind<'a, 'b> {
     state: &'a PersistedAgentKindState,
     cache: &'a RefCell<&'b mut Cache>,
+    prepared: Option<&'a RefCell<PreparedFragments>>,
 }
 impl Serialize for Kind<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -279,11 +507,14 @@ impl Serialize for Kind<'_, '_> {
         if plugin_id != "pine.strategy" {
             return self.state.serialize(serializer);
         }
-        let json = self
-            .cache
-            .borrow_mut()
-            .get(data)
-            .map_err(serde::ser::Error::custom)?;
+        let fragment = self
+            .prepared
+            .and_then(|prepared| prepared.borrow_mut().take(data));
+        let json = match fragment {
+            Some(fragment) => self.cache.borrow_mut().get_prepared(data, Some(fragment)),
+            None => self.cache.borrow_mut().get(data),
+        }
+        .map_err(serde::ser::Error::custom)?;
         let mut s =
             serializer.serialize_struct_variant("PersistedAgentKindState", 0, "Plugin", 4)?;
         s.serialize_field("plugin_id", plugin_id)?;
@@ -306,8 +537,10 @@ impl Serialize for Delta<'_, '_> {
             agent_count,
             state,
             changes,
+            pine_changes,
         } = self.delta;
-        let mut s = serializer.serialize_struct("SchedulerDelta", 5)?;
+        let mut s = serializer
+            .serialize_struct("SchedulerDelta", 5 + usize::from(!pine_changes.is_empty()))?;
         s.serialize_field("version", version)?;
         s.serialize_field("base_revision", base_revision)?;
         s.serialize_field("agent_count", agent_count)?;
@@ -316,6 +549,7 @@ impl Serialize for Delta<'_, '_> {
             &State {
                 state,
                 cache: self.cache,
+                prepared: None,
             },
         )?;
         s.serialize_field(
@@ -325,6 +559,9 @@ impl Serialize for Delta<'_, '_> {
                 cache: self.cache,
             },
         )?;
+        if !pine_changes.is_empty() {
+            s.serialize_field("pine_changes", pine_changes)?;
+        }
         s.end()
     }
 }
@@ -353,6 +590,7 @@ impl Serialize for Changes<'_, '_> {
                 kind_state: Kind {
                     state: kind_state,
                     cache: self.cache,
+                    prepared: None,
                 },
                 unfinished_actions,
             })?;
@@ -362,10 +600,14 @@ impl Serialize for Changes<'_, '_> {
 }
 
 #[cfg(test)]
+#[path = "scheduler_json_parallel_tests.rs"]
+mod parallel_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    fn state() -> SchedulerState {
+    pub(super) fn state() -> SchedulerState {
         let recipe: exchange_core::population::BackgroundMarket = serde_json::from_str(
             include_str!("../../../scripts/fixtures/microstructure_market.json"),
         )
@@ -427,6 +669,54 @@ mod tests {
     }
 
     #[test]
+    fn append_delta_cached_encoder_matches_checked_wire_and_recovers_complete_state() {
+        let mut prior = state();
+        let index = 2;
+        let PersistedAgentKindState::Plugin { data, .. } = &mut prior.agents[index].kind_state
+        else {
+            unreachable!()
+        };
+        *data = Arc::new(serde_json::json!({
+            "identity": "exact-frozen-source", "broker_schema": 2,
+            "bars": [{"close": 91}], "accounts": [{"cash": 111}],
+            "evaluations": [{"time": 1000}], "providers": {},
+        }));
+        let mut next = prior.clone();
+        next.revision += 1;
+        let PersistedAgentKindState::Plugin { data, .. } = &mut next.agents[index].kind_state
+        else {
+            unreachable!()
+        };
+        Arc::make_mut(data)["bars"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"close": 92}));
+        let delta = SchedulerDelta::between(&prior, &next)
+            .unwrap()
+            .into_durable(&prior)
+            .unwrap();
+        assert_eq!(delta.version, 2);
+        let mutation = RoomMutation::SchedulerDelta {
+            clock_steps: 0,
+            delta,
+            training: None,
+        };
+        let mut cache = Cache::default();
+        let encoded = encode(&mutation, &mut cache).unwrap().0;
+        assert_eq!(encoded, RecoveryJson::encode(&mutation).unwrap().0);
+        assert!(
+            cache.entries.is_empty(),
+            "v2 tails must not enter the full-state encoding cache"
+        );
+        let RoomMutation::SchedulerDelta { delta, .. } = serde_json::from_slice(&encoded).unwrap()
+        else {
+            unreachable!()
+        };
+        delta.apply_owned(&mut prior).unwrap();
+        assert_eq!(prior, next);
+    }
+
+    #[test]
     fn cached_full_and_delta_keep_exact_wire_and_recover_all_metadata() {
         let state = state();
         let recipe: exchange_core::population::BackgroundMarket = serde_json::from_str(
@@ -460,6 +750,7 @@ mod tests {
                     unfinished_actions: a.unfinished_actions.clone(),
                 })
                 .collect(),
+            pine_changes: Vec::new(),
         };
         let mut cache = Cache::default();
         for mut mutation in [

@@ -44,6 +44,8 @@ struct Inputs<'a> {
 struct DataInputs<'a> {
     interval_ms: u64,
     truncated: bool,
+    history_proof: &'a Option<exchange_core::CandleHistoryProof>,
+    private_history_complete: bool,
     candles: Option<&'a Vec<exchange_core::Candle>>,
     streams: Option<&'a Vec<exchange_core::observation::BotDataStream>>,
     volume: Option<&'a str>,
@@ -109,6 +111,8 @@ impl Trigger {
                 .map(|data| DataInputs {
                     interval_ms: data.interval_ms,
                     truncated: data.truncated,
+                    history_proof: &data.history_proof,
+                    private_history_complete: data.private_history_complete,
                     candles: closed_bars.then_some(&data.candles),
                     streams: closed_bars.then_some(&data.streams),
                     volume: book.then_some(data.external_volume_qty.as_str()),
@@ -142,6 +146,25 @@ impl Trigger {
         .map_err(|e| BotError(e.to_string()))?;
         Ok(Some(format!("{:x}", writer.0.finalize())))
     }
+    /// Return the exact durable cursor used to decide this invocation. Unlike
+    /// the scheduling-only `due`, callers also need the cursor on timed wakes.
+    pub fn due_with_fingerprint(
+        &self,
+        config: &BotConfig,
+        state: &Value,
+        view: &ParticipantObservation,
+    ) -> Result<(bool, Option<String>), BotError> {
+        let cursor = self.fingerprint(config, state, view)?;
+        let due = state
+            .get("_next_wake_ms")
+            .and_then(Value::as_u64)
+            .is_some_and(|t| t <= view.market_time_ms)
+            || cursor
+                .as_ref()
+                .is_none_or(|key| state.get(CURSOR).and_then(Value::as_str) != Some(key.as_str()));
+        Ok((due, cursor))
+    }
+
     pub fn due(
         &self,
         config: &BotConfig,
@@ -164,8 +187,8 @@ impl Trigger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn durable_cursor_ignores_clock_only_changes_but_wakes_for_private_feedback_and_deadlines() {
+
+    fn observation_fixture() -> (BotConfig, ParticipantObservation) {
         let value: Value =
             serde_json::from_str(include_str!("../../scripts/fixtures/f6_batch_spec.json"))
                 .unwrap();
@@ -173,7 +196,7 @@ mod tests {
         rooms
             .create_room(serde_json::from_value(value["scenario"].clone()).unwrap())
             .unwrap();
-        let mut view = rooms
+        let view = rooms
             .participant_observation("f6-batch", "V-BTC-SPOT", 20)
             .unwrap();
         let config = BotConfig {
@@ -191,6 +214,75 @@ mod tests {
             seed: 7,
             config: serde_json::json!({}),
         };
+        (config, view)
+    }
+
+    fn history_fixture() -> (Trigger, BotConfig, Value, ParticipantObservation) {
+        let (config, mut view) = observation_fixture();
+        let trigger = Trigger::Events {
+            closed_bars: true,
+            book: false,
+            account: true,
+            interval_ms: None,
+        };
+        view.bot_market_data = Some(
+            serde_json::from_value(serde_json::json!({
+                "interval_ms":1000,"candles":[],"own_fills":[],"fill_details":[],
+                "truncated":false,"private_history_complete":true,
+                "history_proof":{
+                    "version":exchange_core::CANDLE_HISTORY_PROOF_VERSION,
+                    "prefix_bars":0,
+                    "prefix_sha256":exchange_core::candle_history_hex(
+                        &exchange_core::candle_history_seed(1000)
+                    )
+                }
+            }))
+            .unwrap(),
+        );
+        let mut state = serde_json::json!({});
+        state[CURSOR] = Value::String(
+            trigger
+                .fingerprint(&config, &state, &view)
+                .unwrap()
+                .unwrap(),
+        );
+        let state = serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap();
+        assert!(!trigger.due(&config, &state, &view).unwrap());
+        (trigger, config, state, view)
+    }
+
+    #[test]
+    fn durable_cursor_wakes_when_only_private_history_completeness_changes() {
+        let (trigger, config, state, mut view) = history_fixture();
+        view.bot_market_data
+            .as_mut()
+            .unwrap()
+            .private_history_complete = false;
+        assert!(
+            trigger.due(&config, &state, &view).unwrap(),
+            "unchanged fills and account events cannot hide incomplete private history"
+        );
+    }
+
+    #[test]
+    fn durable_cursor_wakes_when_only_omitted_history_proof_changes() {
+        let (trigger, config, state, mut view) = history_fixture();
+        view.bot_market_data
+            .as_mut()
+            .unwrap()
+            .history_proof
+            .as_mut()
+            .unwrap()
+            .prefix_sha256 = "f".repeat(64);
+        assert!(
+            trigger.due(&config, &state, &view).unwrap(),
+            "unchanged visible candles cannot hide an altered authoritative prefix"
+        );
+    }
+
+    #[test]
+    fn durable_cursor_ignores_clock_only_changes_but_wakes_for_private_feedback_and_deadlines() {
+        let (config, mut view) = observation_fixture();
         let trigger = Trigger::Events {
             closed_bars: false,
             book: true,
@@ -264,5 +356,47 @@ mod tests {
             bars.due(&config, &state, &view).unwrap(),
             "truncated history must never be hidden"
         );
+    }
+
+    #[test]
+    fn combined_due_and_cursor_match_the_existing_two_call_contract() {
+        let (events, config, baseline, view) = history_fixture();
+        for trigger in [Trigger::EveryTick, events] {
+            for case in 0..6 {
+                let mut state = baseline.clone();
+                match case {
+                    0 => {
+                        state.as_object_mut().unwrap().remove(CURSOR);
+                    }
+                    1 => {}
+                    2 => state["_next_wake_ms"] = Value::from(view.market_time_ms),
+                    3 => state["_next_wake_ms"] = Value::from(view.market_time_ms + 1),
+                    4 => state["_host_receipts"] = serde_json::json!([{"accepted":false}]),
+                    5 => state[CURSOR] = serde_json::json!(17),
+                    _ => unreachable!(),
+                }
+                let expected_due = trigger.due(&config, &state, &view).unwrap();
+                let expected_cursor = trigger.fingerprint(&config, &state, &view).unwrap();
+                let actual = trigger
+                    .due_with_fingerprint(&config, &state, &view)
+                    .unwrap();
+                assert_eq!(actual, (expected_due, expected_cursor));
+                let mut changed = view.clone();
+                changed
+                    .bot_market_data
+                    .as_mut()
+                    .unwrap()
+                    .private_history_complete = false;
+                assert_eq!(
+                    trigger
+                        .due_with_fingerprint(&config, &state, &changed)
+                        .unwrap(),
+                    (
+                        trigger.due(&config, &state, &changed).unwrap(),
+                        trigger.fingerprint(&config, &state, &changed).unwrap()
+                    )
+                );
+            }
+        }
     }
 }

@@ -12,6 +12,7 @@ from pathlib import Path
 SESSIONS = OrderedDict()
 MAX_SESSIONS = 512
 COUNTERS = {"rebuilds": 0, "appends": 0, "fallbacks": 0, "evaluated_bars": 0}
+LAST_EVALUATION = None  # Optional worker-envelope telemetry, never durable state.
 
 
 def qualified(source):
@@ -30,7 +31,11 @@ def replay(program, source, request, bars, accounts, *, pass_factory=None, execu
 
 
 def evaluate(program, source, request, bars, accounts, *, pass_factory=None, execution_transcript=None, **kwargs):
-    if not hasattr(program, "external_session") or not qualified(source):
+    global LAST_EVALUATION
+    reason = ("runtime_no_session" if not hasattr(program, "external_session") else
+              "source_unqualified" if not qualified(source) else None)
+    if reason is not None:
+        LAST_EVALUATION = {"mode": "replay", "reason": reason}
         COUNTERS["fallbacks"] += 1
         return replay(program, source, request, bars, accounts, pass_factory=pass_factory,
                       execution_transcript=execution_transcript, **kwargs)
@@ -56,9 +61,11 @@ def evaluate(program, source, request, bars, accounts, *, pass_factory=None, exe
                 and entry["settings"] == settings)
     if matching:
         offset = previous
+        LAST_EVALUATION = {"mode": "append", "reason": None}
         COUNTERS["appends"] += 1
     else:
         offset = 0
+        LAST_EVALUATION = {"mode": "rebuild", "reason": "session_missing" if entry is None else "state_mismatch"}
         entry = {"session": program.external_session(**settings)}
         COUNTERS["rebuilds"] += 1
     # Do not put a failed session back in the cache. No orders execute here.

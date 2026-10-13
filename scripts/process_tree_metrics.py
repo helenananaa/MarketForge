@@ -6,6 +6,13 @@ import threading
 import time
 
 
+def is_benchmark_server_name(name):
+    """Include the frozen/renamed binaries used by the benchmark matrix."""
+    name = name.replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    return name == "exchange-server.exe" or name.endswith("-exchange-server.exe") or name in {
+        "baseline-server.exe", "diagnostic-server.exe", "candidate-server.exe", "before-server.exe"}
+
+
 class ProcessTreeMetrics:
     def __init__(self, root):
         self.root = root
@@ -56,7 +63,7 @@ class ProcessTreeMetrics:
                 name = entry.exe.casefold()
                 if name in {"cargo.exe", "rustc.exe", "cl.exe", "link.exe"}:
                     compilers[entry.pid] = entry.exe
-                if name in {"exchange-server.exe", "diagnostic-server.exe", "candidate-server.exe", "before-server.exe"} and entry.pid != self.root:
+                if is_benchmark_server_name(name) and entry.pid != self.root:
                     servers[entry.pid] = entry.exe
                 ok = kernel.Process32NextW(snapshot, ctypes.byref(entry))
         finally:
@@ -107,6 +114,7 @@ class ProcessTreeMetrics:
         measured = [s for s in self.samples if self.measurement_window is not None
                     and self.measurement_window[0] <= s["elapsed"] <= self.measurement_window[1]]
         window = {"scope":"samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+                  "elapsed_bounds":self.measurement_window,
                   "samples":len(measured),
                   "average_logical_cores":((measured[-1]["cpu_seconds"]-measured[0]["cpu_seconds"]) /
                     (measured[-1]["elapsed"]-measured[0]["elapsed"])) if len(measured) > 1 else None,
@@ -131,4 +139,5 @@ class ProcessTreeMetrics:
                 "seen_pids":sorted(self.known), "per_process":individual,
                 "compiler_nonempty_samples":sum(bool(v) for v in self.compiler_activity),
                 "other_server_nonempty_samples":sum(bool(v) for v in self.other_servers),
+                "other_server_processes":{pid:name for row in self.other_servers for pid,name in row.items()},
                 "measurement":window, "errors":self.errors, "samples":self.samples}

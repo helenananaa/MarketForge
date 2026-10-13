@@ -25,6 +25,7 @@ mod bench_execution_timing;
 mod bot_dispatch;
 mod bot_history;
 pub mod bot_plugins;
+mod bot_runtime_diagnostics;
 mod bot_wire;
 mod bot_workers;
 mod competition;
@@ -96,6 +97,15 @@ type ApiResult<T> = Result<Json<T>, ApiError>;
 const SNAPSHOT_INTERVAL_COMMANDS: u64 = 100;
 const LIVE_SNAPSHOT_INTERVAL_COMMANDS: u64 = 1000;
 const LIVE_SNAPSHOT_INTERVAL_STEPS: u64 = 100;
+// Candidate recovery budget: every durable scheduler prefix has at most this
+// many consecutive deltas after its latest full state. Manual operations,
+// actor checkpoints and roster/configuration changes still force a full state.
+// This bounds scheduler replay records, not total journal rows or restart time.
+const MAX_SCHEDULER_DELTA_TAIL: u64 = 499;
+
+fn scheduler_checkpoint_due(revision: u64) -> bool {
+    revision.is_multiple_of(MAX_SCHEDULER_DELTA_TAIL + 1)
+}
 const ROOM_EVENT_CHANNEL_CAPACITY: usize = 1_024;
 const ROOM_EVENT_CACHE_CAPACITY: usize = 1_024;
 const IDEMPOTENCY_KEY_HEADER: &str = "idempotency-key";
@@ -1490,6 +1500,11 @@ where
     if let Err(error) = release_owned_room_writer_leases(&state).await {
         eprintln!("failed to release room writer leases during shutdown: {error}");
     }
+    // All trace producers (HTTP, agent blocking jobs and durable transactions)
+    // are now done. Static BufWriter values do not flush themselves at exit.
+    tokio::task::spawn_blocking(bot_runtime_diagnostics::finish_trace)
+        .await
+        .map_err(|error| io::Error::other(format!("trace closeout task failed: {error}")))??;
     result
 }
 
@@ -1974,6 +1989,7 @@ async fn metrics(State(state): State<SharedState>) -> Response {
     let mut body = String::new();
     #[cfg(feature = "bench-execution-timing")]
     bench_execution_timing::append_metrics(&mut body);
+    bot_runtime_diagnostics::append_metrics(&mut body);
     append_prometheus_metric(
         &mut body,
         "marketforge_process_up",
@@ -9642,9 +9658,13 @@ impl AgentWorkerHandle {
         let lifecycle = Arc::new(Mutex::new(AgentWorkerLifecycle::Running));
         let worker_lifecycle = Arc::clone(&lifecycle);
         let runtime = tokio::runtime::Handle::current();
+        // Register before spawn so even a replaced/detached worker is covered
+        // by the optional final trace barrier. This is once per worker lifetime.
+        let trace_worker = bot_runtime_diagnostics::register_worker();
         let join = thread::Builder::new()
             .name(format!("marketforge-agents-{room_id}"))
             .spawn(move || {
+                let _trace_worker = trace_worker;
                 let result = runtime.block_on(realtime::run(
                     shared.clone(),
                     room_id,
@@ -9655,6 +9675,7 @@ impl AgentWorkerHandle {
                     worker_bot_errors,
                 ));
                 if let Err(error) = result {
+                    bot_runtime_diagnostics::shutdown_failed();
                     shared.lifecycle.record_agent_error();
                     *worker_last_error.lock().unwrap() = Some(error);
                     *worker_lifecycle.lock().unwrap() = AgentWorkerLifecycle::Failed;
@@ -9718,8 +9739,16 @@ impl AgentWorkerHandle {
 
     fn shutdown_and_join(mut self) {
         self.request_stop();
-        if let Some(join) = self.join.take() {
-            let _ = join.join();
+        let joined = self.join.take().is_none_or(|join| join.join().is_ok());
+        // An abnormal worker exit may have dropped its JoinSets before the
+        // optional diagnostic drain. Never issue a successful trace seal then.
+        if !joined
+            || self
+                .lifecycle
+                .lock()
+                .map_or(true, |value| matches!(*value, AgentWorkerLifecycle::Failed))
+        {
+            bot_runtime_diagnostics::shutdown_failed();
         }
     }
 }
@@ -9843,9 +9872,33 @@ async fn commit_realtime_work(
     room_id: RoomId,
     work: realtime::Work,
 ) -> Result<(), ApiError> {
-    commit_scheduler_transaction(shared, room_id, None, false, None, Some(work), false)
-        .await
-        .map(|_| ())
+    let trace_ids = work.trace_ids();
+    let result =
+        commit_scheduler_transaction(shared, room_id, None, false, None, Some(work), false)
+            .await
+            .map(|_| ());
+    if let Err((status, body)) = &result {
+        // This exact rejection is emitted before a durable guard exists, so
+        // no action/state mutation could have entered the transaction. Keep a
+        // factual discard when shutdown overtakes an enqueued writer future.
+        if bot_runtime_diagnostics::shutdown_requested()
+            && *status == StatusCode::SERVICE_UNAVAILABLE
+            && body.0.error == "server is shutting down and is not accepting durable writes"
+        {
+            for decision_id in trace_ids {
+                bot_runtime_diagnostics::trace_event(serde_json::json!({
+                    "stage":"decision_discarded", "decision_id":decision_id, "reason":"worker_shutdown",
+                }));
+            }
+            return Ok(());
+        }
+        for decision_id in trace_ids {
+            bot_runtime_diagnostics::trace_event(serde_json::json!({
+                "stage": "transaction_attempt_failed", "decision_id": decision_id, "reason": "transaction_failed",
+            }));
+        }
+    }
+    result
 }
 
 async fn commit_scheduler_transaction(
@@ -9860,7 +9913,19 @@ async fn commit_scheduler_transaction(
     use scheduler_delta::Candidate;
     let wait_started = Instant::now();
     run_durable_state_transaction(shared.clone(), async move {
-        let mut state = lock_room_state(&shared, &room_id).await?;
+        // Pure strategy progress cannot change market collateral. It still
+        // takes the ordered commit mutex, while ordinary venue preparation may
+        // run concurrently behind the shared coordination fence.
+        let state_only =
+            control.is_none() && realtime.as_ref().is_some_and(realtime::Work::is_state_only);
+        let mut state = if state_only {
+            match shared.app.lock_scheduler_only(&room_id).await {
+                Some(state) => state,
+                None => lock_room_state(&shared, &room_id).await?,
+            }
+        } else {
+            lock_room_state(&shared, &room_id).await?
+        };
         shared.lifecycle.record_scheduler_phase(0, wait_started);
         if !competition::market_allowed(&state, &room_id) {
             return Err(api_error(
@@ -9893,6 +9958,7 @@ async fn commit_scheduler_transaction(
                 || state.rooms.status(&room_id).map_err(api_error_from_room)?
                     != MarketStatus::Running
             {
+                work.discard_trace("stale_or_market_not_running");
                 return Ok(Json(return_state.then(|| current.clone())));
             }
         }
@@ -9924,15 +9990,20 @@ async fn commit_scheduler_transaction(
                 .values()
                 .any(|run| run.spec.room_id == room_id)
         {
-            return commit_bot_state_only(
+            let mut trace = realtime::CommitTrace::default();
+            let response = commit_bot_state_only(
                 &shared,
                 &mut state,
                 &room_id,
                 realtime.expect("state-only live work"),
                 return_state,
+                &mut trace,
             )
-            .await
-            .map(Json);
+            .await?;
+            let publication = state.publication_receipt();
+            drop(state); // Publish the durable predecessor before its receipts.
+            trace.publish(publication.and_then(|p| p.wall_us()));
+            return Ok(Json(response));
         }
         let scheduler = if realtime.is_none() {
             Some(
@@ -9986,10 +10057,22 @@ async fn commit_scheduler_transaction(
         let manual = realtime.is_none();
         let clock_tick = manual || matches!(realtime, Some(realtime::Work::Clock(_)));
         let mut submissions = BTreeMap::new();
+        let mut trace = realtime::CommitTrace::default();
+        let hints = realtime
+            .as_ref()
+            .map(|work| {
+                work.state_hints(
+                    state
+                        .schedulers
+                        .get(&room_id)
+                        .expect("live predecessor checked"),
+                )
+            })
+            .unwrap_or_default();
         let apply_started = Instant::now();
         let (candidate, order_id, result, training) = if let Some(work) = realtime {
             let mut policy = ServerBotPolicy { training };
-            let result = work.apply(
+            let result = work.apply_traced(
                 &mut candidate_rooms,
                 &mut next_order_id,
                 state
@@ -9998,6 +10081,7 @@ async fn commit_scheduler_transaction(
                     .expect("live predecessor was checked"),
                 &mut policy,
                 &mut submissions,
+                &mut trace,
             );
             (
                 candidate_rooms,
@@ -10172,7 +10256,8 @@ async fn commit_scheduler_transaction(
         let mutation_timer = crate::bench_execution_timing::Timer::start(
             &crate::bench_execution_timing::SCHEDULER_MUTATION_BUILD,
         );
-        let delta = if manual || snapshot_due || outcome.state().revision.is_multiple_of(100) {
+        let delta = if manual || snapshot_due || scheduler_checkpoint_due(outcome.state().revision)
+        {
             None
         } else {
             match &outcome {
@@ -10192,7 +10277,15 @@ async fn commit_scheduler_transaction(
         let progress = match delta {
             Some(delta) => RoomMutation::SchedulerDelta {
                 clock_steps,
-                delta,
+                delta: delta
+                    .into_durable_with_hints(
+                        state
+                            .schedulers
+                            .get(&room_id)
+                            .expect("delta predecessor checked"),
+                        &hints,
+                    )
+                    .map_err(api_error_from_journal)?,
                 training: training_progress,
             },
             None => RoomMutation::SchedulerProgress {
@@ -10250,6 +10343,8 @@ async fn commit_scheduler_transaction(
         state.rooms = candidate_rooms;
         state.next_order_id = next_order_id;
         let response = return_state.then(|| outcome.materialize(state.schedulers.get(&room_id)));
+        let trace_room_id =
+            (clock_tick && bot_runtime_diagnostics::trace_enabled()).then(|| room_id.clone());
         match outcome {
             Candidate::Full(next) => {
                 state.schedulers.insert(room_id, next);
@@ -10272,6 +10367,20 @@ async fn commit_scheduler_transaction(
                 state.dispatch_patch_applied(publication.0, publication.1);
             }
         }
+        let publication = state.publication_receipt();
+        drop(state);
+        let trace_wall_us = publication.and_then(|p| p.wall_us());
+        if let (Some(trace_room_id), Some(wall_us)) = (trace_room_id, trace_wall_us) {
+            bot_runtime_diagnostics::trace_event_at(
+                serde_json::json!({
+                    "stage": "clock_visible", "room_id": trace_room_id,
+                    "previous_market_ms": clock_before.market_time_ms(),
+                    "market_time_ms": clock_after.market_time_ms(),
+                }),
+                wall_us,
+            );
+        }
+        trace.publish(trace_wall_us);
         Ok(Json(response))
     })
     .await
@@ -10286,6 +10395,7 @@ async fn commit_bot_state_only(
     room_id: &str,
     work: realtime::Work,
     return_state: bool,
+    trace: &mut realtime::CommitTrace,
 ) -> Result<Option<exchange_core::SchedulerState>, ApiError> {
     let started = Instant::now();
     let current = state
@@ -10297,8 +10407,9 @@ async fn commit_bot_state_only(
         .clock(room_id)
         .map_err(api_error_from_room)?
         .step();
+    let hints = work.state_hints(current);
     let mut delta = work
-        .apply_state_only(current, step)
+        .apply_state_only_traced(current, step, trace)
         .map_err(|error| api_error(StatusCode::BAD_REQUEST, format!("{error:?}")))?;
     delta.state.revision = current
         .revision
@@ -10318,7 +10429,7 @@ async fn commit_bot_state_only(
         delta.base_revision,
         delta.changes.iter().map(|c| c.index).collect(),
     );
-    let progress = if delta.state.revision.is_multiple_of(100) {
+    let progress = if scheduler_checkpoint_due(delta.state.revision) {
         #[cfg(feature = "bench-execution-timing")]
         let _timer = crate::bench_execution_timing::Timer::start(
             &crate::bench_execution_timing::SCHEDULER_MATERIALIZE,
@@ -10335,7 +10446,9 @@ async fn commit_bot_state_only(
     } else {
         RoomMutation::SchedulerDelta {
             clock_steps: 0,
-            delta,
+            delta: delta
+                .into_durable_with_hints(current, &hints)
+                .map_err(api_error_from_journal)?,
             training: None,
         }
     };
@@ -20619,3 +20732,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(all(test, feature = "pine-in-process"))]
+mod scheduler_recovery_bench;

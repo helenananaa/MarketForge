@@ -116,7 +116,17 @@ pub fn account<'a>(view: &'a Value, config: &Value) -> Result<(&'a str, &'a Valu
     Ok((kind, a, position, avg))
 }
 pub fn bars(data: &Value, now: i64) -> Result<Vec<Value>> {
-    if data["truncated"] != false {
+    bars_checked(data, now, false)
+}
+
+pub(super) fn checkpoint_bars(data: &Value, now: i64) -> Result<Vec<Value>> {
+    // Candle prefix authorization is performed against the host proof by the
+    // checkpoint adapter; this routine only validates visible candle values.
+    bars_checked(data, now, true)
+}
+
+fn bars_checked(data: &Value, now: i64, checkpoint: bool) -> Result<Vec<Value>> {
+    if !checkpoint && data["truncated"] != false {
         return Err(error("Pine history was truncated; reconstruction refused"));
     }
     let mut bars = Vec::new();
@@ -175,7 +185,12 @@ pub fn feedback(state: &mut Value, views: &[&Value], config: &Value) -> Result<(
         let instrument = text(&view["instrument_id"])?;
         let (kind, a, position, _) = account(view, config)?;
         let data = &view["bot_market_data"];
-        if data.is_null() || data["truncated"] != false {
+        let complete = if state["broker_schema"] == 3 {
+            data["private_history_complete"] == true
+        } else {
+            data["truncated"] == false
+        };
+        if data.is_null() || !complete {
             return Err(error("complete own-fill history is required"));
         }
         let fills = array(&data["own_fills"])?;

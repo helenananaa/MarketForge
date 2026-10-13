@@ -2,6 +2,8 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
 
+mod observation_projection;
+
 use crate::{
     account::{Money, VenueAccountSnapshot},
     actor::{
@@ -115,7 +117,7 @@ impl RoomManager {
         account_id: AccountId,
     ) -> Result<Vec<crate::observation::BotAccountEvent>, RoomManagerError> {
         Ok(self
-            .bot_account_event_map(room_id, instrument, Some(account_id), None)?
+            .bot_account_event_map(room_id, instrument, Some(account_id), None, None)?
             .remove(&account_id)
             .unwrap_or_default())
     }
@@ -126,6 +128,7 @@ impl RoomManager {
         instrument: &str,
         only: Option<AccountId>,
         selected: Option<&[usize]>,
+        mut incomplete: Option<&mut BTreeSet<AccountId>>,
     ) -> Result<BTreeMap<AccountId, Vec<crate::observation::BotAccountEvent>>, RoomManagerError>
     {
         let mut by_account =
@@ -219,10 +222,15 @@ impl RoomManager {
                 );
             }
             for (account, events) in groups {
-                by_account
-                    .entry(account)
-                    .or_default()
-                    .insert(execution.command_seq, events);
+                let by_command = by_account.entry(account).or_default();
+                if by_command
+                    .get(&execution.command_seq)
+                    .is_some_and(|old| old != &events)
+                    && let Some(incomplete) = incomplete.as_deref_mut()
+                {
+                    incomplete.insert(account);
+                }
+                by_command.insert(execution.command_seq, events);
             }
         }
         // Retain one overflow marker so consumers cannot mistake a bounded
@@ -243,9 +251,12 @@ impl RoomManager {
         &self,
         room_id: &str,
         instrument: &str,
+        start: usize,
     ) -> Result<BTreeMap<AccountId, Vec<usize>>, RoomManagerError> {
         let mut result = BTreeMap::<AccountId, Vec<usize>>::new();
-        for (index, execution) in self.execution_history_from(room_id, 0)?.enumerate() {
+        for (offset, execution) in self.execution_history_from(room_id, start)?.enumerate() {
+            #[cfg(test)]
+            observation_projection::record_work(|work| work.index_entries += 1);
             if execution.instrument_id != instrument {
                 continue;
             }
@@ -292,7 +303,7 @@ impl RoomManager {
                 _ => {}
             }
             for account in accounts {
-                result.entry(account).or_default().push(index);
+                result.entry(account).or_default().push(start + offset);
             }
         }
         Ok(result)
@@ -1309,6 +1320,14 @@ impl RoomManager {
                 crate::aggregate_candles(&timed, request.interval_ms, observation.market_time_ms)
                     .map_err(RoomManagerError::Candle)?;
             candles.retain(|bar| bar.is_final);
+            let window_start = candles.len().saturating_sub(request.max_bars);
+            let history_proof = complete.then(|| {
+                let prefixes = crate::candle_history_proof::candle_history_prefixes(
+                    request.interval_ms,
+                    &candles,
+                );
+                crate::candle_history_proof::window_proof(&prefixes, window_start)
+            });
             let mut truncated = !complete || candles.len() > request.max_bars;
             if candles.len() > request.max_bars {
                 candles.drain(..candles.len() - request.max_bars);
@@ -1342,6 +1361,9 @@ impl RoomManager {
                     fills.push(receipt.trade);
                 }
             }
+            let private_history_complete = complete
+                && fills.len() <= 4096
+                && details.iter().all(|detail| detail.fee_paid.is_some());
             if fills.len() > 4096 {
                 truncated = true;
                 details.drain(..details.len() - 4096);
@@ -1354,6 +1376,8 @@ impl RoomManager {
                 external_volume_qty,
                 interval_ms: request.interval_ms,
                 candles,
+                history_proof,
+                private_history_complete,
                 own_fills: fills,
                 fill_details: details,
                 truncated,
@@ -1389,6 +1413,8 @@ impl RoomManager {
         room_id: &str,
         instrument_id: &str,
     ) -> Result<(Vec<crate::observation::BotTradeReceipt>, bool), RoomManagerError> {
+        #[cfg(test)]
+        observation_projection::record_work(|work| work.cold_histories += 1);
         use crate::{Event, PerpClearingEvent, SpotClearingEvent};
         let mut receipts = BTreeMap::new();
         let mut complete = true;
@@ -1398,7 +1424,11 @@ impl RoomManager {
                 .iter()
                 .filter(|receipt| receipt.instrument_id == instrument_id)
             {
-                receipts.insert(receipt.trade.trade_id, receipt.clone());
+                if let Some(previous) = receipts.insert(receipt.trade.trade_id, receipt.clone())
+                    && previous != *receipt
+                {
+                    complete = false;
+                }
             }
         }
         for execution in self.execution_history_from(room_id, 0)? {
@@ -1789,21 +1819,28 @@ impl NativeObservationWave {
 
 /// The immutable room borrow is the cache validity boundary. Keep extra
 /// receipts/bars for this wave to avoid replaying history for every POV bot.
+#[derive(Clone)]
 struct ObservationHistory {
-    receipts: Arc<Vec<crate::observation::BotTradeReceipt>>,
+    receipts: im::Vector<crate::observation::BotTradeReceipt>,
     complete: bool,
-    candles: BTreeMap<u64, Vec<crate::Candle>>,
+    candles: BTreeMap<u64, im::Vector<crate::Candle>>,
+    candle_prefixes: BTreeMap<u64, im::Vector<[u8; 32]>>,
+    forming: BTreeMap<u64, Option<crate::Candle>>,
+    market_time_ms: u64,
+    append_eligible: bool,
     volume: Option<u128>,
-    accounts: BTreeMap<AccountId, ObservationAccountHistory>,
-    account_events: Option<BTreeMap<AccountId, Arc<Vec<crate::observation::BotAccountEvent>>>>,
-    account_execution_index: Option<BTreeMap<AccountId, Vec<usize>>>,
+    accounts: im::OrdMap<AccountId, ObservationAccountHistory>,
+    account_events: Option<im::OrdMap<AccountId, Arc<Vec<crate::observation::BotAccountEvent>>>>,
+    account_execution_index: Option<im::OrdMap<AccountId, im::Vector<usize>>>,
+    incomplete_account_events: BTreeSet<AccountId>,
     candle_stamps: BTreeMap<(u64, usize), [u8; 32]>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct ObservationAccountHistory {
     volume: u128,
-    receipt_indices: Arc<Vec<usize>>,
+    receipt_indices: im::Vector<usize>,
+    incomplete_fees: bool,
 }
 
 impl ObservationHistory {
@@ -1813,6 +1850,8 @@ impl ObservationHistory {
         market_time_ms: u64,
     ) -> Result<(), RoomManagerError> {
         if !self.candles.contains_key(&interval) {
+            #[cfg(test)]
+            observation_projection::record_work(|work| work.cold_intervals += 1);
             let timed = self
                 .receipts
                 .iter()
@@ -1820,15 +1859,32 @@ impl ObservationHistory {
                 .collect::<Vec<_>>();
             let mut candles = crate::aggregate_candles(&timed, interval, market_time_ms)
                 .map_err(RoomManagerError::Candle)?;
+            let mut forming = candles.iter().filter(|bar| !bar.is_final);
+            self.forming.insert(interval, forming.next().cloned());
+            if forming.next().is_some() {
+                self.append_eligible = false;
+            }
             candles.retain(|bar| bar.is_final);
-            self.candles.insert(interval, candles);
+            if self.complete {
+                self.candle_prefixes.insert(
+                    interval,
+                    crate::candle_history_proof::candle_history_prefixes(interval, &candles)
+                        .into_iter()
+                        .collect(),
+                );
+            }
+            self.candles.insert(interval, candles.into_iter().collect());
         }
         Ok(())
     }
 
-    fn new(receipts: Vec<crate::observation::BotTradeReceipt>, complete: bool) -> Self {
+    fn new(
+        receipts: Vec<crate::observation::BotTradeReceipt>,
+        complete: bool,
+        market_time_ms: u64,
+    ) -> Self {
         let mut volume = Some(0u128);
-        let mut accounts = BTreeMap::<AccountId, ObservationAccountHistory>::new();
+        let mut accounts = im::OrdMap::<AccountId, ObservationAccountHistory>::new();
         for (index, receipt) in receipts.iter().enumerate() {
             let trade = &receipt.trade;
             volume = volume.and_then(|value| value.checked_add(u128::from(trade.qty)));
@@ -1841,17 +1897,37 @@ impl ObservationHistory {
                 }
                 let own = accounts.entry(account).or_default();
                 own.volume = own.volume.saturating_add(u128::from(trade.qty));
-                Arc::make_mut(&mut own.receipt_indices).push(index);
+                let buyer = if trade.taker_side == crate::Side::Buy {
+                    trade.taker_account_id
+                } else {
+                    trade.maker_account_id
+                };
+                own.incomplete_fees |= if account == buyer {
+                    receipt.buyer_fee.is_none()
+                } else {
+                    receipt.seller_fee.is_none()
+                };
+                own.receipt_indices.push_back(index);
             }
         }
+        let append_eligible = receipts.iter().all(|r| r.market_time_ms <= market_time_ms)
+            && receipts.windows(2).all(|p| {
+                p[0].trade.trade_id < p[1].trade.trade_id
+                    && p[0].market_time_ms <= p[1].market_time_ms
+            });
         Self {
-            receipts: Arc::new(receipts),
+            receipts: receipts.into_iter().collect(),
             complete,
             candles: BTreeMap::new(),
+            candle_prefixes: BTreeMap::new(),
+            forming: BTreeMap::new(),
+            market_time_ms,
+            append_eligible,
             volume,
             accounts,
             account_events: None,
             account_execution_index: None,
+            incomplete_account_events: BTreeSet::new(),
             candle_stamps: BTreeMap::new(),
         }
     }
@@ -1874,23 +1950,34 @@ impl RoomObservationBatch<'_> {
         if history.account_execution_index.is_none() {
             history.account_execution_index = Some(
                 self.rooms
-                    .bot_account_execution_index(self.room_id, instrument)?,
+                    .bot_account_execution_index(self.room_id, instrument, 0)?
+                    .into_iter()
+                    .map(|(id, indices)| (id, indices.into_iter().collect::<im::Vector<_>>()))
+                    .collect(),
             );
         }
-        let indices = history
+        let indices: Vec<_> = history
             .account_execution_index
             .as_ref()
             .unwrap()
             .get(&account)
-            .map_or(&[][..], Vec::as_slice);
+            .into_iter()
+            .flat_map(|indices| indices.iter().copied())
+            .collect();
         let events = self
             .rooms
-            .bot_account_event_map(self.room_id, instrument, Some(account), Some(indices))?
+            .bot_account_event_map(
+                self.room_id,
+                instrument,
+                Some(account),
+                Some(&indices),
+                Some(&mut history.incomplete_account_events),
+            )?
             .remove(&account)
             .unwrap_or_default();
         history
             .account_events
-            .get_or_insert_with(BTreeMap::new)
+            .get_or_insert_with(im::OrdMap::new)
             .insert(account, Arc::new(events));
         Ok(())
     }
@@ -1902,12 +1989,106 @@ impl RoomObservationBatch<'_> {
         let cache = shared.as_deref_mut().unwrap_or(&mut self.history);
         if !cache.contains_key(instrument) {
             let (receipts, complete) = self.rooms.bot_trade_history(self.room_id, instrument)?;
-            cache.insert(
-                instrument.to_owned(),
-                Arc::new(Mutex::new(ObservationHistory::new(receipts, complete))),
+            let mut history = ObservationHistory::new(
+                receipts,
+                complete,
+                self.rooms.clock(self.room_id)?.market_time_ms(),
             );
+            // A recovered receipt prefix without corresponding private frames
+            // can still authenticate candles, but cannot certify account replay.
+            // Check once per wave, rather than rescanning the prefix per bot.
+            if let Some((restored, _)) = self.rooms.restored_bot_history.get(self.room_id) {
+                let restored_accounts: BTreeSet<_> = self
+                    .rooms
+                    .restored_bot_accounts
+                    .get(self.room_id)
+                    .into_iter()
+                    .flat_map(|events| events.iter())
+                    .filter(|event| event.instrument_id == instrument)
+                    .map(|event| event.account.account_id())
+                    .collect();
+                for receipt in restored
+                    .iter()
+                    .filter(|receipt| receipt.instrument_id == instrument)
+                {
+                    for account in [
+                        receipt.trade.maker_account_id,
+                        receipt.trade.taker_account_id,
+                    ] {
+                        if !restored_accounts.contains(&account) {
+                            history.incomplete_account_events.insert(account);
+                        }
+                    }
+                }
+            }
+            cache.insert(instrument.to_owned(), Arc::new(Mutex::new(history)));
         }
         Ok(cache[instrument].clone())
+    }
+
+    /// Verify every saved cursor against full authoritative history before
+    /// selecting a common bounded suffix for the primary and additional streams.
+    /// A lagging stream expands all windows so no new candle can be skipped.
+    pub fn checkpoint_window_max_bars(
+        &mut self,
+        cursors: &[crate::bots::BotHistoryCursor],
+    ) -> Result<usize, crate::BotError> {
+        use crate::bots::{BotError, MAX_BOT_MARKET_DATA_BARS};
+        if cursors.is_empty() || cursors.len() > 16 {
+            return Err(BotError("invalid checkpoint history cursor set".into()));
+        }
+        let time = self
+            .rooms
+            .clock(self.room_id)
+            .map_err(|e| BotError(format!("{e:?}")))?
+            .market_time_ms();
+        let mut maximum = 64usize;
+        let mut seen = BTreeSet::new();
+        for cursor in cursors {
+            if cursor.interval_ms == 0 || !seen.insert((&cursor.instrument_id, cursor.interval_ms))
+            {
+                return Err(BotError("invalid checkpoint history cursor stream".into()));
+            }
+            let history = self
+                .history_for(&cursor.instrument_id)
+                .map_err(|e| BotError(format!("{e:?}")))?;
+            #[cfg(feature = "bench-observation-timing")]
+            let mut history = crate::observation_timing::lock(
+                &history,
+                crate::observation_timing::Site::CheckpointWindow,
+            );
+            #[cfg(not(feature = "bench-observation-timing"))]
+            let mut history = history.lock().unwrap();
+            if !history.complete {
+                return Err(BotError(
+                    "checkpoint window requires complete authoritative history".into(),
+                ));
+            }
+            history
+                .prepare_candles(cursor.interval_ms, time)
+                .map_err(|e| BotError(format!("{e:?}")))?;
+            let prefixes = history
+                .candle_prefixes
+                .get(&cursor.interval_ms)
+                .ok_or_else(|| {
+                    BotError("checkpoint window requires authoritative prefix proof".into())
+                })?;
+            let saved = usize::try_from(cursor.count)
+                .map_err(|_| BotError("checkpoint candle cursor overflow".into()))?;
+            if prefixes.get(saved) != Some(&cursor.digest) {
+                return Err(BotError(
+                    "committed candle prefix changed or disappeared".into(),
+                ));
+            }
+            let pending = history.candles[&cursor.interval_ms].len() - saved;
+            maximum = maximum.max(pending);
+            if maximum > MAX_BOT_MARKET_DATA_BARS {
+                return Err(BotError(
+                    "checkpoint candle catch-up exceeds bot market data bounds".into(),
+                ));
+            }
+        }
+        Ok(maximum)
     }
 
     /// Conservative content check before copying bars/fills into an observation.
@@ -2004,6 +2185,12 @@ impl RoomObservationBatch<'_> {
                 ));
             }
             let history = self.history_for(instrument)?;
+            #[cfg(feature = "bench-observation-timing")]
+            let mut history = crate::observation_timing::lock(
+                &history,
+                crate::observation_timing::Site::Prefilter,
+            );
+            #[cfg(not(feature = "bench-observation-timing"))]
             let mut history = history.lock().unwrap();
             history.prepare_candles(request.interval_ms, time)?;
             if account_events {
@@ -2024,6 +2211,15 @@ impl RoomObservationBatch<'_> {
                 || history.candles[&request.interval_ms].len() > request.max_bars
                 || indices.len() > 4096
                 || (account_events && events.len() > 4096);
+            let private_history_complete = history.complete
+                && indices.len() <= 4096
+                && !history
+                    .accounts
+                    .get(&account)
+                    .is_some_and(|own| own.incomplete_fees)
+                && (!account_events
+                    || (events.len() <= 4096
+                        && !history.incomplete_account_events.contains(&account)));
             let receipts = history.receipts.clone();
             let mut candle_stamps = Vec::new();
             if filter.closed_bars {
@@ -2037,7 +2233,11 @@ impl RoomObservationBatch<'_> {
                             interval,
                             history.complete,
                             candles.len() > request.max_bars,
-                            &candles[candles.len().saturating_sub(request.max_bars)..],
+                            history.window_proof(
+                                *interval,
+                                candles.len().saturating_sub(request.max_bars),
+                            ),
+                            &candles.skip(candles.len().saturating_sub(request.max_bars)),
                         )) {
                             return Ok((None, time));
                         }
@@ -2052,14 +2252,14 @@ impl RoomObservationBatch<'_> {
             // preparation needs the directory lock; hash private histories in
             // parallel without retaining a market-wide mutex or copying them.
             drop(history);
-            if !writer.value(&(request.interval_ms, truncated)) {
+            if !writer.value(&(request.interval_ms, truncated, private_history_complete)) {
                 return Ok((None, time));
             }
             if filter.account {
                 if !writer.value(&events[..events.len().min(4096)]) {
                     return Ok((None, time));
                 }
-                for &index in &indices[indices.len().saturating_sub(4096)..] {
+                for index in indices.skip(indices.len().saturating_sub(4096)) {
                     // Includes both fees: conservative extra wakes are harmless.
                     let receipt = &receipts[index];
                     if !writer.value(&(
@@ -2112,18 +2312,43 @@ impl RoomObservationBatch<'_> {
         let mut peers = peers;
         for observation in std::iter::once(&mut *view).chain(peers.iter_mut()) {
             if account_events && let Some(data) = &mut observation.bot_market_data {
-                let history = self.history_for(&observation.instrument_id)?;
-                let mut history = history.lock().unwrap();
-                self.prepare_account_events(&observation.instrument_id, account_id, &mut history)?;
-                data.account_events = history
-                    .account_events
-                    .as_ref()
-                    .unwrap()
-                    .get(&account_id)
+                let history_cell = self.history_for(&observation.instrument_id)?;
+                let (events, incomplete) = {
+                    #[cfg(feature = "bench-observation-timing")]
+                    let mut history = crate::observation_timing::lock(
+                        &history_cell,
+                        crate::observation_timing::Site::AccountEvents,
+                    );
+                    #[cfg(not(feature = "bench-observation-timing"))]
+                    let mut history = history_cell.lock().unwrap();
+                    self.prepare_account_events(
+                        &observation.instrument_id,
+                        account_id,
+                        &mut history,
+                    )?;
+                    (
+                        history
+                            .account_events
+                            .as_ref()
+                            .unwrap()
+                            .get(&account_id)
+                            .cloned(),
+                        history.incomplete_account_events.contains(&account_id),
+                    )
+                };
+                // The wave and these Arc-backed events are immutable. Retain
+                // their root under the lock, then copy the wire vector outside it.
+                #[cfg(test)]
+                tests::observation_materialize_check_unlocked(&history_cell, "account_events");
+                if incomplete {
+                    data.private_history_complete = false;
+                }
+                data.account_events = events
                     .map(|events| events.as_ref().clone())
                     .unwrap_or_default();
                 if data.account_events.len() > 4096 {
                     data.truncated = true;
+                    data.private_history_complete = false;
                     data.account_events.truncate(4096);
                 }
                 let room = self.rooms.simulation_room(self.room_id)?;
@@ -2154,6 +2379,7 @@ impl RoomObservationBatch<'_> {
                     instrument_id: instrument.clone(),
                     interval_ms: *interval,
                     candles: data.candles,
+                    history_proof: data.history_proof,
                     truncated: data.truncated,
                 });
             }
@@ -2201,19 +2427,58 @@ impl RoomObservationBatch<'_> {
                 crate::CandleError::InvalidInterval,
             ));
         }
-        let history = self.history_for(instrument_id)?;
-        let mut history = history.lock().unwrap();
-        history.prepare_candles(request.interval_ms, market_time_ms)?;
-        let candles = &history.candles[&request.interval_ms];
-        let own = history.accounts.get(&account_id);
-        let external_volume_qty = history
-            .volume
-            .map(|volume| volume - own.map_or(0, |own| own.volume))
+        let history_cell = self.history_for(instrument_id)?;
+        let (
+            candles,
+            receipts,
+            indices,
+            volume,
+            own_volume,
+            truncated,
+            history_proof,
+            private_history_complete,
+        ) = {
+            #[cfg(feature = "bench-observation-timing")]
+            let mut history = crate::observation_timing::lock(
+                &history_cell,
+                crate::observation_timing::Site::MarketData,
+            );
+            #[cfg(not(feature = "bench-observation-timing"))]
+            let mut history = history_cell.lock().unwrap();
+            history.prepare_candles(request.interval_ms, market_time_ms)?;
+            let candles = &history.candles[&request.interval_ms];
+            let own = history.accounts.get(&account_id);
+            let indices = own
+                .map(|own| own.receipt_indices.clone())
+                .unwrap_or_default();
+            let truncated =
+                !history.complete || candles.len() > request.max_bars || indices.len() > 4096;
+            let window_start = candles.len().saturating_sub(request.max_bars);
+            let history_proof = history.window_proof(request.interval_ms, window_start);
+            let private_history_complete = history.complete
+                && indices.len() <= 4096
+                && own.is_none_or(|own| !own.incomplete_fees);
+            (
+                candles.clone(),
+                history.receipts.clone(),
+                indices,
+                history.volume,
+                own.map_or(0, |own| own.volume),
+                truncated,
+                history_proof,
+                private_history_complete,
+            )
+        };
+        // Persistent roots retain exactly this frozen wave. Materializing the
+        // caller's candle/fill vectors does not require the market-wide mutex.
+        #[cfg(test)]
+        tests::observation_materialize_check_unlocked(&history_cell, "market_data");
+        let external_volume_qty = volume
+            .map(|volume| volume - own_volume)
             .unwrap_or_else(|| {
                 // Preserve the original saturating filtered sum even if
                 // the total quantity cannot be represented in u128.
-                history
-                    .receipts
+                receipts
                     .iter()
                     .filter(|receipt| {
                         receipt.trade.maker_account_id != account_id
@@ -2224,11 +2489,10 @@ impl RoomObservationBatch<'_> {
                     })
             })
             .to_string();
-        let indices = own.map_or(&[][..], |own| own.receipt_indices.as_slice());
         let mut own_fills = Vec::new();
         let mut fill_details = Vec::new();
-        for &index in &indices[indices.len().saturating_sub(4096)..] {
-            let receipt = &history.receipts[index];
+        for index in indices.skip(indices.len().saturating_sub(4096)) {
+            let receipt = &receipts[index];
             let trade = &receipt.trade;
             let buyer = if trade.taker_side == crate::Side::Buy {
                 trade.taker_account_id
@@ -2246,15 +2510,16 @@ impl RoomObservationBatch<'_> {
             });
             own_fills.push(trade.clone());
         }
-        let truncated =
-            !history.complete || candles.len() > request.max_bars || indices.len() > 4096;
+        let window_start = candles.len().saturating_sub(request.max_bars);
         Ok(Some(crate::BotMarketData {
             streams: vec![],
             account_events: vec![],
             conditional_orders: vec![],
             interval_ms: request.interval_ms,
             external_volume_qty,
-            candles: candles[candles.len().saturating_sub(request.max_bars)..].to_vec(),
+            candles: candles.skip(window_start).into_iter().collect(),
+            history_proof,
+            private_history_complete,
             own_fills,
             fill_details,
             truncated,
@@ -2439,6 +2704,9 @@ mod tests {
     include!("order_protection_tests.rs");
     include!("room_incremental_risk_tests.rs");
     include!("room_bot_event_tests.rs");
+    include!("room_bot_checkpoint_window_tests.rs");
+    include!("room/observation_projection_tests.rs");
+    include!("room/observation_materialize_tests.rs");
 
     #[test]
     fn moving_execution_owners_preserves_all_room_state_and_rejects_overlap() {
@@ -2990,6 +3258,16 @@ mod tests {
             }
             assert_eq!(batch.history.len(), 1);
             assert_eq!(batch.history["V-BTC-SPOT"].lock().unwrap().candles.len(), 3);
+            // All five accounts and different window lengths share one prefix
+            // computation per interval, not one full-history hash per bot.
+            assert_eq!(
+                batch.history["V-BTC-SPOT"]
+                    .lock()
+                    .unwrap()
+                    .candle_prefixes
+                    .len(),
+                3
+            );
         }
         let view = manager
             .bot_observation("history", "V-BTC-SPOT", 20, Some(request))
@@ -2998,6 +3276,13 @@ mod tests {
         assert_eq!(data.candles.len(), 40);
         assert_eq!(data.own_fills.len(), 40);
         assert!(!data.truncated);
+        assert!(data.private_history_complete);
+        let proof = data.history_proof.as_ref().unwrap();
+        assert_eq!(proof.prefix_bars, 0);
+        assert_eq!(
+            proof.prefix_digest(),
+            Some(crate::candle_history_seed(1000))
+        );
         assert!(
             data.candles
                 .iter()
@@ -3022,6 +3307,25 @@ mod tests {
         assert!(bounded.truncated);
         assert_eq!(bounded.candles.len(), 2);
         assert_eq!(bounded.candles[0].open_time_ms, 38000);
+        assert!(
+            bounded.private_history_complete,
+            "a candle window does not truncate private feedback"
+        );
+        let proof = bounded.history_proof.as_ref().unwrap();
+        assert_eq!(proof.prefix_bars, 38);
+        let visible_digest = bounded
+            .candles
+            .iter()
+            .fold(proof.prefix_digest().unwrap(), |digest, bar| {
+                crate::candle_history_append(&digest, bar)
+            });
+        let complete_digest = data
+            .candles
+            .iter()
+            .fold(crate::candle_history_seed(1000), |digest, bar| {
+                crate::candle_history_append(&digest, bar)
+            });
+        assert_eq!(visible_digest, complete_digest);
         manager
             .apply("history", limit(81, 10, Side::Sell, 100, 1))
             .unwrap();
@@ -3098,6 +3402,11 @@ mod tests {
                 );
                 let data = view.bot_market_data.unwrap();
                 assert!(data.truncated);
+                assert!(
+                    data.history_proof.is_none(),
+                    "incomplete history cannot authenticate its omitted prefix"
+                );
+                assert!(!data.private_history_complete);
                 if account == 10 || account == 20 {
                     assert_eq!(data.own_fills.len(), 4096);
                     assert_eq!(data.own_fills[0].trade_id, 204);
@@ -3143,7 +3452,7 @@ mod tests {
             .lock()
             .unwrap()
             .receipts
-            .first()
+            .front()
             .unwrap()
             .clone();
         conflict.trade.price_tick += 1;
@@ -3159,6 +3468,151 @@ mod tests {
                 .unwrap()
         );
         assert!(!batch.history["V-BTC-SPOT"].lock().unwrap().complete);
+        assert!(
+            batch.history["V-BTC-SPOT"]
+                .lock()
+                .unwrap()
+                .candle_prefixes
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn private_history_conflict_invalidates_the_event_stamp_even_when_live_frames_win() {
+        let mut manager = RoomManager::new();
+        manager
+            .create_room(spot_scenario("private-conflict"))
+            .unwrap();
+        manager
+            .apply("private-conflict", limit(2, 20, Side::Buy, 100, 1))
+            .unwrap();
+        manager.advance_clock("private-conflict", 1).unwrap();
+        let request = crate::bots::BotMarketDataRequest {
+            interval_ms: 1000,
+            max_bars: 64,
+        };
+        let filter = crate::bots::BotEventFilter {
+            closed_bars: true,
+            account: true,
+            interval_ms: None,
+        };
+        let before = manager
+            .clone()
+            .into_native_observation_wave("private-conflict".into())
+            .batch()
+            .bot_event_stamp("V-BTC-SPOT", 20, Some(request), &[], &[], true, filter)
+            .unwrap();
+        let original = manager
+            .bot_account_events("private-conflict", "V-BTC-SPOT", 20)
+            .unwrap();
+        let mut conflicting = original.clone();
+        match &mut conflicting[0].account {
+            crate::observation::BotAccountFrame::Spot { cash_balance, .. } => *cash_balance += 1,
+            _ => panic!("spot fixture"),
+        }
+        manager.restore_bot_accounts("private-conflict", conflicting);
+        assert_eq!(
+            manager
+                .bot_account_events("private-conflict", "V-BTC-SPOT", 20)
+                .unwrap(),
+            original
+        );
+        let frozen = manager
+            .clone()
+            .into_native_observation_wave("private-conflict".into());
+        let mut batch = frozen.batch();
+        let after = batch
+            .bot_event_stamp("V-BTC-SPOT", 20, Some(request), &[], &[], true, filter)
+            .unwrap();
+        assert!(before.0.is_some());
+        assert_ne!(
+            before, after,
+            "conflicting completeness must wake the consumer even when visible frames match"
+        );
+        let mut view = batch
+            .bot_observation("V-BTC-SPOT", 20, Some(request), &[])
+            .unwrap();
+        batch
+            .enrich_data(&mut view, Some(request), &[], &[], true, 20)
+            .unwrap();
+        assert!(!view.bot_market_data.unwrap().private_history_complete);
+    }
+
+    #[test]
+    fn restored_receipt_conflicts_cannot_authenticate_a_candle_prefix() {
+        let mut manager = restored_history_room();
+        let receipt = manager.restored_bot_history["cached-history"].0[0].clone();
+        let request = crate::bots::BotMarketDataRequest {
+            interval_ms: 1000,
+            max_bars: 2,
+        };
+        manager.restore_bot_history(
+            "cached-history",
+            vec![receipt.clone(), receipt.clone()],
+            true,
+        );
+        assert!(
+            manager
+                .bot_observation("cached-history", "V-BTC-SPOT", 20, Some(request))
+                .unwrap()
+                .bot_market_data
+                .unwrap()
+                .history_proof
+                .is_some(),
+            "identical replay is idempotent"
+        );
+        let mut conflict = receipt.clone();
+        conflict.trade.price_tick += 1;
+        manager.restore_bot_history("cached-history", vec![receipt, conflict], true);
+        let mut batch = manager.observation_batch("cached-history");
+        let data = batch
+            .bot_observation("V-BTC-SPOT", 20, Some(request), &[])
+            .unwrap()
+            .bot_market_data
+            .unwrap();
+        assert!(data.history_proof.is_none());
+        assert!(!data.private_history_complete);
+        assert!(data.truncated);
+    }
+
+    #[test]
+    fn rolling_proof_changes_for_old_history_and_missing_private_frames_stay_incomplete() {
+        let mut manager = restored_history_room();
+        let mut restored = manager.restored_bot_history["cached-history"].0.as_ref()[..80].to_vec();
+        manager.restore_bot_history("cached-history", restored.clone(), true);
+        let request = crate::bots::BotMarketDataRequest {
+            interval_ms: 1000,
+            max_bars: 2,
+        };
+        let mut batch = manager.observation_batch("cached-history");
+        let mut view = batch
+            .bot_observation("V-BTC-SPOT", 20, Some(request), &[])
+            .unwrap();
+        let before = view.bot_market_data.as_ref().unwrap().clone();
+        assert!(before.history_proof.is_some());
+        assert!(before.private_history_complete);
+        batch
+            .enrich_data(&mut view, Some(request), &[], &[2000], true, 20)
+            .unwrap();
+        let data = view.bot_market_data.as_ref().unwrap();
+        assert!(
+            !data.private_history_complete,
+            "restored trades without private frames are not complete account feedback"
+        );
+        assert!(data.streams[0].history_proof.is_some());
+        drop(batch);
+        restored[0].trade.price_tick += 1;
+        manager.restore_bot_history("cached-history", restored, true);
+        let after = manager
+            .bot_observation("cached-history", "V-BTC-SPOT", 20, Some(request))
+            .unwrap()
+            .bot_market_data
+            .unwrap();
+        assert_eq!(
+            before.candles, after.candles,
+            "correction is outside the supplied window"
+        );
+        assert_ne!(before.history_proof, after.history_proof);
     }
 
     #[test]

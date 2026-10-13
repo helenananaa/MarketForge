@@ -293,6 +293,81 @@ impl BotFactory for ProcessBotFactory {
             max_bars: data.max_bars,
         }))
     }
+    fn checkpoint_history_cursors(
+        &self,
+        template: &AgentTemplate,
+        state: &PersistedAgentKindState,
+    ) -> Result<Option<Vec<exchange_core::bots::BotHistoryCursor>>, BotError> {
+        #[cfg(feature = "pine-in-process")]
+        {
+            let (
+                Some(host),
+                AgentTemplate::Plugin(config),
+                PersistedAgentKindState::Plugin { data, .. },
+            ) = (&self.in_process, template, state)
+            else {
+                return Ok(None);
+            };
+            if data["broker_schema"] != 3
+                || data["evaluated_bars"]
+                    .as_u64()
+                    .is_none_or(|count| count == 0)
+            {
+                return Ok(None);
+            }
+            let mut config = config.clone();
+            config.config = self.manifest.bot.validate_config(&config.config)?;
+            if host
+                .installed_ineligible_reason_borrowed(&config, data)
+                .is_some()
+            {
+                return Ok(None);
+            }
+            let audits = data["candle_audits"]
+                .as_object()
+                .ok_or_else(|| BotError("checkpoint candle audits are missing".into()))?;
+            let mut cursors = Vec::with_capacity(audits.len().min(16));
+            if audits.len() > 16 {
+                return Err(BotError("too many checkpoint candle audits".into()));
+            }
+            for (key, audit) in audits {
+                let (instrument, timeframe) = key
+                    .rsplit_once(':')
+                    .ok_or_else(|| BotError("invalid checkpoint candle audit stream".into()))?;
+                let interval_ms = u64::try_from(crate::pine_inprocess::interval(timeframe)?)
+                    .ok()
+                    .filter(|value| *value > 0)
+                    .ok_or_else(|| BotError("invalid checkpoint candle audit interval".into()))?;
+                let count = audit["count"]
+                    .as_u64()
+                    .ok_or_else(|| BotError("invalid checkpoint candle audit count".into()))?;
+                let digest = audit["sha256"]
+                    .as_str()
+                    .and_then(exchange_core::candle_history_parse)
+                    .ok_or_else(|| BotError("invalid checkpoint candle audit digest".into()))?;
+                if config.participant.instrument_id.as_deref() == Some(instrument)
+                    && config.config["bar_interval_ms"].as_u64() == Some(interval_ms)
+                    && data["evaluated_bars"].as_u64() != Some(count)
+                {
+                    return Err(BotError(
+                        "checkpoint evaluation and candle cursors disagree".into(),
+                    ));
+                }
+                cursors.push(exchange_core::bots::BotHistoryCursor {
+                    instrument_id: instrument.into(),
+                    interval_ms,
+                    count,
+                    digest,
+                });
+            }
+            Ok(Some(cursors))
+        }
+        #[cfg(not(feature = "pine-in-process"))]
+        {
+            let _ = (template, state);
+            Ok(None)
+        }
+    }
     fn create(
         &self,
         template: &AgentTemplate,
@@ -324,48 +399,60 @@ impl ScheduledBot for ProcessBot {
         &mut self,
         observation: &ParticipantObservation,
     ) -> Result<Vec<OrderAction>, BotError> {
-        if !self
+        let (due, cursor) = self
             .factory
             .manifest
             .decision_trigger
-            .due(&self.config, &self.state, observation)?
-        {
+            .due_with_fingerprint(&self.config, &self.state, observation)?;
+        if !due {
             return Ok(vec![]);
         }
-        let cursor = self.factory.manifest.decision_trigger.fingerprint(
-            &self.config,
-            &self.state,
-            observation,
-        )?;
         #[cfg(feature = "bench-execution-timing")]
-        let request_clone_timer = crate::bench_execution_timing::Timer::start(
+        let mut request_clone_timer = Some(crate::bench_execution_timing::Timer::start(
             &crate::bench_execution_timing::BOT_REQUEST_CLONE,
-        );
+        ));
         #[cfg(feature = "pine-in-process")]
-        let direct = self
-            .factory
-            .in_process
-            .as_ref()
-            .filter(|host| host.eligible_borrowed(&self.config, &self.state));
-        #[cfg(not(feature = "pine-in-process"))]
-        let direct: Option<std::convert::Infallible> = None;
-        let response = if let Some(host) = direct {
-            #[cfg(feature = "bench-execution-timing")]
-            drop(request_clone_timer);
-            #[cfg(feature = "pine-in-process")]
-            {
-                host.decide_borrowed(
-                    &self.config,
-                    &self.state,
-                    observation,
-                    self.factory.manifest.timeout_ms,
-                )?
-            }
-            #[cfg(not(feature = "pine-in-process"))]
-            {
-                match host {}
+        let (direct_response, fallback_reason) = if let Some(host) = &self.factory.in_process {
+            match host.route_borrowed(
+                &self.config,
+                &self.state,
+                observation,
+                self.factory.manifest.timeout_ms,
+                || {
+                    crate::bot_runtime_diagnostics::record_route("direct", None);
+                    #[cfg(feature = "bench-execution-timing")]
+                    drop(request_clone_timer.take());
+                },
+            ) {
+                crate::pine_inprocess::DirectAttempt::NotQualified(reason) => (None, Some(reason)),
+                crate::pine_inprocess::DirectAttempt::Executed(result) => (Some(result?), None),
             }
         } else {
+            (None, Some("disabled"))
+        };
+        #[cfg(not(feature = "pine-in-process"))]
+        let (direct_response, fallback_reason): (Option<BotDecisionResponse>, _) =
+            (None, Some("feature_disabled"));
+        let response = if let Some(response) = direct_response {
+            response
+        } else {
+            if self.config.plugin_id == "pine.strategy"
+                && self.state.get("broker_schema").and_then(Value::as_u64) == Some(3)
+            {
+                crate::bot_runtime_diagnostics::record_route(
+                    "blocked",
+                    Some("checkpoint_requires_direct"),
+                );
+                return Err(BotError(
+                    "Pine VM checkpoint requires qualified in-process runtime".into(),
+                ));
+            }
+            crate::bot_runtime_diagnostics::record_route(
+                "process",
+                (self.config.plugin_id == "pine.strategy")
+                    .then_some(fallback_reason)
+                    .flatten(),
+            );
             let request = BotDecisionRequest {
                 protocol_version: BOT_PROTOCOL_VERSION.into(),
                 plugin_id: self.config.plugin_id.clone(),
@@ -378,8 +465,8 @@ impl ScheduledBot for ProcessBot {
                 observation: observation.clone(),
             };
             #[cfg(feature = "bench-execution-timing")]
-            drop(request_clone_timer);
-            self.factory.exchange(&request)?
+            drop(request_clone_timer.take());
+            self.factory.exchange_process(&request)?
         };
         if response.protocol_version != BOT_PROTOCOL_VERSION
             || response.plugin_id != self.config.plugin_id
@@ -507,16 +594,16 @@ pub(super) fn process_command(directory: &Path, args: &[String]) -> Command {
 }
 
 impl ProcessBotFactory {
-    fn exchange(&self, request: &BotDecisionRequest) -> Result<BotDecisionResponse, BotError> {
-        #[cfg(feature = "pine-in-process")]
-        if let Some(host) = &self.in_process
-            && host.eligible(request)
-        {
-            return host.decide(request, self.manifest.timeout_ms);
-        }
+    // Routing was decided once before constructing the wire request. A source
+    // restored after a failed check must not secretly reselect direct here.
+    fn exchange_process(
+        &self,
+        request: &BotDecisionRequest,
+    ) -> Result<BotDecisionResponse, BotError> {
         if let Some(pool) = &self.pool {
             return pool.exchange(&self.directory, &self.manifest, request);
         }
+        crate::bot_runtime_diagnostics::record_evaluation("process", "unknown", Some("one_shot"));
         let mut input = serde_json::to_vec(request).map_err(bot_io)?;
         input.push(b'\n');
         if input.len() > MAX_REQUEST_BYTES {
@@ -674,6 +761,112 @@ mod tests {
         );
     }
     struct Package(PathBuf);
+    #[cfg(feature = "pine-in-process")]
+    #[test]
+    fn checkpoint_history_cursors_are_direct_schema3_only_and_cover_every_stream() {
+        let directory = example_root().join("pine-strategy");
+        let manifest: ProcessBotManifest =
+            serde_json::from_slice(&fs::read(directory.join("bot.json")).unwrap()).unwrap();
+        let host = Arc::new(crate::pine_inprocess::Host::load(&directory).unwrap());
+        let factory = ProcessBotFactory {
+            manifest,
+            directory,
+            pool: None,
+            event_prefilter_enabled: true,
+            in_process: Some(host),
+        };
+        let mut registry = BotRegistry::with_builtins();
+        registry.register(factory.clone()).unwrap();
+        let AgentTemplate::Plugin(mut config) = template() else {
+            unreachable!()
+        };
+        config.plugin_id = "pine.strategy".into();
+        config.plugin_version = "2.0.0".into();
+        config.config = serde_json::json!({"script":"ma.pine","bar_interval_ms":1000});
+        let template = AgentTemplate::Plugin(config.clone());
+        let persisted = |data: Value| PersistedAgentKindState::Plugin {
+            plugin_id: "pine.strategy".into(),
+            plugin_version: "2.0.0".into(),
+            state_version: 1,
+            data: data.into(),
+        };
+        for data in [
+            Value::Null,
+            serde_json::json!({}),
+            serde_json::json!({"broker_schema":2,"evaluated_bars":100}),
+            serde_json::json!({"broker_schema":3,"evaluated_bars":0}),
+        ] {
+            assert!(
+                registry
+                    .checkpoint_history_cursors(&template, &persisted(data))
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(
+                registry
+                    .market_data_request(&template)
+                    .unwrap()
+                    .unwrap()
+                    .max_bars,
+                2049
+            );
+        }
+        let mut data = serde_json::json!({"broker_schema":3,"evaluated_bars":100,"candle_audits":{
+            "V-BTC-SPOT:1S":{"count":100,"sha256":"a".repeat(64)}
+        }});
+        let cursors = registry
+            .checkpoint_history_cursors(&template, &persisted(data.clone()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(cursors.len(), 1);
+        assert_eq!(
+            (cursors[0].interval_ms, cursors[0].count, cursors[0].digest),
+            (1000, 100, [0xaa; 32])
+        );
+        let mut process = factory.clone();
+        process.in_process = None;
+        assert!(
+            process
+                .checkpoint_history_cursors(&template, &persisted(data.clone()))
+                .unwrap()
+                .is_none()
+        );
+        data["candle_audits"]["V-BTC-SPOT:1S"]["count"] = serde_json::json!(99);
+        assert!(
+            registry
+                .checkpoint_history_cursors(&template, &persisted(data.clone()))
+                .unwrap_err()
+                .0
+                .contains("disagree")
+        );
+        data["candle_audits"]["V-BTC-SPOT:1S"]["count"] = serde_json::json!(100);
+        config.config["additional_intervals_ms"] = serde_json::json!([5000]);
+        let multiple = AgentTemplate::Plugin(config);
+        assert!(
+            registry
+                .checkpoint_history_cursors(&multiple, &persisted(data.clone()))
+                .unwrap_err()
+                .0
+                .contains("every requested stream")
+        );
+        data["candle_audits"]["V-BTC-SPOT:5S"] =
+            serde_json::json!({"count":20,"sha256":"b".repeat(64)});
+        assert_eq!(
+            registry
+                .checkpoint_history_cursors(&multiple, &persisted(data.clone()))
+                .unwrap()
+                .unwrap()
+                .len(),
+            2
+        );
+        data["candle_audits"]["V-BTC-SPOT:5S"]["sha256"] = serde_json::json!("invalid");
+        assert!(
+            registry
+                .checkpoint_history_cursors(&multiple, &persisted(data))
+                .is_err()
+        );
+    }
+
     impl Package {
         fn new(program: &str, timeout_ms: u64) -> Self {
             static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -912,6 +1105,428 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
             serde_json::json!({"workers": workers, "command": manifest["command"]});
         fs::write(path, serde_json::to_vec(&manifest).unwrap()).unwrap();
         package
+    }
+
+    #[test]
+    fn checkpoint_state_cannot_silently_fall_back_to_a_process() {
+        let AgentTemplate::Plugin(mut config) = template() else {
+            unreachable!()
+        };
+        config.plugin_id = "pine.strategy".into();
+        let mut manifest: ProcessBotManifest =
+            serde_json::from_str(include_str!("../../bot-plugins/buy-remaining/bot.json")).unwrap();
+        manifest.command = vec!["missing-process-must-not-start".into()];
+        manifest.decision_trigger = Trigger::EveryTick;
+        let mut bot = ProcessBot {
+            factory: ProcessBotFactory {
+                #[cfg(feature = "pine-in-process")]
+                in_process: None,
+                manifest,
+                directory: PathBuf::new(),
+                pool: None,
+                event_prefilter_enabled: false,
+            },
+            config,
+            state: Arc::new(serde_json::json!({"broker_schema": 3, "vm": "unchanged"})),
+        };
+        let before = bot.snapshot();
+        let error = bot.decide(&observation()).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Pine VM checkpoint requires qualified in-process runtime"
+        );
+        assert_eq!(bot.snapshot(), before);
+    }
+
+    #[cfg(feature = "pine-in-process")]
+    #[test]
+    fn checkpoint_window_uses_installed_qualification_but_execution_rechecks_changed_source() {
+        let package = Package::new("raise RuntimeError('must not start')", 1000);
+        let directory = package.0.join("test");
+        fs::create_dir_all(directory.join("scripts")).unwrap();
+        let source = directory.join("scripts/ma.pine");
+        fs::copy(
+            example_root().join("pine-strategy/scripts/ma.pine"),
+            &source,
+        )
+        .unwrap();
+        let host = Arc::new(crate::pine_inprocess::Host::load(&directory).unwrap());
+        let mut manifest: ProcessBotManifest =
+            serde_json::from_str(include_str!("../../bot-plugins/pine-strategy/bot.json")).unwrap();
+        manifest.command = vec!["missing-process-must-not-start".into()];
+        manifest.decision_trigger = Trigger::EveryTick;
+        let factory = ProcessBotFactory {
+            manifest,
+            directory,
+            pool: None,
+            event_prefilter_enabled: true,
+            in_process: Some(host),
+        };
+        let AgentTemplate::Plugin(mut config) = template() else {
+            unreachable!()
+        };
+        config.plugin_id = "pine.strategy".into();
+        config.plugin_version = "2.0.0".into();
+        config.config = serde_json::json!({"script":"ma.pine", "bar_interval_ms":1000});
+        let template = AgentTemplate::Plugin(config.clone());
+        let persisted = |data: Value| PersistedAgentKindState::Plugin {
+            plugin_id: "pine.strategy".into(),
+            plugin_version: "2.0.0".into(),
+            state_version: 1,
+            data: data.into(),
+        };
+        for data in [
+            Value::Null,
+            serde_json::json!({}),
+            serde_json::json!({"broker_schema":2}),
+        ] {
+            assert!(
+                factory
+                    .checkpoint_history_cursors(&template, &persisted(data))
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        let data = serde_json::json!({"broker_schema":3, "evaluated_bars":1,
+            "candle_audits":{"V-BTC-SPOT:1S":{"count":1,"sha256":"a".repeat(64)}}});
+        let state = persisted(data.clone());
+        let mut registry = BotRegistry::default();
+        registry.register(factory.clone()).unwrap();
+        assert!(
+            registry
+                .checkpoint_history_cursors(&template, &state)
+                .unwrap()
+                .is_some()
+        );
+        let mut disabled = factory.clone();
+        disabled.in_process = None;
+        assert!(
+            disabled
+                .checkpoint_history_cursors(&template, &state)
+                .unwrap()
+                .is_none()
+        );
+
+        // Unsupported metadata cannot authorize a bounded checkpoint window.
+        config.config["inputs"] = serde_json::json!({"Length":2.5});
+        let unsupported = AgentTemplate::Plugin(config);
+        assert!(
+            registry
+                .checkpoint_history_cursors(&unsupported, &state)
+                .unwrap()
+                .is_none()
+        );
+        let mut bot = registry.create(&unsupported, &state).unwrap();
+        assert_eq!(
+            bot.decide(&observation()).unwrap_err().0,
+            "Pine VM checkpoint requires qualified in-process runtime"
+        );
+        assert_eq!(bot.snapshot(), state);
+
+        // Bounded-window metadata uses the frozen installed set without file
+        // IO. Actual execution rechecks and blocks before process fallback.
+        for changed_source in ["// changed after installation", ""] {
+            fs::write(&source, changed_source).unwrap();
+            assert!(
+                registry
+                    .checkpoint_history_cursors(&template, &state)
+                    .unwrap()
+                    .is_some()
+            );
+            let mut bot = registry.create(&template, &state).unwrap();
+            assert_eq!(
+                bot.decide(&observation()).unwrap_err().0,
+                "Pine VM checkpoint requires qualified in-process runtime"
+            );
+            assert_eq!(bot.snapshot(), state);
+        }
+    }
+
+    #[cfg(feature = "pine-in-process")]
+    fn source_route_fixture() -> (
+        Package,
+        ProcessBot,
+        Arc<crate::pine_inprocess::Host>,
+        String,
+    ) {
+        let package = Package::new(
+            r#"import json,sys
+r=json.loads(sys.stdin.readline())
+s=r['state'] or {}
+s['through']='process'
+print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin_id'],plugin_version=r['plugin_version'],state_version=r['state_version'],actions=[],state=s)))"#,
+            5000,
+        );
+        let directory = package.0.join("test");
+        fs::create_dir_all(directory.join("scripts")).unwrap();
+        let source =
+            fs::read_to_string(example_root().join("pine-strategy/scripts/ma.pine")).unwrap();
+        fs::write(directory.join("scripts/ma.pine"), &source).unwrap();
+        let host = Arc::new(
+            crate::pine_inprocess::Host::load(&directory)
+                .unwrap()
+                .with_checkpoint_mode(false),
+        );
+        let mut manifest: ProcessBotManifest =
+            serde_json::from_str(include_str!("../../bot-plugins/pine-strategy/bot.json")).unwrap();
+        let process_manifest: ProcessBotManifest =
+            serde_json::from_slice(&fs::read(directory.join("bot.json")).unwrap()).unwrap();
+        manifest.command = process_manifest.command;
+        manifest.timeout_ms = 5000;
+        manifest.decision_trigger = Trigger::EveryTick;
+        let AgentTemplate::Plugin(mut config) = template() else {
+            unreachable!()
+        };
+        config.plugin_id = "pine.strategy".into();
+        config.plugin_version = "2.0.0".into();
+        config.config = manifest
+            .bot
+            .validate_config(&serde_json::json!({"script":"ma.pine","bar_interval_ms":1000}))
+            .unwrap();
+        let bot = ProcessBot {
+            factory: ProcessBotFactory {
+                manifest,
+                directory,
+                pool: None,
+                event_prefilter_enabled: false,
+                in_process: Some(host.clone()),
+            },
+            config,
+            state: Arc::new(Value::Null),
+        };
+        (package, bot, host, source)
+    }
+
+    #[cfg(feature = "pine-in-process")]
+    fn source_route_observation() -> ParticipantObservation {
+        let mut result = observation();
+        result.bot_market_data = Some(
+            serde_json::from_value(serde_json::json!({
+                "interval_ms":1000,"candles":[],"own_fills":[],"fill_details":[],
+                "truncated":false,"private_history_complete":true,
+            }))
+            .unwrap(),
+        );
+        result
+    }
+
+    #[cfg(feature = "pine-in-process")]
+    fn source_route_request(
+        bot: &ProcessBot,
+        observation: ParticipantObservation,
+    ) -> BotDecisionRequest {
+        BotDecisionRequest {
+            protocol_version: BOT_PROTOCOL_VERSION.into(),
+            plugin_id: bot.config.plugin_id.clone(),
+            plugin_version: bot.config.plugin_version.clone(),
+            state_version: bot.config.state_version,
+            participant: bot.config.participant.clone(),
+            seed: bot.config.seed,
+            config: bot.config.config.clone(),
+            state: bot.state.as_ref().clone(),
+            observation,
+        }
+    }
+
+    #[cfg(feature = "pine-in-process")]
+    #[test]
+    fn single_source_public_entries_freshly_validate_once_and_preserve_response() {
+        let (_package, bot, host, source) = source_route_fixture();
+        let observation = source_route_observation();
+        let request = source_route_request(&bot, observation.clone());
+        let value = serde_json::to_value(&request).unwrap();
+        let expected = host
+            .decide_borrowed(&bot.config, &bot.state, &observation, 5000)
+            .unwrap();
+        assert_eq!(host.source_read_count(), 1);
+        assert_eq!(
+            serde_json::to_value(host.decide(&request, 5000).unwrap()).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
+        assert_eq!(host.source_read_count(), 2);
+        assert_eq!(
+            host.decide_value(&value, 5000).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
+        assert_eq!(host.source_read_count(), 3);
+        let path = bot.factory.directory.join("scripts/ma.pine");
+        // Public execution cannot reuse even a successful explicit eligibility query.
+        assert!(host.eligible(&request));
+        for replacement in [Some("// changed"), Some(""), None] {
+            if let Some(source) = replacement {
+                fs::write(&path, source).unwrap();
+            } else {
+                fs::remove_file(&path).unwrap();
+            }
+            let before = host.source_read_count();
+            let errors = [
+                host.decide_borrowed(&bot.config, &bot.state, &observation, 5000)
+                    .unwrap_err(),
+                host.decide(&request, 5000).unwrap_err(),
+                host.decide_value(&value, 5000).unwrap_err(),
+            ];
+            assert!(
+                errors
+                    .iter()
+                    .all(|error| error.0
+                        == "request is outside the qualified in-process Pine profile")
+            );
+            assert_eq!(host.source_read_count(), before + 3);
+        }
+        // Preserve the existing normalized source comparison, including CRLF.
+        fs::write(
+            path,
+            source
+                .replace("\r\n", "\n")
+                .replace('\r', "\n")
+                .replace('\n', "\r\n"),
+        )
+        .unwrap();
+        let before = host.source_read_count();
+        assert_eq!(
+            host.decide_value(&value, 5000).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+        assert_eq!(host.source_read_count(), before + 1);
+        assert!(bot.state.is_null());
+    }
+
+    #[cfg(feature = "pine-in-process")]
+    #[test]
+    fn single_source_unsupported_profiles_do_not_call_direct_callback() {
+        use crate::pine_inprocess::DirectAttempt;
+        let (_package, bot, host, _) = source_route_fixture();
+        for (case, expected) in [
+            "plugin_id",
+            "plugin_version",
+            "state_version",
+            "execution_mode",
+            "source_unqualified",
+            "hedging",
+            "noninteger_inputs",
+            "hedge_state",
+            "exit_protection",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut config = bot.config.clone();
+            let mut state = Value::Null;
+            match case {
+                0 => config.plugin_id = "other".into(),
+                1 => config.plugin_version = "9".into(),
+                2 => config.state_version = 9,
+                3 => config.config["execution_mode"] = "legacy".into(),
+                4 => config.config["script"] = "unqualified.pine".into(),
+                5 => config.config["hedge_instrument_id"] = "other".into(),
+                6 => config.config["inputs"] = serde_json::json!({"Length":2.5}),
+                7 => state = serde_json::json!({"hedge":{}}),
+                _ => state = serde_json::json!({"exit_specs":{"stop":1}}),
+            }
+            let before = state.clone();
+            assert!(
+                matches!(host.route_borrowed(&config, &state, &source_route_observation(), 5000, || panic!("ineligible route must not enter direct")), DirectAttempt::NotQualified(reason) if reason == expected)
+            );
+            assert_eq!(state, before);
+        }
+    }
+
+    #[cfg(feature = "pine-in-process")]
+    #[test]
+    fn single_source_snapshot_is_call_scoped_and_next_call_observes_edits() {
+        use crate::pine_inprocess::DirectAttempt;
+        let (_package, bot, host, _) = source_route_fixture();
+        let view = source_route_observation();
+        let expected = host
+            .decide_borrowed(&bot.config, &bot.state, &view, 5000)
+            .unwrap();
+        let before = host.source_read_count();
+        let path = bot.factory.directory.join("scripts/ma.pine");
+        let attempt = host.route_borrowed(&bot.config, &bot.state, &view, 5000, || {
+            assert_eq!(host.source_read_count(), before + 1);
+            fs::write(&path, "// edited after admission").unwrap();
+        });
+        let DirectAttempt::Executed(Ok(response)) = attempt else {
+            panic!("the checked snapshot must authorize this attempt")
+        };
+        assert_eq!(
+            serde_json::to_value(response).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+        assert_eq!(
+            host.source_read_count(),
+            before + 1,
+            "no second read after input construction"
+        );
+        assert!(matches!(
+            host.route_borrowed(&bot.config, &bot.state, &view, 5000, || panic!(
+                "source has changed"
+            )),
+            DirectAttempt::NotQualified("source_unqualified")
+        ));
+        assert_eq!(host.source_read_count(), before + 2);
+    }
+
+    #[cfg(feature = "pine-in-process")]
+    #[test]
+    fn single_source_schema2_fallback_has_no_hidden_reselection_and_schema3_blocks() {
+        use crate::pine_inprocess::DirectAttempt;
+        let (_package, mut bot, host, source) = source_route_fixture();
+        let path = bot.factory.directory.join("scripts/ma.pine");
+        fs::write(&path, "// changed before execution").unwrap();
+        bot.state = Arc::new(serde_json::json!({"broker_schema":2,"saved":"intact"}));
+        let view = source_route_observation();
+        assert!(bot.decide(&view).unwrap().is_empty());
+        assert_eq!(host.source_read_count(), 1);
+        assert_eq!(bot.state["through"], "process");
+        assert_eq!(bot.state["saved"], "intact");
+        let before = host.source_read_count();
+        assert!(matches!(
+            host.route_borrowed(&bot.config, &bot.state, &view, 5000, || panic!(
+                "changed source"
+            )),
+            DirectAttempt::NotQualified("source_unqualified")
+        ));
+        // A source restored between routing and transport must remain on the
+        // chosen process route; its state would fail if reselected as direct.
+        fs::write(&path, source).unwrap();
+        let request = source_route_request(&bot, view.clone());
+        let response = bot.factory.exchange_process(&request).unwrap();
+        assert_eq!(response.state["through"], "process");
+        assert_eq!(host.source_read_count(), before + 1);
+        fs::write(path, "// changed before schema3 execution").unwrap();
+        bot.state = Arc::new(serde_json::json!({"broker_schema":3,"saved":"intact"}));
+        let saved = bot.snapshot();
+        assert_eq!(
+            bot.decide(&view).unwrap_err().0,
+            "Pine VM checkpoint requires qualified in-process runtime"
+        );
+        assert_eq!(bot.snapshot(), saved);
+        assert_eq!(host.source_read_count(), before + 2);
+    }
+
+    #[cfg(feature = "pine-in-process")]
+    #[test]
+    fn single_source_execution_errors_never_fall_back_to_process() {
+        let (_package, mut bot, host, _) = source_route_fixture();
+        for (schema, expected) in [
+            (
+                2,
+                "Pine source/config/account changed; create a new instance",
+            ),
+            (3, "Pine checkpoint source/config/account changed"),
+        ] {
+            bot.state =
+                Arc::new(serde_json::json!({"broker_schema":schema,"identity":"other-account"}));
+            let saved = bot.snapshot();
+            let before = host.source_read_count();
+            assert_eq!(
+                bot.decide(&source_route_observation()).unwrap_err().0,
+                expected
+            );
+            assert_eq!(bot.snapshot(), saved);
+            assert_eq!(host.source_read_count(), before + 1);
+        }
     }
 
     #[test]

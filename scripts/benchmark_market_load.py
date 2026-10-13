@@ -95,6 +95,59 @@ def observation_freshness(scheduler, market_time_ms):
             "lag_sim_ms":percentiles(lags),"future_observations":sum(lag<0 for lag in lags)}
 
 
+def finish_server(process, shutdown_request=None, trace_path=None, timeout=15.0):
+    """Cleanup only. Legacy binaries retain their prior hard-stop behavior."""
+    started = time.perf_counter()
+    receipt = {"version":1, "mode":"trace_graceful" if shutdown_request else "legacy_terminate",
+               "requested":shutdown_request is not None, "timeout_seconds":timeout,
+               "forced_kill":False, "qualified":None}
+    if shutdown_request is None:
+        if process.poll() is None:
+            process.terminate()
+            try: process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                receipt["forced_kill"] = True
+                process.kill(); process.wait(timeout=5)
+    else:
+        receipt["qualified"] = False
+        try:
+            if process.poll() is None:
+                with shutdown_request.open("x", encoding="utf-8") as request:
+                    request.write(json.dumps({"process_id":process.pid}) + "\n")
+                process.wait(timeout=timeout)
+            if process.returncode != 0:
+                raise RuntimeError(f"server exit {process.returncode} before trace acknowledgement")
+            acknowledgement_path = Path(str(trace_path) + ".complete.json")
+            acknowledgement = json.loads(acknowledgement_path.read_text(encoding="utf-8"))
+            marker = acknowledgement.get("marker", {})
+            if (type(acknowledgement.get("version")) is not int or acknowledgement["version"] != 1
+                    or Path(acknowledgement.get("trace_path", "")).resolve() != trace_path.resolve()
+                    or marker.get("stage") != "trace_complete" or marker.get("schema_version") != 1
+                    or marker.get("process_id") != process.pid or marker.get("trace_errors") != 0):
+                raise RuntimeError("trace acknowledgement identity/schema/errors mismatch")
+            size = trace_path.stat().st_size
+            if type(acknowledgement.get("trace_bytes")) is not int or acknowledgement["trace_bytes"] != size:
+                raise RuntimeError("trace length does not match its completion acknowledgement")
+            with trace_path.open("rb") as stream:
+                stream.seek(max(0, size - 65536))
+                tail = stream.read()
+            if not tail.endswith(b"\n") or json.loads(tail.splitlines()[-1]) != marker:
+                raise RuntimeError("trace EOF completion marker is missing, partial or mismatched")
+            receipt.update(qualified=True, acknowledgement=acknowledgement,
+                           acknowledgement_path=str(acknowledgement_path))
+        except Exception as error:
+            receipt["error"] = repr(error)
+            if process.poll() is None:
+                receipt["forced_kill"] = True
+                try:
+                    process.kill(); process.wait(timeout=5)
+                except Exception as cleanup_error:
+                    receipt["error"] += "; cleanup: " + repr(cleanup_error)
+    receipt["exit_code"] = process.returncode
+    receipt["elapsed_seconds"] = time.perf_counter() - started
+    return receipt
+
+
 def run_case(args,count):
     output=args.output/f"bots-{count}"
     output.mkdir(parents=True,exist_ok=True)
@@ -112,6 +165,16 @@ def run_case(args,count):
         env.update(MARKETFORGE_WRITE_PROFILE="1", MARKETFORGE_WRITE_PROFILE_MIN_MS="0")
     # No auth is configured in the isolated process, matching the web's local
     # development flow. It binds loopback and uses a fresh working directory.
+    graceful_trace = bool(getattr(args, "trace_graceful_shutdown", False))
+    shutdown_request = (output / "shutdown.request").resolve()
+    trace_path = (output / "bot-receipts.jsonl").resolve()
+    if graceful_trace:
+        if not getattr(args, "require_bot_receipts", False):
+            raise ValueError("trace graceful shutdown requires complete bot receipts")
+        if shutdown_request.exists() or Path(str(trace_path) + ".complete.json").exists():
+            raise RuntimeError("refusing to reuse trace shutdown receipt paths")
+        env.update(MARKETFORGE_SHUTDOWN_FILE=str(shutdown_request), MARKETFORGE_BOT_TRACE_SHUTDOWN="1")
+    result = None
     stop=threading.Event();samples=[];latencies={"view":[],"place":[],"cancel":[]};errors=[];resources=[]
     with (output/"server.log").open("w",encoding="utf-8") as log:
         process=subprocess.Popen([str(args.server.resolve())],cwd=output.resolve(),env=env,stdout=log,stderr=subprocess.STDOUT,
@@ -210,10 +273,16 @@ def run_case(args,count):
             return result
         finally:
             stop.set()
-            if process.poll() is None:
-                process.terminate()
-                try:process.wait(timeout=10)
-                except subprocess.TimeoutExpired:process.kill();process.wait(timeout=5)
+            cleanup = finish_server(process, shutdown_request if graceful_trace else None,
+                trace_path if graceful_trace else None, getattr(args, "trace_shutdown_timeout", 15.0))
+            save(output/"shutdown.json", cleanup)
+            if graceful_trace and not cleanup["qualified"]:
+                errors.append({"kind":"trace_shutdown", "error":cleanup.get("error", "trace closeout failed")})
+            if result is not None:
+                result["shutdown"] = cleanup
+                if graceful_trace:
+                    result["qualified"]["trace_shutdown_complete"] = cleanup["qualified"]
+                save(output/"report.json", result)
 
 
 def main():

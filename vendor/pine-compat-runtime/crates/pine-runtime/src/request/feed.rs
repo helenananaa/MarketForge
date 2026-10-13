@@ -26,6 +26,9 @@ pub enum RequestFeedError {
 }
 
 impl RequestFeed {
+    pub(crate) fn checkpoint_is_empty(&self) -> bool {
+        self.streams.is_empty()
+    }
     pub(crate) fn contains(&self, key: &RequestKey) -> bool {
         self.streams
             .get(key)

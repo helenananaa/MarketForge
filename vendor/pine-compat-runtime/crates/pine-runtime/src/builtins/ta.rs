@@ -25,6 +25,27 @@ pub(crate) struct RsiState {
     average_loss: Option<f64>,
 }
 
+impl RsiState {
+    pub(crate) fn external_checkpoint(self) -> serde_json::Value {
+        use crate::runtime::external_checkpoint::{float, optional_float};
+        serde_json::json!([
+            float(self.previous_source),
+            optional_float(self.average_gain),
+            optional_float(self.average_loss)
+        ])
+    }
+    pub(crate) fn restore_external_checkpoint(
+        value: &serde_json::Value,
+    ) -> Result<Self, crate::RuntimeError> {
+        use crate::runtime::external_checkpoint::{read_float, read_optional_float};
+        Ok(Self {
+            previous_source: read_float(&value[0])?,
+            average_gain: read_optional_float(&value[1])?,
+            average_loss: read_optional_float(&value[2])?,
+        })
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub(crate) struct MacdState {
     last_bar: Option<usize>,

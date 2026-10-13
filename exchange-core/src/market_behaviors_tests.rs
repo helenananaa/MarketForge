@@ -39,6 +39,8 @@ fn volume(v: &mut ParticipantObservation, amount: u128, truncated: bool) {
         interval_ms: 1000,
         external_volume_qty: amount.to_string(),
         candles: vec![],
+        history_proof: None,
+        private_history_complete: !truncated,
         own_fills: vec![],
         fill_details: vec![],
         truncated,

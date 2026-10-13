@@ -72,6 +72,10 @@ impl InputOverrides {
     pub(crate) fn values(&self) -> impl Iterator<Item = &PineValue> {
         self.values.values()
     }
+
+    pub(crate) fn checkpoint_entries(&self) -> impl Iterator<Item = (u32, &PineValue)> {
+        self.values.iter().map(|(id, value)| (*id, value))
+    }
 }
 
 #[derive(Clone)]
@@ -926,7 +930,7 @@ impl<'a> HistoricalRuntime<'a> {
         if let Some(external) = &self.external_execution
             && external
                 .frames
-                .get(bar_index)
+                .get(bar_index.saturating_sub(external.base))
                 .is_none_or(|frame| frame.time != bar.time)
         {
             return Err(crate::external::external_error(
@@ -1045,8 +1049,8 @@ impl<'a> HistoricalRuntime<'a> {
                 let passes = self
                     .external_execution
                     .as_ref()
-                    .and_then(|state| state.passes.as_ref())
-                    .map(|groups| groups[bar_index].clone());
+                    .and_then(|state| state.passes.as_ref().map(|groups| (state.base, groups)))
+                    .map(|(base, groups)| groups[bar_index - base].clone());
                 if let Some(passes) = passes {
                     for (index, pass) in passes.into_iter().enumerate() {
                         self.current_bar = Some(pass.bar);

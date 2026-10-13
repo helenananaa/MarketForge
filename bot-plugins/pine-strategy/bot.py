@@ -360,6 +360,7 @@ def serve_worker():
     decoder = transport.RequestDecoder()
     trace_dir = os.environ.get("PINE_BENCH_PY_TRACE_DIR")
     trace = (Path(trace_dir) / f"worker-{os.getpid()}.jsonl").open("w", encoding="utf-8") if trace_dir else None
+    diagnostics = os.environ.get("MARKETFORGE_BOT_WORKER_DIAGNOSTICS") == "1"
     for line in sys.stdin:
         begun = time.perf_counter()
         envelope = json.loads(line)
@@ -371,8 +372,15 @@ def serve_worker():
         try:
             request = decoder.decode_readonly(envelope)
             decoded = time.perf_counter()
+            if diagnostics:
+                incremental_module().LAST_EVALUATION = None
             response["response"] = decide(request, profile, borrow_history=True,
                                            encoded_response=encoded_response)
+            if diagnostics:
+                response["runtime_profile"] = incremental_module().LAST_EVALUATION or {
+                    "mode": "replay" if request["config"].get("execution_mode") == "legacy" else "no_evaluation",
+                    "reason": "legacy" if request["config"].get("execution_mode") == "legacy" else None,
+                }
             decided = time.perf_counter()
         except Exception as exc:
             response["error"] = str(exc)
@@ -391,14 +399,20 @@ def encode_worker_response(response, encoded_response):
     if encoded_response:
         # Reuse the exact default-spacing JSON that passed the original Pine
         # size/finite-number check. JSON whitespace has no protocol meaning.
-        prefix = json.dumps({key: response[key] for key in ("protocol", "id")},
+        prefix = json.dumps({key: response[key] for key in ("protocol", "id", "runtime_profile") if key in response},
                             separators=(",", ":"), allow_nan=False)
         encoded = prefix[:-1] + ',"response":' + encoded_response[0] + '}'
         # Near the worker framing bound, retain the original compact encoding
         # so a formerly valid response cannot be rejected by extra whitespace.
         if len(encoded) + 1 <= 1_048_576:
             return encoded
-    return json.dumps(response, separators=(",", ":"), allow_nan=False)
+    encoded = json.dumps(response, separators=(",", ":"), allow_nan=False)
+    if len(encoded.encode("utf-8")) + 1 > 1_048_576 and "runtime_profile" in response:
+        # Telemetry cannot make a previously valid strategy response too large.
+        # The host explicitly counts the omitted profile as unreported.
+        encoded = json.dumps({key: value for key, value in response.items() if key != "runtime_profile"},
+                             separators=(",", ":"), allow_nan=False)
+    return encoded
 
 
 if __name__ == "__main__":

@@ -46,6 +46,9 @@ impl<T> DerefMut for Chunk<T> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct History<T> {
+    // Fresh on reconstruction, inherited only by an in-memory clone. This also
+    // distinguishes reconstructed short histories with no sealed chunk yet.
+    origin: Arc<()>,
     chunks: im::Vector<Arc<Chunk<T>>>,
     tail: Arc<Chunk<T>>,
     len: usize,
@@ -55,6 +58,7 @@ pub(crate) struct History<T> {
 impl<T> Default for History<T> {
     fn default() -> Self {
         Self {
+            origin: Arc::new(()),
             chunks: im::Vector::new(),
             tail: Arc::default(),
             len: 0,
@@ -81,6 +85,34 @@ impl<T: Clone> History<T> {
 }
 
 impl<T> History<T> {
+    /// Conservative append witness for immutable value histories. Sealed chunks
+    /// can only be inherited by cloning an ancestor: no API can replace, splice,
+    /// or reorder them. Matching the last old sealed chunk therefore pins its
+    /// entire ancestry. Only the old (at most 32 element) tail needs comparison.
+    /// A reconstructed history deliberately fails this witness even if equal.
+    pub(crate) fn shares_append_prefix(&self, previous: &Self) -> bool
+    where
+        T: PartialEq,
+    {
+        if !Arc::ptr_eq(&self.origin, &previous.origin) || self.len < previous.len {
+            return false;
+        }
+        if let Some(index) = previous.chunks.len().checked_sub(1)
+            && !self
+                .chunks
+                .get(index)
+                .is_some_and(|chunk| Arc::ptr_eq(chunk, &previous.chunks[index]))
+        {
+            return false;
+        }
+        let offset = previous.len - previous.tail.len();
+        previous
+            .tail
+            .iter()
+            .enumerate()
+            .all(|(index, value)| self.at(offset + index) == Some(value))
+    }
+
     /// Exact append proof: shared sealed chunks need no element traversal;
     /// detached/recovered chunks and the short old tail are compared fully.
     pub(crate) fn extends(&self, previous: &Self) -> bool
@@ -196,6 +228,49 @@ impl<'de, T: Deserialize<'de> + Clone> Deserialize<'de> for History<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observation_append_witness_is_bounded_and_rejects_divergent_or_rebuilt_prefixes() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        #[derive(Clone, Debug)]
+        struct Counted(usize, Arc<AtomicUsize>);
+        impl PartialEq for Counted {
+            fn eq(&self, other: &Self) -> bool {
+                self.1.fetch_add(1, Ordering::Relaxed);
+                self.0 == other.0
+            }
+        }
+        for length in [0, 1, 31, 32, 33, 63, 64, 65, 100_003] {
+            let comparisons = Arc::new(AtomicUsize::new(0));
+            let mut old = History::default();
+            old.extend((0..length).map(|i| Counted(i, comparisons.clone())));
+            let mut next = old.clone();
+            next.extend((length..length + 75).map(|i| Counted(i, comparisons.clone())));
+            assert!(next.shares_append_prefix(&old));
+            assert!(comparisons.load(Ordering::Relaxed) <= CHUNK_SIZE);
+            assert!(old.contiguous.get().is_none() && next.contiguous.get().is_none());
+            if length > 32 {
+                let rebuilt: History<_> = old.iter().cloned().collect::<Vec<_>>().into();
+                assert!(!next.shares_append_prefix(&rebuilt));
+            }
+            if length > 0 {
+                let mut divergent: History<_> = old
+                    .iter()
+                    .take(length - 1)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .into();
+                divergent.push(Counted(usize::MAX, comparisons.clone()));
+                assert!(!next.shares_append_prefix(&divergent));
+                assert!(!old.shares_append_prefix(&next));
+            }
+            let mut a = old.clone();
+            let mut b = old.clone();
+            a.push(Counted(7, comparisons.clone()));
+            b.push(Counted(8, comparisons.clone()));
+            assert!(!a.shares_append_prefix(&b));
+        }
+    }
 
     #[test]
     fn append_proof_checks_changed_prefixes_across_sealed_and_tail_boundaries() {

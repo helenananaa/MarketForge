@@ -3,6 +3,10 @@
 use crate::journal::JournalError;
 use exchange_core::{OrderAction, PersistedAgentKindState, SchedulerState};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+mod pine;
+pub use pine::{PineAgentDelta, PineStateHint};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SchedulerDelta {
@@ -12,6 +16,9 @@ pub struct SchedulerDelta {
     /// All scheduler metadata, with an empty agents vector.
     pub state: SchedulerState,
     pub changes: Vec<AgentDelta>,
+    /// Version 2 append-only Pine changes. Version 1 remains byte-compatible.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pine_changes: Vec<PineAgentDelta>,
 }
 
 #[cfg(test)]
@@ -300,11 +307,73 @@ impl SchedulerDelta {
             agent_count: prior.agents.len(),
             state,
             changes,
+            pine_changes: Vec::new(),
+        })
+    }
+
+    /// Turn complete live changes into bounded append records where the exact
+    /// predecessor permits it. Native-only deltas retain the original v1 wire.
+    pub fn into_durable(self, prior: &SchedulerState) -> Result<Self, JournalError> {
+        self.into_durable_with_hints(prior, &BTreeMap::new())
+    }
+
+    pub fn into_durable_with_hints(
+        mut self,
+        prior: &SchedulerState,
+        hints: &BTreeMap<usize, PineStateHint>,
+    ) -> Result<Self, JournalError> {
+        self.validate_predecessor(prior)?;
+        if self.changes.iter().all(|change| {
+            !matches!(
+                &change.kind_state,
+                PersistedAgentKindState::Plugin { plugin_id, .. } if plugin_id == "pine.strategy"
+            )
+        }) {
+            return Ok(self);
+        }
+        let mut full = Vec::with_capacity(self.changes.len());
+        for change in self.changes {
+            let base = &prior.agents[change.index].kind_state;
+            let hint = hints
+                .get(&change.index)
+                .filter(|hint| hint.matches(base, &change.kind_state))
+                .cloned()
+                .or_else(|| PineStateHint::prepare(base, &change.kind_state));
+            match hint {
+                Some(hint) => self.pine_changes.push(PineAgentDelta::new(
+                    change.index,
+                    hint,
+                    change.unfinished_actions,
+                )),
+                None => full.push(change),
+            }
+        }
+        self.changes = full;
+        self.pine_changes.sort_by_key(|change| change.index);
+        self.version = if self.pine_changes.is_empty() { 1 } else { 2 };
+        self.validate(&prior.room_id)?;
+        Ok(self)
+    }
+
+    pub fn changed_indices(&self) -> impl Iterator<Item = usize> + '_ {
+        let mut full = self.changes.iter().map(|change| change.index).peekable();
+        let mut pine = self
+            .pine_changes
+            .iter()
+            .map(|change| change.index)
+            .peekable();
+        std::iter::from_fn(move || match (full.peek(), pine.peek()) {
+            (Some(a), Some(b)) if a < b => full.next(),
+            (_, Some(_)) => pine.next(),
+            (Some(_), None) => full.next(),
+            (None, None) => None,
         })
     }
 
     pub fn validate(&self, room: &str) -> Result<(), JournalError> {
-        if self.version != 1
+        if !matches!(self.version, 1 | 2)
+            || (self.version == 1 && !self.pine_changes.is_empty())
+            || (self.version == 2 && self.pine_changes.is_empty())
             || self.state.version != exchange_core::scheduler::SCHEDULER_STATE_VERSION
             || self.state.room_id != room
             || !self.state.agents.is_empty()
@@ -317,24 +386,58 @@ impl SchedulerDelta {
                 .changes
                 .windows(2)
                 .any(|pair| pair[0].index >= pair[1].index)
+            || self
+                .pine_changes
+                .iter()
+                .any(|change| change.index >= self.agent_count)
+            || self
+                .pine_changes
+                .windows(2)
+                .any(|pair| pair[0].index >= pair[1].index)
         {
             return Err(JournalError::Recovery(
                 "invalid scheduler delta version, revision, room or agent indexes".into(),
             ));
+        }
+        if !self.pine_changes.is_empty() {
+            let mut last = None;
+            for index in self.changed_indices() {
+                if last == Some(index) {
+                    return Err(JournalError::Recovery(
+                        "duplicate scheduler delta agent index".into(),
+                    ));
+                }
+                last = Some(index);
+            }
+            for change in &self.pine_changes {
+                change.validate()?;
+            }
         }
         Ok(())
     }
 
     pub fn apply(&self, prior: &mut SchedulerState) -> Result<(), JournalError> {
         self.validate_predecessor(prior)?;
+        let pine = self.prepare_pine(prior)?;
         for change in &self.changes {
             prior.agents[change.index].kind_state = change.kind_state.clone();
             prior.agents[change.index].unfinished_actions = change.unfinished_actions.clone();
+        }
+        for change in pine {
+            prior.agents[change.index].kind_state = change.kind_state;
+            prior.agents[change.index].unfinished_actions = change.unfinished_actions;
         }
         let agents = std::mem::take(&mut prior.agents);
         *prior = self.state.clone();
         prior.agents = agents;
         Ok(())
+    }
+
+    fn prepare_pine(&self, prior: &SchedulerState) -> Result<Vec<AgentDelta>, JournalError> {
+        self.pine_changes
+            .iter()
+            .map(|change| change.materialize(&prior.agents[change.index].kind_state))
+            .collect()
     }
 
     pub(super) fn validate_predecessor(&self, prior: &SchedulerState) -> Result<(), JournalError> {
@@ -354,8 +457,13 @@ impl SchedulerDelta {
     /// Validation still precedes every mutation, including recovery callers.
     pub(super) fn apply_owned(self, prior: &mut SchedulerState) -> Result<(), JournalError> {
         self.validate_predecessor(prior)?;
+        let pine = self.prepare_pine(prior)?;
         // Validate every field before mutating the recovered state.
         for change in self.changes {
+            prior.agents[change.index].kind_state = change.kind_state;
+            prior.agents[change.index].unfinished_actions = change.unfinished_actions;
+        }
+        for change in pine {
             prior.agents[change.index].kind_state = change.kind_state;
             prior.agents[change.index].unfinished_actions = change.unfinished_actions;
         }

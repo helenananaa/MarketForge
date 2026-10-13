@@ -66,6 +66,9 @@ impl Worker {
         );
         let mut child = ManagedChild(
             process_command(directory, &config.command)
+                // First-party workers may return non-authoritative runtime
+                // diagnostics. Old hosts do not request this envelope extension.
+                .env("MARKETFORGE_BOT_WORKER_DIAGNOSTICS", "1")
                 .spawn()
                 .map_err(bot_io)?,
         );
@@ -213,6 +216,7 @@ impl Worker {
             id: u64,
             response: Option<BotDecisionResponse>,
             error: Option<String>,
+            runtime_profile: Option<serde_json::Value>,
         }
         let reply: Reply = serde_json::from_slice(&bytes).map_err(bot_io)?;
         if reply.protocol != "bot.worker.v1" || reply.id != id {
@@ -233,6 +237,22 @@ impl Worker {
                 self.calls += 1;
                 if let Some(packet) = packet {
                     self.requests.as_mut().unwrap().accept(packet);
+                }
+                if let Some(profile) = reply.runtime_profile {
+                    crate::bot_runtime_diagnostics::record_evaluation(
+                        "process",
+                        profile
+                            .get("mode")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("unknown"),
+                        profile.get("reason").and_then(serde_json::Value::as_str),
+                    );
+                } else {
+                    crate::bot_runtime_diagnostics::record_evaluation(
+                        "process",
+                        "unknown",
+                        Some("worker_unreported"),
+                    );
                 }
                 Ok(response)
             }

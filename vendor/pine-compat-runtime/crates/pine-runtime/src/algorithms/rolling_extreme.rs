@@ -16,6 +16,54 @@ pub(crate) struct RollingExtremeState {
 }
 
 impl RollingExtremeState {
+    pub(crate) fn external_checkpoint(&self) -> serde_json::Value {
+        use crate::runtime::external_checkpoint::float;
+        serde_json::json!({"series": self.series_id.0, "length": self.length,
+            "highest": self.mode == WindowExtreme::Highest, "processed": self.processed_until,
+            "candidates": self.candidates.iter().map(|(i, v)| serde_json::json!([i, float(*v)])).collect::<Vec<_>>()})
+    }
+
+    pub(crate) fn restore_external_checkpoint(
+        value: &serde_json::Value,
+    ) -> Result<Self, crate::RuntimeError> {
+        use crate::runtime::external_checkpoint::{
+            array, boolean, read_float, u32_field, usize_field,
+        };
+        let length = usize_field(&value["length"])?;
+        let processed_until = usize_field(&value["processed"])?;
+        let mode = if boolean(&value["highest"])? {
+            WindowExtreme::Highest
+        } else {
+            WindowExtreme::Lowest
+        };
+        let mut candidates = AppendHistory::default();
+        for item in array(&value["candidates"])? {
+            let index = usize_field(&item[0])?;
+            let sample = read_float(&item[1])?;
+            if !sample.is_finite()
+                || index >= processed_until
+                || candidates.last().is_some_and(|(i, _)| *i >= index)
+            {
+                return Err(crate::external::external_error(
+                    "invalid extreme checkpoint candidate",
+                ));
+            }
+            candidates.push((index, sample));
+        }
+        if length == 0 || candidates.len() > length {
+            return Err(crate::external::external_error(
+                "invalid extreme checkpoint length",
+            ));
+        }
+        Ok(Self {
+            series_id: SeriesId(u32_field(&value["series"])?),
+            length,
+            mode,
+            processed_until,
+            candidates,
+        })
+    }
+
     pub(crate) fn new(series_id: SeriesId, length: usize, mode: WindowExtreme) -> Self {
         Self {
             series_id,

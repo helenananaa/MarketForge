@@ -38,6 +38,12 @@ pub struct BotMarketData {
     pub external_volume_qty: String,
     /// Closed, nonempty bars only; no synthetic volume or prices.
     pub candles: Vec<crate::Candle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_proof: Option<crate::CandleHistoryProof>,
+    /// Candle-window truncation is independent of private fill/account history.
+    /// Legacy payloads cannot silently claim a completeness proof.
+    #[serde(default)]
+    pub private_history_complete: bool,
     /// Complete public fills involving this account, in execution order.
     pub own_fills: Vec<Trade>,
     pub fill_details: Vec<BotFillDetail>,
@@ -101,6 +107,8 @@ pub struct BotDataStream {
     pub instrument_id: String,
     pub interval_ms: u64,
     pub candles: Vec<crate::Candle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_proof: Option<crate::CandleHistoryProof>,
     pub truncated: bool,
 }
 

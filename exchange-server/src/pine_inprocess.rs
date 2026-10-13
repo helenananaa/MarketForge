@@ -21,7 +21,9 @@ use std::{
 };
 
 mod broker;
+mod checkpoint;
 mod json_compat;
+mod stamp_cache;
 use broker::{array, number, text};
 use json_compat::{digest, encoded_len, python_json_len};
 
@@ -66,6 +68,7 @@ struct Program {
 struct Session {
     runtime: HistoricalRuntime<'static>,
     transcript: Value,
+    checkpoint_stamp: Option<stamp_cache::Stamp>,
     settings: Value,
 }
 #[derive(Default)]
@@ -73,13 +76,42 @@ struct Sessions {
     entries: BTreeMap<String, Arc<Mutex<Option<Session>>>>,
     order: VecDeque<String>,
 }
+/// Routing and execution are one call; execution errors never authorize fallback.
+pub(crate) enum DirectAttempt {
+    NotQualified(&'static str),
+    Executed(Result<BotDecisionResponse, BotError>),
+}
+
+// Created only by a current-source read, and never returned from a public or
+// crate-visible API. Bind both Host and script so a different input cannot use
+// a successful check for another installed program. No Clone or persistence.
+struct VerifiedSource<'a> {
+    host: &'a Host,
+    name: &'a str,
+}
+impl VerifiedSource<'_> {
+    fn matches(&self, host: &Host, input: &Value) -> bool {
+        std::ptr::eq(self.host, host) && input["config"]["script"].as_str() == Some(self.name)
+    }
+}
+
 pub struct Host {
     directory: std::path::PathBuf,
     programs: BTreeMap<String, Program>,
     sessions: Mutex<Sessions>,
+    checkpoint_enabled: bool,
+    #[cfg(test)]
+    source_reads: std::sync::atomic::AtomicUsize,
 }
 
 impl Host {
+    /// Select compact durable state for newly created instances. Existing
+    /// schema-2 instances retain their original replay contract.
+    pub fn with_checkpoint_mode(mut self, enabled: bool) -> Self {
+        self.checkpoint_enabled = enabled;
+        self
+    }
+
     pub fn load(directory: &Path) -> Result<Self, BotError> {
         let mut programs = BTreeMap::new();
         for &(name, hash) in QUALIFIED {
@@ -120,17 +152,29 @@ impl Host {
             directory: directory.to_owned(),
             programs,
             sessions: Mutex::default(),
+            checkpoint_enabled: std::env::var("MARKETFORGE_PINE_VM_CHECKPOINT").as_deref()
+                == Ok("1"),
+            #[cfg(test)]
+            source_reads: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
     pub fn eligible(&self, request: &BotDecisionRequest) -> bool {
+        self.eligible_with_source(request, |name| self.source_is_current(name))
+    }
+
+    fn eligible_with_source(
+        &self,
+        request: &BotDecisionRequest,
+        qualified_source: impl FnOnce(&str) -> bool,
+    ) -> bool {
         request.plugin_id == "pine.strategy"
             && matches!(request.plugin_version.as_str(), "1.0.0" | "2.0.0")
             && request.state_version == 1
             && request.config["execution_mode"] == "broker"
             && request.config["script"]
                 .as_str()
-                .is_some_and(|s| self.source_is_current(s))
+                .is_some_and(qualified_source)
             && request.config["hedge_instrument_id"].as_str() == Some("")
             && request.config["inputs"]
                 .as_object()
@@ -143,21 +187,103 @@ impl Host {
     }
 
     pub fn eligible_borrowed(&self, config: &BotConfig, state: &Value) -> bool {
-        config.plugin_id == "pine.strategy"
-            && matches!(config.plugin_version.as_str(), "1.0.0" | "2.0.0")
-            && config.state_version == 1
-            && config.config["execution_mode"] == "broker"
-            && config.config["script"]
-                .as_str()
-                .is_some_and(|s| self.source_is_current(s))
-            && config.config["hedge_instrument_id"].as_str() == Some("")
-            && config.config["inputs"]
-                .as_object()
-                .is_some_and(|o| o.values().all(Value::is_i64))
-            && state.get("hedge").is_none()
-            && state
-                .get("exit_specs")
-                .is_none_or(|v| v.as_object().is_some_and(|o| o.is_empty()))
+        self.ineligible_reason_borrowed(config, state).is_none()
+    }
+
+    /// Stable diagnostic codes; configuration and source text never enter metrics.
+    pub fn ineligible_reason_borrowed(
+        &self,
+        config: &BotConfig,
+        state: &Value,
+    ) -> Option<&'static str> {
+        self.ineligible_reason_with_source(config, state, |name| self.source_is_current(name))
+    }
+
+    /// Window metadata checks the already qualified, immutable installed set.
+    /// The actual call still checks the current source before executing it.
+    pub fn installed_ineligible_reason_borrowed(
+        &self,
+        config: &BotConfig,
+        state: &Value,
+    ) -> Option<&'static str> {
+        self.ineligible_reason_with_source(config, state, |name| self.programs.contains_key(name))
+    }
+
+    fn ineligible_reason_with_source(
+        &self,
+        config: &BotConfig,
+        state: &Value,
+        qualified_source: impl FnOnce(&str) -> bool,
+    ) -> Option<&'static str> {
+        if config.plugin_id != "pine.strategy" {
+            return Some("plugin_id");
+        }
+        if !matches!(config.plugin_version.as_str(), "1.0.0" | "2.0.0") {
+            return Some("plugin_version");
+        }
+        if config.state_version != 1 {
+            return Some("state_version");
+        }
+        if config.config["execution_mode"] != "broker" {
+            return Some("execution_mode");
+        }
+        if !config.config["script"]
+            .as_str()
+            .is_some_and(qualified_source)
+        {
+            return Some("source_unqualified");
+        }
+        if config.config["hedge_instrument_id"].as_str() != Some("") {
+            return Some("hedging");
+        }
+        if !config.config["inputs"]
+            .as_object()
+            .is_some_and(|o| o.values().all(Value::is_i64))
+        {
+            return Some("noninteger_inputs");
+        }
+        if state.get("hedge").is_some() {
+            return Some("hedge_state");
+        }
+        if state
+            .get("exit_specs")
+            .is_some_and(|v| !v.as_object().is_some_and(|o| o.is_empty()))
+        {
+            return Some("exit_protection");
+        }
+        None
+    }
+
+    /// One current-source snapshot is the admission point for this attempt.
+    /// Changes after that read are observed on a later call; no token escapes
+    /// this stack, and no mtime, TTL or startup-only check authorizes execution.
+    pub(crate) fn route_borrowed(
+        &self,
+        config: &BotConfig,
+        state: &Value,
+        observation: &ParticipantObservation,
+        timeout_ms: u64,
+        on_direct: impl FnOnce(),
+    ) -> DirectAttempt {
+        let mut source = None;
+        let reason = self.ineligible_reason_with_source(config, state, |name| {
+            source = self.current_source(name);
+            source.is_some()
+        });
+        if let Some(reason) = reason {
+            return DirectAttempt::NotQualified(reason);
+        }
+        let Some(source) = source else {
+            return DirectAttempt::NotQualified("source_unqualified");
+        };
+        on_direct();
+        DirectAttempt::Executed(self.decide_borrowed_verified(
+            config,
+            state,
+            observation,
+            timeout_ms,
+            source,
+        ))
     }
 
     pub fn decide_borrowed(
@@ -166,6 +292,20 @@ impl Host {
         state: &Value,
         observation: &ParticipantObservation,
         timeout_ms: u64,
+    ) -> Result<BotDecisionResponse, BotError> {
+        match self.route_borrowed(config, state, observation, timeout_ms, || {}) {
+            DirectAttempt::NotQualified(_) => Err(outside_profile()),
+            DirectAttempt::Executed(result) => result,
+        }
+    }
+
+    fn decide_borrowed_verified(
+        &self,
+        config: &BotConfig,
+        state: &Value,
+        observation: &ParticipantObservation,
+        timeout_ms: u64,
+        source: VerifiedSource<'_>,
     ) -> Result<BotDecisionResponse, BotError> {
         #[derive(serde::Serialize)]
         struct Request<'a> {
@@ -191,9 +331,17 @@ impl Host {
             observation,
         };
         // Committed state remains borrowed until the single mutable working copy.
-        let input = json!({"protocol_version":request.protocol_version,"plugin_id":request.plugin_id,"plugin_version":request.plugin_version,"state_version":request.state_version,"participant":request.participant,"seed":request.seed,"config":request.config,"observation":observation});
+        let input = {
+            #[cfg(feature = "bench-execution-timing")]
+            let _phase_timer = crate::bench_execution_timing::Timer::start(
+                &crate::bench_execution_timing::BOT_PINE_INPUT_VALUE,
+            );
+            json!({"protocol_version":request.protocol_version,"plugin_id":request.plugin_id,"plugin_version":request.plugin_version,"state_version":request.state_version,"participant":request.participant,"seed":request.seed,"config":request.config,"observation":observation})
+        };
         let (actions, state) =
-            self.decide_parts(&input, state, timeout_ms, || encoded_len(&request))?;
+            self.decide_parts_verified(&input, state, timeout_ms, source, || {
+                encoded_len(&request)
+            })?;
         Ok(BotDecisionResponse {
             protocol_version: request.protocol_version.into(),
             plugin_id: request.plugin_id.into(),
@@ -205,11 +353,26 @@ impl Host {
     }
 
     fn source_is_current(&self, name: &str) -> bool {
-        self.programs.get(name).is_some_and(|program| {
-            std::fs::read_to_string(self.directory.join("scripts").join(name)).is_ok_and(|source| {
-                source.replace("\r\n", "\n").replace('\r', "\n") == program.source
-            })
-        })
+        self.current_source(name).is_some()
+    }
+
+    fn current_source(&self, name: &str) -> Option<VerifiedSource<'_>> {
+        #[cfg(feature = "bench-execution-timing")]
+        let _phase_timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::BOT_PINE_SOURCE_CHECK,
+        );
+        let (name, program) = self.programs.get_key_value(name)?;
+        #[cfg(test)]
+        self.source_reads
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let source = std::fs::read_to_string(self.directory.join("scripts").join(name)).ok()?;
+        (source.replace("\r\n", "\n").replace('\r', "\n") == program.source)
+            .then_some(VerifiedSource { host: self, name })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn source_read_count(&self) -> usize {
+        self.source_reads.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn session(&self, identity: &str) -> Result<Arc<Mutex<Option<Session>>>, BotError> {
@@ -239,22 +402,45 @@ impl Host {
         request: &BotDecisionRequest,
         timeout_ms: u64,
     ) -> Result<BotDecisionResponse, BotError> {
-        if !self.eligible(request) {
-            return Err(error(
-                "request is outside the qualified in-process Pine profile",
-            ));
+        let mut source = None;
+        if !self.eligible_with_source(request, |name| {
+            source = self.current_source(name);
+            source.is_some()
+        }) {
+            return Err(outside_profile());
         }
-        serde_json::from_value(
-            self.decide_value(&serde_json::to_value(request).map_err(io)?, timeout_ms)?,
-        )
+        let source = source.ok_or_else(outside_profile)?;
+        serde_json::from_value(self.decide_value_verified(
+            &serde_json::to_value(request).map_err(io)?,
+            timeout_ms,
+            source,
+        )?)
         .map_err(io)
     }
 
     /// Same implementation for frozen differential fixtures, without requiring
     /// fixtures to manufacture unrelated exchange observation fields.
     pub fn decide_value(&self, input: &Value, timeout_ms: u64) -> Result<Value, BotError> {
+        if !value_profile(input, &input["state"]) {
+            return Err(outside_profile());
+        }
+        let source = input["config"]["script"]
+            .as_str()
+            .and_then(|name| self.current_source(name))
+            .ok_or_else(outside_profile)?;
+        self.decide_value_verified(input, timeout_ms, source)
+    }
+
+    fn decide_value_verified(
+        &self,
+        input: &Value,
+        timeout_ms: u64,
+        source: VerifiedSource<'_>,
+    ) -> Result<Value, BotError> {
         let (actions, state) =
-            self.decide_parts(input, &input["state"], timeout_ms, || encoded_len(input))?;
+            self.decide_parts_verified(input, &input["state"], timeout_ms, source, || {
+                encoded_len(input)
+            })?;
         let mut response = serde_json::Map::new();
         for key in [
             "protocol_version",
@@ -269,33 +455,18 @@ impl Host {
         Ok(Value::Object(response))
     }
 
-    fn decide_parts(
+    fn decide_parts_verified(
         &self,
         input: &Value,
         committed: &Value,
         timeout_ms: u64,
+        source: VerifiedSource<'_>,
         request_len: impl FnOnce() -> Result<usize, BotError>,
     ) -> Result<(Vec<Value>, Value), BotError> {
-        if input["protocol_version"] != "bot.v1"
-            || input["plugin_id"] != "pine.strategy"
-            || !matches!(input["plugin_version"].as_str(), Some("1.0.0" | "2.0.0"))
-            || input["state_version"] != 1
-            || input["config"]["execution_mode"] != "broker"
-            || input["config"]["hedge_instrument_id"] != ""
-            || !input["config"]["inputs"]
-                .as_object()
-                .is_some_and(|o| o.values().all(Value::is_i64))
-            || !input["config"]["script"]
-                .as_str()
-                .is_some_and(|s| self.source_is_current(s))
-            || committed.get("hedge").is_some()
-            || committed
-                .get("exit_specs")
-                .is_some_and(|v| !v.as_object().is_some_and(|o| o.is_empty()))
-        {
-            return Err(error(
-                "request is outside the qualified in-process Pine profile",
-            ));
+        // The source proof is private and belongs to this call. Still recheck
+        // metadata and input binding before session access or state mutation.
+        if !value_profile(input, committed) || !source.matches(self, input) {
+            return Err(outside_profile());
         }
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         #[cfg(feature = "bench-execution-timing")]
@@ -310,8 +481,21 @@ impl Host {
             0,
         );
         // Counting remains inside the decision deadline, as on the wire path.
-        if request_len()? > crate::bot_plugins::MAX_REQUEST_BYTES {
+        let request_bytes = {
+            #[cfg(feature = "bench-execution-timing")]
+            let _phase_timer = crate::bench_execution_timing::Timer::start(
+                &crate::bench_execution_timing::BOT_PINE_REQUEST_LENGTH,
+            );
+            request_len()?
+        };
+        if request_bytes > crate::bot_plugins::MAX_REQUEST_BYTES {
             return Err(error("bot request exceeds size limit"));
+        }
+        if committed["broker_schema"] == 3
+            || (self.checkpoint_enabled
+                && (committed.is_null() || committed.as_object().is_some_and(|o| o.is_empty())))
+        {
+            return checkpoint::decide(self, input, committed, deadline);
         }
         let config = &input["config"];
         let observation = &input["observation"];
@@ -470,6 +654,17 @@ impl Host {
                         .iter()
                         .all(|k| s.transcript[*k] == committed[*k])
             });
+            crate::bot_runtime_diagnostics::record_evaluation(
+                "direct",
+                if reusable { "append" } else { "rebuild" },
+                if reusable {
+                    None
+                } else if cached.is_some() {
+                    Some("state_mismatch")
+                } else {
+                    Some("session_missing")
+                },
+            );
             let offset = if reusable { previous.len() } else { 0 };
             #[cfg(feature = "bench-execution-timing")]
             let _session_timer = crate::bench_execution_timing::Timer::start(if reusable {
@@ -526,6 +721,7 @@ impl Host {
                 cached = Some(Session {
                     runtime,
                     transcript: Value::Null,
+                    checkpoint_stamp: None,
                     settings,
                 });
             }
@@ -638,6 +834,8 @@ impl Host {
             state["bars"] = Value::Array(bars);
             cached.transcript = json!({"bars":state["bars"],"accounts":state["accounts"],"providers":state["providers"],"evaluations":state["evaluations"]});
             *slot = Some(cached);
+        } else {
+            crate::bot_runtime_diagnostics::record_evaluation("direct", "no_evaluation", None);
         }
         actions.extend(broker::replacements(&mut state, &views, config)?);
         let (_, account, position, _) = broker::account(observation, config)?;
@@ -670,6 +868,26 @@ impl Host {
     }
 }
 
+fn outside_profile() -> BotError {
+    error("request is outside the qualified in-process Pine profile")
+}
+
+fn value_profile(input: &Value, committed: &Value) -> bool {
+    input["protocol_version"] == "bot.v1"
+        && input["plugin_id"] == "pine.strategy"
+        && matches!(input["plugin_version"].as_str(), Some("1.0.0" | "2.0.0"))
+        && input["state_version"] == 1
+        && input["config"]["execution_mode"] == "broker"
+        && input["config"]["hedge_instrument_id"] == ""
+        && input["config"]["inputs"]
+            .as_object()
+            .is_some_and(|o| o.values().all(Value::is_i64))
+        && committed.get("hedge").is_none()
+        && committed
+            .get("exit_specs")
+            .is_none_or(|v| v.as_object().is_some_and(|o| o.is_empty()))
+}
+
 /// Called only on the owned speculative working copy. Failed decisions leave
 /// the committed input untouched, including malformed restored array fields.
 fn take_array(state: &mut Value, field: &str) -> Result<Vec<Value>, BotError> {
@@ -691,7 +909,7 @@ fn timeframe(ms: i64) -> Result<String, BotError> {
         Err(error("Pine timeframes require integral seconds"))
     }
 }
-fn interval(tf: &str) -> Result<i64, BotError> {
+pub(crate) fn interval(tf: &str) -> Result<i64, BotError> {
     let (value, scale) = if let Some(n) = tf.strip_suffix('D') {
         (n, 86_400_000)
     } else if let Some(n) = tf.strip_suffix('S') {
@@ -717,4 +935,48 @@ fn bar(v: &Value) -> Result<Bar, BotError> {
 }
 fn account_frame(v: &Value) -> Result<ExternalAccountFrame, BotError> {
     serde_json::from_value(v.clone()).map_err(io)
+}
+
+#[cfg(test)]
+mod source_route_tests {
+    use super::*;
+
+    #[test]
+    fn single_source_private_proof_rejects_another_host_or_script_before_execution() {
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../bot-plugins/pine-strategy");
+        let first = Host::load(&directory).unwrap();
+        let second = Host::load(&directory).unwrap();
+        let mut input = json!({
+            "protocol_version":"bot.v1","plugin_id":"pine.strategy",
+            "plugin_version":"2.0.0","state_version":1,
+            "config":{"execution_mode":"broker","hedge_instrument_id":"","inputs":{},"script":"ma.pine"},
+        });
+        // Only this private test module can pass a token to a mismatched call.
+        // Public entrypoints cannot receive or manufacture the proof.
+        let source = first.current_source("ma.pine").unwrap();
+        assert_eq!(
+            second
+                .decide_parts_verified(&input, &Value::Null, 5000, source, || panic!(
+                    "wrong Host must fail before request counting"
+                ))
+                .unwrap_err()
+                .0,
+            "request is outside the qualified in-process Pine profile"
+        );
+        input["config"]["script"] = "rsi.pine".into();
+        let source = first.current_source("ma.pine").unwrap();
+        assert_eq!(
+            first
+                .decide_parts_verified(&input, &Value::Null, 5000, source, || panic!(
+                    "wrong script must fail before request counting"
+                ))
+                .unwrap_err()
+                .0,
+            "request is outside the qualified in-process Pine profile"
+        );
+        assert!(first.sessions.lock().unwrap().entries.is_empty());
+        assert!(second.sessions.lock().unwrap().entries.is_empty());
+        assert_eq!(first.source_read_count(), 2);
+        assert_eq!(second.source_read_count(), 0);
+    }
 }

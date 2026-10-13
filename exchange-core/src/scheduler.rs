@@ -356,7 +356,7 @@ pub fn run_scheduler_step_with_policy(
                 });
             }
             let template = &state.agents[participant_index].template;
-            let history = registry
+            let mut history = registry
                 .market_data_request(template)
                 .map_err(SchedulerError::Bot)?;
             let related = registry
@@ -366,6 +366,17 @@ pub fn run_scheduler_step_with_policy(
                 .additional_intervals(template)
                 .map_err(SchedulerError::Bot)?;
             let mut batch = rooms.observation_batch(&room_id);
+            if let Some(cursors) = registry
+                .checkpoint_history_cursors(template, &state.agents[participant_index].kind_state)
+                .map_err(SchedulerError::Bot)?
+            {
+                let max_bars = batch
+                    .checkpoint_window_max_bars(&cursors)
+                    .map_err(SchedulerError::Bot)?;
+                if let Some(history) = &mut history {
+                    history.max_bars = max_bars;
+                }
+            }
             let mut observation = batch
                 .bot_observation(&instrument_id, account_id, history, &related)
                 .map_err(SchedulerError::Room)?;
@@ -539,6 +550,7 @@ fn persist_runtime(state: &mut SchedulerState, agents: &[Box<dyn ScheduledBot>])
 #[cfg(test)]
 mod tests {
     use super::*;
+    include!("scheduler_checkpoint_window_tests.rs");
     use crate::{
         DcaTraderConfig, GridTraderConfig, ParticipantKind, Side, SpotRiskConfig,
         market::{InstrumentConfig, MarketConfig, SpotMarketConfig},
