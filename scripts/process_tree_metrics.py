@@ -9,13 +9,16 @@ import time
 def is_benchmark_server_name(name):
     """Include the frozen/renamed binaries used by the benchmark matrix."""
     name = name.replace("\\", "/").rsplit("/", 1)[-1].casefold()
-    return name == "exchange-server.exe" or name.endswith("-exchange-server.exe") or name in {
-        "baseline-server.exe", "diagnostic-server.exe", "candidate-server.exe", "before-server.exe"}
+    return name == "exchange-server.exe" or name.endswith("-exchange-server.exe") or (
+        name.endswith("-server.exe") and name.startswith(
+            ("baseline", "diagnostic", "candidate", "selected", "before", "after")))
 
 
 class ProcessTreeMetrics:
-    def __init__(self, root):
+    def __init__(self, root, driver_root=False):
         self.root = root
+        self.driver_root = driver_root
+        self.owned_servers = []
         self.known = {root}
         self.samples = []
         self.errors = []
@@ -69,13 +72,16 @@ class ProcessTreeMetrics:
         finally:
             kernel.CloseHandle(snapshot)
         self.compiler_activity.append(compilers)
-        self.other_servers.append(servers)
         current = {self.root} if self.root in parents else set()
         while True:
             next_set = current | {pid for pid, parent in parents.items() if parent in current}
             if next_set == current: break
             current = next_set
         self.known.update(current)
+        owned = {pid: name for pid, name in servers.items() if pid in current}
+        self.owned_servers.append(owned)
+        self.other_servers.append({pid: name for pid, name in servers.items()
+                                   if not self.driver_root or pid not in current})
         values = {}
         for pid in current:
             handle = kernel.OpenProcess(0x400 | 0x10, False, pid)
@@ -131,7 +137,9 @@ class ProcessTreeMetrics:
             record["average_logical_cores_while_sampled"] = (
                 (record["last_cpu_seconds"] - record["first_cpu_seconds"]) / elapsed
                 if elapsed > 0 else None)
-        return {"scope":"server and live descendants, sampled every 250ms including startup/warmup/measurement",
+        return {"scope":"root process and live descendants, sampled every 250ms including startup/warmup/measurement",
+                "driver_root":self.driver_root,
+                "max_owned_benchmark_servers":max((len(row) for row in self.owned_servers), default=0),
                 "limitations":"sampled summed working set; shared pages counted per process; short-lived processes may be missed",
                 "peak_sampled_rss_mib":max((s["rss_bytes"] for s in self.samples), default=0)/1024**2 if self.samples else None,
                 "peak_processes":max((s["processes"] for s in self.samples), default=None),

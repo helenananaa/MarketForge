@@ -1,5 +1,7 @@
 mod account_activity;
 mod account_events;
+#[cfg(test)]
+mod async_scheduler_checkpoint_benchmark;
 mod market_analysis;
 mod market_events;
 mod stream_output;

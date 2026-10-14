@@ -1299,6 +1299,9 @@ fn spawn_decision_batch(
         #[cfg(feature = "bench-execution-timing")]
         drop(blocking_timer);
         let _permit = permit;
+        #[cfg(feature = "pine-in-process")]
+        let _source_wave = (!native && crate::pine_inprocess::source_wave::enabled())
+            .then(|| crate::pine_inprocess::source_wave::enter(&frozen));
         let mut observations = frozen.batch();
         inputs
             .into_iter()

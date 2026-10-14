@@ -22,7 +22,10 @@ use std::{
 
 mod broker;
 mod checkpoint;
+#[cfg(test)]
+mod host_state_benchmark;
 mod json_compat;
+pub(crate) mod source_wave;
 mod stamp_cache;
 use broker::{array, number, text};
 use json_compat::{digest, encoded_len, python_json_len};
@@ -96,6 +99,8 @@ impl VerifiedSource<'_> {
 }
 
 pub struct Host {
+    source_identity: u64,
+    wave_source_checks: bool,
     directory: std::path::PathBuf,
     programs: BTreeMap<String, Program>,
     sessions: Mutex<Sessions>,
@@ -149,6 +154,11 @@ impl Host {
             programs.insert(name.into(), Program { source, program });
         }
         Ok(Self {
+            source_identity: {
+                static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            },
+            wave_source_checks: source_wave::enabled(),
             directory: directory.to_owned(),
             programs,
             sessions: Mutex::default(),
@@ -265,9 +275,32 @@ impl Host {
         timeout_ms: u64,
         on_direct: impl FnOnce(),
     ) -> DirectAttempt {
+        self.route_borrowed_mode(
+            config,
+            state,
+            observation,
+            timeout_ms,
+            self.wave_source_checks,
+            on_direct,
+        )
+    }
+
+    fn route_borrowed_mode(
+        &self,
+        config: &BotConfig,
+        state: &Value,
+        observation: &ParticipantObservation,
+        timeout_ms: u64,
+        wave_source_checks: bool,
+        on_direct: impl FnOnce(),
+    ) -> DirectAttempt {
         let mut source = None;
         let reason = self.ineligible_reason_with_source(config, state, |name| {
-            source = self.current_source(name);
+            source = if wave_source_checks {
+                self.wave_source(name)
+            } else {
+                self.current_source(name)
+            };
             source.is_some()
         });
         if let Some(reason) = reason {
@@ -293,7 +326,7 @@ impl Host {
         observation: &ParticipantObservation,
         timeout_ms: u64,
     ) -> Result<BotDecisionResponse, BotError> {
-        match self.route_borrowed(config, state, observation, timeout_ms, || {}) {
+        match self.route_borrowed_mode(config, state, observation, timeout_ms, false, || {}) {
             DirectAttempt::NotQualified(_) => Err(outside_profile()),
             DirectAttempt::Executed(result) => result,
         }
@@ -354,6 +387,14 @@ impl Host {
 
     fn source_is_current(&self, name: &str) -> bool {
         self.current_source(name).is_some()
+    }
+
+    fn wave_source(&self, name: &str) -> Option<VerifiedSource<'_>> {
+        let (name, _) = self.programs.get_key_value(name)?;
+        source_wave::verified(self.source_identity, name, || {
+            self.current_source(name).is_some()
+        })
+        .then_some(VerifiedSource { host: self, name })
     }
 
     fn current_source(&self, name: &str) -> Option<VerifiedSource<'_>> {

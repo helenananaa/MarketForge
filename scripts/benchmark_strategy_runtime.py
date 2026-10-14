@@ -12,6 +12,16 @@ import time
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
+HOST_EXPERIMENTS = {
+    "MARKETFORGE_PINE_SOURCE_WAVE": ("0", "1"),
+}
+
+
+def host_experiment(value):
+    name, separator, setting = value.partition("=")
+    if not separator or name not in HOST_EXPERIMENTS or setting not in HOST_EXPERIMENTS[name]:
+        raise argparse.ArgumentTypeError("invalid or unsupported host experiment NAME=VALUE")
+    return name, setting
 sys.path.insert(0, str(ROOT / "python"))
 import benchmark_market_load as load
 from background_market import child_seed
@@ -564,6 +574,8 @@ def restore_environment(values):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--server", type=Path, required=True)
+    parser.add_argument("--host-experiment", type=host_experiment, action="append", default=[],
+                        help="explicit isolated server experiment NAME=VALUE; inherited MARKETFORGE variables are stripped")
     parser.add_argument("--pine-in-process", action="store_true", help="enable the optional qualified Rust Pine backend")
     parser.add_argument("--pine-vm-checkpoint", action="store_true", help="opt in to compact schema-3 checkpoints; requires --pine-in-process")
     parser.add_argument("--output", type=Path, required=True)
@@ -669,6 +681,10 @@ def main():
             kwargs["env"]["MARKETFORGE_PINE_IN_PROCESS"] = "1" if args.pine_in_process else "0"
             kwargs["env"]["MARKETFORGE_PINE_VM_CHECKPOINT"] = "1" if args.pine_vm_checkpoint else "0"
             kwargs["env"]["MARKETFORGE_BOT_PLUGIN_DIR"] = str(args.plugin_dir.resolve())
+            kwargs["env"].update(dict(args.host_experiment))
+            load.save(active_case_output / "host-experiment-env.json", {
+                name: kwargs["env"].get(name) for name in HOST_EXPERIMENTS
+            })
             if args.bot_trace or args.require_bot_receipts:
                 trace_path = (active_case_output / "bot-receipts.jsonl").resolve()
                 if trace_path.exists():

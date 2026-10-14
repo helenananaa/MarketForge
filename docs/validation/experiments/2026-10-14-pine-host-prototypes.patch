@@ -1,0 +1,3150 @@
+diff --git a/docs/validation/2026-10-13-pine-host-performance.md b/docs/validation/2026-10-13-pine-host-performance.md
+new file mode 100644
+index 0000000..4a0f45e
+--- /dev/null
++++ b/docs/validation/2026-10-13-pine-host-performance.md
+@@ -0,0 +1,204 @@
++# Pine host performance experiments
++
++Status: work in progress. Baseline: `05ce347478f9b870996e74ac66c9afc7a980b27e`.
++Worktree: `E:/CodexData/worktrees/pine-host-performance/MarketForge`.
++Artifacts: `.local/pine-host-performance-20261013/` in this worktree.
++
++## Experiment contract
++
++Investigate every direction proposed in the external review, including alternatives
++when the suggested shortcut would change a correctness or recovery guarantee.
++No timing prediction is a measured result. Keep all attempts and restore rejected
++changes. Current main-directory native-Pine and strategy-research work is excluded.
++
++| Direction | Experiment | Status |
++| --- | --- | --- |
++| Source admission | Explicit opt-in snapshot shared within an immutable observation wave; public calls still check fresh | Four-run same-binary ABBA complete; candidate retained |
++| Identity | Cache canonical identity only with exact immutable configuration and participant match | Implemented; runtime comparison pending |
++| Incoming execution seal | Complete authenticated envelope cache; mismatch/cold restore keeps full validation | Implemented; runtime comparison pending |
++| Request construction and sizing | Reuse input Value; exact complete state size, optionally from identity-bound encoded bytes | Implemented; runtime comparison pending |
++| Trigger fingerprint | Complete history proof plus private inputs, with conservative fallback | Implemented; runtime comparison pending |
++| Worker concurrency | Same-source configurable 16/32/core-count sweep; serial runs | Implemented; runtime comparison pending |
++| Pine task batches | Small bounded batches, retaining per-bot isolation and admission accounting | Implemented; runtime comparison pending |
++| Fixed wake offsets | Opt-in behavioral experiment; measure total bar-to-durable latency including the delay | Prototype implemented; validation pending |
++| Full scheduler checkpoints | Ahead-of-writer encoding of exact immutable state fragments; existing journal order and revision budget preserved | Prototype implemented; validation pending |
++| Checkpoint trigger policy | Byte/time alternatives without silently extending replay/readiness limits | Pending |
++| Typed Pine state | Cached typed state with Arc fields, including the current durable Value boundary | Fixed-work prototype implemented; measurement pending |
++
++## Validation
++
++Freeze executable, driver, recipe and plugin hashes before timed runs. Never run
++compilation alongside load measurements. First use fixed-work comparisons with exact
++response/state equality, then 500/1000-bot cycle pilots, native controls and relevant
++PostgreSQL recovery. Capacity qualification requires its unchanged activity,
++latency, cutoff-backlog and duration gates; post-pause catch-up is not cutoff success.
++
++The v15 raw artifact directory referenced by the previous report is absent at its
++recorded path. Historical report numbers remain historical; this task produces
++new baseline evidence rather than reconstructing or relabeling those runs.
++
++## Source-wave experiment
++
++The first controller inherited experiment flags through the environment, but the
++lower-level isolated server launcher strips those variables. All four cases in
++`wave-abba/` therefore ran with source sharing disabled. The grouping is invalid
++and explicitly excluded; its receipts are retained. The corrected driver accepts
++an allowlisted `--host-experiment NAME=VALUE` and saves the actual server environment.
++
++Candidate v2 `wave-abba-v2/` runs control / wave / wave / control, 1000 Pine plus
++38 native liquidity bots, 100ms cadence, 20s warmup, 120s measurement, 64 genuine
++prewarm candles, diverse-short inputs and a cycle feed. All recipes and complete
++prewarm histories are identical. Every case has valid sampling, no compiler or
++other benchmark server, complete trace shutdown and no cutoff backlog or skipped
++bars. Configured >=9.5 step/s gates pass; literal >=10 step/s passes only one case.
++
++| Metric | Control median (2 runs) | Source-wave median (2 runs) |
++| --- | ---: | ---: |
++| Turn elapsed per complete turn (ms) | 1.741748 | 1.341511 |
++| Average server CPU (logical cores) | 1.276923 | 1.122375 |
++| Accepted bar-to-durable P95 (ms) | 164.772 | 151.785 |
++| All bar-to-decision P95 (ms) | 122.732 | 120.552 |
++| Dispatch queue own-scope mean (ms) | 37.782161 | 33.155727 |
++
++Actual source reads are 80,622 / 81,467 in controls and 1,550 / 1,151 in enabled
++cases. Turn elapsed falls about 23%, average CPU about 12%, accepted P95 about 8%.
++The pre-decision P95 improves only about 2%; this is not the predicted fivefold
++burst improvement. Accepted populations differ (582/1427 versus 1713/1016) under
++asynchronous trading; report medians of case quantiles, not a pooled causal estimate.
++Nested elapsed scopes are not additive or CPU shares. These are short memory-journal
++results, not PostgreSQL throughput, long-run stability or universal Pine capacity.
++
++## Frozen candidate v5 screen
++
++The first `v5-option-screen` controller was interrupted after five completed
++cases. The partial combined case has no completed report and is excluded.
++`v5-option-screen-interruption.json` retains that disposition. The remaining
++directions were run serially by a detached controller in `v5-rest-screen`;
++all twelve cases completed. Each has a complete sampling window, quiet compiler,
++no concurrent benchmark server, actual option receipts and graceful trace closeout.
++Recipes and initial candle histories are identical within the series.
++
++This is a screen, not a randomized causal experiment. Each option has one run,
++with controls at both ends. Several cases fail activity/receipt/cutoff gates
++despite valid measurements. The two controls themselves fail sustained accepted
++receipt coverage, so this series does not establish 1000-bot capacity.
++
++| Option | Turn elapsed ms | CPU cores | Accepted durable P95 ms | All decision P95 ms |
++| --- | ---: | ---: | ---: | ---: |
++| Control, median of two | 2.081 | 1.587 | 257.253 | 180.787 |
++| Five host flags together | 1.592 | 1.380 | 247.091 | 186.333 |
++| 32 workers | 3.837 | 1.907 | 240.292 | 197.727 |
++| Core-count workers | 3.655 | 1.759 | 291.614 | 185.240 |
++| Pine batch 4 | 0.998 | 0.945 | 232.790 | 231.149 |
++| Pine batch 8 | 1.477 | 1.366 | 690.213 | 673.372 |
++| Background JSON fragments | 2.126 | 1.633 | 236.459 | 192.576 |
++| Fixed offsets 50 ms | 1.990 | 1.499 | 222.235 | 175.214 |
++| Fixed offsets 100 ms | 1.771 | 1.455 | 236.392 | 151.526 |
++| Checkpoint byte budget 32 MiB | 2.278 | 1.727 | 335.001 | 223.596 |
++| Checkpoint time budget 10 s | 2.240 | 1.680 | 393.628 | 217.046 |
++
++Five host flags and batch 4 warrant repeated comparisons. Batch 8 has a large
++tail regression; raising concurrency also increases CPU without a clear latency
++gain. Wake offsets include intentional delay in the end-to-end metric and change
++market behavior. Their single-run result is not authorization to enable them by
++default. The byte/time checkpoint policies preserve the maximum 499-delta tail,
++so they cannot arbitrarily defer full checkpoints to claim lower cost.
++
++`screen-summary.json` verifies report hashes and includes every capacity gate,
++actual flag value, initial-history hash and measurement count. It also retains
++the first five completed exploratory cases; those are not pooled with this screen.
++
++## Typed-state experiment boundary
++
++The fixed-work prototype loads all 1000 actual saved Pine states, clones them,
++increments a counter and encodes exact durable bytes. Three ABBA rounds produce
++median elapsed times of 96.507 ms for Value, 113.395 ms for typed state converted
++back to Value, and 44.718 ms for direct canonical typed encoding. Every output is
++byte-equal. Preparation/decoding is outside timing.
++
++The current host's Value boundary makes the typed adaptation slower. Direct typed
++encoding demonstrates a useful structural direction, but is not a typed Pine
++broker implementation and excludes state admission, VM, gateway, queue and journal
++work. Neither number is an end-to-end improvement. Raw evidence is retained in
++`typed-state-direct-micro.json`; the Value adaptation is rejected.
++
++## Correctness evidence so far
++
++Candidate v4 release workspace/all-features tests with required authenticated
++PostgreSQL: 768 passed, 24 ignored, no failures. All-feature release Clippy passed;
++default-feature Clippy passed after gating two feature-specific helper functions.
++Candidate v5: 30 focused Pine tests passed, 2 ignored with all five cache flags.
++Two actual PostgreSQL HTTP restart tests passed with explicit candidate flags:
++limit restart/cancel, and continuous versus restart schema-3 fill/close.
++These establish those recovery paths, not PostgreSQL realtime load capacity.
++
++Additional request-boundary and late-checkpoint recovery audits, repeat candidate
++comparisons, final-code cleanup, native controls and long-run qualification remain
++in progress. This document deliberately does not claim completion.
++
++## Additional exact-work and recovery audits
++
++The borrowed request guard test passes at 4 MiB minus one byte, exactly 4 MiB,
++and 4 MiB plus one byte, with Unicode and numeric metadata. Only the last case
++receives the size-limit error, matching the original serializer.
++
++A full 1038-agent scheduler snapshot cloned at revision 8 takes 1.003 ms; encoding
++its 16,251,229 bytes on a background thread takes 53.254 ms. Thirty-two synthetic
++opaque metadata deltas advance the foreground to revision 40 while the snapshot
++remains isolated. Explicit replay from the covered revision equals the final
++state. Appending that old snapshot as a later ordinary SchedulerProgress record
++makes the current recovery code select revision 8 instead of 40. Therefore the
++naive late-record proposal is rejected. Independent covering-revision anchors need
++a storage/recovery protocol extension; fragment preencoding is not that extension.
++These are correctness/prototype measurements, not concurrent trading throughput.
++
++Fixed cache work over all 1000 saved Pine states uses the actual manifest validator
++to insert the same configuration defaults as ProcessBot construction. The initial
++attempt used raw persisted configuration and failed the identity equality check;
++its failure is retained. The corrected three ABBA rounds produce median 139.148 ms
++for original identity plus incoming/outgoing seals and 108.660 ms with caches,
++including outgoing seal generation, full proof write and comparison. Identities
++and seals equal the durable fixture in every successful case. This excludes the
++VM, observations, cold restore and queues; it is not a full single-turn replay.
++
++An additional cache review found signed-zero configuration equality insufficient:
++ordinary Value equality can hide a change that canonical Python hashing preserves.
++The candidate now compares float bits recursively, with a positive/negative-zero
++identity regression test. The original screen workload is retained as bounded
++evidence; the repaired candidate requires its own validation before final adoption.
++
++Defender realtime monitoring is enabled and this worktree's plugin path has no
++covering path exclusion. This read-only check does not establish that antivirus
++causes the filesystem timing; no system exclusions were changed.
++
++## Candidate v6 repeated comparison in progress
++
++The signed-zero repair is included in a new frozen executable, SHA256
++`41a113413945b7b8640c67c5817f375703d3b1df9ecdf4eeb16546d28168f745`.
++Its four-case source-wave / combined / combined / source-wave block completed.
++This comparison removes repeated file reads in both versions and asks whether
++the additional identity/seal/request/fingerprint caches help.
++
++| Metric, median of two cases | Source-wave only | Five flags together |
++| --- | ---: | ---: |
++| Turn elapsed ms | 1.685 | 1.669 |
++| CPU cores | 1.503 | 1.510 |
++| Accepted durable P95 ms | 317.411 | 312.616 |
++| All decision P95 ms | 211.658 | 208.510 |
++
++These small differences do not establish an additional runtime benefit. The
++fixed-work cache result does not override this evidence. Tail latency also fails
++the existing receipt qualification; this is not 1000-bot capacity evidence.
++The second ABBA block comparing combined with combined-plus-batch-4 awaits its
++last control. Both batch cases have completed: accepted P95 517.858/342.705 ms,
++decision P95 310.022/309.859 ms and CPU 1.298/1.287 cores. The latency regression
++is a reason to reject this combination despite its lower CPU consumption.
++
++This machine has 32 logical processors. Therefore the explicit 32-worker and
++core-count screen cases select the same worker bound; their differing results
++are run variation, not evidence about two distinct algorithms.
++
++Prepared but not yet run: expanded related/private-input cursor coverage and a
++complete 1000-borrowed-turn fixture with both serial and 16-worker ABBA comparisons,
++exact response-byte equality and separate VM elapsed counters. They must wait
++until the current load controller terminates; no compiler runs alongside it.
+diff --git a/exchange-server/src/async_scheduler_checkpoint_benchmark.rs b/exchange-server/src/async_scheduler_checkpoint_benchmark.rs
+new file mode 100644
+index 0000000..25b2c4d
+--- /dev/null
++++ b/exchange-server/src/async_scheduler_checkpoint_benchmark.rs
+@@ -0,0 +1,81 @@
++//! Exact full-state asynchronous snapshot prototype and current-protocol audit.
++//! It deliberately does not introduce a new durable record kind. The audit
++//! demonstrates why late SchedulerProgress cannot safely be used as an anchor.
++use super::*;
++use crate::scheduler_delta::SchedulerDelta;
++
++fn record(state: &exchange_core::SchedulerState, seq: u64, mutation: RoomMutation) -> JournalMutation {
++    JournalMutation { room_id: state.room_id.clone(), mutation_seq: seq, command_cursor: 0,
++        schema_version: journal::ROOM_MUTATION_SCHEMA_VERSION, mutation }
++}
++
++#[test]
++#[ignore = "explicit 1000-state async full checkpoint/recovery experiment"]
++fn full_snapshot_background_encoding_and_late_record_recovery_audit() {
++    let fixture = std::env::var("MARKETFORGE_PINE_STATE_FIXTURE").unwrap();
++    let bytes = std::fs::read(&fixture).unwrap();
++    let mut state: exchange_core::SchedulerState = serde_json::from_slice(&bytes).unwrap();
++    assert_eq!(state.agents.len(), 1038);
++    state.revision = 0;
++    let mut history = vec![record(&state, 0, RoomMutation::SchedulerProgress { clock_steps: 0, state: state.clone(), training: None })];
++    let index = state.agents.iter().position(|agent| agent.template.bot_id() == "pine.strategy").unwrap();
++    let advance = |state: &mut exchange_core::SchedulerState, history: &mut Vec<JournalMutation>| {
++        let mut next = state.clone();
++        next.revision += 1;
++        let exchange_core::PersistedAgentKindState::Plugin { data, .. } = &mut next.agents[index].kind_state else { unreachable!() };
++        Arc::make_mut(data)["_checkpoint_trial"] = serde_json::json!(next.revision);
++        let delta = SchedulerDelta::between(state, &next).unwrap();
++        history.push(record(&next, next.revision, RoomMutation::SchedulerDelta { clock_steps: 0, delta, training: None }));
++        *state = next;
++    };
++    for _ in 0..8 { advance(&mut state, &mut history); }
++    let clone_started = Instant::now();
++    let snapshot = state.clone();
++    let clone_ms = clone_started.elapsed().as_secs_f64()*1000.0;
++    let snapshot_revision = snapshot.revision;
++    let snapshot_room = snapshot.room_id.clone();
++    let (started, received) = std::sync::mpsc::sync_channel(1);
++    let encoder = std::thread::spawn(move || {
++        started.send(()).unwrap();
++        let began = Instant::now();
++        let encoded = serde_json::to_vec(&snapshot).unwrap();
++        (encoded, began.elapsed().as_secs_f64()*1000.0)
++    });
++    received.recv().unwrap();
++    let foreground_started = Instant::now();
++    for _ in 0..32 { advance(&mut state, &mut history); }
++    let foreground_ms = foreground_started.elapsed().as_secs_f64()*1000.0;
++    let (encoded, encoding_ms) = encoder.join().unwrap();
++    let restored: exchange_core::SchedulerState = serde_json::from_slice(&encoded).unwrap();
++    assert_eq!(restored.revision, snapshot_revision);
++    assert_eq!(restored.room_id, snapshot_room);
++    let exchange_core::PersistedAgentKindState::Plugin { data: frozen, .. } = &restored.agents[index].kind_state else { unreachable!() };
++    assert_eq!(frozen["_checkpoint_trial"], 8);
++    let recovery = JournalRecovery { mutations: history.clone(), ..Default::default() };
++    assert_eq!(scheduler_states_from_recovery(&recovery).unwrap()[&state.room_id], state);
++
++    // An independent covering-N anchor works when replay starts at the covered
++    // sequence and follows its ordered tail. This is a prototype, not support
++    // for such records in the current storage/recovery protocol.
++    let mut anchored = restored.clone();
++    for record in history.iter().filter(|record| record.mutation_seq > snapshot_revision) {
++        if let RoomMutation::SchedulerDelta { delta, .. } = &record.mutation { delta.apply(&mut anchored).unwrap(); }
++    }
++    assert_eq!(anchored, state);
++
++    // The proposed "write it later as a full record" shortcut selects the old
++    // snapshot as the newest full state and loses all subsequent revisions.
++    history.push(record(&state, state.revision+1, RoomMutation::SchedulerProgress { clock_steps: 0, state: restored, training: None }));
++    let unsafe_recovery = JournalRecovery { mutations: history, ..Default::default() };
++    let rolled_back = scheduler_states_from_recovery(&unsafe_recovery).unwrap();
++    assert_eq!(rolled_back[&state.room_id].revision, snapshot_revision);
++    assert_ne!(rolled_back[&state.room_id], state);
++    let result = serde_json::json!({"fixture":fixture,"agents":state.agents.len(),"snapshot_revision":snapshot_revision,
++        "final_revision":state.revision,"copy_on_write_snapshot_ms":clone_ms,"background_full_encode_ms":encoding_ms,
++        "foreground_32_deltas_ms":foreground_ms,"encoded_bytes":encoded.len(),"frozen_snapshot_isolated":true,
++        "covering_revision_plus_ordered_tail_equal":true,"late_existing_record_rolls_back_to":snapshot_revision,
++        "decision":"reject late SchedulerProgress insertion; requires independently versioned anchor/recovery protocol",
++        "scope":"Real saved 1000-Pine state, background full encode and current recovery code; synthetic opaque metadata updates, no trading or capacity claim."});
++    if let Ok(path) = std::env::var("MARKETFORGE_ASYNC_CHECKPOINT_OUTPUT") { std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).unwrap(); }
++    eprintln!("{result}");
++}
+diff --git a/exchange-server/src/bench_execution_timing.rs b/exchange-server/src/bench_execution_timing.rs
+index c969ba4..69f49ab 100644
+--- a/exchange-server/src/bench_execution_timing.rs
++++ b/exchange-server/src/bench_execution_timing.rs
+@@ -149,6 +149,8 @@ pub(crate) static BOT_PINE_VM_CHECKPOINT: Counter = Counter::new();
+ pub(crate) static BOT_PINE_STAMP_CLONE: Counter = Counter::new();
+ pub(crate) static BOT_PINE_RESPONSE_LENGTH: Counter = Counter::new();
+ pub(crate) static PINE_DELTA_HINT_PREPARE: Counter = Counter::new();
++pub(crate) static PINE_BACKGROUND_JSON: Counter = Counter::new();
++pub(crate) static PINE_BACKGROUND_HIT: Counter = Counter::new();
+ pub(crate) static BOT_DISPATCH_QUEUE: Counter = Counter::new();
+ // Screen submission through successful pre-FIFO admission, including compute.
+ pub(crate) static BOT_SCREEN_PREFIFO: Counter = Counter::new();
+@@ -256,6 +258,8 @@ pub(crate) fn append_metrics(body: &mut String) {
+         ("bot_pine_stamp_clone", &BOT_PINE_STAMP_CLONE),
+         ("bot_pine_response_length", &BOT_PINE_RESPONSE_LENGTH),
+         ("pine_delta_hint_prepare", &PINE_DELTA_HINT_PREPARE),
++        ("pine_background_json", &PINE_BACKGROUND_JSON),
++        ("pine_background_hit", &PINE_BACKGROUND_HIT),
+         ("bot_dispatch_queue", &BOT_DISPATCH_QUEUE),
+         ("bot_screen_prefifo", &BOT_SCREEN_PREFIFO),
+         ("bot_queue_discard", &BOT_QUEUE_DISCARD),
+diff --git a/exchange-server/src/bot_dispatch.rs b/exchange-server/src/bot_dispatch.rs
+index de15661..0c1b80d 100644
+--- a/exchange-server/src/bot_dispatch.rs
++++ b/exchange-server/src/bot_dispatch.rs
+@@ -46,8 +46,8 @@ struct DataInputs<'a> {
+     truncated: bool,
+     history_proof: &'a Option<exchange_core::CandleHistoryProof>,
+     private_history_complete: bool,
+-    candles: Option<&'a Vec<exchange_core::Candle>>,
+-    streams: Option<&'a Vec<exchange_core::observation::BotDataStream>>,
++    candles: Option<HistoryInput<'a>>,
++    streams: Option<StreamInputs<'a>>,
+     volume: Option<&'a str>,
+     fills: Option<&'a Vec<exchange_core::Trade>>,
+     fill_details: Option<&'a Vec<exchange_core::observation::BotFillDetail>>,
+@@ -55,6 +55,52 @@ struct DataInputs<'a> {
+     conditions: Option<&'a Vec<exchange_core::conditional_orders::ConditionalOrder>>,
+ }
+ 
++#[derive(Serialize)]
++#[serde(untagged)]
++enum HistoryInput<'a> {
++    Raw(&'a Vec<exchange_core::Candle>),
++    Chain {
++        suffix_bars: usize,
++        tail_sha256: String,
++    },
++}
++
++impl<'a> HistoryInput<'a> {
++    fn new(
++        candles: &'a Vec<exchange_core::Candle>,
++        proof: &Option<exchange_core::CandleHistoryProof>,
++        compact: bool,
++    ) -> Self {
++        if compact && let Some(digest) = proof.as_ref().and_then(|proof| proof.prefix_digest()) {
++            let digest = candles.iter().fold(digest, |digest, candle| {
++                exchange_core::candle_history_append(&digest, candle)
++            });
++            Self::Chain {
++                suffix_bars: candles.len(),
++                tail_sha256: exchange_core::candle_history_hex(&digest),
++            }
++        } else {
++            Self::Raw(candles)
++        }
++    }
++}
++
++#[derive(Serialize)]
++#[serde(untagged)]
++enum StreamInputs<'a> {
++    Raw(&'a Vec<exchange_core::observation::BotDataStream>),
++    Chain(Vec<StreamInput<'a>>),
++}
++
++#[derive(Serialize)]
++struct StreamInput<'a> {
++    instrument_id: &'a str,
++    interval_ms: u64,
++    candles: HistoryInput<'a>,
++    history_proof: &'a Option<exchange_core::CandleHistoryProof>,
++    truncated: bool,
++}
++
+ struct HashWriter(Sha256);
+ impl Write for HashWriter {
+     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+@@ -82,7 +128,7 @@ impl Trigger {
+         }
+         Ok(())
+     }
+-    fn inputs<'a>(&self, view: &'a ParticipantObservation) -> Inputs<'a> {
++    fn inputs<'a>(&self, view: &'a ParticipantObservation, compact: bool) -> Inputs<'a> {
+         let Self::Events {
+             closed_bars,
+             book,
+@@ -113,8 +159,30 @@ impl Trigger {
+                     truncated: data.truncated,
+                     history_proof: &data.history_proof,
+                     private_history_complete: data.private_history_complete,
+-                    candles: closed_bars.then_some(&data.candles),
+-                    streams: closed_bars.then_some(&data.streams),
++                    candles: closed_bars
++                        .then(|| HistoryInput::new(&data.candles, &data.history_proof, compact)),
++                    streams: closed_bars.then(|| {
++                        if compact {
++                            StreamInputs::Chain(
++                                data.streams
++                                    .iter()
++                                    .map(|stream| StreamInput {
++                                        instrument_id: &stream.instrument_id,
++                                        interval_ms: stream.interval_ms,
++                                        candles: HistoryInput::new(
++                                            &stream.candles,
++                                            &stream.history_proof,
++                                            true,
++                                        ),
++                                        history_proof: &stream.history_proof,
++                                        truncated: stream.truncated,
++                                    })
++                                    .collect(),
++                            )
++                        } else {
++                            StreamInputs::Raw(&data.streams)
++                        }
++                    }),
+                     volume: book.then_some(data.external_volume_qty.as_str()),
+                     fills: account.then_some(&data.own_fills),
+                     fill_details: account.then_some(&data.fill_details),
+@@ -125,7 +193,7 @@ impl Trigger {
+             related: view
+                 .related_markets
+                 .iter()
+-                .map(|v| self.inputs(v))
++                .map(|v| self.inputs(v, compact))
+                 .collect(),
+         }
+     }
+@@ -134,6 +202,16 @@ impl Trigger {
+         config: &BotConfig,
+         state: &Value,
+         view: &ParticipantObservation,
++    ) -> Result<Option<String>, BotError> {
++        self.fingerprint_mode(config, state, view, false)
++    }
++
++    fn fingerprint_mode(
++        &self,
++        config: &BotConfig,
++        state: &Value,
++        view: &ParticipantObservation,
++        compact: bool,
+     ) -> Result<Option<String>, BotError> {
+         if matches!(self, Self::EveryTick) {
+             return Ok(None);
+@@ -141,10 +219,16 @@ impl Trigger {
+         let mut writer = HashWriter(Sha256::new());
+         serde_json::to_writer(
+             &mut writer,
+-            &(self, config, self.inputs(view), state.get("_host_receipts")),
++            &(
++                self,
++                config,
++                self.inputs(view, compact),
++                state.get("_host_receipts"),
++            ),
+         )
+         .map_err(|e| BotError(e.to_string()))?;
+-        Ok(Some(format!("{:x}", writer.0.finalize())))
++        let prefix = if compact { "chain1:" } else { "" };
++        Ok(Some(format!("{prefix}{:x}", writer.0.finalize())))
+     }
+     /// Return the exact durable cursor used to decide this invocation. Unlike
+     /// the scheduling-only `due`, callers also need the cursor on timed wakes.
+@@ -154,7 +238,17 @@ impl Trigger {
+         state: &Value,
+         view: &ParticipantObservation,
+     ) -> Result<(bool, Option<String>), BotError> {
+-        let cursor = self.fingerprint(config, state, view)?;
++        self.due_with_fingerprint_mode(config, state, view, false)
++    }
++
++    pub(super) fn due_with_fingerprint_mode(
++        &self,
++        config: &BotConfig,
++        state: &Value,
++        view: &ParticipantObservation,
++        compact: bool,
++    ) -> Result<(bool, Option<String>), BotError> {
++        let cursor = self.fingerprint_mode(config, state, view, compact)?;
+         let due = state
+             .get("_next_wake_ms")
+             .and_then(Value::as_u64)
+@@ -399,4 +493,159 @@ mod tests {
+             }
+         }
+     }
++
++    #[test]
++    fn chain_cursor_preserves_related_stream_and_private_feedback_coverage() {
++        let (_, config, mut state, mut view) = history_fixture();
++        let trigger = Trigger::Events {
++            closed_bars: true, book: true, account: true, interval_ms: Some(10_000),
++        };
++        let candle: exchange_core::Candle = serde_json::from_value(serde_json::json!({
++            "schema_version":1,"open_time_ms":0,"close_time_ms":1000,"open_tick":100,
++            "high_tick":102,"low_tick":99,"close_tick":101,"volume":7,"quote_volume":707,
++            "trades":2,"taker_buy_base":3,"taker_buy_quote":303,"is_final":true
++        })).unwrap();
++        let data = view.bot_market_data.as_mut().unwrap();
++        data.candles.push(candle.clone());
++        data.streams.push(exchange_core::observation::BotDataStream {
++            instrument_id: "related".into(), interval_ms: 1000, candles: vec![candle],
++            history_proof: data.history_proof.clone(), truncated: false,
++        });
++        data.own_fills.push(serde_json::from_value(serde_json::json!({
++            "trade_id":1,"maker_order_id":1,"maker_account_id":20,"taker_order_id":2,
++            "taker_account_id":21,"price_tick":100,"qty":1,"taker_side":"Buy"
++        })).unwrap());
++        data.fill_details.push(exchange_core::observation::BotFillDetail {
++            trade_id: 1, market_time_ms: 1000, fee_paid: Some(1),
++        });
++        data.account_events.push(exchange_core::observation::BotAccountEvent {
++            instrument_id: view.instrument_id.clone(), command_seq: 1, market_time_ms: 1000,
++            account: exchange_core::observation::BotAccountFrame::Spot {
++                account_id: 20, cash_balance: 1000, position_qty: 1, fees_paid: 1,
++            },
++        });
++        data.conditional_orders.push(serde_json::from_value(serde_json::json!({
++            "key":"stop","instrument_id":"V-BTC-SPOT","account_id":20,
++            "spec":{"side":"Sell","qty":1,"trigger_price_tick":99,"above":false},
++            "status":"armed","last_checked_event_seq":1,"submitted_order_id":null
++        })).unwrap());
++        view.related_markets.push(view.clone());
++        let original = trigger.fingerprint_mode(&config, &state, &view, true).unwrap();
++        let legacy = trigger.fingerprint(&config, &state, &view).unwrap();
++        state[CURSOR] = serde_json::json!(original);
++        let encoded = serde_json::to_value(&view).unwrap();
++        let replacements = [
++            ("/bot_market_data/streams/0/candles/0/close_tick", serde_json::json!(102)),
++            ("/bot_market_data/streams/0/history_proof/prefix_bars", serde_json::json!(1)),
++            ("/bot_market_data/streams/0/truncated", serde_json::json!(true)),
++            ("/bot_market_data/streams/0/instrument_id", serde_json::json!("other")),
++            ("/bot_market_data/streams/0/interval_ms", serde_json::json!(2000)),
++            ("/bot_market_data/own_fills/0/qty", serde_json::json!(2)),
++            ("/bot_market_data/fill_details/0/fee_paid", serde_json::json!(2)),
++            ("/bot_market_data/account_events/0/account/Spot/cash_balance", serde_json::json!(999)),
++            ("/bot_market_data/account_events/0/command_seq", serde_json::json!(2)),
++            ("/bot_market_data/conditional_orders/0/status", serde_json::json!("fired")),
++            ("/bot_market_data/external_volume_qty", serde_json::json!("9")),
++            ("/related_markets/0/bot_market_data/candles/0/close_tick", serde_json::json!(102)),
++            ("/related_markets/0/bot_market_data/fill_details/0/fee_paid", serde_json::json!(2)),
++            ("/related_markets/0/bot_market_data/private_history_complete", serde_json::json!(false)),
++        ];
++        for (path, value) in replacements {
++            let mut changed = encoded.clone();
++            *changed.pointer_mut(path).unwrap_or_else(|| panic!("fixture missing {path}")) = value;
++            let changed: ParticipantObservation = serde_json::from_value(changed).unwrap();
++            assert_ne!(trigger.fingerprint_mode(&config, &state, &changed, true).unwrap(), original, "{path}");
++            assert_ne!(trigger.fingerprint(&config, &state, &changed).unwrap(), legacy, "{path}");
++            assert!(trigger.due_with_fingerprint_mode(&config, &state, &changed, true).unwrap().0, "{path}");
++        }
++        let mut changed_config = config.clone();
++        changed_config.seed += 1;
++        assert!(trigger.due_with_fingerprint_mode(&changed_config, &state, &view, true).unwrap().0);
++        state["_host_receipts"] = serde_json::json!([{"accepted":false}]);
++        assert!(trigger.due_with_fingerprint_mode(&config, &state, &view, true).unwrap().0);
++    }
++
++    #[test]
++    fn chain_cursor_covers_every_candle_field_and_cursor_migration() {
++        let (trigger, config, mut state, mut view) = history_fixture();
++        let candle: exchange_core::Candle = serde_json::from_value(serde_json::json!({
++            "schema_version":1,"open_time_ms":0,"close_time_ms":1000,"open_tick":100,
++            "high_tick":102,"low_tick":99,"close_tick":101,"volume":7,"quote_volume":707,
++            "trades":2,"taker_buy_base":3,"taker_buy_quote":303,"is_final":true
++        }))
++        .unwrap();
++        view.bot_market_data.as_mut().unwrap().candles.push(candle);
++        let original = trigger
++            .fingerprint_mode(&config, &state, &view, true)
++            .unwrap();
++        let legacy = trigger.fingerprint(&config, &state, &view).unwrap();
++        for index in 0..13 {
++            let mut changed = view.clone();
++            let candle = &mut changed.bot_market_data.as_mut().unwrap().candles[0];
++            match index {
++                0 => candle.schema_version += 1,
++                1 => candle.open_time_ms += 1,
++                2 => candle.close_time_ms += 1,
++                3 => candle.open_tick += 1,
++                4 => candle.high_tick += 1,
++                5 => candle.low_tick += 1,
++                6 => candle.close_tick += 1,
++                7 => candle.volume += 1,
++                8 => candle.quote_volume += 1_i128 << 100,
++                9 => candle.trades += 1,
++                10 => candle.taker_buy_base = None,
++                11 => candle.taker_buy_quote = Some(0),
++                12 => candle.is_final = false,
++                _ => unreachable!(),
++            }
++            assert_ne!(
++                trigger
++                    .fingerprint_mode(&config, &state, &changed, true)
++                    .unwrap(),
++                original,
++                "field {index}"
++            );
++            assert_ne!(
++                trigger.fingerprint(&config, &state, &changed).unwrap(),
++                legacy
++            );
++        }
++        state[CURSOR] = serde_json::json!(legacy);
++        assert!(
++            trigger
++                .due_with_fingerprint_mode(&config, &state, &view, true)
++                .unwrap()
++                .0
++        );
++        state[CURSOR] = serde_json::json!(original);
++        assert!(
++            !trigger
++                .due_with_fingerprint_mode(&config, &state, &view, true)
++                .unwrap()
++                .0
++        );
++        assert!(
++            trigger
++                .due_with_fingerprint(&config, &state, &view)
++                .unwrap()
++                .0
++        );
++        for index in 0..4 {
++            let mut changed = view.clone();
++            let data = changed.bot_market_data.as_mut().unwrap();
++            match index {
++                0 => data.private_history_complete = false,
++                1 => data.truncated = true,
++                2 => data.history_proof.as_mut().unwrap().prefix_sha256 = "f".repeat(64),
++                3 => data.history_proof.as_mut().unwrap().version += 1,
++                _ => unreachable!(),
++            }
++            assert!(
++                trigger
++                    .due_with_fingerprint_mode(&config, &state, &changed, true)
++                    .unwrap()
++                    .0
++            );
++        }
++    }
+ }
+diff --git a/exchange-server/src/bot_plugins.rs b/exchange-server/src/bot_plugins.rs
+index 92a82cf..5a1b5f8 100644
+--- a/exchange-server/src/bot_plugins.rs
++++ b/exchange-server/src/bot_plugins.rs
+@@ -70,6 +70,7 @@ struct ProcessBotFactory {
+     directory: PathBuf,
+     pool: Option<Arc<WorkerPool>>,
+     event_prefilter_enabled: bool,
++    chain_fingerprint_enabled: bool,
+     #[cfg(feature = "pine-in-process")]
+     in_process: Option<Arc<crate::pine_inprocess::Host>>,
+ }
+@@ -154,6 +155,8 @@ pub fn load_bot_plugins(root: &Path) -> Result<BotRegistry, BotError> {
+         let event_prefilter_enabled = manifest.host_event_prefilter
+             || std::env::var("MARKETFORGE_EXPERIMENTAL_EVENT_PREFILTER").as_deref() == Ok("1");
+         registry.register(ProcessBotFactory {
++            chain_fingerprint_enabled: manifest.bot.id == "pine.strategy"
++                && std::env::var("MARKETFORGE_PINE_CHAIN_FINGERPRINT").as_deref() == Ok("1"),
+             #[cfg(feature = "pine-in-process")]
+             in_process: if manifest.bot.id == "pine.strategy"
+                 && std::env::var("MARKETFORGE_PINE_IN_PROCESS").as_deref() == Ok("1")
+@@ -399,11 +402,12 @@ impl ScheduledBot for ProcessBot {
+         &mut self,
+         observation: &ParticipantObservation,
+     ) -> Result<Vec<OrderAction>, BotError> {
+-        let (due, cursor) = self
+-            .factory
+-            .manifest
+-            .decision_trigger
+-            .due_with_fingerprint(&self.config, &self.state, observation)?;
++        let trigger = &self.factory.manifest.decision_trigger;
++        let (due, cursor) = if self.factory.chain_fingerprint_enabled {
++            trigger.due_with_fingerprint_mode(&self.config, &self.state, observation, true)?
++        } else {
++            trigger.due_with_fingerprint(&self.config, &self.state, observation)?
++        };
+         if !due {
+             return Ok(vec![]);
+         }
+@@ -773,6 +777,7 @@ mod tests {
+             directory,
+             pool: None,
+             event_prefilter_enabled: true,
++            chain_fingerprint_enabled: false,
+             in_process: Some(host),
+         };
+         let mut registry = BotRegistry::with_builtins();
+@@ -1125,6 +1130,7 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
+                 directory: PathBuf::new(),
+                 pool: None,
+                 event_prefilter_enabled: false,
++                chain_fingerprint_enabled: false,
+             },
+             config,
+             state: Arc::new(serde_json::json!({"broker_schema": 3, "vm": "unchanged"})),
+@@ -1160,6 +1166,7 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
+             directory,
+             pool: None,
+             event_prefilter_enabled: true,
++            chain_fingerprint_enabled: false,
+             in_process: Some(host),
+         };
+         let AgentTemplate::Plugin(mut config) = template() else {
+@@ -1289,6 +1296,7 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
+                 directory,
+                 pool: None,
+                 event_prefilter_enabled: false,
++                chain_fingerprint_enabled: false,
+                 in_process: Some(host.clone()),
+             },
+             config,
+@@ -1542,6 +1550,7 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
+             directory: package.0.clone(),
+             pool: None,
+             event_prefilter_enabled: false,
++            chain_fingerprint_enabled: false,
+         };
+         factory.manifest.decision_trigger = Trigger::Events {
+             closed_bars: false,
+diff --git a/exchange-server/src/journal.rs b/exchange-server/src/journal.rs
+index a163607..56a72fd 100644
+--- a/exchange-server/src/journal.rs
++++ b/exchange-server/src/journal.rs
+@@ -7,8 +7,9 @@ use std::{
+     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+ };
+ 
++use std::sync::Arc;
+ #[cfg(test)]
+-use std::sync::{Arc, Mutex};
++use std::sync::Mutex;
+ 
+ use self::pg_cached::{CachedClient as Client, CachedTransaction};
+ use exchange_core::{
+@@ -35,6 +36,15 @@ const DATABASE_URL_ENV: &str = "MARKETFORGE_DATABASE_URL";
+ const RUNTIME_MODE_ENV: &str = "MARKETFORGE_RUNTIME_MODE";
+ pub const JOURNAL_READ_WORKERS_ENV: &str = "MARKETFORGE_JOURNAL_READ_WORKERS";
+ pub const DEFAULT_POSTGRES_READ_WORKERS: usize = 4;
++
++pub(crate) fn prefetch_pine_state(data: &Arc<Value>) {
++    scheduler_json::background::enqueue(data);
++}
++
++#[cfg(feature = "pine-in-process")]
++pub(crate) fn prefetched_pine_state_len(data: &Value) -> Option<usize> {
++    scheduler_json::background::value_len(data)
++}
+ const MAX_POSTGRES_READ_WORKERS: usize = 32;
+ pub const RUNTIME_LOCK_WAIT_MS_ENV: &str = "MARKETFORGE_RUNTIME_LOCK_WAIT_MS";
+ const MAX_RUNTIME_LOCK_WAIT_MS: u64 = 3_600_000;
+diff --git a/exchange-server/src/journal/scheduler_json.rs b/exchange-server/src/journal/scheduler_json.rs
+index c7f395d..9cb540c 100644
+--- a/exchange-server/src/journal/scheduler_json.rs
++++ b/exchange-server/src/journal/scheduler_json.rs
+@@ -16,6 +16,7 @@ use std::{
+ };
+ 
+ const MAX_BYTES: usize = 64 * 1024 * 1024;
++pub(crate) mod background;
+ const MAX_ENTRIES: usize = 4096;
+ const MAX_ENCODING_WORKERS: usize = 4;
+ const MIN_PARALLEL_MISSES: usize = 32;
+@@ -154,7 +155,7 @@ impl Cache {
+         // directly, without reparsing a string we just serialized. The enclosing
+         // typed mutation still uses RecoveryJson's i128/u128 range checks.
+         // Weak identity also prevents reuse after expiration or a COW update.
+-        let json: Arc<RawValue> = match prepared {
++        let json: Arc<RawValue> = match prepared.or_else(|| background::get(data)) {
+             Some(json) => json,
+             None => serde_json::value::to_raw_value(data.as_ref())
+                 .map_err(JournalError::Serialize)?
+@@ -237,6 +238,7 @@ fn missing_sources(mutation: &RoomMutation, cache: &Cache) -> Vec<Arc<Value>> {
+         } = &agent.kind_state
+             && plugin_id == "pine.strategy"
+             && !cache.contains(data)
++            && background::get(data).is_none()
+             && seen.insert(Arc::as_ptr(data) as usize)
+         {
+             sources.push(data.clone());
+diff --git a/exchange-server/src/journal/scheduler_json/background.rs b/exchange-server/src/journal/scheduler_json/background.rs
+new file mode 100644
+index 0000000..65da3c7
+--- /dev/null
++++ b/exchange-server/src/journal/scheduler_json/background.rs
+@@ -0,0 +1,109 @@
++//! Optional ahead-of-writer encoding of immutable Pine state fragments.
++//! This changes neither checkpoint revisions nor durable acknowledgement order.
++//! Queue saturation, stale weak identities and oversized fragments fall back
++//! to the ordinary encoder. Only the exact live Arc allocation authorizes reuse.
++use super::{Cache, bounded_fragment};
++use serde_json::{Value, value::RawValue};
++use std::sync::{Arc, Mutex, OnceLock, mpsc};
++
++static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
++static JOBS: OnceLock<mpsc::SyncSender<Arc<Value>>> = OnceLock::new();
++
++fn next_job(receiver: &Mutex<mpsc::Receiver<Arc<Value>>>) -> Option<Arc<Value>> {
++    // Release the receive lock before the caller encodes; both workers can
++    // execute concurrently, including on Rust editions with extended temporaries.
++    receiver.lock().ok()?.recv().ok()
++}
++
++fn enabled() -> bool {
++    static ENABLED: OnceLock<bool> = OnceLock::new();
++    *ENABLED.get_or_init(|| std::env::var("MARKETFORGE_PINE_BACKGROUND_JSON").as_deref() == Ok("1"))
++}
++
++pub(crate) fn enqueue(data: &Arc<Value>) {
++    if !enabled() {
++        return;
++    }
++    let jobs = JOBS.get_or_init(|| {
++        // At most eight queued and two active state references. Encoding stops
++        // at 256 KiB per fragment; the independent retained cache is <=64 MiB.
++        let (sender, receiver) = mpsc::sync_channel::<Arc<Value>>(8);
++        let receiver = Arc::new(Mutex::new(receiver));
++        for index in 0..2 {
++            let receiver = receiver.clone();
++            let _ = std::thread::Builder::new()
++                .name(format!("pine-json-prefetch-{index}"))
++                .spawn(move || {
++                    while let Some(data) = next_job(&receiver) {
++                        #[cfg(feature = "bench-execution-timing")]
++                        let _timer = crate::bench_execution_timing::Timer::start(
++                            &crate::bench_execution_timing::PINE_BACKGROUND_JSON,
++                        );
++                        let Some(json) = bounded_fragment(&data) else {
++                            continue;
++                        };
++                        let mut cache = CACHE.get_or_init(Mutex::default).lock().unwrap();
++                        // A prepared fragment is always provided, so insertion
++                        // never recursively consults this global cache.
++                        let _ = cache.get_prepared(&data, Some(json));
++                    }
++                });
++        }
++        sender
++    });
++    // Best effort only: a full queue must never hold up a trading decision.
++    let _ = jobs.try_send(data.clone());
++}
++
++pub(super) fn get(data: &Arc<Value>) -> Option<Arc<RawValue>> {
++    get_value(data)
++}
++
++#[cfg(feature = "pine-in-process")]
++pub(crate) fn value_len(data: &Value) -> Option<usize> {
++    get_value(data).map(|json| json.get().len())
++}
++
++fn get_value(data: &Value) -> Option<Arc<RawValue>> {
++    if !enabled() {
++        return None;
++    }
++    let cache = CACHE.get()?.lock().ok()?;
++    let entry = cache.entries.get(&(std::ptr::from_ref(data) as usize))?;
++    let source = entry.source.upgrade()?;
++    if !std::ptr::eq(source.as_ref(), data) {
++        return None;
++    }
++    #[cfg(feature = "bench-execution-timing")]
++    let _timer = crate::bench_execution_timing::Timer::start(
++        &crate::bench_execution_timing::PINE_BACKGROUND_HIT,
++    );
++    Some(entry.json.clone())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use serde_json::json;
++
++    #[test]
++    fn fragment_identity_requires_live_immutable_source_and_bounds_are_exact() {
++        let mut source = Arc::new(json!({"checkpoint":{"bars":32},"host":{"opaque":"策略🐱"}}));
++        let original = source.clone();
++        let mut cache = Cache::default();
++        let raw = bounded_fragment(&source).unwrap();
++        assert_eq!(
++            raw.get().as_bytes(),
++            serde_json::to_vec(source.as_ref()).unwrap()
++        );
++        cache.get_prepared(&source, Some(raw)).unwrap();
++        assert!(cache.contains(&original));
++        Arc::make_mut(&mut source)["host"]["opaque"] = json!("changed");
++        assert!(!cache.contains(&source));
++        assert!(cache.contains(&original));
++        let key = Arc::as_ptr(&original) as usize;
++        drop(original);
++        assert!(cache.entries[&key].source.upgrade().is_none());
++        assert!(bounded_fragment(&Arc::new(json!({"padding":"x".repeat(256*1024)}))).is_none());
++    }
++}
+diff --git a/exchange-server/src/journal_worker.rs b/exchange-server/src/journal_worker.rs
+index b10511f..43c494b 100644
+--- a/exchange-server/src/journal_worker.rs
++++ b/exchange-server/src/journal_worker.rs
+@@ -19,6 +19,7 @@ use crate::journal::{
+ };
+ 
+ pub const DEFAULT_JOURNAL_QUEUE_CAPACITY: usize = 64;
++mod checkpoint_budget;
+ 
+ type JournalJob = Box<dyn FnOnce(&mut dyn JournalStore) + Send + 'static>;
+ 
+@@ -34,6 +35,7 @@ pub(crate) struct JournalCoordinator {
+     writer: JournalWorker,
+     readers: Arc<Vec<JournalWorker>>,
+     next_reader: Arc<AtomicUsize>,
++    checkpoint_budget: Arc<checkpoint_budget::Budget>,
+ }
+ 
+ #[derive(Clone)]
+@@ -67,6 +69,13 @@ pub(crate) struct JournalCoordinatorMetricsSnapshot {
+ }
+ 
+ impl JournalCoordinator {
++    pub(crate) fn scheduler_checkpoint_due(
++        &self,
++        room: &str,
++        revision: u64,
++    ) -> Result<bool, JournalError> {
++        self.checkpoint_budget.due(room, revision)
++    }
+     #[cfg(feature = "risk-benchmark")]
+     pub(crate) async fn benchmark_storage(&self) -> Result<serde_json::Value, JournalError> {
+         self.execute_read(|store| Ok(store.benchmark_storage()))
+@@ -126,6 +135,7 @@ impl JournalCoordinator {
+             writer,
+             readers: Arc::new(readers),
+             next_reader: Arc::new(AtomicUsize::new(0)),
++            checkpoint_budget: Arc::default(),
+         }
+     }
+ 
+@@ -530,6 +540,7 @@ impl JournalCoordinator {
+         transfer_records: Vec<JournalTransfer>,
+         snapshot: Option<JournalSnapshot>,
+     ) -> Result<PendingJournalMutation, JournalError> {
++        let checkpoint_budget = self.checkpoint_budget.clone();
+         self.execute(move |store| {
+             match claim {
+                 Some(claim) => store.append_room_mutation_fenced(
+@@ -546,6 +557,7 @@ impl JournalCoordinator {
+                     snapshot.as_ref(),
+                 )?,
+             }
++            checkpoint_budget.observe(&mutation);
+             Ok(mutation)
+         })
+         .await
+@@ -568,13 +580,16 @@ impl JournalCoordinator {
+         let snapshot = snapshot.cloned();
+         #[cfg(feature = "bench-execution-timing")]
+         drop(clone_timer);
++        let checkpoint_budget = self.checkpoint_budget.clone();
+         self.execute(move |store| {
+             store.append_room_mutation(
+                 &mutation,
+                 &execution_records,
+                 &transfer_records,
+                 snapshot.as_ref(),
+-            )
++            )?;
++            checkpoint_budget.observe(&mutation);
++            Ok(())
+         })
+         .await
+     }
+@@ -598,6 +613,7 @@ impl JournalCoordinator {
+         let snapshot = snapshot.cloned();
+         #[cfg(feature = "bench-execution-timing")]
+         drop(clone_timer);
++        let checkpoint_budget = self.checkpoint_budget.clone();
+         self.execute(move |store| {
+             store.append_room_mutation_fenced(
+                 &claim,
+@@ -605,7 +621,9 @@ impl JournalCoordinator {
+                 &execution_records,
+                 &transfer_records,
+                 snapshot.as_ref(),
+-            )
++            )?;
++            checkpoint_budget.observe(&mutation);
++            Ok(())
+         })
+         .await
+     }
+diff --git a/exchange-server/src/journal_worker/checkpoint_budget.rs b/exchange-server/src/journal_worker/checkpoint_budget.rs
+new file mode 100644
+index 0000000..8725e6e
+--- /dev/null
++++ b/exchange-server/src/journal_worker/checkpoint_budget.rs
+@@ -0,0 +1,218 @@
++//! Alternative checkpoint triggers, tied to successful ordered journal writes.
++//! The <=499 delta recovery bound is unchanged. Missing history, restart or a
++//! predecessor gap forces a full state; metadata never authorizes durable data.
++use crate::journal::{JournalError, PendingJournalMutation, RoomMutation};
++use std::{
++    collections::BTreeMap,
++    sync::Mutex,
++    time::{Duration, Instant},
++};
++
++#[derive(Clone, Copy)]
++struct Options {
++    bytes: usize,
++    time: Duration,
++}
++
++fn options() -> Result<Option<Options>, String> {
++    let number = |name: &str| {
++        std::env::var(name).ok().map_or(Ok(0), |value| {
++            value
++                .parse::<u64>()
++                .map_err(|error| format!("invalid {name}: {error}"))
++        })
++    };
++    let bytes = number("MARKETFORGE_SCHEDULER_CHECKPOINT_BYTES")?;
++    let time_ms = number("MARKETFORGE_SCHEDULER_CHECKPOINT_MS")?;
++    if bytes > 256 * 1024 * 1024 || time_ms > 3_600_000 {
++        return Err("checkpoint experiment limit exceeds its bound".into());
++    }
++    Ok((bytes != 0 || time_ms != 0).then_some(Options {
++        bytes: bytes as usize,
++        time: Duration::from_millis(time_ms),
++    }))
++}
++
++struct Entry {
++    full: u64,
++    current: u64,
++    bytes: usize,
++    at: Instant,
++}
++
++pub(super) struct Budget {
++    options: Result<Option<Options>, String>,
++    entries: Mutex<BTreeMap<String, Entry>>,
++}
++
++impl Default for Budget {
++    fn default() -> Self {
++        Self {
++            options: options(),
++            entries: Mutex::default(),
++        }
++    }
++}
++
++impl Budget {
++    pub(super) fn due(&self, room: &str, revision: u64) -> Result<bool, JournalError> {
++        self.due_at(room, revision, Instant::now())
++    }
++
++    fn due_at(&self, room: &str, revision: u64, now: Instant) -> Result<bool, JournalError> {
++        let Some(options) = self
++            .options
++            .as_ref()
++            .map_err(|error| JournalError::Recovery(error.clone()))?
++        else {
++            return Ok(crate::scheduler_checkpoint_due(revision));
++        };
++        let Ok(entries) = self.entries.lock() else {
++            return Ok(crate::scheduler_checkpoint_due(revision));
++        };
++        let Some(entry) = entries.get(room) else {
++            return Ok(true);
++        };
++        if entry.current.checked_add(1) != Some(revision) || revision <= entry.full {
++            return Ok(true);
++        }
++        Ok(revision - entry.full > crate::MAX_SCHEDULER_DELTA_TAIL
++            || (options.bytes != 0 && entry.bytes >= options.bytes)
++            || (!options.time.is_zero() && now.saturating_duration_since(entry.at) >= options.time))
++    }
++
++    pub(super) fn observe(&self, mutation: &PendingJournalMutation) {
++        let Ok(Some(options)) = self.options.as_ref() else {
++            return;
++        };
++        // A successful idempotent control replay may append no new record.
++        // It must never create an apparent recovery anchor. A newly committed
++        // manual revision will be detected as a gap and force the next full state.
++        if mutation.control_idempotency.is_some() {
++            return;
++        }
++        let (revision, base, bytes) = match &mutation.mutation {
++            RoomMutation::SchedulerProgress { state, .. } => (state.revision, None, 0),
++            RoomMutation::SchedulerDelta { delta, .. } => {
++                let bytes = if options.bytes == 0 {
++                    Some(0)
++                } else {
++                    encoded_len(&mutation.mutation)
++                };
++                let Some(bytes) = bytes else {
++                    if let Ok(mut entries) = self.entries.lock() {
++                        entries.remove(&mutation.room_id);
++                    }
++                    return;
++                };
++                (delta.state.revision, Some(delta.base_revision), bytes)
++            }
++            _ => return,
++        };
++        self.record(&mutation.room_id, revision, base, bytes, Instant::now());
++    }
++
++    fn record(&self, room: &str, revision: u64, base: Option<u64>, bytes: usize, now: Instant) {
++        let Ok(mut entries) = self.entries.lock() else {
++            return;
++        };
++        match base {
++            None => {
++                entries.insert(
++                    room.to_owned(),
++                    Entry {
++                        full: revision,
++                        current: revision,
++                        bytes: 0,
++                        at: now,
++                    },
++                );
++            }
++            Some(base) => {
++                if let Some(entry) = entries.get_mut(room)
++                    && entry.current == base
++                    && base.checked_add(1) == Some(revision)
++                {
++                    entry.current = revision;
++                    entry.bytes = entry.bytes.saturating_add(bytes);
++                } else {
++                    entries.remove(room);
++                }
++            }
++        }
++    }
++}
++
++fn encoded_len(value: &impl serde::Serialize) -> Option<usize> {
++    struct Counter(usize);
++    impl std::io::Write for Counter {
++        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
++            self.0 = self
++                .0
++                .checked_add(bytes.len())
++                .ok_or_else(|| std::io::Error::other("checkpoint byte counter overflow"))?;
++            Ok(bytes.len())
++        }
++        fn flush(&mut self) -> std::io::Result<()> {
++            Ok(())
++        }
++    }
++    let mut counter = Counter(0);
++    serde_json::to_writer(&mut counter, value).ok()?;
++    Some(counter.0)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn budget(bytes: usize, time: u64) -> Budget {
++        Budget {
++            options: Ok(Some(Options {
++                bytes,
++                time: Duration::from_millis(time),
++            })),
++            entries: Mutex::default(),
++        }
++    }
++
++    #[test]
++    fn alternative_policy_counts_from_actual_full_and_never_extends_the_recovery_tail() {
++        let budget = budget(usize::MAX, 0);
++        let now = Instant::now();
++        assert!(budget.due_at("r", 451, now).unwrap());
++        budget.record("r", 450, None, 0, now);
++        for revision in 451..950 {
++            assert!(!budget.due_at("r", revision, now).unwrap());
++            budget.record("r", revision, Some(revision - 1), 7, now);
++        }
++        assert!(budget.due_at("r", 950, now).unwrap());
++        assert!(budget.due_at("other", 950, now).unwrap());
++        budget.record("r", 951, Some(949), 7, now);
++        assert!(
++            budget.due_at("r", 952, now).unwrap(),
++            "gap requires full recovery anchor"
++        );
++    }
++
++    #[test]
++    fn byte_and_time_thresholds_are_independent_and_full_resets_them() {
++        let now = Instant::now();
++        let budget = budget(100, 1000);
++        budget.record("r", 0, None, 0, now);
++        budget.record("r", 1, Some(0), 100, now);
++        assert!(budget.due_at("r", 2, now).unwrap());
++        budget.record("r", 2, None, 0, now);
++        assert!(!budget.due_at("r", 3, now).unwrap());
++        assert!(budget.due_at("r", 3, now + Duration::from_secs(1)).unwrap());
++        assert!(
++            budget.due_at("r", 5, now).unwrap(),
++            "unknown predecessor cannot postpone full validation"
++        );
++        let value = serde_json::json!({"unicode":"策略🐱","float":-0.0,"x":[1,2,null]});
++        assert_eq!(
++            encoded_len(&value).unwrap(),
++            serde_json::to_vec(&value).unwrap().len()
++        );
++    }
++}
+diff --git a/exchange-server/src/lib.rs b/exchange-server/src/lib.rs
+index d07e34f..a7d8cb7 100644
+--- a/exchange-server/src/lib.rs
++++ b/exchange-server/src/lib.rs
+@@ -1,5 +1,7 @@
+ mod account_activity;
+ mod account_events;
++#[cfg(test)]
++mod async_scheduler_checkpoint_benchmark;
+ mod market_analysis;
+ mod market_events;
+ mod stream_output;
+@@ -10256,7 +10258,12 @@ async fn commit_scheduler_transaction(
+         let mutation_timer = crate::bench_execution_timing::Timer::start(
+             &crate::bench_execution_timing::SCHEDULER_MUTATION_BUILD,
+         );
+-        let delta = if manual || snapshot_due || scheduler_checkpoint_due(outcome.state().revision)
++        let delta = if manual
++            || snapshot_due
++            || state
++                .journal
++                .scheduler_checkpoint_due(&room_id, outcome.state().revision)
++                .map_err(api_error_from_journal)?
+         {
+             None
+         } else {
+@@ -10429,7 +10436,11 @@ async fn commit_bot_state_only(
+         delta.base_revision,
+         delta.changes.iter().map(|c| c.index).collect(),
+     );
+-    let progress = if scheduler_checkpoint_due(delta.state.revision) {
++    let progress = if state
++        .journal
++        .scheduler_checkpoint_due(room_id, delta.state.revision)
++        .map_err(api_error_from_journal)?
++    {
+         #[cfg(feature = "bench-execution-timing")]
+         let _timer = crate::bench_execution_timing::Timer::start(
+             &crate::bench_execution_timing::SCHEDULER_MATERIALIZE,
+diff --git a/exchange-server/src/pine_inprocess.rs b/exchange-server/src/pine_inprocess.rs
+index c70b042..3d75afc 100644
+--- a/exchange-server/src/pine_inprocess.rs
++++ b/exchange-server/src/pine_inprocess.rs
+@@ -22,7 +22,14 @@ use std::{
+ 
+ mod broker;
+ mod checkpoint;
++#[cfg(test)]
++mod host_state_benchmark;
++mod identity_cache;
+ mod json_compat;
++#[cfg(test)]
++mod request_length_tests;
++mod seal_cache;
++pub(crate) mod source_wave;
+ mod stamp_cache;
+ use broker::{array, number, text};
+ use json_compat::{digest, encoded_len, python_json_len};
+@@ -96,6 +103,13 @@ impl VerifiedSource<'_> {
+ }
+ 
+ pub struct Host {
++    source_identity: u64,
++    wave_source_checks: bool,
++    identity_cache_enabled: bool,
++    identities: identity_cache::Cache,
++    seal_cache_enabled: bool,
++    seals: seal_cache::Cache,
++    reuse_input_length: bool,
+     directory: std::path::PathBuf,
+     programs: BTreeMap<String, Program>,
+     sessions: Mutex<Sessions>,
+@@ -149,6 +163,18 @@ impl Host {
+             programs.insert(name.into(), Program { source, program });
+         }
+         Ok(Self {
++            source_identity: {
++                static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
++                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
++            },
++            wave_source_checks: std::env::var("MARKETFORGE_PINE_SOURCE_WAVE").as_deref() == Ok("1"),
++            identity_cache_enabled: std::env::var("MARKETFORGE_PINE_IDENTITY_CACHE").as_deref()
++                == Ok("1"),
++            identities: identity_cache::Cache::default(),
++            seal_cache_enabled: std::env::var("MARKETFORGE_PINE_SEAL_CACHE").as_deref() == Ok("1"),
++            seals: seal_cache::Cache::default(),
++            reuse_input_length: std::env::var("MARKETFORGE_PINE_INPUT_LENGTH").as_deref()
++                == Ok("1"),
+             directory: directory.to_owned(),
+             programs,
+             sessions: Mutex::default(),
+@@ -264,10 +290,33 @@ impl Host {
+         observation: &ParticipantObservation,
+         timeout_ms: u64,
+         on_direct: impl FnOnce(),
++    ) -> DirectAttempt {
++        self.route_borrowed_mode(
++            config,
++            state,
++            observation,
++            timeout_ms,
++            self.wave_source_checks,
++            on_direct,
++        )
++    }
++
++    fn route_borrowed_mode(
++        &self,
++        config: &BotConfig,
++        state: &Value,
++        observation: &ParticipantObservation,
++        timeout_ms: u64,
++        wave_source_checks: bool,
++        on_direct: impl FnOnce(),
+     ) -> DirectAttempt {
+         let mut source = None;
+         let reason = self.ineligible_reason_with_source(config, state, |name| {
+-            source = self.current_source(name);
++            source = if wave_source_checks {
++                self.wave_source(name)
++            } else {
++                self.current_source(name)
++            };
+             source.is_some()
+         });
+         if let Some(reason) = reason {
+@@ -293,7 +342,7 @@ impl Host {
+         observation: &ParticipantObservation,
+         timeout_ms: u64,
+     ) -> Result<BotDecisionResponse, BotError> {
+-        match self.route_borrowed(config, state, observation, timeout_ms, || {}) {
++        match self.route_borrowed_mode(config, state, observation, timeout_ms, false, || {}) {
+             DirectAttempt::NotQualified(_) => Err(outside_profile()),
+             DirectAttempt::Executed(result) => result,
+         }
+@@ -340,7 +389,20 @@ impl Host {
+         };
+         let (actions, state) =
+             self.decide_parts_verified(&input, state, timeout_ms, source, || {
+-                encoded_len(&request)
++                if self.reuse_input_length {
++                    // `input` is exactly this request with the state member
++                    // omitted. Reuse the constructed observation Value rather
++                    // than serializing the typed observation a second time.
++                    // The comma plus `"state":` is nine ASCII bytes. State is
++                    // still counted exactly, including opaque host metadata.
++                    let state_len = match crate::journal::prefetched_pine_state_len(state) {
++                        Some(length) => length,
++                        None => encoded_len(state)?,
++                    };
++                    Ok(encoded_len(&input)? + 9 + state_len)
++                } else {
++                    encoded_len(&request)
++                }
+             })?;
+         Ok(BotDecisionResponse {
+             protocol_version: request.protocol_version.into(),
+@@ -356,6 +418,26 @@ impl Host {
+         self.current_source(name).is_some()
+     }
+ 
++    fn wave_source(&self, name: &str) -> Option<VerifiedSource<'_>> {
++        let (name, _) = self.programs.get_key_value(name)?;
++        source_wave::verified(self.source_identity, name, || {
++            self.current_source(name).is_some()
++        })
++        .then_some(VerifiedSource { host: self, name })
++    }
++
++    fn checkpoint_identity(&self, input: &Value) -> Result<String, BotError> {
++        let source = &self.programs[text(&input["config"]["script"])?].source;
++        if self.identity_cache_enabled {
++            self.identities
++                .identity(source, &input["config"], &input["participant"])
++        } else {
++            digest(
++                &json!({"source":source,"config":input["config"],"participant":input["participant"]}),
++            )
++        }
++    }
++
+     fn current_source(&self, name: &str) -> Option<VerifiedSource<'_>> {
+         #[cfg(feature = "bench-execution-timing")]
+         let _phase_timer = crate::bench_execution_timing::Timer::start(
+@@ -395,6 +477,7 @@ impl Host {
+     /// is part of the journal or of a successful trading acknowledgement.
+     pub fn clear_sessions(&self) {
+         *self.sessions.lock().unwrap() = Sessions::default();
++        self.seals.clear();
+     }
+ 
+     pub fn decide(
+diff --git a/exchange-server/src/pine_inprocess/checkpoint.rs b/exchange-server/src/pine_inprocess/checkpoint.rs
+index fef67c9..ac2c57d 100644
+--- a/exchange-server/src/pine_inprocess/checkpoint.rs
++++ b/exchange-server/src/pine_inprocess/checkpoint.rs
+@@ -9,6 +9,10 @@ use serde::Deserialize;
+ 
+ const CHECKPOINT_EVERY: usize = 32;
+ 
++#[cfg(test)]
++#[path = "fixed_cache_benchmark.rs"]
++mod fixed_cache_benchmark;
++
+ #[cfg(test)]
+ fn stamp(state: &Value) -> Value {
+     json!({"checkpoint": state["vm_checkpoint"], "tail": state["vm_tail"], "intents": state["vm_tail_intents"]})
+@@ -312,9 +316,7 @@ pub(super) fn decide(
+     let config = &input["config"];
+     let observation = &input["observation"];
+     let program = &host.programs[text(&config["script"])?];
+-    let identity = digest(
+-        &json!({"source":program.source,"config":config,"participant":input["participant"]}),
+-    )?;
++    let identity = host.checkpoint_identity(input)?;
+     let mut state = {
+         #[cfg(feature = "bench-execution-timing")]
+         let _phase_timer = crate::bench_execution_timing::Timer::start(
+@@ -330,7 +332,11 @@ pub(super) fn decide(
+     if !cold && (state["broker_schema"] != 3 || state["identity"] != identity) {
+         return Err(error("Pine checkpoint source/config/account changed"));
+     }
+-    if !cold && state["execution_seal"].as_str() != Some(execution_seal(&state)?.as_str()) {
++    let seal_cached = !cold && host.seal_cache_enabled && host.seals.matches(&identity, &state)?;
++    if !cold
++        && !seal_cached
++        && state["execution_seal"].as_str() != Some(execution_seal(&state)?.as_str())
++    {
+         return Err(error("Pine checkpoint execution seal mismatch"));
+     }
+     let mut views = vec![observation];
+@@ -690,6 +696,12 @@ pub(super) fn decide(
+     if Instant::now() >= deadline {
+         return Err(error("Pine decision timed out"));
+     }
++    if host.seal_cache_enabled {
++        host.seals.remember(&identity, &state)?;
++        if Instant::now() >= deadline {
++            return Err(error("Pine decision timed out"));
++        }
++    }
+     Ok((actions, state))
+ }
+ 
+diff --git a/exchange-server/src/pine_inprocess/fixed_cache_benchmark.rs b/exchange-server/src/pine_inprocess/fixed_cache_benchmark.rs
+new file mode 100644
+index 0000000..a12bbb9
+--- /dev/null
++++ b/exchange-server/src/pine_inprocess/fixed_cache_benchmark.rs
+@@ -0,0 +1,71 @@
++//! Full saved-state cache work, including writing the next trusted proof.
++use super::*;
++
++#[test]
++#[ignore = "explicit fixed-work 1000-Pine fixture cache experiment"]
++fn saved_state_identity_and_complete_seal_cache_abba() {
++    let fixture = std::env::var("MARKETFORGE_PINE_STATE_FIXTURE").unwrap();
++    let bytes = std::fs::read(&fixture).unwrap();
++    let scheduler: Value = serde_json::from_slice(&bytes).unwrap();
++    // Persisted templates contain user input. Actual ProcessBot construction
++    // validates it and inserts manifest defaults before computing identity.
++    let manifest: crate::bot_plugins::ProcessBotManifest = serde_json::from_str(
++        include_str!("../../../bot-plugins/pine-strategy/bot.json")).unwrap();
++    let states: Vec<_> = scheduler["agents"].as_array().unwrap().iter()
++        .filter(|agent| agent["template"]["Plugin"]["plugin_id"] == "pine.strategy")
++        .map(|agent| {
++            let mut config = agent["template"]["Plugin"].clone();
++            config["config"] = manifest.bot.validate_config(&config["config"]).unwrap();
++            (config, &agent["kind_state"]["Plugin"]["data"])
++        })
++        .collect();
++    assert_eq!(states.len(), 1000);
++    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("bot-plugins/pine-strategy");
++    let host = Host::load(&directory).unwrap();
++    let identities = identity_cache::Cache::default();
++    let seals = seal_cache::Cache::default();
++    for (config, state) in &states {
++        let source = &host.programs[config["config"]["script"].as_str().unwrap()].source;
++        assert_eq!(identities.identity(source, &config["config"], &config["participant"]).unwrap(), state["identity"]);
++        assert_eq!(execution_seal(state).unwrap(), state["execution_seal"]);
++        seals.remember(state["identity"].as_str().unwrap(), state).unwrap();
++    }
++    let mut rows = Vec::new();
++    for round in 0..3 {
++        for mode in ["original", "cached", "cached", "original"] {
++            let started = Instant::now();
++            let mut results = Vec::with_capacity(states.len());
++            for (config, state) in &states {
++                let source = &host.programs[config["config"]["script"].as_str().unwrap()].source;
++                let identity = if mode == "cached" {
++                    identities.identity(source, &config["config"], &config["participant"]).unwrap()
++                } else {
++                    digest(&json!({"source":source,"config":config["config"],"participant":config["participant"]})).unwrap()
++                };
++                // Production produces an outgoing seal in both modes. The
++                // candidate additionally stores its full authenticated proof.
++                let outgoing = execution_seal(state).unwrap();
++                if mode == "cached" {
++                    seals.remember(&identity, state).unwrap();
++                    assert!(seals.matches(&identity, state).unwrap());
++                } else {
++                    assert_eq!(execution_seal(state).unwrap(), outgoing);
++                }
++                results.push((identity, outgoing));
++            }
++            let elapsed_ms = started.elapsed().as_secs_f64()*1000.0;
++            for ((_, state), (identity, seal)) in states.iter().zip(&results) {
++                assert_eq!(identity, state["identity"].as_str().unwrap());
++                assert_eq!(seal, state["execution_seal"].as_str().unwrap());
++            }
++            rows.push(json!({"round":round,"mode":mode,"states":states.len(),"elapsed_ms":elapsed_ms,"exact":true}));
++            std::hint::black_box(results);
++        }
++    }
++    let result = json!({"fixture":fixture,"fixture_sha256":format!("{:x}",Sha256::digest(&bytes)),"cases":rows,
++        "scope":"Three ABBA rounds over complete saved states: identity plus incoming/outgoing seal work, including proof write and match. Excludes VM, observation construction, cold restore, gateway and asynchronous load; not a complete single-turn replay."});
++    if let Ok(path) = std::env::var("MARKETFORGE_PINE_CACHE_BENCH_OUTPUT") {
++        std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).unwrap();
++    }
++    eprintln!("{result}");
++}
+diff --git a/exchange-server/src/pine_inprocess/full_turn_benchmark.rs b/exchange-server/src/pine_inprocess/full_turn_benchmark.rs
+new file mode 100644
+index 0000000..2117283
+--- /dev/null
++++ b/exchange-server/src/pine_inprocess/full_turn_benchmark.rs
+@@ -0,0 +1,135 @@
++//! Complete borrowed host calls over a frozen, prepared 1000-bot turn fixture.
++//! This includes the VM and guards, but excludes gateway/journal/queue work.
++use super::{Checks, enter_checks};
++use super::super::*;
++use exchange_core::{Candle, candle_history_hex, candle_history_seed};
++
++fn market_data(count: usize) -> exchange_core::observation::BotMarketData {
++    let candles: Vec<_> = (0..count).map(|i| {
++        let close = 100 + ((i * 73 + i * i * 13) % 101) as i64;
++        Candle { schema_version: 1, open_time_ms: i as u64*1000,
++            close_time_ms: (i as u64+1)*1000, open_tick: close, high_tick: close+3,
++            low_tick: close-4, close_tick: close, volume: 1, quote_volume: i128::from(close),
++            trades: 1, taker_buy_base: Some(0), taker_buy_quote: Some(0), is_final: true }
++    }).collect();
++    serde_json::from_value(json!({"interval_ms":1000,"candles":candles,
++        "own_fills":[],"fill_details":[],"truncated":false,"private_history_complete":true,
++        "history_proof":{"version":1,"prefix_bars":0,"prefix_sha256":candle_history_hex(&candle_history_seed(1000))}})).unwrap()
++}
++
++fn call(host: &Host, config: &BotConfig, state: &Value, view: &ParticipantObservation) -> BotDecisionResponse {
++    match host.route_borrowed(config, state, view, 5000, || {}) {
++        DirectAttempt::Executed(result) => result.unwrap(),
++        DirectAttempt::NotQualified(reason) => panic!("fixed turn escaped direct route: {reason}"),
++    }
++}
++
++#[cfg(feature = "bench-execution-timing")]
++fn metric(name: &str) -> u64 {
++    let mut body = String::new();
++    crate::bench_execution_timing::append_metrics(&mut body);
++    let prefix = format!("marketforge_bench_{name}_nanos_total ");
++    body.lines().find_map(|line| line.strip_prefix(&prefix)).unwrap().parse().unwrap()
++}
++
++#[test]
++#[ignore = "explicit complete 1000-host-turn ABBA experiment; no simultaneous load"]
++fn complete_prepared_1000_borrowed_turns_have_exact_responses() {
++    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("bot-plugins/pine-strategy");
++    let manifest: crate::bot_plugins::ProcessBotManifest = serde_json::from_str(
++        include_str!("../../../bot-plugins/pine-strategy/bot.json")).unwrap();
++    let fixture: Value = serde_json::from_str(include_str!("../../../scripts/fixtures/f6_batch_spec.json")).unwrap();
++    let scenario: exchange_core::ScenarioConfig = serde_json::from_value(fixture["scenario"].clone()).unwrap();
++    let room = scenario.room_id.clone();
++    let mut rooms = exchange_core::RoomManager::new();
++    rooms.create_room(scenario).unwrap();
++    let mut prior = rooms.participant_observation(&room, "V-BTC-SPOT", 20).unwrap();
++    prior.market_time_ms = 64_000;
++    prior.step = 64;
++    prior.bot_market_data = Some(market_data(64));
++    let mut next = prior.clone();
++    next.market_time_ms = 65_000;
++    next.step = 65;
++    next.bot_market_data = Some(market_data(65));
++    let configs: Vec<BotConfig> = (0..1000).map(|index| {
++        let script = ["ma.pine", "rsi.pine", "limit.pine"][index % 3];
++        serde_json::from_value(json!({"plugin_id":"pine.strategy","plugin_version":"2.0.0","state_version":1,
++            "seed":index+7,"participant":{"participant_id":format!("fixed-{index}"),"room_id":room,
++                "account_id":20,"instrument_id":"V-BTC-SPOT","kind":"RuleAgent"},
++            "config":manifest.bot.validate_config(&json!({"script":script,
++                "bar_interval_ms":1000,"history_limit":512})).unwrap()})).unwrap()
++    }).collect();
++    let make_host = |cached: bool| {
++        let mut host = Host::load(&directory).unwrap().with_checkpoint_mode(true);
++        host.wave_source_checks = true;
++        host.identity_cache_enabled = cached;
++        host.seal_cache_enabled = cached;
++        host.reuse_input_length = cached;
++        host
++    };
++    let reference = make_host(false);
++    let committed: Vec<Value> = {
++        let _wave = enter_checks(Arc::<Checks>::default());
++        configs.iter().map(|config| call(&reference, config, &Value::Null, &prior).state).collect()
++    };
++    let expected: Vec<Vec<u8>> = {
++        let _wave = enter_checks(Arc::<Checks>::default());
++        configs.iter().zip(&committed).map(|(config, state)| serde_json::to_vec(&call(&reference, config, state, &next)).unwrap()).collect()
++    };
++    let prepared = json!({"configs":configs,"committed":committed,"prior":prior,"next":next});
++    let fixture_bytes = serde_json::to_vec(&prepared).unwrap();
++    let mut rows = Vec::new();
++    for (parallel, round) in [(false, 0), (false, 1), (true, 0)] {
++        for cached in [false, true, true, false] {
++            let host = make_host(cached);
++            let preparation_started = Instant::now();
++            {
++                let _wave = enter_checks(Arc::<Checks>::default());
++                for (config, state) in configs.iter().zip(&committed) {
++                    assert_eq!(call(&host, config, &Value::Null, &prior).state, *state);
++                }
++            }
++            let preparation_ms = preparation_started.elapsed().as_secs_f64()*1000.0;
++            #[cfg(feature = "bench-execution-timing")]
++            let vm_before = metric("bot_pine_vm_execute");
++            let started = Instant::now();
++            let responses: Vec<_> = if parallel {
++                let checks = Arc::<Checks>::default();
++                std::thread::scope(|scope| {
++                    let tasks: Vec<_> = configs.chunks(63).zip(committed.chunks(63)).map(|(configs, states)| {
++                        let checks = checks.clone();
++                        let host = &host;
++                        let view = &next;
++                        scope.spawn(move || {
++                            let _wave = enter_checks(checks);
++                            configs.iter().zip(states).map(|(config, state)| call(host, config, state, view)).collect::<Vec<_>>()
++                        })
++                    }).collect();
++                    tasks.into_iter().flat_map(|task| task.join().unwrap()).collect()
++                })
++            } else {
++                let _wave = enter_checks(Arc::<Checks>::default());
++                configs.iter().zip(&committed).map(|(config, state)| call(&host, config, state, &next)).collect()
++            };
++            let total_ms = started.elapsed().as_secs_f64()*1000.0;
++            #[cfg(feature = "bench-execution-timing")]
++            let vm_ms = (metric("bot_pine_vm_execute")-vm_before) as f64/1_000_000.0;
++            #[cfg(not(feature = "bench-execution-timing"))]
++            let vm_ms: Option<f64> = None;
++            for (response, expected) in responses.iter().zip(&expected) {
++                assert_eq!(&serde_json::to_vec(response).unwrap(), expected);
++            }
++            rows.push(json!({"round":round,"parallel_workers":if parallel {16} else {1},"cached":cached,"turns":responses.len(),"total_ms":total_ms,
++                "vm_ms":vm_ms,"preparation_ms_excluded":preparation_ms,"exact_full_responses":true}));
++        }
++    }
++    if let Ok(path) = std::env::var("MARKETFORGE_PINE_TURN_FIXTURE_OUTPUT") {
++        std::fs::write(path, &fixture_bytes).unwrap();
++    }
++    let result = json!({"fixture_sha256":format!("{:x}",Sha256::digest(&fixture_bytes)),"fixture_bytes":fixture_bytes.len(),
++        "cases":rows,"scope":"Two sequential ABBA rounds and one 16-worker ABBA, prepared schema3 states and complete borrowed host calls including source admission, exact guards, seals, broker and VM. Both share source checks per wave. Three qualified scripts, synthetic authoritative-history inputs, 1000 distinct identities sharing one fixture account. Excludes preparing hosts/states, trigger, queue, gateway, journal and asynchronous load. VM elapsed scopes overlap in parallel mode and must not be subtracted from wall time. Not a replay of missing historical v14 artifacts."});
++    if let Ok(path) = std::env::var("MARKETFORGE_PINE_TURN_BENCH_OUTPUT") {
++        std::fs::write(path, serde_json::to_vec_pretty(&result).unwrap()).unwrap();
++    }
++    eprintln!("{result}");
++}
+diff --git a/exchange-server/src/pine_inprocess/host_state_benchmark.rs b/exchange-server/src/pine_inprocess/host_state_benchmark.rs
+new file mode 100644
+index 0000000..2cce2d1
+--- /dev/null
++++ b/exchange-server/src/pine_inprocess/host_state_benchmark.rs
+@@ -0,0 +1,140 @@
++//! Isolated typed-state boundary prototype, not an alternate trading runtime.
++//! Include clone and durable Value materialization; scalar-only microbenchmarks
++//! would hide the dominant cost of adapting back to the current host contract.
++use serde::{Deserialize, Serialize};
++use serde_json::Value;
++use std::{collections::BTreeMap, sync::Arc, time::Instant};
++
++#[derive(Clone, Deserialize, Serialize)]
++struct TypedState {
++    broker_schema: u64,
++    identity: String,
++    evaluated_bars: u64,
++    last_bar_time: u64,
++    execution_seal: String,
++    vm_checkpoint: Arc<Value>,
++    vm_tail: Arc<Vec<Value>>,
++    vm_tail_intents: Arc<Vec<Value>>,
++    candle_audits: Arc<BTreeMap<String, Value>>,
++    #[serde(flatten)]
++    other: BTreeMap<String, Arc<Value>>,
++}
++
++// Direct typed encoding removes Value materialization, but requires a host
++// accepting this representation. Keep canonical root key order for byte parity.
++#[derive(Serialize)]
++#[serde(untagged)]
++enum Field<'a> {
++    Number(u64),
++    Text(&'a str),
++    Value(&'a Value),
++    Array(&'a [Value]),
++    Object(&'a BTreeMap<String, Value>),
++}
++
++struct Canonical<'a>(&'a TypedState);
++impl Serialize for Canonical<'_> {
++    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
++        let state = self.0;
++        let mut fields: BTreeMap<&str, Field<'_>> = state
++            .other
++            .iter()
++            .map(|(name, value)| (name.as_str(), Field::Value(value)))
++            .collect();
++        fields.insert("broker_schema", Field::Number(state.broker_schema));
++        fields.insert("identity", Field::Text(&state.identity));
++        fields.insert("evaluated_bars", Field::Number(state.evaluated_bars));
++        fields.insert("last_bar_time", Field::Number(state.last_bar_time));
++        fields.insert("execution_seal", Field::Text(&state.execution_seal));
++        fields.insert("vm_checkpoint", Field::Value(&state.vm_checkpoint));
++        fields.insert("vm_tail", Field::Array(&state.vm_tail));
++        fields.insert("vm_tail_intents", Field::Array(&state.vm_tail_intents));
++        fields.insert("candle_audits", Field::Object(&state.candle_audits));
++        fields.serialize(serializer)
++    }
++}
++
++#[test]
++#[ignore = "explicit fixed-work experiment requires a saved real scheduler fixture"]
++fn typed_state_clone_and_durable_boundary_abba() {
++    let fixture_path =
++        std::env::var("MARKETFORGE_PINE_STATE_FIXTURE").expect("saved scheduler JSON path");
++    let input = std::fs::read(&fixture_path).unwrap();
++    let scheduler: Value = serde_json::from_slice(&input).unwrap();
++    let states: Vec<Value> = scheduler["agents"]
++        .as_array()
++        .unwrap()
++        .iter()
++        .filter(|agent| agent["template"]["Plugin"]["plugin_id"] == "pine.strategy")
++        .map(|agent| agent["kind_state"]["Plugin"]["data"].clone())
++        .collect();
++    assert_eq!(states.len(), 1000, "freeze a complete 1000-bot fixture");
++    let typed: Vec<TypedState> = states
++        .iter()
++        .map(|state| TypedState::deserialize(state).unwrap())
++        .collect();
++    for (state, typed) in states.iter().zip(&typed) {
++        let value = serde_json::to_value(typed).unwrap();
++        assert_eq!(&value, state);
++        assert_eq!(
++            serde_json::to_vec(&value).unwrap(),
++            serde_json::to_vec(state).unwrap()
++        );
++        assert_eq!(
++            serde_json::to_vec(&Canonical(typed)).unwrap(),
++            serde_json::to_vec(state).unwrap()
++        );
++    }
++    let mut rows = Vec::new();
++    for round in 0..3 {
++        for mode in [
++            "value",
++            "typed",
++            "typed",
++            "value",
++            "value",
++            "typed_direct",
++            "typed_direct",
++            "value",
++        ] {
++            let start = Instant::now();
++            let mut outputs = Vec::with_capacity(states.len());
++            if mode == "value" {
++                for state in &states {
++                    let mut working = state.clone();
++                    let next = working["evaluated_bars"].as_u64().unwrap() + 1;
++                    working["evaluated_bars"] = serde_json::json!(next);
++                    outputs.push(serde_json::to_vec(&working).unwrap());
++                }
++            } else {
++                for state in &typed {
++                    let mut working = state.clone();
++                    working.evaluated_bars += 1;
++                    if mode == "typed_direct" {
++                        outputs.push(serde_json::to_vec(&Canonical(&working)).unwrap());
++                    } else {
++                        let value = serde_json::to_value(&working).unwrap();
++                        outputs.push(serde_json::to_vec(&value).unwrap());
++                    }
++                }
++            }
++            let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
++            for ((state, typed), bytes) in states.iter().zip(&typed).zip(&outputs) {
++                let mut expected = state.clone();
++                expected["evaluated_bars"] = serde_json::json!(typed.evaluated_bars + 1);
++                assert_eq!(bytes, &serde_json::to_vec(&expected).unwrap());
++            }
++            let row = serde_json::json!({"round":round,"mode":mode,"states":states.len(),
++                "elapsed_ms":elapsed_ms,"output_bytes":outputs.iter().map(Vec::len).sum::<usize>(),"byte_equal":true});
++            eprintln!("{row}");
++            rows.push(row);
++            std::hint::black_box(outputs);
++        }
++    }
++    if let Ok(output_path) = std::env::var("MARKETFORGE_PINE_STATE_BENCH_OUTPUT") {
++        use sha2::{Digest, Sha256};
++        let result = serde_json::json!({"fixture":fixture_path,"fixture_sha256":format!("{:x}",Sha256::digest(&input)),
++            "cases":rows,"scope":"Three serial ABBA rounds for typed Value-boundary and direct canonical encoding separately; predecoded typed records; clone + scalar edit + exact durable encode. Direct mode requires a different internal host representation. Excludes VM, gateway, state admission and queueing. Not a complete typed broker architecture."});
++        std::fs::write(output_path, serde_json::to_vec_pretty(&result).unwrap()).unwrap();
++    }
++}
+diff --git a/exchange-server/src/pine_inprocess/identity_cache.rs b/exchange-server/src/pine_inprocess/identity_cache.rs
+new file mode 100644
+index 0000000..fb67ca1
+--- /dev/null
++++ b/exchange-server/src/pine_inprocess/identity_cache.rs
+@@ -0,0 +1,168 @@
++//! Bounded identity memoization. Full configuration and participant equality
++//! authorize a hit; the source belongs to the immutable Host program set.
++use super::{digest, io};
++use exchange_core::BotError;
++use serde_json::{Value, json};
++use std::{
++    collections::{BTreeMap, VecDeque},
++    sync::{Arc, Mutex},
++};
++
++struct Entry {
++    config: Value,
++    participant: Value,
++    digest: String,
++}
++
++// The Python-compatible identity distinguishes signed zero. Value's ordinary
++// numeric equality is insufficient to authorize reuse for configuration input.
++fn exact(left: &Value, right: &Value) -> bool {
++    match (left, right) {
++        (Value::Number(left), Value::Number(right)) if left.is_f64() && right.is_f64() => {
++            left.as_f64().unwrap().to_bits() == right.as_f64().unwrap().to_bits()
++        }
++        (Value::Array(left), Value::Array(right)) => {
++            left.len() == right.len() && left.iter().zip(right).all(|(a, b)| exact(a, b))
++        }
++        (Value::Object(left), Value::Object(right)) => {
++            left.len() == right.len()
++                && left.iter().all(|(key, value)| right.get(key).is_some_and(|other| exact(value, other)))
++        }
++        _ => left == right,
++    }
++}
++
++#[derive(Default)]
++pub(super) struct Cache {
++    entries: Mutex<Entries>,
++}
++
++#[derive(Default)]
++struct Entries {
++    values: BTreeMap<(String, String), Arc<Mutex<Option<Entry>>>>,
++    order: VecDeque<(String, String)>,
++}
++
++impl Cache {
++    pub(super) fn identity(
++        &self,
++        source: &str,
++        config: &Value,
++        participant: &Value,
++    ) -> Result<String, BotError> {
++        let compute =
++            || digest(&json!({"source":source,"config":config,"participant":participant}));
++        let (Some(room), Some(id)) = (
++            participant["room_id"].as_str(),
++            participant["participant_id"].as_str(),
++        ) else {
++            return compute();
++        };
++        let key = (room.to_owned(), id.to_owned());
++        // The shared map lock protects only lookup/eviction. Configuration
++        // comparison and cold hashing for one bot must not serialize other bots.
++        let slot = {
++            let mut entries = self.entries.lock().map_err(io)?;
++            if let Some(slot) = entries.values.get(&key) {
++                slot.clone()
++            } else {
++                while entries.values.len() >= 2048 {
++                    let oldest = entries.order.pop_front().unwrap();
++                    entries.values.remove(&oldest);
++                }
++                let slot = Arc::new(Mutex::new(None));
++                entries.order.push_back(key.clone());
++                entries.values.insert(key, slot.clone());
++                slot
++            }
++        };
++        let mut saved = slot.lock().map_err(io)?;
++        if let Some(entry) = saved.as_ref()
++            && exact(&entry.config, config)
++            && exact(&entry.participant, participant)
++        {
++            return Ok(entry.digest.clone());
++        }
++        let identity = compute()?;
++        *saved = Some(Entry {
++                config: config.clone(),
++                participant: participant.clone(),
++                digest: identity.clone(),
++            });
++        Ok(identity)
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn signed_zero_configuration_changes_never_reuse_the_old_identity() {
++        let cache = Cache::default();
++        let participant = json!({"room_id":"room","participant_id":"id"});
++        let positive = json!({"inputs":{"nested":[0.0]}});
++        let negative = json!({"inputs":{"nested":[-0.0]}});
++        assert_eq!(positive, negative);
++        assert!(!exact(&positive, &negative));
++        let positive_digest = digest(&json!({"source":"fixed","config":positive,"participant":participant})).unwrap();
++        let negative_digest = digest(&json!({"source":"fixed","config":negative,"participant":participant})).unwrap();
++        assert_ne!(positive_digest, negative_digest);
++        for (config, expected) in [(&positive, &positive_digest), (&negative, &negative_digest), (&positive, &positive_digest)] {
++            assert_eq!(&cache.identity("fixed", config, &participant).unwrap(), expected);
++        }
++    }
++
++    #[test]
++    fn complete_config_and_participant_bind_hits_and_changes() {
++        let cache = Cache::default();
++        let participant = json!({"room_id":"room","participant_id":"id","account_id":1});
++        for config in [
++            json!({"script":"ma","inputs":{"Fast":2}}),
++            json!({"script":"rsi"}),
++            json!({"script":"ma","inputs":{"Fast":3}}),
++        ] {
++            for participant in [
++                participant.clone(),
++                json!({"room_id":"other","participant_id":"id","account_id":1}),
++                json!({"room_id":"room","participant_id":"id","account_id":2}),
++            ] {
++                let expected =
++                    digest(&json!({"source":"fixed","config":config,"participant":participant}))
++                        .unwrap();
++                assert_eq!(
++                    cache.identity("fixed", &config, &participant).unwrap(),
++                    expected
++                );
++                assert_eq!(
++                    cache.identity("fixed", &config, &participant).unwrap(),
++                    expected
++                );
++            }
++        }
++        assert_eq!(
++            cache.identity("fixed", &Value::Null, &Value::Null).unwrap(),
++            digest(&json!({"source":"fixed","config":null,"participant":null})).unwrap()
++        );
++    }
++
++    #[test]
++    fn eviction_is_bounded_and_recomputes_exactly() {
++        let cache = Cache::default();
++        let config = json!({"script":"ma"});
++        for index in 0..2050 {
++            let participant = json!({"room_id":"room","participant_id":index.to_string()});
++            let expected =
++                digest(&json!({"source":"fixed","config":config,"participant":participant}))
++                    .unwrap();
++            assert_eq!(
++                cache.identity("fixed", &config, &participant).unwrap(),
++                expected
++            );
++        }
++        let entries = cache.entries.lock().unwrap();
++        assert_eq!(entries.values.len(), 2048);
++        assert_eq!(entries.order.len(), 2048);
++        assert!(!entries.values.contains_key(&("room".into(), "0".into())));
++    }
++}
+diff --git a/exchange-server/src/pine_inprocess/request_length_tests.rs b/exchange-server/src/pine_inprocess/request_length_tests.rs
+new file mode 100644
+index 0000000..5d8162a
+--- /dev/null
++++ b/exchange-server/src/pine_inprocess/request_length_tests.rs
+@@ -0,0 +1,38 @@
++//! Compare the real borrowed-route request guard with its original serializer.
++use super::*;
++
++#[test]
++fn reused_input_counts_exact_four_mib_boundaries_and_unicode_metadata() {
++    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("bot-plugins/pine-strategy");
++    let original = Host::load(&directory).unwrap().with_checkpoint_mode(false);
++    let mut candidate = Host::load(&directory).unwrap().with_checkpoint_mode(false);
++    candidate.reuse_input_length = true;
++    let fixture: Value = serde_json::from_str(include_str!("../../../scripts/fixtures/f6_batch_spec.json")).unwrap();
++    let mut rooms = exchange_core::RoomManager::new();
++    let scenario: exchange_core::ScenarioConfig = serde_json::from_value(fixture["scenario"].clone()).unwrap();
++    let room = scenario.room_id.clone();
++    rooms.create_room(scenario).unwrap();
++    let view = rooms.participant_observation(&room, "V-BTC-SPOT", 20).unwrap();
++    let config: BotConfig = serde_json::from_value(json!({"plugin_id":"pine.strategy","plugin_version":"2.0.0",
++        "participant":{"participant_id":"大小🐱","room_id":room,"account_id":20,"instrument_id":"V-BTC-SPOT","kind":"RuleAgent"},
++        "config":{"execution_mode":"broker","script":"ma.pine","hedge_instrument_id":"","inputs":{},
++            "bar_interval_ms":1000,"history_limit":512,"max_qty":2,"inventory_cap":10,
++            "slippage_ticks":2,"fee_buffer_ppm":1000,"initial_avg_price_tick":0,"position_side":"Both",
++            "related_instruments":[],"additional_intervals_ms":[]}})).unwrap();
++    let make = |state: Value| BotDecisionRequest {
++        protocol_version: exchange_core::BOT_PROTOCOL_VERSION.into(),
++        plugin_id: config.plugin_id.clone(), plugin_version: config.plugin_version.clone(), state_version: config.state_version,
++        participant: config.participant.clone(), seed: config.seed, config: config.config.clone(), state, observation: view.clone(),
++    };
++    let empty = make(json!({"控制padding":"","numeric":[-0.0,1e-7,u64::MAX],"extra":"策略🐱"}));
++    let fixed = serde_json::to_vec(&empty).unwrap().len();
++    for target in [4_194_303,4_194_304,4_194_305] {
++        let mut request = empty.clone();
++        request.state["控制padding"] = json!("x".repeat(target-fixed));
++        assert_eq!(serde_json::to_vec(&request).unwrap().len(), target);
++        let old = original.decide_borrowed(&config, &request.state, &view, 5000).unwrap_err();
++        let new = candidate.decide_borrowed(&config, &request.state, &view, 5000).unwrap_err();
++        assert_eq!(old.0, new.0);
++        assert_eq!(new.0 == "bot request exceeds size limit", target > 4_194_304);
++    }
++}
+diff --git a/exchange-server/src/pine_inprocess/seal_cache.rs b/exchange-server/src/pine_inprocess/seal_cache.rs
+new file mode 100644
+index 0000000..63adae7
+--- /dev/null
++++ b/exchange-server/src/pine_inprocess/seal_cache.rs
+@@ -0,0 +1,122 @@
++//! Complete private execution-envelope proof. Only a locally generated seal,
++//! after successful bounds/deadline checks, can populate this cache. A hit
++//! compares every field covered by the public seal plus the seal itself.
++use super::{io, stamp_cache::bytes_match};
++use exchange_core::BotError;
++use serde::Serialize;
++use serde_json::Value;
++use std::{
++    collections::{BTreeMap, VecDeque},
++    sync::{Arc, Mutex},
++};
++
++#[derive(Serialize)]
++struct Vm<'a> {
++    checkpoint: &'a Value,
++    intents: &'a Value,
++    tail: &'a Value,
++}
++
++#[derive(Serialize)]
++struct Envelope<'a> {
++    audits: &'a Value,
++    evaluated: &'a Value,
++    last_time: &'a Value,
++    seal: &'a Value,
++    vm: Vm<'a>,
++}
++
++fn envelope(state: &Value) -> Envelope<'_> {
++    Envelope {
++        audits: &state["candle_audits"],
++        evaluated: &state["evaluated_bars"],
++        last_time: &state["last_bar_time"],
++        seal: &state["execution_seal"],
++        vm: Vm {
++            checkpoint: &state["vm_checkpoint"],
++            intents: &state["vm_tail_intents"],
++            tail: &state["vm_tail"],
++        },
++    }
++}
++
++type Entry = Arc<Mutex<Vec<u8>>>;
++#[derive(Default)]
++struct Entries {
++    values: BTreeMap<String, Entry>,
++    order: VecDeque<String>,
++}
++
++#[derive(Default)]
++pub(super) struct Cache(Mutex<Entries>);
++
++impl Cache {
++    pub(super) fn matches(&self, identity: &str, state: &Value) -> Result<bool, BotError> {
++        let entry = self.0.lock().map_err(io)?.values.get(identity).cloned();
++        let Some(entry) = entry else { return Ok(false) };
++        let bytes = entry.lock().map_err(io)?;
++        Ok(bytes_match(&bytes, &envelope(state)))
++    }
++
++    pub(super) fn remember(&self, identity: &str, state: &Value) -> Result<(), BotError> {
++        let entry = {
++            let mut entries = self.0.lock().map_err(io)?;
++            if let Some(entry) = entries.values.get(identity) {
++                entry.clone()
++            } else {
++                while entries.values.len() >= 2048 {
++                    let oldest = entries.order.pop_front().unwrap();
++                    entries.values.remove(&oldest);
++                }
++                let entry = Arc::new(Mutex::new(Vec::new()));
++                entries.values.insert(identity.to_owned(), entry.clone());
++                entries.order.push_back(identity.to_owned());
++                entry
++            }
++        };
++        let mut bytes = entry.lock().map_err(io)?;
++        bytes.clear();
++        serde_json::to_writer(&mut *bytes, &envelope(state)).map_err(io)
++    }
++
++    pub(super) fn clear(&self) {
++        *self.0.lock().unwrap() = Entries::default();
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use serde_json::json;
++
++    #[test]
++    fn every_sealed_field_and_seal_must_match_but_host_metadata_is_external() {
++        let cache = Cache::default();
++        let state = json!({"candle_audits":{"p":{"count":32}},"evaluated_bars":32,"last_bar_time":32000,
++            "execution_seal":"verified","vm_checkpoint":{"bars":32},"vm_tail":[],"vm_tail_intents":[]});
++        assert!(!cache.matches("a", &state).unwrap());
++        cache.remember("a", &state).unwrap();
++        assert!(cache.matches("a", &state).unwrap());
++        assert!(!cache.matches("b", &state).unwrap());
++        for field in [
++            "candle_audits",
++            "evaluated_bars",
++            "last_bar_time",
++            "execution_seal",
++            "vm_checkpoint",
++            "vm_tail",
++            "vm_tail_intents",
++        ] {
++            let mut changed = state.clone();
++            changed[field] = json!("changed");
++            assert!(!cache.matches("a", &changed).unwrap(), "{field}");
++            changed.as_object_mut().unwrap().remove(field);
++            assert!(!cache.matches("a", &changed).unwrap(), "missing {field}");
++        }
++        let mut extra = state.clone();
++        extra["_host_receipts"] = json!([{"accepted":true}]);
++        assert!(cache.matches("a", &extra).unwrap());
++        cache.clear();
++        assert!(!cache.matches("a", &state).unwrap());
++    }
++}
+diff --git a/exchange-server/src/pine_inprocess/source_wave.rs b/exchange-server/src/pine_inprocess/source_wave.rs
+new file mode 100644
+index 0000000..cb00548
+--- /dev/null
++++ b/exchange-server/src/pine_inprocess/source_wave.rs
+@@ -0,0 +1,180 @@
++//! Private source admission snapshots. Public Host entry points never consult
++//! this cache. The opt-in realtime route shares checks only while its exact
++//! immutable observation wave is alive, including across blocking tasks.
++use exchange_core::room::NativeObservationWave;
++use std::{
++    cell::RefCell,
++    collections::BTreeMap,
++    sync::{Arc, Mutex, OnceLock, Weak},
++};
++
++#[derive(Default)]
++pub(super) struct Checks(Mutex<BTreeMap<(u64, String), bool>>);
++
++type Waves = Vec<(Weak<NativeObservationWave>, Arc<Checks>)>;
++static WAVES: OnceLock<Mutex<Waves>> = OnceLock::new();
++#[cfg(test)]
++#[path = "full_turn_benchmark.rs"]
++mod full_turn_benchmark;
++thread_local! {
++    static CURRENT: RefCell<Option<Arc<Checks>>> = const { RefCell::new(None) };
++}
++
++pub(crate) struct Guard(Option<Arc<Checks>>);
++impl Drop for Guard {
++    fn drop(&mut self) {
++        CURRENT.with(|current| *current.borrow_mut() = self.0.take());
++    }
++}
++
++pub(crate) fn enter(wave: &Arc<NativeObservationWave>) -> Guard {
++    let mut waves = WAVES.get_or_init(Mutex::default).lock().unwrap();
++    waves.retain(|(owner, _)| owner.strong_count() != 0);
++    let checks = waves
++        .iter()
++        .find(|(owner, _)| owner.ptr_eq(&Arc::downgrade(wave)))
++        .map(|(_, checks)| checks.clone())
++        .unwrap_or_else(|| {
++            let checks = Arc::new(Checks::default());
++            waves.push((Arc::downgrade(wave), checks.clone()));
++            checks
++        });
++    drop(waves);
++    enter_checks(checks)
++}
++
++pub(crate) fn enabled() -> bool {
++    static ENABLED: OnceLock<bool> = OnceLock::new();
++    *ENABLED.get_or_init(|| std::env::var("MARKETFORGE_PINE_SOURCE_WAVE").as_deref() == Ok("1"))
++}
++
++fn enter_checks(checks: Arc<Checks>) -> Guard {
++    Guard(CURRENT.with(|current| current.replace(Some(checks))))
++}
++
++pub(super) fn verified(host: u64, name: &str, read: impl FnOnce() -> bool) -> bool {
++    let current = CURRENT.with(|current| current.borrow().clone());
++    let Some(checks) = current else {
++        return read();
++    };
++    // Hold the lock through the first read: concurrent callers must share the
++    // same admission snapshot even when the file is edited during this wave.
++    let mut checks = checks.0.lock().unwrap();
++    *checks.entry((host, name.to_owned())).or_insert_with(read)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
++
++    #[test]
++    fn snapshots_are_scoped_to_wave_host_and_script_and_cache_rejection() {
++        let reads = AtomicUsize::new(0);
++        let current = AtomicBool::new(true);
++        let read = || {
++            reads.fetch_add(1, Ordering::Relaxed);
++            current.load(Ordering::Relaxed)
++        };
++        {
++            let _scope = enter_checks(Arc::default());
++            assert!(verified(1, "ma", read));
++            current.store(false, Ordering::Relaxed);
++            assert!(verified(1, "ma", read));
++            assert!(!verified(2, "ma", read));
++            assert!(!verified(1, "rsi", read));
++            current.store(true, Ordering::Relaxed);
++            assert!(!verified(1, "rsi", read));
++            assert_eq!(reads.load(Ordering::Relaxed), 3);
++        }
++        assert!(verified(1, "ma", read));
++        {
++            let _scope = enter_checks(Arc::default());
++            current.store(false, Ordering::Relaxed);
++            assert!(!verified(1, "ma", read));
++        }
++        assert_eq!(reads.load(Ordering::Relaxed), 5);
++    }
++
++    #[test]
++    fn concurrent_tasks_share_one_read_and_unwind_restores_scope() {
++        let checks = Arc::new(Checks::default());
++        let reads = AtomicUsize::new(0);
++        std::thread::scope(|scope| {
++            for _ in 0..32 {
++                let checks = checks.clone();
++                let reads = &reads;
++                scope.spawn(move || {
++                    let _scope = enter_checks(checks);
++                    assert!(verified(1, "ma", || {
++                        reads.fetch_add(1, Ordering::Relaxed);
++                        true
++                    }));
++                });
++            }
++        });
++        assert_eq!(reads.load(Ordering::Relaxed), 1);
++        let _outer = enter_checks(checks);
++        let _ = std::panic::catch_unwind(|| {
++            let _inner = enter_checks(Arc::default());
++            panic!("isolated bot failure");
++        });
++        assert!(verified(1, "ma", || panic!("outer scope was lost")));
++    }
++
++    #[test]
++    fn host_wave_snapshot_never_authorizes_a_public_call_or_another_host() {
++        let root = std::env::temp_dir().join(format!(
++            "mf-source-wave-{}-{}",
++            std::process::id(),
++            std::time::SystemTime::now()
++                .duration_since(std::time::UNIX_EPOCH)
++                .unwrap()
++                .as_nanos()
++        ));
++        std::fs::create_dir(&root).unwrap();
++        let scripts = root.join("scripts");
++        std::fs::create_dir(&scripts).unwrap();
++        let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
++            .parent()
++            .unwrap()
++            .join("bot-plugins/pine-strategy/scripts/ma.pine");
++        let target = scripts.join("ma.pine");
++        std::fs::copy(source, &target).unwrap();
++        let mut host = super::super::Host::load(&root).unwrap();
++        host.wave_source_checks = true;
++        let other = super::super::Host::load(&root).unwrap();
++        {
++            let _scope = enter_checks(Arc::default());
++            assert!(host.wave_source("ma.pine").is_some());
++            std::fs::write(&target, "edited source").unwrap();
++            assert!(host.wave_source("ma.pine").is_some());
++            assert!(host.current_source("ma.pine").is_none());
++            let config: exchange_core::BotConfig = serde_json::from_value(serde_json::json!({
++                "plugin_id":"pine.strategy","plugin_version":"2.0.0","state_version":1,
++                "participant":{"participant_id":"id","room_id":"room","account_id":300,"instrument_id":"V-BTC-SPOT","kind":"RuleAgent"},
++                "config":{"execution_mode":"broker","script":"ma.pine","hedge_instrument_id":"","inputs":{}}
++            })).unwrap();
++            let view: exchange_core::ParticipantObservation = serde_json::from_value(serde_json::json!({
++                "version":1,"room_id":"room","venue_id":"venue","instrument_id":"V-BTC-SPOT","status":"Running",
++                "step":0,"market_time_ms":0,"book":{"bids":[],"asks":[]},"public_trades":[],"own_orders":[],"own_account":null
++            })).unwrap();
++            let before = host.source_read_count();
++            assert_eq!(
++                host.decide_borrowed(&config, &serde_json::Value::Null, &view, 5000)
++                    .unwrap_err()
++                    .0,
++                "request is outside the qualified in-process Pine profile"
++            );
++            assert_eq!(host.source_read_count(), before + 1);
++            assert!(other.wave_source("ma.pine").is_none());
++        }
++        {
++            let _scope = enter_checks(Arc::default());
++            assert!(host.wave_source("ma.pine").is_none());
++        }
++        std::fs::remove_file(target).unwrap();
++        std::fs::remove_dir(scripts).unwrap();
++        std::fs::remove_dir(root).unwrap();
++    }
++}
+diff --git a/exchange-server/src/pine_inprocess/stamp_cache.rs b/exchange-server/src/pine_inprocess/stamp_cache.rs
+index 780405e..73eda89 100644
+--- a/exchange-server/src/pine_inprocess/stamp_cache.rs
++++ b/exchange-server/src/pine_inprocess/stamp_cache.rs
+@@ -34,11 +34,15 @@ impl Stamp {
+     }
+ 
+     pub(super) fn matches(&self, state: &Value) -> bool {
+-        let mut writer = CompareWriter::new(&self.bytes);
+-        serde_json::to_writer(&mut writer, &payload(state)).is_ok() && writer.finished()
++        bytes_match(&self.bytes, &payload(state))
+     }
+ }
+ 
++pub(super) fn bytes_match(bytes: &[u8], value: &impl Serialize) -> bool {
++    let mut writer = CompareWriter::new(bytes);
++    serde_json::to_writer(&mut writer, value).is_ok() && writer.finished()
++}
++
+ struct CompareWriter<'a> {
+     expected: &'a [u8],
+     offset: usize,
+diff --git a/exchange-server/src/pine_inprocess/stamp_cache_tests.rs b/exchange-server/src/pine_inprocess/stamp_cache_tests.rs
+index 8c64aad..5258fa2 100644
+--- a/exchange-server/src/pine_inprocess/stamp_cache_tests.rs
++++ b/exchange-server/src/pine_inprocess/stamp_cache_tests.rs
+@@ -488,6 +488,47 @@ fn private_stamp_cannot_bypass_public_seal_and_missing_cache_reconstructs() {
+     assert_saved(&live, &actual["state"], 7);
+ }
+ 
++#[test]
++fn complete_envelope_cache_preserves_seal_rejection_and_uncommitted_retry() {
++    let mut live = host(true);
++    live.seal_cache_enabled = true;
++    live.identity_cache_enabled = true;
++    let mut committed = Value::Null;
++    for count in [31, 32, 33, 63, 64, 65] {
++        let input = request("rsi.pine", count, committed.clone());
++        let expected = host(true).decide_value(&input, 5000).unwrap();
++        let actual = live.decide_value(&input, 5000).unwrap();
++        assert_eq!(actual, expected);
++        assert_eq!(
++            live.decide_value(&input, 5000).unwrap(),
++            expected,
++            "uncommitted retry must reconstruct"
++        );
++        committed = actual["state"].clone();
++        for field in [
++            "execution_seal",
++            "evaluated_bars",
++            "last_bar_time",
++            "candle_audits",
++            "vm_checkpoint",
++            "vm_tail",
++            "vm_tail_intents",
++        ] {
++            let mut changed = committed.clone();
++            changed[field] = json!("modified");
++            let input = request("rsi.pine", count + 1, changed);
++            assert!(
++                live.decide_value(&input, 5000)
++                    .unwrap_err()
++                    .to_string()
++                    .contains("execution seal"),
++                "{field}"
++            );
++        }
++        live.clear_sessions();
++    }
++}
++
+ #[test]
+ fn private_stamp_schema_two_keeps_the_original_transcript_path() {
+     let live = host(false);
+diff --git a/exchange-server/src/realtime.rs b/exchange-server/src/realtime.rs
+index d97044e..90df267 100644
+--- a/exchange-server/src/realtime.rs
++++ b/exchange-server/src/realtime.rs
+@@ -3,6 +3,7 @@
+ use super::*;
+ use crate::scheduler_delta::{AgentDelta, SchedulerDelta};
+ use exchange_core::{BotError, BotExecutionPolicy, PersistedAgent, SchedulerPhase, SchedulerState};
++mod tuning;
+ mod wake_index;
+ use wake_index::WakeIndex;
+ mod commit_trace;
+@@ -527,6 +528,7 @@ fn apply_decision(
+ // already completed decisions. Pending decisions still never delay a tick.
+ enum Wake<T> {
+     Poll,
++    Dispatch,
+     Clock,
+     Ready,
+     Decision(Option<Result<T, tokio::task::JoinError>>),
+@@ -591,13 +593,16 @@ pub(super) async fn run(
+     let mut wake_index = WakeIndex::default();
+     static EXTERNAL_PERMITS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> =
+         std::sync::OnceLock::new();
++    let execution_options = tuning::get()?;
++    let worker_limit = execution_options.workers;
+     let external_permits = EXTERNAL_PERMITS
+-        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(16)))
++        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(worker_limit)))
+         .clone();
+     loop {
+         if control.stop.load(Ordering::Acquire) || !shared.lifecycle.is_accepting_durable_writes() {
+             break;
+         }
++        let dispatch_deadline = pending_external.next_deadline();
+         let wake = if clock_due && writer.is_empty() && (prefer_clock || ready_decisions.is_empty())
+         {
+             clock_due = false;
+@@ -608,6 +613,9 @@ pub(super) async fn run(
+                 completed = writer.join_next(), if !writer.is_empty() => {
+                     Wake::Committed(completed.unwrap().map_err(|e| e.to_string())??)
+                 }
++                _ = tokio::time::sleep_until(dispatch_deadline.unwrap_or_else(Instant::now).into()),
++                    if dispatch_deadline.is_some() && external_permits.available_permits() != 0
++                        && ready_decisions.len() < MAX_READY_DECISIONS * 4 => Wake::Dispatch,
+                 wake = next_wake(&mut ticks, &mut stop_poll, &mut decisions, prefer_clock,
+                     !completed_results.is_empty()) => wake,
+             }
+@@ -620,7 +628,7 @@ pub(super) async fn run(
+             other => other,
+         };
+         match wake {
+-            Wake::Poll => {}
++            Wake::Poll | Wake::Dispatch => {}
+             Wake::Decision(_) => unreachable!(),
+             Wake::Ready => {
+                 prefer_clock = true;
+@@ -669,7 +677,13 @@ pub(super) async fn run(
+                                         crate::bench_execution_timing::BOT_SCREEN_PREFIFO
+                                             .record(started);
+                                     }
+-                                    pending_external.push(index, id);
++                                    let delay =
++                                        if decision.prior.template.bot_id() == "pine.strategy" {
++                                            execution_options.wake_spread_ms
++                                        } else {
++                                            0
++                                        };
++                                    pending_external.push_delayed(index, id, delay);
+                                 }
+                             } else {
+                                 if let Some(cached) = cached {
+@@ -797,7 +811,12 @@ pub(super) async fn run(
+                                         screening.push((index, cached.expected.clone(), cached));
+                                         return None;
+                                     }
+-                                    pending_external.push(index, id.to_owned());
++                                    let delay = if agent.template.bot_id() == "pine.strategy" {
++                                        execution_options.wake_spread_ms
++                                    } else {
++                                        0
++                                    };
++                                    pending_external.push_delayed(index, id.to_owned(), delay);
+                                     return None;
+                                 }
+                                 let cached = instances.remove(agent.template.participant_id());
+@@ -1108,6 +1127,7 @@ struct ExternalQueue {
+     epoch: u64,
+     items: VecDeque<(usize, String, Instant)>,
+     queued: BTreeSet<String>,
++    not_before: BTreeMap<String, Instant>,
+ }
+ 
+ #[derive(Default)]
+@@ -1153,11 +1173,13 @@ impl ExternalQueue {
+             epoch,
+             items: VecDeque::new(),
+             queued: BTreeSet::new(),
++            not_before: BTreeMap::new(),
+         }
+     }
+     fn clear(&mut self) {
+         self.items.clear();
+         self.queued.clear();
++        self.not_before.clear();
+     }
+     fn reset_epoch(&mut self, epoch: u64) {
+         if self.epoch != epoch {
+@@ -1165,16 +1187,82 @@ impl ExternalQueue {
+             self.epoch = epoch;
+         }
+     }
++    #[cfg(test)]
+     fn push(&mut self, index: usize, id: String) {
++        self.push_delayed(index, id, 0);
++    }
++    fn push_delayed(&mut self, index: usize, id: String, spread_ms: u64) {
+         if self.queued.insert(id.clone()) {
++            if spread_ms != 0 {
++                use sha2::{Digest, Sha256};
++                let digest = Sha256::digest(id.as_bytes());
++                let offset = u64::from_le_bytes(digest[..8].try_into().unwrap()) % (spread_ms + 1);
++                self.not_before
++                    .insert(id.clone(), Instant::now() + Duration::from_millis(offset));
++            }
+             self.items.push_back((index, id, Instant::now()));
+         }
+     }
+     fn pop(&mut self) -> Option<(usize, String, Instant)> {
+         let item = self.items.pop_front()?;
+         self.queued.remove(&item.1);
++        self.not_before.remove(&item.1);
+         Some(item)
+     }
++    fn next_deadline(&self) -> Option<Instant> {
++        self.not_before.values().copied().min()
++    }
++    fn pop_ready(&mut self, now: Instant) -> Option<(usize, String, Instant)> {
++        for _ in 0..self.items.len() {
++            let item = self.items.front()?;
++            if self
++                .not_before
++                .get(&item.1)
++                .is_none_or(|deadline| *deadline <= now)
++            {
++                return self.pop();
++            }
++            self.items.rotate_left(1);
++        }
++        None
++    }
++}
++
++#[cfg(test)]
++mod delayed_queue_tests {
++    use super::*;
++
++    #[test]
++    fn future_deadlines_do_not_hide_ready_bots_and_epoch_clears_delays() {
++        let mut queue = ExternalQueue::new(1);
++        queue.push(0, "slow".into());
++        queue.push(1, "ready".into());
++        let now = Instant::now();
++        queue
++            .not_before
++            .insert("slow".into(), now + Duration::from_secs(1));
++        assert_eq!(queue.pop_ready(now).unwrap().1, "ready");
++        assert!(queue.pop_ready(now).is_none());
++        assert_eq!(queue.items.len(), 1);
++        assert_eq!(queue.next_deadline(), Some(now + Duration::from_secs(1)));
++        assert_eq!(
++            queue.pop_ready(now + Duration::from_secs(1)).unwrap().1,
++            "slow"
++        );
++        assert!(queue.next_deadline().is_none());
++        queue.push_delayed(2, "delayed".into(), 100);
++        let before = queue.next_deadline().unwrap();
++        queue.push_delayed(2, "delayed".into(), 100);
++        assert_eq!(
++            queue.next_deadline().unwrap(),
++            before,
++            "duplicate enqueue must not extend the delay"
++        );
++        assert_eq!(queue.items.len(), 1);
++        queue.reset_epoch(2);
++        assert!(queue.items.is_empty());
++        assert!(queue.not_before.is_empty());
++    }
+ }
+ 
+ #[allow(clippy::too_many_arguments)]
+@@ -1218,7 +1306,10 @@ async fn dispatch_external_pending(
+             let Ok(permit) = permits.clone().try_acquire_owned() else {
+                 break;
+             };
+-            let (index, id, _queued) = pending.pop().unwrap();
++            let Some((index, id, _queued)) = pending.pop_ready(Instant::now()) else {
++                drop(permit);
++                break;
++            };
+             #[cfg(feature = "bench-execution-timing")]
+             {
+                 crate::bench_execution_timing::BOT_DISPATCH_QUEUE.record(_queued);
+@@ -1263,16 +1354,46 @@ async fn dispatch_external_pending(
+         (app.rooms.clone(), registry.clone(), inputs, epoch)
+     };
+     let frozen = observations.get(rooms, room_id);
++    let pine_batch_size = tuning::get()?.pine_batch;
++    let mut batch = Vec::new();
++    let mut batch_permits = Vec::new();
+     for (id, prior, cached, valid, permit) in inputs {
+         in_flight.insert(id);
+-        spawn_decision_batch(
++        let pine = prior.template.bot_id() == "pine.strategy";
++        if !pine && !batch.is_empty() {
++            spawn_decision_batch_with_permits(
++                decisions,
++                frozen.clone(),
++                registry.clone(),
++                std::mem::take(&mut batch),
++                epoch,
++                false,
++                std::mem::take(&mut batch_permits),
++            );
++        }
++        batch.push((prior, cached.filter(|_| valid)));
++        batch_permits.push(permit);
++        if !pine || batch.len() >= pine_batch_size {
++            spawn_decision_batch_with_permits(
++                decisions,
++                frozen.clone(),
++                registry.clone(),
++                std::mem::take(&mut batch),
++                epoch,
++                false,
++                std::mem::take(&mut batch_permits),
++            );
++        }
++    }
++    if !batch.is_empty() {
++        spawn_decision_batch_with_permits(
+             decisions,
+-            frozen.clone(),
+-            registry.clone(),
+-            vec![(prior, cached.filter(|_| valid))],
++            frozen,
++            registry,
++            batch,
+             epoch,
+             false,
+-            Some(permit),
++            batch_permits,
+         );
+     }
+     Ok(())
+@@ -1286,6 +1407,26 @@ fn spawn_decision_batch(
+     epoch: u64,
+     native: bool,
+     permit: Option<tokio::sync::OwnedSemaphorePermit>,
++) {
++    spawn_decision_batch_with_permits(
++        decisions,
++        frozen,
++        registry,
++        inputs,
++        epoch,
++        native,
++        permit.into_iter().collect(),
++    );
++}
++
++fn spawn_decision_batch_with_permits(
++    decisions: &mut tokio::task::JoinSet<Vec<DecisionResult>>,
++    frozen: Arc<exchange_core::room::NativeObservationWave>,
++    registry: exchange_core::BotRegistry,
++    inputs: Vec<(SharedAgent, Option<CachedBot>)>,
++    epoch: u64,
++    native: bool,
++    permits: Vec<tokio::sync::OwnedSemaphorePermit>,
+ ) {
+     // Observation construction, metadata hooks, strategy calls and destructors
+     // all run outside both the room lane and the clock's async task.
+@@ -1298,7 +1439,10 @@ fn spawn_decision_batch(
+     decisions.spawn_blocking(move || {
+         #[cfg(feature = "bench-execution-timing")]
+         drop(blocking_timer);
+-        let _permit = permit;
++        let _permits = permits;
++        #[cfg(feature = "pine-in-process")]
++        let _source_wave = crate::pine_inprocess::source_wave::enabled()
++            .then(|| crate::pine_inprocess::source_wave::enter(&frozen));
+         let mut observations = frozen.batch();
+         inputs
+             .into_iter()
+@@ -1552,6 +1696,12 @@ fn compute_decision_input(
+         return Err("bot exceeded action limit".to_string());
+     }
+     let next = Arc::new(bot.take_snapshot());
++    if prior.template.bot_id() == "pine.strategy"
++        && let exchange_core::PersistedAgentKindState::Plugin { data, .. } = next.as_ref()
++        && data["broker_schema"].as_u64() == Some(3)
++    {
++        crate::journal::prefetch_pine_state(data);
++    }
+     exchange_core::bots::validate_bot_orders(
+         prior.requires_instrument().map_err(|e| format!("{e:?}"))?,
+         &request.related,
+diff --git a/exchange-server/src/realtime/tuning.rs b/exchange-server/src/realtime/tuning.rs
+new file mode 100644
+index 0000000..902587b
+--- /dev/null
++++ b/exchange-server/src/realtime/tuning.rs
+@@ -0,0 +1,79 @@
++//! Explicit experiment controls. Defaults preserve the existing global
++//! sixteen-bot admission bound and one external bot per blocking task.
++use std::sync::OnceLock;
++
++#[derive(Clone, Copy)]
++pub(super) struct Options {
++    pub workers: usize,
++    pub pine_batch: usize,
++    pub wake_spread_ms: u64,
++}
++
++fn bounded(
++    value: Option<&str>,
++    fallback: usize,
++    maximum: usize,
++    name: &str,
++) -> Result<usize, String> {
++    let result = value.map_or(Ok(fallback), |value| {
++        value
++            .parse::<usize>()
++            .map_err(|error| format!("invalid {name}: {error}"))
++    })?;
++    if !(1..=maximum).contains(&result) {
++        return Err(format!("{name} must be from 1 to {maximum}"));
++    }
++    Ok(result)
++}
++
++pub(super) fn get() -> Result<Options, String> {
++    static OPTIONS: OnceLock<Options> = OnceLock::new();
++    if let Some(options) = OPTIONS.get() {
++        return Ok(*options);
++    }
++    let workers = std::env::var("MARKETFORGE_EXTERNAL_DECISION_WORKERS").ok();
++    let cores = std::thread::available_parallelism().map_or(1, |cores| cores.get());
++    let workers = if workers.as_deref() == Some("auto") {
++        bounded(None, cores, 256, "available_parallelism")?
++    } else {
++        bounded(
++            workers.as_deref(),
++            16,
++            256,
++            "MARKETFORGE_EXTERNAL_DECISION_WORKERS",
++        )?
++    };
++    let batch = std::env::var("MARKETFORGE_PINE_TASK_BATCH").ok();
++    let pine_batch = bounded(batch.as_deref(), 1, 8, "MARKETFORGE_PINE_TASK_BATCH")?;
++    let wake_spread_ms = std::env::var("MARKETFORGE_PINE_WAKE_SPREAD_MS")
++        .ok()
++        .map_or(Ok(0), |value| {
++            value
++                .parse::<u64>()
++                .map_err(|error| format!("invalid MARKETFORGE_PINE_WAKE_SPREAD_MS: {error}"))
++        })?;
++    if wake_spread_ms > 250 {
++        return Err("MARKETFORGE_PINE_WAKE_SPREAD_MS must be from 0 to 250".into());
++    }
++    Ok(*OPTIONS.get_or_init(|| Options {
++        workers,
++        pine_batch,
++        wake_spread_ms,
++    }))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn admission_controls_are_bounded_and_invalid_values_are_rejected() {
++        assert_eq!(bounded(None, 16, 256, "workers").unwrap(), 16);
++        assert_eq!(bounded(Some("32"), 16, 256, "workers").unwrap(), 32);
++        assert_eq!(bounded(Some("8"), 1, 8, "batch").unwrap(), 8);
++        for value in ["0", "257", "bad", "-1"] {
++            assert!(bounded(Some(value), 16, 256, "workers").is_err());
++        }
++        assert!(bounded(Some("9"), 1, 8, "batch").is_err());
++    }
++}
+diff --git a/scripts/benchmark_pine_host.py b/scripts/benchmark_pine_host.py
+new file mode 100644
+index 0000000..ccbd651
+--- /dev/null
++++ b/scripts/benchmark_pine_host.py
+@@ -0,0 +1,142 @@
++"""Serial same-binary Pine host experiments with frozen inputs and full receipts.
++
++Experimental flags must be explicit driver arguments: the lower-level load
++driver intentionally strips inherited MARKETFORGE_* environment variables.
++"""
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++
++from benchmark_pine_dispatch_checkpoint import frozen_inputs, changed_inputs
++
++ROOT = Path(__file__).resolve().parents[1]
++FLAGS = ("MARKETFORGE_PINE_SOURCE_WAVE", "MARKETFORGE_PINE_IDENTITY_CACHE",
++         "MARKETFORGE_PINE_SEAL_CACHE", "MARKETFORGE_PINE_INPUT_LENGTH",
++         "MARKETFORGE_PINE_CHAIN_FINGERPRINT",
++         "MARKETFORGE_EXTERNAL_DECISION_WORKERS", "MARKETFORGE_PINE_TASK_BATCH",
++         "MARKETFORGE_PINE_BACKGROUND_JSON", "MARKETFORGE_PINE_WAKE_SPREAD_MS",
++         "MARKETFORGE_SCHEDULER_CHECKPOINT_BYTES", "MARKETFORGE_SCHEDULER_CHECKPOINT_MS")
++CASES = {
++    "control": {},
++    "wave": {FLAGS[0]: "1"},
++    "identity": {FLAGS[1]: "1"},
++    "seal": {FLAGS[2]: "1"},
++    "input": {FLAGS[3]: "1"},
++    "chain": {FLAGS[4]: "1"},
++    "combined": {flag: "1" for flag in FLAGS[:5]},
++    "combined_batch4": {**{flag: "1" for flag in FLAGS[:5]}, FLAGS[6]: "4"},
++    "workers32": {FLAGS[5]: "32"},
++    "workers_auto": {FLAGS[5]: "auto"},
++    "batch4": {FLAGS[6]: "4"},
++    "batch8": {FLAGS[6]: "8"},
++    "background": {FLAGS[7]: "1"},
++    "spread50": {FLAGS[8]: "50"},
++    "spread100": {FLAGS[8]: "100"},
++    "checkpoint_bytes": {FLAGS[9]: "33554432"},
++    "checkpoint_time": {FLAGS[10]: "10000"},
++}
++
++
++def save(path, value):
++    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
++
++
++def summarize(report):
++    receipt = report.get("bot_durable_receipts") or {}
++    phases = (report.get("diagnostics") or {}).get("measurement_deltas") or {}
++    turns = phases.get("bot_turn", {}).get("count", 0)
++    return {
++        "recipe_sha256": report.get("recipe_sha256"),
++        "qualified": report.get("qualified"),
++        "errors": report.get("errors"),
++        "steps_per_second": report.get("steps_per_wall_second"),
++        "logical_cores": report.get("average_logical_cores"),
++        "peak_memory_mib": report.get("peak_memory_mib"),
++        "accepted": receipt.get("accepted_bar_close_to_durable"),
++        "bar_to_decision": receipt.get("bar_close_to_decision"),
++        "accepted_coverage": receipt.get("accepted_window_coverage", {}).get("qualified"),
++        "turns": turns,
++        "phase_per_turn_ms": {key: value["total_wall_ms"] / turns if turns else None
++                              for key, value in phases.items()},
++        "phase_counts": {key: value["count"] for key, value in phases.items()},
++        "scope": "Nested elapsed scopes are not additive or CPU shares; accepted mixes may differ.",
++    }
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--server", type=Path, required=True)
++    parser.add_argument("--plugin-dir", type=Path, required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--cases", nargs="+", choices=CASES, default=["control", "wave", "wave", "control"])
++    parser.add_argument("--counts", type=int, default=1000)
++    parser.add_argument("--seconds", type=int, default=120)
++    args = parser.parse_args()
++    if args.output.exists():
++        parser.error("output must be new; preserve earlier attempts")
++    args.output.mkdir(parents=True)
++    binary = args.server.resolve()
++    plugins = args.plugin_dir.resolve()
++    binaries, directories = {"experiment": binary}, {"experiment": plugins}
++    freeze = frozen_inputs(binaries, directories)
++    controller = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
++    save(args.output / "freeze.json", {**freeze, "controller_sha256": controller,
++                                     "cases": args.cases, "count": args.counts, "seconds": args.seconds})
++    rows = []
++    for index, case in enumerate(args.cases, 1):
++        changes = changed_inputs(freeze, binaries, directories)
++        if changes or hashlib.sha256(Path(__file__).read_bytes()).hexdigest() != controller:
++            raise RuntimeError(f"frozen inputs changed: {changes}")
++        output = args.output / f"{index:02d}-{case}"
++        env = os.environ.copy()
++        for flag in FLAGS:
++            env.pop(flag, None)
++        env.update(CASES[case])
++        command = [sys.executable, str(ROOT / "scripts/benchmark_strategy_runtime.py"),
++                   "--server", str(binary), "--plugin-dir", str(plugins), "--output", str(output),
++                   "--counts", str(args.counts), "--seconds", str(args.seconds),
++                   "--population", "pine", "--interval-ms", "100", "--warmup", "20",
++                   "--prewarm-bars", "64", "--sustained-input", "--input-profile", "cycle",
++                   "--pine-profile", "diverse-short", "--pine-in-process", "--pine-vm-checkpoint",
++                   "--require-diagnostics", "--require-bot-receipts", "--trace-graceful-shutdown"]
++        for name, value in CASES[case].items():
++            command += ["--host-experiment", f"{name}={value}"]
++        with (args.output / f"{index:02d}-{case}.log").open("w", encoding="utf-8") as log:
++            result = subprocess.run(command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
++        report = output / f"bots-{args.counts}/report.json"
++        row = {"case": case, "env": CASES[case], "exit_code": result.returncode,
++               "command": command, "report": str(report)}
++        if report.is_file():
++            row.update(summarize(json.loads(report.read_text(encoding="utf-8"))))
++            row["report_sha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
++            row["prewarm_candles_sha256"] = hashlib.sha256((report.parent / "prewarm-candles.json").read_bytes()).hexdigest()
++            actual = json.loads((report.parent / "host-experiment-env.json").read_text())
++            row["actual_server_experiments"] = actual
++            if any(actual.get(name) != value for name, value in CASES[case].items()):
++                raise RuntimeError("experiment options did not reach the server")
++        rows.append(row)
++        save(args.output / "results.json", {"freeze": freeze, "cases": rows,
++                                            "scope": "Short memory-journal comparisons; not long-run or PostgreSQL capacity."})
++        print(json.dumps({key: row.get(key) for key in ("case", "exit_code", "accepted", "bar_to_decision", "logical_cores")}), flush=True)
++        if result.returncode or not report.is_file():
++            raise RuntimeError(f"case {case} did not produce a completed run; receipt preserved")
++        validity = row["qualified"]
++        if not all(validity.get(key) is True for key in (
++            "compiler_quiet", "no_parallel_benchmark_server", "no_harness_errors",
++            "full_requested_duration_observed", "metric_window_captured", "trace_shutdown_complete",
++        )):
++            raise RuntimeError(f"case {case} has invalid measurement; receipt preserved")
++    if changed_inputs(freeze, binaries, directories):
++        raise RuntimeError("frozen inputs changed after final case")
++    if len({row["recipe_sha256"] for row in rows}) != 1:
++        raise RuntimeError("recipes differ")
++    if len({row["prewarm_candles_sha256"] for row in rows}) != 1:
++        raise RuntimeError("initial histories differ")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/benchmark_strategy_runtime.py b/scripts/benchmark_strategy_runtime.py
+index 5ce5197..5c5921c 100644
+--- a/scripts/benchmark_strategy_runtime.py
++++ b/scripts/benchmark_strategy_runtime.py
+@@ -12,6 +12,26 @@ import time
+ from types import SimpleNamespace
+ 
+ ROOT = Path(__file__).resolve().parents[1]
++HOST_EXPERIMENTS = {
++    "MARKETFORGE_PINE_SOURCE_WAVE": ("0", "1"),
++    "MARKETFORGE_PINE_IDENTITY_CACHE": ("0", "1"),
++    "MARKETFORGE_PINE_SEAL_CACHE": ("0", "1"),
++    "MARKETFORGE_PINE_INPUT_LENGTH": ("0", "1"),
++    "MARKETFORGE_PINE_CHAIN_FINGERPRINT": ("0", "1"),
++    "MARKETFORGE_PINE_BACKGROUND_JSON": ("0", "1"),
++    "MARKETFORGE_PINE_WAKE_SPREAD_MS": tuple(map(str, range(251))),
++    "MARKETFORGE_SCHEDULER_CHECKPOINT_BYTES": ("0", "8388608", "33554432", "67108864"),
++    "MARKETFORGE_SCHEDULER_CHECKPOINT_MS": ("0", "5000", "10000", "30000"),
++    "MARKETFORGE_EXTERNAL_DECISION_WORKERS": ("auto", *map(str, range(1, 257))),
++    "MARKETFORGE_PINE_TASK_BATCH": tuple(map(str, range(1, 9))),
++}
++
++
++def host_experiment(value):
++    name, separator, setting = value.partition("=")
++    if not separator or name not in HOST_EXPERIMENTS or setting not in HOST_EXPERIMENTS[name]:
++        raise argparse.ArgumentTypeError("invalid or unsupported host experiment NAME=VALUE")
++    return name, setting
+ sys.path.insert(0, str(ROOT / "python"))
+ import benchmark_market_load as load
+ from background_market import child_seed
+@@ -405,6 +425,8 @@ def prewarm_market(client, room, spec, longest_bars):
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument("--server", type=Path, required=True)
++    parser.add_argument("--host-experiment", type=host_experiment, action="append", default=[],
++                        help="explicit isolated server experiment NAME=VALUE; inherited MARKETFORGE variables are stripped")
+     parser.add_argument("--pine-in-process", action="store_true", help="enable the optional qualified Rust Pine backend")
+     parser.add_argument("--pine-vm-checkpoint", action="store_true", help="opt in to compact schema-3 checkpoints; requires --pine-in-process")
+     parser.add_argument("--output", type=Path, required=True)
+@@ -503,6 +525,10 @@ def main():
+             kwargs["env"]["MARKETFORGE_PINE_IN_PROCESS"] = "1" if args.pine_in_process else "0"
+             kwargs["env"]["MARKETFORGE_PINE_VM_CHECKPOINT"] = "1" if args.pine_vm_checkpoint else "0"
+             kwargs["env"]["MARKETFORGE_BOT_PLUGIN_DIR"] = str(args.plugin_dir.resolve())
++            kwargs["env"].update(dict(args.host_experiment))
++            load.save(active_case_output / "host-experiment-env.json", {
++                name: kwargs["env"].get(name) for name in HOST_EXPERIMENTS
++            })
+             if args.bot_trace or args.require_bot_receipts:
+                 trace_path = (active_case_output / "bot-receipts.jsonl").resolve()
+                 if trace_path.exists():
+diff --git a/scripts/summarize_pine_host.py b/scripts/summarize_pine_host.py
+new file mode 100644
+index 0000000..1c7c80e
+--- /dev/null
++++ b/scripts/summarize_pine_host.py
+@@ -0,0 +1,61 @@
++"""Audit retained host experiments and export compact, source-bound evidence."""
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import statistics
++
++VALIDITY = ("compiler_quiet", "no_parallel_benchmark_server", "no_harness_errors",
++            "full_requested_duration_observed", "metric_window_captured", "trace_shutdown_complete")
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--series", type=Path, nargs="+", required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    args = parser.parse_args()
++    summaries = []
++    for directory in args.series:
++        result_path = directory / "results.json"
++        result = json.loads(result_path.read_text(encoding="utf-8"))
++        groups = {}
++        audited = []
++        for row in result["cases"]:
++            path = Path(row["report"])
++            actual = hashlib.sha256(path.read_bytes()).hexdigest()
++            if actual != row["report_sha256"]:
++                raise RuntimeError(f"report changed: {path}")
++            report = json.loads(path.read_text(encoding="utf-8"))
++            qualified = row["qualified"]
++            valid = row["exit_code"] == 0 and all(qualified.get(key) is True for key in VALIDITY)
++            item = {"case":row["case"], "valid":valid,"report_sha256":actual,
++                    "qualified":qualified,"actual_server_experiments":row.get("actual_server_experiments"),
++                    "accepted":row["accepted"],"bar_to_decision":row["bar_to_decision"],
++                    "cpu_cores":row["logical_cores"],"peak_memory_mib":row["peak_memory_mib"],
++                    "turns":row["turns"],"phase_per_turn_ms":row["phase_per_turn_ms"],
++                    "phase_counts":row["phase_counts"],
++                    "prewarm_sha256":hashlib.sha256((path.parent/"prewarm-candles.json").read_bytes()).hexdigest(),
++                    "recipe_sha256":report["recipe_sha256"]}
++            audited.append(item)
++            groups.setdefault(item["case"], []).append(item)
++        medians = {case: {
++            "runs":len(rows), "all_valid":all(row["valid"] for row in rows),
++            "accepted_p95_ms":statistics.median(row["accepted"]["p95_ms"] for row in rows),
++            "bar_to_decision_p95_ms":statistics.median(row["bar_to_decision"]["p95_ms"] for row in rows),
++            "turn_ms":statistics.median(row["phase_per_turn_ms"]["bot_turn"] for row in rows),
++            "cpu_cores":statistics.median(row["cpu_cores"] for row in rows),
++            "peak_memory_mib":statistics.median(row["peak_memory_mib"] for row in rows),
++        } for case, rows in groups.items()}
++        summaries.append({"series":str(directory),"result_sha256":hashlib.sha256(result_path.read_bytes()).hexdigest(),
++            "freeze":result["freeze"],"same_recipe":len({row["recipe_sha256"] for row in audited})==1,
++            "same_prewarm":len({row["prewarm_sha256"] for row in audited})==1,
++            "groups":medians,"cases":audited,
++            "scope":"Medians of run-level quantiles; differing asynchronous action populations. Single-run groups are exploratory; nested elapsed scopes are not additive or CPU shares."})
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    args.output.write_text(json.dumps({"series":summaries},indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
++    print(json.dumps([{ "series":row["series"],"same_recipe":row["same_recipe"],
++                       "same_prewarm":row["same_prewarm"],"groups":row["groups"]} for row in summaries],indent=2))
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/validate_pine_host_recovery.py b/scripts/validate_pine_host_recovery.py
+new file mode 100644
+index 0000000..9b098a9
+--- /dev/null
++++ b/scripts/validate_pine_host_recovery.py
+@@ -0,0 +1,46 @@
++"""Run real PostgreSQL HTTP recovery with explicit host experiments enabled."""
++import argparse
++import json
++import os
++from pathlib import Path
++import sys
++import unittest
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT / "python/tests"))
++from benchmark_strategy_runtime import host_experiment
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--server", type=Path, required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--host-experiment", type=host_experiment, action="append", default=[])
++    args = parser.parse_args()
++    if not os.environ.get("MARKETFORGE_TEST_DATABASE_URL"):
++        parser.error("set the isolated MARKETFORGE_TEST_DATABASE_URL; never use a production database")
++    os.environ.update(MARKETFORGE_TEST_SERVER=str(args.server.resolve()),
++                      MARKETFORGE_REQUIRE_PINE_TESTS="1", MARKETFORGE_REQUIRE_POSTGRES_TESTS="1")
++    # Freeze the public oracle before the plugin adds its private adapter path.
++    import pine_compat
++    if pine_compat.__version__ != "0.3.1":
++        raise RuntimeError("public HTTP oracle must be pine-compat-runtime 0.3.1")
++    from test_pine_inprocess_http import PineInProcessRecoveryTests
++    options = dict(args.host_experiment)
++
++    class HostRecovery(PineInProcessRecoveryTests):
++        def setUp(self):
++            super().setUp()
++            self.env.update(options)
++
++    result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(HostRecovery))
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    args.output.write_text(json.dumps({"tests":result.testsRun,"failures":len(result.failures),
++        "errors":len(result.errors),"skipped":len(result.skipped),"server":str(args.server.resolve()),
++        "experiments":options,"scope":"Real authenticated HTTP, durable PostgreSQL restart and state/trade comparison. Not PostgreSQL capacity."},indent=2)+"\n")
++    if not result.wasSuccessful() or result.skipped or result.testsRun != 2:
++        raise SystemExit(1)
++
++
++if __name__ == "__main__":
++    main()
