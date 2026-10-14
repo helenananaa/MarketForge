@@ -1,4 +1,4 @@
-"""Mixed or pure-Pine live load; every tier retains its full receipt."""
+"""Mixed, pure-Pine or equivalent native-Pine live load with retained receipts."""
 import argparse
 import copy
 import json
@@ -17,6 +17,76 @@ import benchmark_market_load as load
 from background_market import child_seed
 from process_tree_metrics import ProcessTreeMetrics
 from bot_runtime_receipts import audit_receipts, runtime_delta, runtime_metrics
+
+
+NATIVE_PINE_PLUGINS = {
+    "ma.pine": "NativePineMa",
+    "rsi.pine": "NativePineRsi",
+    "breakout.pine": "NativePineBreakout",
+}
+PINE_INPUT_DEFAULTS = {
+    "ma.pine": {"Fast": 3, "Slow": 8, "Quantity": 2},
+    "rsi.pine": {"Length": 7, "Low": 35, "High": 65, "Quantity": 2},
+    "breakout.pine": {"Length": 6, "Quantity": 2},
+}
+NATIVE_INPUT_FIELDS = {
+    "Fast": "fast", "Slow": "slow", "Length": "length",
+    "Low": "low", "High": "high", "Quantity": "qty",
+}
+BAR_STRATEGY_PLUGINS = {"pine.strategy", "python.sma", *NATIVE_PINE_PLUGINS.values()}
+
+
+def language_group(plugin):
+    if plugin["plugin_id"] in NATIVE_PINE_PLUGINS.values(): return "native-pine"
+    if plugin["plugin_id"] == "pine.strategy": return "pine"
+    if plugin["plugin_id"] == "python.sma": return "python"
+    return "native"
+
+
+def native_pine_config(config):
+    """Resolve bundled Pine defaults into the corresponding flat Rust inputs."""
+    script = config["script"]
+    inputs = {**PINE_INPUT_DEFAULTS[script], **config.get("inputs", {})}
+    if inputs.keys() - PINE_INPUT_DEFAULTS[script].keys():
+        raise ValueError(f"unsupported native Pine input for {script}")
+    result = {key: copy.deepcopy(value) for key, value in config.items()
+              if key not in ("script", "inputs")}
+    result.update({NATIVE_INPUT_FIELDS[key]: value for key, value in inputs.items()})
+    return result
+
+
+def normalized_pine_config(plugin):
+    """Canonical source configuration for a behavior-equivalent recipe audit."""
+    config = plugin["config"]
+    if plugin["plugin_id"] == "pine.strategy":
+        script = config["script"]
+        return {**copy.deepcopy(config),
+                "inputs": {**PINE_INPUT_DEFAULTS[script], **config.get("inputs", {})}}
+    scripts = {identifier: script for script, identifier in NATIVE_PINE_PLUGINS.items()}
+    script = scripts[plugin["plugin_id"]]
+    fields = {NATIVE_INPUT_FIELDS[key] for key in PINE_INPUT_DEFAULTS[script]}
+    result = {key: copy.deepcopy(value) for key, value in config.items() if key not in fields}
+    result.update(script=script, inputs={key: config.get(NATIVE_INPUT_FIELDS[key], default)
+                                      for key, default in PINE_INPUT_DEFAULTS[script].items()})
+    return result
+
+
+def normalized_strategy_recipe(spec):
+    """Normalize implementation identity only, retaining accounts and workload."""
+    result = copy.deepcopy(spec)
+    for agent in result["agents"]:
+        plugin = agent["Plugin"]
+        if language_group(plugin) in ("pine", "native-pine"):
+            plugin["config"] = normalized_pine_config(plugin)
+            plugin.update(plugin_id="pine.strategy", plugin_version="2.0.0")
+    # Receipt hashes compare bytes. Recursively canonicalize object key order
+    # so Pine input nesting and native flat-config lowering serialize alike.
+    return json.loads(json.dumps(result, sort_keys=True))
+
+
+def strategy_configs(spec):
+    return [plugin["config"] for agent in spec["agents"]
+            if language_group(plugin := agent["Plugin"]) in ("pine", "native-pine")]
 
 
 def mixed_recipe(count, room, seed, staggered=False, template=None):
@@ -82,9 +152,16 @@ def pine_config(index, seed, profile):
     return config
 
 
-def workload_summary(spec):
-    configs = [a["Plugin"]["config"] for a in spec["agents"]
-               if a["Plugin"]["plugin_id"] == "pine.strategy"]
+def workload_summary(spec, *, profile="short"):
+    # Native strategies use the same source inputs even though Rust receives a
+    # flat config. Keep the workload receipt directly comparable to Pine.
+    configs = [normalized_pine_config(a["Plugin"]) if language_group(a["Plugin"]) == "native-pine"
+               else a["Plugin"]["config"] for a in spec["agents"]
+               if language_group(a["Plugin"]) in ("pine", "native-pine")]
+    if profile == "short" and any(language_group(a["Plugin"]) == "native-pine" for a in spec["agents"]):
+        # The short Pine recipe omits all input overrides. Native config must
+        # spell out the same defaults but its receipt retains that distinction.
+        for config in configs: config.pop("inputs", None)
     groups = Counter(c["bar_interval_ms"] for c in configs)
     return {"period_instances":{str(k):v for k,v in sorted(groups.items())},
             "ideal_bar_updates_per_sim_second":sum(v * 1000 / k for k,v in groups.items()),
@@ -117,6 +194,16 @@ def diagnostic_metrics(path):
             "worker_acquire":"affinity-slot wait plus cold process startup when needed"} if stages else {}
 
 
+def required_diagnostics_present(diagnostics, population, *, pine_in_process=False):
+    if population != "native-pine":
+        return bool(diagnostics.get("stages", {}).get("bot_inprocess_call" if pine_in_process else "bot_worker_roundtrip"))
+    # This native stage covers only the three rewritten strategies, excluding
+    # the 38 liquidity bots. A zero/startup-only counter cannot qualify load.
+    stage = diagnostics.get("stages", {}).get("bot_native_pine_evaluate", {})
+    measured = diagnostics.get("measurement_deltas", {}).get("bot_native_pine_evaluate", {})
+    return stage.get("count", 0) > 0 and measured.get("count", 0) > 0 and measured.get("total_wall_ms", 0) > 0
+
+
 def pine_recipe(count, room, seed, staggered=False, template=None, *, profile="short"):
     """Count denotes actual Pine instances; 38 fixed native liquidity bots remain."""
     if not 100 <= count <= 3000: raise ValueError("use 100..3000 Pine instances")
@@ -147,6 +234,18 @@ def pine_recipe(count, room, seed, staggered=False, template=None, *, profile="s
             "state_version":1,"config_version":1,"seed":child_seed(seed,name)&(2**53-1) or 1,
             "config":pine_config(i, seed, profile)}})
     assert len(spec["agents"]) == count + 38
+    return spec
+
+
+def native_pine_recipe(*values, **kwargs):
+    """Identical Pine workload/accounts/liquidity; only implementation changes."""
+    spec = pine_recipe(*values, **kwargs)
+    for agent in spec["agents"]:
+        plugin = agent["Plugin"]
+        if plugin["plugin_id"] == "pine.strategy":
+            script = plugin["config"]["script"]
+            plugin["config"] = native_pine_config(plugin["config"])
+            plugin.update(plugin_id=NATIVE_PINE_PLUGINS[script], plugin_version="1.0.0")
     return spec
 
 
@@ -364,7 +463,7 @@ def duration_summary(path, tree, warmup, seconds, target_rate):
 
 
 def prewarm_market(client, room, spec, longest_bars):
-    configs = [a["Plugin"]["config"] for a in spec["agents"] if a["Plugin"]["plugin_id"] == "pine.strategy"]
+    configs = strategy_configs(spec)
     periods = sorted({c["bar_interval_ms"] for c in configs})
     stride = math.gcd(*periods)
     if stride % 1000: raise ValueError("prewarm periods must be whole simulation steps")
@@ -402,6 +501,66 @@ def prewarm_market(client, room, spec, longest_bars):
             "closed_bars_by_period":history, "receipts":receipts}
 
 
+def summarize_language_groups(scheduler, market_time_ms):
+    groups = {}
+    for agent in scheduler["agents"]:
+        config = agent["template"]["Plugin"]
+        language = language_group(config)
+        group = groups.setdefault(language, {"instances":0,"initialized":0,"evaluated_bars":0,"skipped_bar_decisions":0,"lags_sim_ms":[],"bar_backlogs":[]})
+        group["instances"] += 1
+        data = agent["kind_state"].get("Plugin", {}).get("data")
+        initialized = isinstance(data, dict) and bool(data.get("initialized")) if language == "native-pine" else bool(data)
+        group["initialized"] += initialized
+        if isinstance(data, dict):
+            group["evaluated_bars"] += data.get("evaluated_bars", 0)
+            group["skipped_bar_decisions"] += data.get("skipped_bar_decisions", 0)
+        observed = data.get("_host_observation", data.get("last_observation")) if isinstance(data, dict) else None
+        if observed is not None: group["lags_sim_ms"].append(market_time_ms - observed[1])
+        if config["plugin_id"] in BAR_STRATEGY_PLUGINS:
+            expected = scheduler["benchmark_required_inputs"][f'{config["participant"]["instrument_id"]}:{config["config"]["bar_interval_ms"]}']["closed_bars"]
+            group["bar_backlogs"].append(max(0, expected - (data.get("evaluated_bars", 0) if isinstance(data, dict) else 0)))
+    for group in groups.values():
+        lags = group.pop("lags_sim_ms")
+        group["observed"] = len(lags)
+        group["lag_sim_ms"] = load.percentiles(lags)
+        backlogs = group.pop("bar_backlogs")
+        group["closed_bar_backlog"] = {k.removesuffix("_ms"):v for k,v in load.percentiles(backlogs).items()} if backlogs else None
+        group["instances_behind_closed_bars"] = sum(b > 0 for b in backlogs)
+    return groups
+
+
+def lookbacks_exercised(scheduler, language):
+    agents = [agent for agent in scheduler["agents"]
+              if language_group(agent["template"]["Plugin"]) == language]
+    # Missing strategy populations cannot qualify through all([]).
+    if not agents: return False
+    return all(
+        (agent["kind_state"].get("Plugin", {}).get("data") or {}).get("evaluated_bars", 0) >=
+        max((normalized_pine_config(agent["template"]["Plugin"])["inputs"].get(key, default)
+             for key, default in (("Fast", 3), ("Slow", 8), ("Length", 7))), default=8) + 1
+        for agent in agents)
+
+
+def input_qualification(scheduler, groups, population):
+    required = scheduler["benchmark_required_inputs"]
+    return {
+        "recent_nonempty_input":bool(required) and all(v["latest_open_ms"] is not None and
+            v["market_time_ms"] - v["latest_open_ms"] <= 2 * int(k.rsplit(":", 1)[1])
+            for k, v in required.items()),
+        "no_closed_bar_backlog":bool(set(groups) & {"pine", "python", "native-pine"}) and
+            all(g["instances_behind_closed_bars"] == 0 for name, g in groups.items() if name != "native"),
+        "all_pine_lookbacks_exercised":lookbacks_exercised(scheduler, "pine") if population != "native-pine" else None,
+        "all_native_pine_lookbacks_exercised":lookbacks_exercised(scheduler, "native-pine") if population == "native-pine" else None,
+        "all_horizon_groups_exercised":bool(required) and all(v["closed_bars"] > 0 for v in required.values()),
+    }
+
+
+def restore_environment(values):
+    for key, previous in values.items():
+        if previous is None: os.environ.pop(key, None)
+        else: os.environ[key] = previous
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--server", type=Path, required=True)
@@ -414,10 +573,10 @@ def main():
     parser.add_argument("--max-memory-mib", type=float, default=4096, help="explicit server memory guard; raising it changes the acceptance contract")
     parser.add_argument("--interval-ms", type=int, default=25)
     parser.add_argument("--plugin-dir", type=Path, default=ROOT / "bot-plugins")
-    parser.add_argument("--population", choices=("mixed", "pine"), default="mixed",
-                        help="pine counts actual Pine bots plus 38 fixed native liquidity providers")
+    parser.add_argument("--population", choices=("mixed", "pine", "native-pine"), default="mixed",
+                        help="pine/native-pine counts actual strategy bots plus 38 identical fixed native liquidity providers")
     parser.add_argument("--sustained-input", action="store_true",
-                        help="pure Pine only: funded gateway traders keep nonempty candles arriving")
+                        help="pine/native-pine only: funded gateway traders keep nonempty candles arriving")
     parser.add_argument("--input-profile", choices=("flat", "cycle"), default="flat",
                         help="sustained gateway limits: flat=100, cycle=80..120..80 every 400 simulation seconds; actual trades are audited separately")
     parser.add_argument("--pine-profile", choices=("short", "diverse-short", "mixed-horizon", "slow-horizon"), default="short",
@@ -455,14 +614,15 @@ def main():
     if not 5 <= args.seconds <= (3600 if args.long_run else 120) or not 25 <= args.interval_ms <= 1000: parser.error("bounded duration/clock required; use --long-run above 120 seconds")
     if not 0 < args.max_memory_mib <= (16384 if args.long_run else 4096): parser.error("memory guard must be finite, positive and within the explicit duration mode limit")
     if args.pine_vm_checkpoint and not args.pine_in_process: parser.error("VM checkpoints require --pine-in-process")
-    if args.sustained_input and args.population != "pine": parser.error("sustained input requires pure Pine")
+    pure_strategy = args.population in ("pine", "native-pine")
+    if args.sustained_input and not pure_strategy: parser.error("sustained input requires pine or native-pine")
     if args.input_profile == "cycle" and not args.sustained_input: parser.error("cycle input requires --sustained-input")
     if not 0 <= args.start_step <= 10000: parser.error("start-step must be within 0..10000")
     if not 0 <= args.prewarm_bars <= 128 or not 0 <= args.warmup <= 30: parser.error("bounded prewarm-bars/warmup required")
-    if args.prewarm_bars and (args.population != "pine" or not args.sustained_input or args.start_step):
-        parser.error("history prewarming requires pure Pine sustained input and start-step 0")
-    if args.population != "pine" and (args.pine_profile != "short" or args.start_step):
-        parser.error("Pine workload and start-step options require pure Pine")
+    if args.prewarm_bars and (not pure_strategy or not args.sustained_input or args.start_step):
+        parser.error("history prewarming requires pine/native-pine sustained input and start-step 0")
+    if not pure_strategy and (args.pine_profile != "short" or args.start_step):
+        parser.error("Pine workload and start-step options require pine or native-pine")
     args.output.mkdir(parents=True, exist_ok=True)
     feed_budget = max(2000, math.ceil((args.warmup + args.seconds) * 1000 / args.interval_ms * 1.1)) if args.long_run else 2000
     # A scoped child environment installs only these trusted local packages.
@@ -470,26 +630,32 @@ def main():
     os.environ["MARKETFORGE_BOT_PLUGIN_DIR"] = str(args.plugin_dir.resolve())
     previous_prefilter = os.environ.get("MARKETFORGE_EXPERIMENTAL_EVENT_PREFILTER")
     os.environ["MARKETFORGE_EXPERIMENTAL_EVENT_PREFILTER"] = "1" if args.event_prefilter else "0"
+    previous_environment = {"MARKETFORGE_BOT_PLUGIN_DIR": previous,
+                            "MARKETFORGE_EXPERIMENTAL_EVENT_PREFILTER": previous_prefilter}
     def recipe(*values, **kwargs):
-        spec = pine_recipe(*values, **kwargs, profile=args.pine_profile) if args.population == "pine" else mixed_recipe(*values, **kwargs)
+        factory = native_pine_recipe if args.population == "native-pine" else pine_recipe
+        spec = factory(*values, **kwargs, profile=args.pine_profile) if pure_strategy else mixed_recipe(*values, **kwargs)
         if args.sustained_input:
             for account, position in ((900001, max(10000, feed_budget + 512)), (900002, 0)):
                 spec["scenario"]["accounts"].append({"Spot":{"account_id":account,
                     "cash_balance":max(10000000, (feed_budget+512)*200),"position_qty":position}})
         if args.prewarm_bars:
-            configs = [a["Plugin"]["config"] for a in spec["agents"] if a["Plugin"]["plugin_id"] == "pine.strategy"]
+            configs = strategy_configs(spec)
             span = max(c["bar_interval_ms"] for c in configs) * args.prewarm_bars
             if any(math.ceil(span / c["bar_interval_ms"]) + 16 > c["history_limit"] for c in configs):
                 raise ValueError("prewarm history would exceed a configured history_limit; this case requires long-term checkpoint support")
         return spec
     if args.export_only:
-        for count in args.counts:
-            spec = recipe(count, f"load-{count}", 7)
-            (args.output / f"bots-{count}").mkdir(parents=True, exist_ok=True)
-            load.save(args.output / f"bots-{count}/recipe.json", spec)
-            load.save(args.output / f"bots-{count}/workload.json", workload_summary(spec))
-        if previous is None: os.environ.pop("MARKETFORGE_BOT_PLUGIN_DIR", None)
-        else: os.environ["MARKETFORGE_BOT_PLUGIN_DIR"] = previous
+        try:
+            for count in args.counts:
+                spec = recipe(count, f"load-{count}", 7)
+                (args.output / f"bots-{count}").mkdir(parents=True, exist_ok=True)
+                load.save(args.output / f"bots-{count}/recipe.json", spec)
+                load.save(args.output / f"bots-{count}/workload.json", workload_summary(spec, profile=args.pine_profile))
+                if pure_strategy:
+                    load.save(args.output / f"bots-{count}/normalized-recipe.json", normalized_strategy_recipe(spec))
+        finally:
+            restore_environment(previous_environment)
         return
     load.load_recipe = recipe
     # run_case strips MARKETFORGE_* variables; pass the installation through its
@@ -508,6 +674,7 @@ def main():
                 if trace_path.exists():
                     raise RuntimeError("refusing to overwrite existing bot trace receipt")
                 kwargs["env"]["MARKETFORGE_BOT_TRACE"] = str(trace_path)
+            kwargs["env"]["MARKETFORGE_EXPERIMENTAL_EVENT_PREFILTER"] = "1" if args.event_prefilter else "0"
             process = popen(*values, **kwargs)
             monitors.append(ProcessTreeMetrics(process.pid))
             return process
@@ -542,7 +709,7 @@ def main():
                     if args.prewarm_bars:
                         warm = prewarm_market(control, room, values[2], args.prewarm_bars)
                         load.save(case_output / 'prewarm.json', warm)
-                        periods = sorted({a['Plugin']['config']['bar_interval_ms'] for a in values[2]['agents'] if a['Plugin']['plugin_id'] == 'pine.strategy'})
+                        periods = sorted({config['bar_interval_ms'] for config in strategy_configs(values[2])})
                         initial_history = {str(period): control.candles(room, 'V-BTC-SPOT', interval_ms=period, limit=2000)['candles'] for period in periods}
                         load.save(case_output / 'prewarm-candles.json', initial_history)
                     if args.start_step:
@@ -583,7 +750,7 @@ def main():
             required = {}
             for agent in saved["agents"]:
                 config = agent["template"]["Plugin"]
-                if config["plugin_id"] not in ("pine.strategy", "python.sma"): continue
+                if config["plugin_id"] not in BAR_STRATEGY_PLUGINS: continue
                 interval = config["config"]["bar_interval_ms"]
                 instrument = config["participant"]["instrument_id"]
                 key = f"{instrument}:{interval}"
@@ -702,54 +869,26 @@ def main():
                 "missing_participants":cutoff_missing, "instances_behind":sum(lag > 0 for lag in cutoff_lags),
                 "backlog_bars":{key.removesuffix("_ms"):value for key,value in load.percentiles(cutoff_lags).items()} if cutoff_lags else None,
                 "scope":"required closed bars at scheduled cutoff versus per-decision durable publication at or before cutoff; post-cutoff drain cannot erase backlog"}
-            groups = {}
-            for agent in scheduler["agents"]:
-                config = agent["template"]["Plugin"]
-                language = "pine" if config["plugin_id"] == "pine.strategy" else "python" if config["plugin_id"] == "python.sma" else "native"
-                group = groups.setdefault(language, {"instances":0,"initialized":0,"evaluated_bars":0,"skipped_bar_decisions":0,"lags_sim_ms":[],"bar_backlogs":[]})
-                group["instances"] += 1
-                data = agent["kind_state"].get("Plugin", {}).get("data")
-                group["initialized"] += bool(data)
-                if isinstance(data, dict):
-                    group["evaluated_bars"] += data.get("evaluated_bars", 0)
-                    group["skipped_bar_decisions"] += data.get("skipped_bar_decisions", 0)
-                observed = data.get("_host_observation", data.get("last_observation")) if isinstance(data, dict) else None
-                if observed is not None: group["lags_sim_ms"].append(report["final"]["clock"]["clock"]["market_time_ms"] - observed[1])
-                if language != "native":
-                    expected = scheduler["benchmark_required_inputs"][f'{config["participant"]["instrument_id"]}:{config["config"]["bar_interval_ms"]}']["closed_bars"]
-                    group["bar_backlogs"].append(max(0, expected - (data.get("evaluated_bars", 0) if isinstance(data, dict) else 0)))
-            for group in groups.values():
-                lags = group.pop("lags_sim_ms")
-                group["observed"] = len(lags)
-                group["lag_sim_ms"] = load.percentiles(lags)
-                backlogs = group.pop("bar_backlogs")
-                group["closed_bar_backlog"] = {k.removesuffix("_ms"):v for k,v in load.percentiles(backlogs).items()} if backlogs else None
-                group["instances_behind_closed_bars"] = sum(b > 0 for b in backlogs)
+            groups = summarize_language_groups(scheduler, report["final"]["clock"]["clock"]["market_time_ms"])
+            if pure_strategy:
+                load.save(args.output / f"bots-{count}/normalized-recipe.json", normalized_strategy_recipe(spec))
+            expected_languages = {"native", "native-pine" if args.population == "native-pine" else "pine"} if pure_strategy else {"native", "pine", "python"}
             report["qualified"].update(literal_step_rate=report["steps_per_wall_second"] is not None and report["steps_per_wall_second"] >= 1000 / args.interval_ms,
-                all_languages_initialized=len(groups) == (2 if args.population == "pine" else 3) and all(g["initialized"] == g["instances"] for g in groups.values()),
+                all_languages_initialized=set(groups) == expected_languages and all(g["initialized"] == g["instances"] for g in groups.values()),
                 no_bot_errors="status" in report["final"] and not status.get("bot_errors"),
-                recent_nonempty_input=all(v["latest_open_ms"] is not None and
-                    v["market_time_ms"] - v["latest_open_ms"] <= 2 * int(k.rsplit(":", 1)[1])
-                    for k,v in scheduler["benchmark_required_inputs"].items()),
                 no_input_feed_errors=all(not f["errors"] for f in feed_receipts))
+            report["qualified"].update(input_qualification(scheduler, groups, args.population))
             report["qualified"].update(
                 no_closed_bar_backlog_after_pause=all(g["instances_behind_closed_bars"] == 0 for name, g in groups.items() if name != "native"),
                 no_closed_bar_backlog_at_cutoff=(bool(cutoff_lags) and not cutoff_missing and cutoff["instances_behind"] == 0)
                     if args.require_bot_receipts else None,
                 no_skipped_bar_decisions=all(g["skipped_bar_decisions"] == 0 for name, g in groups.items() if name != "native"),
-                all_pine_lookbacks_exercised=all(
-                    (agent["kind_state"].get("Plugin", {}).get("data") or {}).get("evaluated_bars", 0) >=
-                    max((agent["template"]["Plugin"]["config"].get("inputs", {}).get(key, default)
-                         for key, default in (("Fast", 3), ("Slow", 8), ("Length", 7))), default=8) + 1
-                    for agent in scheduler["agents"] if agent["template"]["Plugin"]["plugin_id"] == "pine.strategy"),
-                all_horizon_groups_exercised=all(v["closed_bars"] > 0 for v in scheduler["benchmark_required_inputs"].values()),
                 compiler_quiet=tree.get("compiler_nonempty_samples") == 0 if tree else False,
                 no_parallel_benchmark_server=tree.get("other_server_nonempty_samples") == 0 if tree else False,
-                diagnostic_stages_present=bool(diagnostics.get("stages", {}).get(
-                    "bot_inprocess_call" if args.pine_in_process else "bot_worker_roundtrip"))
+                diagnostic_stages_present=required_diagnostics_present(diagnostics, args.population, pine_in_process=args.pine_in_process)
                     if args.require_diagnostics else None,
                 requested_runtime_route=paths["requested_route_exercised"]
-                    if (args.require_diagnostics or args.require_bot_receipts) else None,
+                    if args.population != "native-pine" and (args.require_diagnostics or args.require_bot_receipts) else None,
                 bot_durable_receipts=receipts["qualified"] if args.require_bot_receipts else None)
             report["qualified"].update(full_requested_duration_observed=duration["full_requested_duration_observed"],
                 sustained_target=duration["sustained_target"] if args.long_run else None,
@@ -765,7 +904,7 @@ def main():
                 pine_checkpoint_schema=all((a["kind_state"].get("Plugin", {}).get("data") or {}).get("broker_schema") == 3
                     for a in scheduler["agents"] if a["template"]["Plugin"]["plugin_id"] == "pine.strategy") if args.pine_vm_checkpoint else None)
             report.update(language_groups=groups, process_tree={k:v for k,v in tree.items() if k != "samples"} if tree else None,
-                workload=workload_summary(spec), pine_profile=args.pine_profile, start_step=args.start_step,
+                workload=workload_summary(spec, profile=args.pine_profile), pine_profile=args.pine_profile, start_step=args.start_step,
                 prewarm_bars=args.prewarm_bars, warmup_seconds=args.warmup,
                 event_prefilter_enabled=args.event_prefilter,
                 pine_vm_checkpoint_enabled=args.pine_vm_checkpoint,
@@ -781,7 +920,7 @@ def main():
                 sustained_input=args.sustained_input,
                 probe="account 900000 sell at 101, quantity 1, then cancel on separate empty LOAD-PROBE-SPOT book",
                 population=args.population,
-                scope="actual Pine count plus 38 fixed native liquidity bots; three qualified sources" if args.population == "pine" else "80% native, 10% first-party Python SMA, 10% qualified Pine; not community-library capacity")
+                scope="actual native Pine-equivalent strategy count plus 38 identical fixed native liquidity bots; same source inputs, accounts and timing as Pine" if args.population == "native-pine" else "actual Pine count plus 38 fixed native liquidity bots; three qualified sources" if args.population == "pine" else "80% native, 10% first-party Python SMA, 10% qualified Pine; not community-library capacity")
             load.save(args.output / f"bots-{count}/report.json", report)
             cases.append(report)
             print(json.dumps({"bots":count,"steps_per_second":report["steps_per_wall_second"],"groups":groups,
@@ -791,10 +930,7 @@ def main():
         load.Client = original_client
         load.subprocess.Popen = popen
         load.load_recipe = ORIGINAL
-        if previous is None: os.environ.pop("MARKETFORGE_BOT_PLUGIN_DIR", None)
-        else: os.environ["MARKETFORGE_BOT_PLUGIN_DIR"] = previous
-        if previous_prefilter is None: os.environ.pop("MARKETFORGE_EXPERIMENTAL_EVENT_PREFILTER", None)
-        else: os.environ["MARKETFORGE_EXPERIMENTAL_EVENT_PREFILTER"] = previous_prefilter
+        restore_environment(previous_environment)
 
 
 if __name__ == "__main__": main()

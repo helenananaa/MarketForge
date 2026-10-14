@@ -1461,6 +1461,13 @@ fn spawn_decision_batch(
                             &crate::bench_execution_timing::BOT_EVALUATE,
                         )
                     });
+                    #[cfg(feature = "bench-execution-timing")]
+                    let _native_pine_timer =
+                        (native && prior.template.bot_id().starts_with("NativePine")).then(|| {
+                            crate::bench_execution_timing::Timer::start(
+                                &crate::bench_execution_timing::BOT_NATIVE_PINE_EVALUATE,
+                            )
+                        });
                     let mut result = compute_decision_input(
                         prior,
                         observation,

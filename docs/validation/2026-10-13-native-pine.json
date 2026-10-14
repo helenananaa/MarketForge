@@ -1,0 +1,3360 @@
+{
+  "date": "2026-10-13",
+  "base_commit": "5a3e5f4b302b1dbac9ac4f71308c1733afb1bb48",
+  "source_state": "uncommitted native ports; unrelated pre-existing staged strategy library preserved",
+  "ports": {
+    "ma": "NativePineMa",
+    "rsi": "NativePineRsi",
+    "breakout": "NativePineBreakout"
+  },
+  "source_sha256": {
+    "Cargo.lock": "8b4d0c658069475e7c53e1fd37ebf85ba698b6177364ebc717043af67b1add01",
+    "exchange-core/Cargo.toml": "bd6bf3384a0132da6622285644aa6bc721764eb7876085056b1d3e4a604124d6",
+    "exchange-core/src/native_pine.rs": "f8211d6488bd84d5834f89a6a0158482da83de4c21dd5b6c4731962f0d8dd088",
+    "exchange-core/src/native_pine_tests.rs": "4c01686a385b24158eb398856470cdb531761790ccc0ab77829ba856364e5a84",
+    "exchange-core/src/bots.rs": "f70826b1c87aa13dd85632c8b4b1c377615af18ddd7150f3ba41f2fc50cc39bd",
+    "exchange-core/src/lib.rs": "268e34b5f99ccbd22711ce1d7b6d59a8d10f921950ec0b6ab3aabf704a8829c0",
+    "exchange-server/src/bench_execution_timing.rs": "2ed20ec1db82d69711d784a8fcf5594c7a7cd7bc9ba957be8f819da34f584a15",
+    "exchange-server/src/realtime.rs": "7696b90572460d8d62e4981ccabe83e4d93daeb7efba9142da30c840603da786",
+    "exchange-server/examples/native_pine_probe.rs": "ecf2348b1bf5f85c98d0a6a01a102cd53fae5ee98df948e3c17cb938f7c80be0",
+    "scripts/benchmark_strategy_runtime.py": "c3f0021d734d4e6f4cb2c83c7ca522d39f4115ea59398b84e276a86a5bb1a263",
+    "python/tests/test_native_pine.py": "7f2ef1ca1cc567a4254709990ea73d3e93b4b7091404cf66bae1ad7578b17114",
+    "python/tests/test_native_pine_http.py": "60f140b60fa01f1473cd4b7340eb5e90b6522ae4fe13ac4db3bfc2c9c23a80bb",
+    "python/tests/test_native_pine_benchmark.py": "be3d2d5e40c0419c492ee115a48d486384840d48966a35ba0985a332ccc2c638",
+    "bot-plugins/pine-strategy/bot.py": "2e179d11ed47d9f4c7fd51aa8be630eb76d01e52a6224d7072d1affbd5978e5a",
+    "bot-plugins/pine-strategy/broker.py": "fbb7e965870ced850514774e0910601dc14b043189a05b80bfb52a8bcf9fbd41",
+    "bot-plugins/pine-strategy/incremental.py": "1e6eb50d8d170288d56721774901349d206df004faa7f4c5197ad481933e2d51",
+    "bot-plugins/pine-strategy/bot.json": "9b8d7956b3693fb883cf94b8eb4580b001ec587ffdbeb35f709d241cf53a3e8c",
+    "bot-plugins/pine-strategy/scripts/ma.pine": "5b05dac3d2bd42aff7d3d0d75e6a4d5cd41b64ea6d9e34dfd8d861f3f0b3c165",
+    "bot-plugins/pine-strategy/scripts/rsi.pine": "2a8c15eed0be312d956b1e0f4672006e04f77aa4c9798f4abcc8ee890699b3fc",
+    "bot-plugins/pine-strategy/scripts/breakout.pine": "0b3ca54621fa9c57a6979a34f2e1c3bb2f9e5ffa03904a740925283cc697f784"
+  },
+  "binary_sha256": {
+    "target/native-pine-20261013/release/exchange-server.exe": "157b27b442e83b9471e1dbca0295be7839701d0b2361f18d25639ed2bed9bef8",
+    "target/native-pine-20261013/release/examples/native_pine_probe.exe": "9fd0bd3a1e94e5a2e5e551e5b6be32ea8e4b3660662bfa22a9c48fb9860d123f",
+    "target/native-pine-20261013/release/examples/pine_inprocess_probe.exe": "ec866eaf98190fc5eeb651e0f64eb67279c85f30f6b182113642547214cced7b"
+  },
+  "python": "3.12.7",
+  "pine_compat": "0.3.1",
+  "test_logs": {
+    "tests-qualified-final.log": {
+      "exists": true,
+      "sha256": "3614b4c8d8df7c892f6abd7704b4dec600a583017f1295865cd96559835dd147",
+      "summaries": [
+        "    Finished `test` profile [unoptimized] target(s) in 0.36s",
+        "test result: ok. 353 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 16.04s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 284 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 3.45s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    "clippy-all-paused.log": {
+      "exists": true,
+      "sha256": "16ba62044b0bf1c1609939d9a397b41001a1b8f8ea70a19e72d99e4507da3a8d",
+      "summaries": [
+        "    Finished `dev` profile [unoptimized] target(s) in 7.67s"
+      ]
+    },
+    "fmt-paused.log": {
+      "exists": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summaries": []
+    },
+    "build-paused.log": {
+      "exists": true,
+      "sha256": "d7e857b82dbe65dab93210c0a0374029e635cc5956c527dd3f71d5adce1bb436",
+      "summaries": [
+        "    Finished `release` profile [optimized] target(s) in 1m 29s"
+      ]
+    },
+    "native-differential-final.log": {
+      "exists": true,
+      "sha256": "882c0531ca24ac13c060d7954e665937665a0f8474ac379a0dee66f2f3140f09",
+      "summaries": [
+        "Ran 5 tests in 21.984s",
+        "OK"
+      ]
+    },
+    "pine-inprocess-differential-final.log": {
+      "exists": true,
+      "sha256": "9d24cf8e26c6b60834154e87679e806f0fc22acbfe2a5f1ba2cf42f86587cf20",
+      "summaries": [
+        "Ran 6 tests in 2.826s",
+        "OK"
+      ]
+    },
+    "native-http-final.log": {
+      "exists": true,
+      "sha256": "21f1440ae7213c9db2136db8c9c1ae845a9dfc67d31cd606e1de06c119909cb6",
+      "summaries": [
+        "Ran 3 tests in 69.143s",
+        "OK"
+      ]
+    },
+    "test-native-pine-benchmark-final.log": {
+      "exists": true,
+      "sha256": "e9b0b1b48e98457cae6de5d317940508abc0bdcfe462723d4ae43ef3fbd80a21",
+      "summaries": [
+        "Ran 9 tests in 0.240s",
+        "OK"
+      ]
+    },
+    "test-market-load-final.log": {
+      "exists": true,
+      "sha256": "1e7bfbdf548fc2b5b208f70ada12e3122baccc1ca2c1a63187c415c1742b6a68",
+      "summaries": [
+        "Ran 5 tests in 0.035s",
+        "OK"
+      ]
+    }
+  },
+  "raw_receipts": {
+    ".local/native-pine-20261013/test_existing_inventory_is_not_an_owned_strategy_entry.json": "ba30cd1aa00acea588584ff70f40d912751a16209fe4f5f5d37b490bc062fc1c",
+    ".local/native-pine-20261013/test_random_bars_realistic_partial_fills_fees_and_duplicates.json": "e4b95207f6e3ba633c02fdacaca1d29a2dacf44787db41db1d5d56efa0c6a750",
+    ".local/native-pine-20261013/test_rejected_entry_no_phantom_position_then_next_bar_retry.json": "15efc160bd182eba19248acf5a4e92e671c39c76abea11a0a19d7e0aaa7990ee",
+    ".local/native-pine-20261013/test_rolling_history_and_compact_state_resume_match_complete_pine.json": "554d172cf45cb7cc68837fe7817344c458761a855637185eaadc32a55abea161",
+    ".local/native-pine-20261013/test_warmup_flat_alternating_and_parameter_overrides.json": "7a3635bec539f722308e104a868d4464cc6ad5499c229fa9a0eb0136e49fa7cb",
+    ".local/native-pine-20261013/http/test_all_ports_complete_orders_partial_fills_fees_and_idempotency.json": "ca6ac7bffbd97325399ba4efaa58a9e5cdf71905119184e9cb16697bad272b95",
+    ".local/native-pine-20261013/http/test_gateway_rejection_stays_flat_and_next_bar_retries.json": "8df0653d34597cd5b8c9d844ab336454af55a7a6f695322faa0e60d7f777d4af",
+    ".local/native-pine-20261013/http/test_postgres_restart_after_partial_fills_preserves_subsequent_actions.json": "cef39c197507162fc7ebd21aac43658d783c5465285ecbf7ef83b5f9718e25f6"
+  },
+  "compact_state_128_bar_cases": [
+    {
+      "script": "ma.pine",
+      "bars": 128,
+      "maximum_bytes": 5235,
+      "last_bytes": 5232,
+      "bytes_change_bar_65_to_128": 40
+    },
+    {
+      "script": "rsi.pine",
+      "bars": 128,
+      "maximum_bytes": 5257,
+      "last_bytes": 5254,
+      "bytes_change_bar_65_to_128": 39
+    },
+    {
+      "script": "breakout.pine",
+      "bars": 128,
+      "maximum_bytes": 5271,
+      "last_bytes": 5269,
+      "bytes_change_bar_65_to_128": 44
+    }
+  ],
+  "postgres": {
+    "scope": "correctness and paired-room restart; not load capacity",
+    "durability": [
+      "fsync=on",
+      "synchronous_commit=on",
+      "full_page_writes=on"
+    ],
+    "forced": true,
+    "existing_postgres_tests": 9
+  },
+  "performance": {
+    "server_sha256": "157b27b442e83b9471e1dbca0295be7839701d0b2361f18d25639ed2bed9bef8",
+    "cases": [
+      {
+        "label": "01-pine",
+        "population": "pine",
+        "command": [
+          "E:\\projects\\MarketForge\\.venv\\Scripts\\python.exe",
+          "E:\\projects\\MarketForge\\scripts\\benchmark_strategy_runtime.py",
+          "--server",
+          "E:\\projects\\MarketForge\\target\\native-pine-20261013\\release\\exchange-server.exe",
+          "--output",
+          "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\abba-20x\\01-pine",
+          "--counts",
+          "1000",
+          "--population",
+          "pine",
+          "--pine-profile",
+          "diverse-short",
+          "--sustained-input",
+          "--prewarm-bars",
+          "64",
+          "--warmup",
+          "20",
+          "--seconds",
+          "30",
+          "--interval-ms",
+          "50",
+          "--require-diagnostics",
+          "--plugin-dir",
+          "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\plugins",
+          "--pine-in-process"
+        ],
+        "exit_code": 0,
+        "report": "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\abba-20x\\01-pine\\bots-1000\\report.json",
+        "failure": null,
+        "steps_per_wall_second": 14.384414807931007,
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": null,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true,
+          "no_input_feed_errors": true,
+          "recent_nonempty_input": true,
+          "no_closed_bar_backlog": false,
+          "all_pine_lookbacks_exercised": true,
+          "all_native_pine_lookbacks_exercised": null,
+          "all_horizon_groups_exercised": true,
+          "compiler_quiet": true,
+          "no_parallel_benchmark_server": true,
+          "diagnostic_stages_present": true
+        },
+        "latency": {
+          "view": {
+            "count": 56,
+            "p50_ms": 22.781399999985297,
+            "p95_ms": 65.95400000014706,
+            "max_ms": 71.97470000028261
+          },
+          "place": {
+            "count": 53,
+            "p50_ms": 25.320400000055088,
+            "p95_ms": 62.19809999993231,
+            "max_ms": 103.23919999973441
+          },
+          "cancel": {
+            "count": 53,
+            "p50_ms": 15.163399999892135,
+            "p95_ms": 77.49760000024253,
+            "max_ms": 108.84729999997944
+          }
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 4000,
+              "p95_ms": 7000,
+              "max_ms": 7000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 179563,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 13000,
+              "p95_ms": 40000,
+              "max_ms": 41000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 1,
+              "p95": 2,
+              "max": 2
+            },
+            "instances_behind_closed_bars": 612
+          }
+        },
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 3766.9375,
+          "peak_processes": 2,
+          "average_logical_cores": 4.332349136301031,
+          "seen_pids": [
+            33808,
+            37752
+          ],
+          "per_process": {
+            "37752": {
+              "first_elapsed": 0.029490699999769276,
+              "first_cpu_seconds": 0.015625,
+              "peak_rss_bytes": 3942633472,
+              "last_elapsed": 80.69841110000016,
+              "last_cpu_seconds": 351.125,
+              "average_logical_cores_while_sampled": 4.352473954764843
+            },
+            "33808": {
+              "first_elapsed": 0.029490699999769276,
+              "first_cpu_seconds": 0.0,
+              "peak_rss_bytes": 7307264,
+              "last_elapsed": 80.4223262999999,
+              "last_cpu_seconds": 0.0,
+              "average_logical_cores_while_sampled": 0.0
+            }
+          },
+          "compiler_nonempty_samples": 0,
+          "other_server_nonempty_samples": 0,
+          "measurement": {
+            "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+            "samples": 109,
+            "average_logical_cores": 6.971929908513762,
+            "peak_sampled_rss_mib": 3741.47265625
+          },
+          "errors": []
+        },
+        "peak_memory_mib": 3883.46484375,
+        "average_logical_cores": 6.969906751164837,
+        "server_sha256": "157b27b442e83b9471e1dbca0295be7839701d0b2361f18d25639ed2bed9bef8",
+        "recipe_sha256": "16dda3d26595820d47a057d00348c09a7b9d4001c9b1827fe05ca4d27df38099",
+        "diagnostics": {
+          "stages": {
+            "directory_wait": {
+              "count": 4664,
+              "total_wall_ms": 3.7129,
+              "mean_wall_ms": 0.0007960763293310463,
+              "max_wall_ms": 0.0198,
+              "p95_upper_wall_ms": 0.002048
+            },
+            "room_wait": {
+              "count": 4664,
+              "total_wall_ms": 109.7069,
+              "mean_wall_ms": 0.023522062607204117,
+              "max_wall_ms": 18.5504,
+              "p95_upper_wall_ms": 0.004096
+            },
+            "room_held": {
+              "count": 4664,
+              "total_wall_ms": 36670.1406,
+              "mean_wall_ms": 7.862380060034305,
+              "max_wall_ms": 228.7527,
+              "p95_upper_wall_ms": 67.108864
+            },
+            "venue_wait": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "venue_compute": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "venue_commit": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "venue_fallback": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "order_prepare": {
+              "count": 2162,
+              "total_wall_ms": 452.4036,
+              "mean_wall_ms": 0.2092523589269195,
+              "max_wall_ms": 1.1673,
+              "p95_upper_wall_ms": 1.048576
+            },
+            "order_apply": {
+              "count": 2162,
+              "total_wall_ms": 468.1115,
+              "mean_wall_ms": 0.21651780758556893,
+              "max_wall_ms": 2.4679,
+              "p95_upper_wall_ms": 0.524288
+            },
+            "order_receipt": {
+              "count": 2162,
+              "total_wall_ms": 13.9029,
+              "mean_wall_ms": 0.006430573543015726,
+              "max_wall_ms": 0.0659,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "order_journal": {
+              "count": 2162,
+              "total_wall_ms": 278.103,
+              "mean_wall_ms": 0.1286322849213691,
+              "max_wall_ms": 5.0317,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "order_publish": {
+              "count": 2162,
+              "total_wall_ms": 11.7671,
+              "mean_wall_ms": 0.005442691951896392,
+              "max_wall_ms": 0.0837,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "bot_state_copy": {
+              "count": 49748,
+              "total_wall_ms": 271.2884,
+              "mean_wall_ms": 0.005453252392055963,
+              "max_wall_ms": 0.3654,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "bot_blocking_wait": {
+              "count": 49748,
+              "total_wall_ms": 1654.2658,
+              "mean_wall_ms": 0.03325291066977567,
+              "max_wall_ms": 0.7813,
+              "p95_upper_wall_ms": 0.131072
+            },
+            "bot_turn": {
+              "count": 49748,
+              "total_wall_ms": 351461.1387,
+              "mean_wall_ms": 7.064829514754362,
+              "max_wall_ms": 28.3343,
+              "p95_upper_wall_ms": 16.777216
+            },
+            "bot_observation": {
+              "count": 49748,
+              "total_wall_ms": 9925.0514,
+              "mean_wall_ms": 0.19950654096647102,
+              "max_wall_ms": 3.8115,
+              "p95_upper_wall_ms": 1.048576
+            },
+            "bot_wave_build": {
+              "count": 1080,
+              "total_wall_ms": 337.2651,
+              "mean_wall_ms": 0.3122825,
+              "max_wall_ms": 1.4658,
+              "p95_upper_wall_ms": 1.048576
+            },
+            "bot_wave_reuse": {
+              "count": 33791,
+              "total_wall_ms": 2.507,
+              "mean_wall_ms": 7.41913527270575e-05,
+              "max_wall_ms": 0.0932,
+              "p95_upper_wall_ms": 0.000128
+            },
+            "bot_event_prefilter": {
+              "count": 134064,
+              "total_wall_ms": 53637.4431,
+              "mean_wall_ms": 0.40008833915145003,
+              "max_wall_ms": 8.5263,
+              "p95_upper_wall_ms": 4.194304
+            },
+            "bot_event_index": {
+              "count": 791,
+              "total_wall_ms": 63.6527,
+              "mean_wall_ms": 0.08047117572692793,
+              "max_wall_ms": 7.0478,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "bot_event_skip": {
+              "count": 37120,
+              "total_wall_ms": 1.4825,
+              "mean_wall_ms": 3.9938038793103444e-05,
+              "max_wall_ms": 0.0057,
+              "p95_upper_wall_ms": 0.000128
+            },
+            "bot_trigger": {
+              "count": 49748,
+              "total_wall_ms": 5143.9553,
+              "mean_wall_ms": 0.10340024322585833,
+              "max_wall_ms": 0.9365,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "bot_evaluate": {
+              "count": 49748,
+              "total_wall_ms": 296908.5738,
+              "mean_wall_ms": 5.968251463375412,
+              "max_wall_ms": 23.7534,
+              "p95_upper_wall_ms": 16.777216
+            },
+            "bot_native_pine_evaluate": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_worker_acquire": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_wire_encode": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_worker_roundtrip": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_wire_decode": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "scheduler_admission": {
+              "count": 1730,
+              "total_wall_ms": 25.3073,
+              "mean_wall_ms": 0.01462849710982659,
+              "max_wall_ms": 0.1928,
+              "p95_upper_wall_ms": 0.065536
+            },
+            "scheduler_apply": {
+              "count": 1730,
+              "total_wall_ms": 2171.0115,
+              "mean_wall_ms": 1.2549199421965316,
+              "max_wall_ms": 37.4274,
+              "p95_upper_wall_ms": 8.388608
+            },
+            "scheduler_mutation_build": {
+              "count": 1730,
+              "total_wall_ms": 53.1814,
+              "mean_wall_ms": 0.030740693641618497,
+              "max_wall_ms": 4.43,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "scheduler_checkpoint": {
+              "count": 1220,
+              "total_wall_ms": 0.3542,
+              "mean_wall_ms": 0.000290327868852459,
+              "max_wall_ms": 0.0135,
+              "p95_upper_wall_ms": 0.001024
+            },
+            "scheduler_install": {
+              "count": 1730,
+              "total_wall_ms": 89.545,
+              "mean_wall_ms": 0.05176011560693641,
+              "max_wall_ms": 1.9008,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "scheduler_materialize": {
+              "count": 27,
+              "total_wall_ms": 46.8693,
+              "mean_wall_ms": 1.7359,
+              "max_wall_ms": 4.428,
+              "p95_upper_wall_ms": 4.194304
+            },
+            "scheduler_delta_clone": {
+              "count": 1199,
+              "total_wall_ms": 5.1487,
+              "mean_wall_ms": 0.004294161801501251,
+              "max_wall_ms": 0.2056,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "scheduler_delta_between": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "scheduler_publish": {
+              "count": 4664,
+              "total_wall_ms": 354.6601,
+              "mean_wall_ms": 0.07604204545454546,
+              "max_wall_ms": 1.9861,
+              "p95_upper_wall_ms": 0.524288
+            },
+            "journal_request_clone": {
+              "count": 2117,
+              "total_wall_ms": 10.9665,
+              "mean_wall_ms": 0.005180207841284837,
+              "max_wall_ms": 0.9142,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "journal_queue": {
+              "count": 11522,
+              "total_wall_ms": 22461.2613,
+              "mean_wall_ms": 1.9494238239888908,
+              "max_wall_ms": 185.299,
+              "p95_upper_wall_ms": 16.777216
+            },
+            "journal_operation": {
+              "count": 11522,
+              "total_wall_ms": 32946.445,
+              "mean_wall_ms": 2.8594380315917376,
+              "max_wall_ms": 224.9382,
+              "p95_upper_wall_ms": 33.554432
+            },
+            "journal_validate": {
+              "count": 2117,
+              "total_wall_ms": 27605.3143,
+              "mean_wall_ms": 13.039827255550307,
+              "max_wall_ms": 164.1596,
+              "p95_upper_wall_ms": 67.108864
+            },
+            "journal_serialize": {
+              "count": 2118,
+              "total_wall_ms": 2304.9383,
+              "mean_wall_ms": 1.0882617091595845,
+              "max_wall_ms": 32.3806,
+              "p95_upper_wall_ms": 4.194304
+            },
+            "journal_compress": {
+              "count": 2118,
+              "total_wall_ms": 1852.3297,
+              "mean_wall_ms": 0.8745654863078375,
+              "max_wall_ms": 29.4143,
+              "p95_upper_wall_ms": 4.194304
+            },
+            "bot_worker_start": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_request_clone": {
+              "count": 49748,
+              "total_wall_ms": 15399.3201,
+              "mean_wall_ms": 0.30954651644287207,
+              "max_wall_ms": 1.7545,
+              "p95_upper_wall_ms": 1.048576
+            },
+            "bot_state_restore": {
+              "count": 46849,
+              "total_wall_ms": 79.3145,
+              "mean_wall_ms": 0.0016929817071869198,
+              "max_wall_ms": 0.228,
+              "p95_upper_wall_ms": 0.004096
+            },
+            "bot_inprocess_call": {
+              "count": 49748,
+              "total_wall_ms": 214432.1622,
+              "mean_wall_ms": 4.310367496180751,
+              "max_wall_ms": 21.9026,
+              "p95_upper_wall_ms": 16.777216
+            },
+            "bot_inprocess_rebuild": {
+              "count": 1000,
+              "total_wall_ms": 5400.2893,
+              "mean_wall_ms": 5.4002893,
+              "max_wall_ms": 18.0199,
+              "p95_upper_wall_ms": 16.777216
+            },
+            "bot_inprocess_append": {
+              "count": 48130,
+              "total_wall_ms": 85657.5061,
+              "mean_wall_ms": 1.7797113255765633,
+              "max_wall_ms": 8.0638,
+              "p95_upper_wall_ms": 8.388608
+            },
+            "bot_dispatch_queue": {
+              "count": 49748,
+              "total_wall_ms": 15674015.4834,
+              "mean_wall_ms": 315.06825366647905,
+              "max_wall_ms": 998.9201,
+              "p95_upper_wall_ms": 1073.741824
+            },
+            "bot_queue_discard": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "journal_full_validate": {
+              "count": 29,
+              "total_wall_ms": 1892.4821,
+              "mean_wall_ms": 65.25800344827586,
+              "max_wall_ms": 164.1589,
+              "p95_upper_wall_ms": 134.217728
+            },
+            "journal_full_serialize": {
+              "count": 29,
+              "total_wall_ms": 601.0176,
+              "mean_wall_ms": 20.724744827586207,
+              "max_wall_ms": 32.3803,
+              "p95_upper_wall_ms": 33.554432
+            }
+          },
+          "scope": "whole run including startup/warmup; nested cumulative wall times include waits and must not be summed",
+          "p95": "power-of-two nanosecond histogram upper bound, not exact sample P95",
+          "worker_roundtrip": "pipe send, Python decode/decision/encode, output receive; not interpreter-only CPU time",
+          "worker_acquire": "affinity-slot wait plus cold process startup when needed",
+          "measurement_deltas": {
+            "directory_wait": {
+              "count": 1518,
+              "total_wall_ms": 1.6667
+            },
+            "room_wait": {
+              "count": 1518,
+              "total_wall_ms": 61.515100000000004
+            },
+            "room_held": {
+              "count": 1519,
+              "total_wall_ms": 21320.8908
+            },
+            "venue_wait": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "venue_compute": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "venue_commit": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "venue_fallback": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "order_prepare": {
+              "count": 613,
+              "total_wall_ms": 255.85779999999997
+            },
+            "order_apply": {
+              "count": 614,
+              "total_wall_ms": 174.54379999999998
+            },
+            "order_receipt": {
+              "count": 614,
+              "total_wall_ms": 5.096400000000001
+            },
+            "order_journal": {
+              "count": 614,
+              "total_wall_ms": 109.7244
+            },
+            "order_publish": {
+              "count": 614,
+              "total_wall_ms": 4.912799999999999
+            },
+            "bot_state_copy": {
+              "count": 25997,
+              "total_wall_ms": 151.17190000000002
+            },
+            "bot_blocking_wait": {
+              "count": 25997,
+              "total_wall_ms": 862.3091999999999
+            },
+            "bot_turn": {
+              "count": 25997,
+              "total_wall_ms": 213978.77800000002
+            },
+            "bot_observation": {
+              "count": 25997,
+              "total_wall_ms": 5716.8752
+            },
+            "bot_wave_build": {
+              "count": 577,
+              "total_wall_ms": 213.43370000000002
+            },
+            "bot_wave_reuse": {
+              "count": 17823,
+              "total_wall_ms": 1.3385
+            },
+            "bot_event_prefilter": {
+              "count": 70186,
+              "total_wall_ms": 34361.856199999995
+            },
+            "bot_event_index": {
+              "count": 435,
+              "total_wall_ms": 32.0127
+            },
+            "bot_event_skip": {
+              "count": 18318,
+              "total_wall_ms": 0.7391
+            },
+            "bot_trigger": {
+              "count": 25997,
+              "total_wall_ms": 2923.8744999999994
+            },
+            "bot_evaluate": {
+              "count": 25997,
+              "total_wall_ms": 179146.3811
+            },
+            "bot_native_pine_evaluate": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_worker_acquire": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_wire_encode": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_worker_roundtrip": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_wire_decode": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "scheduler_admission": {
+              "count": 902,
+              "total_wall_ms": 14.3335
+            },
+            "scheduler_apply": {
+              "count": 902,
+              "total_wall_ms": 728.8141
+            },
+            "scheduler_mutation_build": {
+              "count": 902,
+              "total_wall_ms": 33.0394
+            },
+            "scheduler_checkpoint": {
+              "count": 600,
+              "total_wall_ms": 0.18880000000000002
+            },
+            "scheduler_install": {
+              "count": 902,
+              "total_wall_ms": 43.2897
+            },
+            "scheduler_materialize": {
+              "count": 14,
+              "total_wall_ms": 30.045700000000004
+            },
+            "scheduler_delta_clone": {
+              "count": 590,
+              "total_wall_ms": 2.3196999999999997
+            },
+            "scheduler_delta_between": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "scheduler_publish": {
+              "count": 1518,
+              "total_wall_ms": 197.0796
+            },
+            "journal_request_clone": {
+              "count": 903,
+              "total_wall_ms": 1.9046000000000003
+            },
+            "journal_queue": {
+              "count": 3575,
+              "total_wall_ms": 14403.303499999998
+            },
+            "journal_operation": {
+              "count": 3575,
+              "total_wall_ms": 19945.7799
+            },
+            "journal_validate": {
+              "count": 903,
+              "total_wall_ms": 16968.3497
+            },
+            "journal_serialize": {
+              "count": 903,
+              "total_wall_ms": 1383.3473999999997
+            },
+            "journal_compress": {
+              "count": 903,
+              "total_wall_ms": 1078.1179
+            },
+            "bot_worker_start": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_request_clone": {
+              "count": 25997,
+              "total_wall_ms": 8533.8593
+            },
+            "bot_state_restore": {
+              "count": 25685,
+              "total_wall_ms": 46.5498
+            },
+            "bot_inprocess_call": {
+              "count": 25997,
+              "total_wall_ms": 130838.4619
+            },
+            "bot_inprocess_rebuild": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_inprocess_append": {
+              "count": 25970,
+              "total_wall_ms": 54521.2451
+            },
+            "bot_dispatch_queue": {
+              "count": 25997,
+              "total_wall_ms": 10482321.8858
+            },
+            "bot_queue_discard": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "journal_full_validate": {
+              "count": 14,
+              "total_wall_ms": 1105.5385
+            },
+            "journal_full_serialize": {
+              "count": 14,
+              "total_wall_ms": 355.7123
+            }
+          },
+          "measurement_delta_scope": "counter snapshot after warmup through final paused metrics; includes final quiescence; P95/max remain whole-run values"
+        },
+        "errors": [],
+        "failed_qualification_gates": [
+          "configured_step_rate",
+          "literal_step_rate",
+          "no_closed_bar_backlog"
+        ],
+        "strategy_state_bytes": {
+          "instances": 1000,
+          "total": 59745226,
+          "mean": 59745.226,
+          "max": 90202
+        }
+      },
+      {
+        "label": "02-native",
+        "population": "native-pine",
+        "command": [
+          "E:\\projects\\MarketForge\\.venv\\Scripts\\python.exe",
+          "E:\\projects\\MarketForge\\scripts\\benchmark_strategy_runtime.py",
+          "--server",
+          "E:\\projects\\MarketForge\\target\\native-pine-20261013\\release\\exchange-server.exe",
+          "--output",
+          "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\abba-20x\\02-native",
+          "--counts",
+          "1000",
+          "--population",
+          "native-pine",
+          "--pine-profile",
+          "diverse-short",
+          "--sustained-input",
+          "--prewarm-bars",
+          "64",
+          "--warmup",
+          "20",
+          "--seconds",
+          "30",
+          "--interval-ms",
+          "50",
+          "--require-diagnostics",
+          "--plugin-dir",
+          "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\plugins",
+          "--pine-in-process"
+        ],
+        "exit_code": 0,
+        "report": "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\abba-20x\\02-native\\bots-1000\\report.json",
+        "failure": null,
+        "steps_per_wall_second": 20.005717106771378,
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": true,
+          "configured_40_steps_per_second": null,
+          "literal_step_rate": true,
+          "all_languages_initialized": true,
+          "no_bot_errors": true,
+          "no_input_feed_errors": true,
+          "recent_nonempty_input": true,
+          "no_closed_bar_backlog": false,
+          "all_pine_lookbacks_exercised": null,
+          "all_native_pine_lookbacks_exercised": true,
+          "all_horizon_groups_exercised": true,
+          "compiler_quiet": true,
+          "no_parallel_benchmark_server": true,
+          "diagnostic_stages_present": true
+        },
+        "latency": {
+          "view": {
+            "count": 57,
+            "p50_ms": 17.945399999916845,
+            "p95_ms": 19.80600000024424,
+            "max_ms": 23.925100000269595
+          },
+          "place": {
+            "count": 56,
+            "p50_ms": 16.459999999824504,
+            "p95_ms": 18.317800000204443,
+            "max_ms": 21.34120000027906
+          },
+          "cancel": {
+            "count": 56,
+            "p50_ms": 14.962799999921117,
+            "p95_ms": 18.427599999995437,
+            "max_ms": 31.292900000153168
+          }
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 0,
+              "p95_ms": 0,
+              "max_ms": 0
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "native-pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 194612,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 5000,
+              "p95_ms": 15000,
+              "max_ms": 15000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 0,
+              "p95": 1,
+              "max": 1
+            },
+            "instances_behind_closed_bars": 152
+          }
+        },
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 339.69921875,
+          "peak_processes": 2,
+          "average_logical_cores": 0.6594469793995287,
+          "seen_pids": [
+            21536,
+            34372
+          ],
+          "per_process": {
+            "21536": {
+              "first_elapsed": 0.03161289999979999,
+              "first_cpu_seconds": 0.015625,
+              "peak_rss_bytes": 348913664,
+              "last_elapsed": 73.02520369999957,
+              "last_cpu_seconds": 48.140625,
+              "average_logical_cores_while_sampled": 0.6593044604677833
+            },
+            "34372": {
+              "first_elapsed": 0.03161289999979999,
+              "first_cpu_seconds": 0.015625,
+              "peak_rss_bytes": 7307264,
+              "last_elapsed": 73.02520369999957,
+              "last_cpu_seconds": 0.015625,
+              "average_logical_cores_while_sampled": 0.0
+            }
+          },
+          "compiler_nonempty_samples": 0,
+          "other_server_nonempty_samples": 0,
+          "measurement": {
+            "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+            "samples": 113,
+            "average_logical_cores": 0.835099063280214,
+            "peak_sampled_rss_mib": 338.6796875
+          },
+          "errors": []
+        },
+        "peak_memory_mib": 349.3203125,
+        "average_logical_cores": 0.8333740592928127,
+        "server_sha256": "157b27b442e83b9471e1dbca0295be7839701d0b2361f18d25639ed2bed9bef8",
+        "recipe_sha256": "f98c2d506a5e7e1f543f757fc702d67dff2956032fed8f6b585f75fda41415a9",
+        "diagnostics": {
+          "stages": {
+            "directory_wait": {
+              "count": 7652,
+              "total_wall_ms": 5.8448,
+              "mean_wall_ms": 0.00076382645060115,
+              "max_wall_ms": 0.0488,
+              "p95_upper_wall_ms": 0.002048
+            },
+            "room_wait": {
+              "count": 7652,
+              "total_wall_ms": 83.8813,
+              "mean_wall_ms": 0.010962009932043909,
+              "max_wall_ms": 4.1482,
+              "p95_upper_wall_ms": 0.004096
+            },
+            "room_held": {
+              "count": 7652,
+              "total_wall_ms": 7574.9414,
+              "mean_wall_ms": 0.9899296131730267,
+              "max_wall_ms": 46.3465,
+              "p95_upper_wall_ms": 4.194304
+            },
+            "venue_wait": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "venue_compute": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "venue_commit": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "venue_fallback": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "order_prepare": {
+              "count": 2654,
+              "total_wall_ms": 587.7529,
+              "mean_wall_ms": 0.22145926902788243,
+              "max_wall_ms": 1.8294,
+              "p95_upper_wall_ms": 1.048576
+            },
+            "order_apply": {
+              "count": 2654,
+              "total_wall_ms": 528.4451,
+              "mean_wall_ms": 0.19911269781461943,
+              "max_wall_ms": 2.3617,
+              "p95_upper_wall_ms": 0.524288
+            },
+            "order_receipt": {
+              "count": 2654,
+              "total_wall_ms": 17.7917,
+              "mean_wall_ms": 0.0067037302185380555,
+              "max_wall_ms": 0.097,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "order_journal": {
+              "count": 2654,
+              "total_wall_ms": 318.3052,
+              "mean_wall_ms": 0.11993413715146947,
+              "max_wall_ms": 3.5609,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "order_publish": {
+              "count": 2654,
+              "total_wall_ms": 14.3339,
+              "mean_wall_ms": 0.0054008666164280334,
+              "max_wall_ms": 0.0815,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "bot_state_copy": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_blocking_wait": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_turn": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_observation": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_wave_build": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_wave_reuse": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_event_prefilter": {
+              "count": 990376,
+              "total_wall_ms": 87715.8797,
+              "mean_wall_ms": 0.08856826064040324,
+              "max_wall_ms": 6.0409,
+              "p95_upper_wall_ms": 0.524288
+            },
+            "bot_event_index": {
+              "count": 1005,
+              "total_wall_ms": 90.9159,
+              "mean_wall_ms": 0.09046358208955223,
+              "max_wall_ms": 0.5034,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "bot_event_skip": {
+              "count": 921829,
+              "total_wall_ms": 76.8556,
+              "mean_wall_ms": 8.33729466094037e-05,
+              "max_wall_ms": 0.2683,
+              "p95_upper_wall_ms": 0.000256
+            },
+            "bot_trigger": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_evaluate": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_native_pine_evaluate": {
+              "count": 68547,
+              "total_wall_ms": 14496.7824,
+              "mean_wall_ms": 0.21148675215545537,
+              "max_wall_ms": 1.1229,
+              "p95_upper_wall_ms": 0.524288
+            },
+            "bot_worker_acquire": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_wire_encode": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_worker_roundtrip": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_wire_decode": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "scheduler_admission": {
+              "count": 4226,
+              "total_wall_ms": 67.0113,
+              "mean_wall_ms": 0.015856909607193565,
+              "max_wall_ms": 0.2421,
+              "p95_upper_wall_ms": 0.065536
+            },
+            "scheduler_apply": {
+              "count": 4226,
+              "total_wall_ms": 1675.9855,
+              "mean_wall_ms": 0.39658909133932796,
+              "max_wall_ms": 6.6139,
+              "p95_upper_wall_ms": 2.097152
+            },
+            "scheduler_mutation_build": {
+              "count": 4226,
+              "total_wall_ms": 62.6221,
+              "mean_wall_ms": 0.014818291528632278,
+              "max_wall_ms": 3.4063,
+              "p95_upper_wall_ms": 0.008192
+            },
+            "scheduler_checkpoint": {
+              "count": 2007,
+              "total_wall_ms": 0.5912,
+              "mean_wall_ms": 0.00029456900847035376,
+              "max_wall_ms": 0.0139,
+              "p95_upper_wall_ms": 0.001024
+            },
+            "scheduler_install": {
+              "count": 4226,
+              "total_wall_ms": 84.6113,
+              "mean_wall_ms": 0.020021604353999054,
+              "max_wall_ms": 1.0427,
+              "p95_upper_wall_ms": 0.065536
+            },
+            "scheduler_materialize": {
+              "count": 57,
+              "total_wall_ms": 55.0717,
+              "mean_wall_ms": 0.9661701754385965,
+              "max_wall_ms": 3.4045,
+              "p95_upper_wall_ms": 2.097152
+            },
+            "scheduler_delta_clone": {
+              "count": 1971,
+              "total_wall_ms": 5.2117,
+              "mean_wall_ms": 0.0026441907661085744,
+              "max_wall_ms": 0.1282,
+              "p95_upper_wall_ms": 0.008192
+            },
+            "scheduler_delta_between": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "scheduler_publish": {
+              "count": 7652,
+              "total_wall_ms": 400.8394,
+              "mean_wall_ms": 0.05238361212754835,
+              "max_wall_ms": 1.3335,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "journal_request_clone": {
+              "count": 4613,
+              "total_wall_ms": 11.7546,
+              "mean_wall_ms": 0.0025481465423802295,
+              "max_wall_ms": 1.0566,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "journal_queue": {
+              "count": 16158,
+              "total_wall_ms": 801.2093,
+              "mean_wall_ms": 0.049585920287164256,
+              "max_wall_ms": 32.801,
+              "p95_upper_wall_ms": 0.065536
+            },
+            "journal_operation": {
+              "count": 16158,
+              "total_wall_ms": 4106.397,
+              "mean_wall_ms": 0.25414017823988116,
+              "max_wall_ms": 40.9759,
+              "p95_upper_wall_ms": 2.097152
+            },
+            "journal_validate": {
+              "count": 4613,
+              "total_wall_ms": 2292.8655,
+              "mean_wall_ms": 0.49704433123780617,
+              "max_wall_ms": 32.2937,
+              "p95_upper_wall_ms": 2.097152
+            },
+            "journal_serialize": {
+              "count": 4614,
+              "total_wall_ms": 257.4713,
+              "mean_wall_ms": 0.055802188990030345,
+              "max_wall_ms": 4.8537,
+              "p95_upper_wall_ms": 0.131072
+            },
+            "journal_compress": {
+              "count": 4614,
+              "total_wall_ms": 393.5656,
+              "mean_wall_ms": 0.08529813610749891,
+              "max_wall_ms": 3.9214,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "bot_worker_start": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_request_clone": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_state_restore": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_inprocess_call": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_inprocess_rebuild": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_inprocess_append": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_dispatch_queue": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_queue_discard": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "journal_full_validate": {
+              "count": 59,
+              "total_wall_ms": 1039.6623,
+              "mean_wall_ms": 17.62139491525424,
+              "max_wall_ms": 32.2922,
+              "p95_upper_wall_ms": 33.554432
+            },
+            "journal_full_serialize": {
+              "count": 59,
+              "total_wall_ms": 163.3965,
+              "mean_wall_ms": 2.7694322033898304,
+              "max_wall_ms": 4.8533,
+              "p95_upper_wall_ms": 4.194304
+            }
+          },
+          "scope": "whole run including startup/warmup; nested cumulative wall times include waits and must not be summed",
+          "p95": "power-of-two nanosecond histogram upper bound, not exact sample P95",
+          "worker_roundtrip": "pipe send, Python decode/decision/encode, output receive; not interpreter-only CPU time",
+          "worker_acquire": "affinity-slot wait plus cold process startup when needed",
+          "measurement_deltas": {
+            "directory_wait": {
+              "count": 3418,
+              "total_wall_ms": 2.7818
+            },
+            "room_wait": {
+              "count": 3418,
+              "total_wall_ms": 55.9075
+            },
+            "room_held": {
+              "count": 3418,
+              "total_wall_ms": 3795.5467
+            },
+            "venue_wait": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "venue_compute": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "venue_commit": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "venue_fallback": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "order_prepare": {
+              "count": 897,
+              "total_wall_ms": 334.26169999999996
+            },
+            "order_apply": {
+              "count": 897,
+              "total_wall_ms": 175.3086
+            },
+            "order_receipt": {
+              "count": 897,
+              "total_wall_ms": 5.933999999999999
+            },
+            "order_journal": {
+              "count": 897,
+              "total_wall_ms": 116.68050000000002
+            },
+            "order_publish": {
+              "count": 897,
+              "total_wall_ms": 4.9879
+            },
+            "bot_state_copy": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_blocking_wait": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_turn": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_observation": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_wave_build": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_wave_reuse": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_event_prefilter": {
+              "count": 594738,
+              "total_wall_ms": 55742.49340000001
+            },
+            "bot_event_index": {
+              "count": 604,
+              "total_wall_ms": 52.457699999999996
+            },
+            "bot_event_skip": {
+              "count": 554384,
+              "total_wall_ms": 45.6097
+            },
+            "bot_trigger": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_evaluate": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_native_pine_evaluate": {
+              "count": 40354,
+              "total_wall_ms": 8539.6952
+            },
+            "bot_worker_acquire": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_wire_encode": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_worker_roundtrip": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_wire_decode": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "scheduler_admission": {
+              "count": 2518,
+              "total_wall_ms": 38.7775
+            },
+            "scheduler_apply": {
+              "count": 2518,
+              "total_wall_ms": 885.6662
+            },
+            "scheduler_mutation_build": {
+              "count": 2518,
+              "total_wall_ms": 35.581500000000005
+            },
+            "scheduler_checkpoint": {
+              "count": 1067,
+              "total_wall_ms": 0.3020999999999999
+            },
+            "scheduler_install": {
+              "count": 2518,
+              "total_wall_ms": 43.3084
+            },
+            "scheduler_materialize": {
+              "count": 33,
+              "total_wall_ms": 31.740099999999998
+            },
+            "scheduler_delta_clone": {
+              "count": 1049,
+              "total_wall_ms": 2.3749000000000002
+            },
+            "scheduler_delta_between": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "scheduler_publish": {
+              "count": 3418,
+              "total_wall_ms": 210.8505
+            },
+            "journal_request_clone": {
+              "count": 2519,
+              "total_wall_ms": 3.6499000000000006
+            },
+            "journal_queue": {
+              "count": 6423,
+              "total_wall_ms": 374.92019999999997
+            },
+            "journal_operation": {
+              "count": 6423,
+              "total_wall_ms": 2170.1713
+            },
+            "journal_validate": {
+              "count": 2519,
+              "total_wall_ms": 1326.1601999999998
+            },
+            "journal_serialize": {
+              "count": 2519,
+              "total_wall_ms": 148.94189999999998
+            },
+            "journal_compress": {
+              "count": 2519,
+              "total_wall_ms": 223.7776
+            },
+            "bot_worker_start": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_request_clone": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_state_restore": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_inprocess_call": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_inprocess_rebuild": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_inprocess_append": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_dispatch_queue": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_queue_discard": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "journal_full_validate": {
+              "count": 33,
+              "total_wall_ms": 597.518
+            },
+            "journal_full_serialize": {
+              "count": 33,
+              "total_wall_ms": 95.4171
+            }
+          },
+          "measurement_delta_scope": "counter snapshot after warmup through final paused metrics; includes final quiescence; P95/max remain whole-run values"
+        },
+        "errors": [],
+        "failed_qualification_gates": [
+          "no_closed_bar_backlog"
+        ],
+        "strategy_state_bytes": {
+          "instances": 1000,
+          "total": 5560046,
+          "mean": 5560.046,
+          "max": 5904
+        }
+      },
+      {
+        "label": "03-native",
+        "population": "native-pine",
+        "command": [
+          "E:\\projects\\MarketForge\\.venv\\Scripts\\python.exe",
+          "E:\\projects\\MarketForge\\scripts\\benchmark_strategy_runtime.py",
+          "--server",
+          "E:\\projects\\MarketForge\\target\\native-pine-20261013\\release\\exchange-server.exe",
+          "--output",
+          "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\abba-20x\\03-native",
+          "--counts",
+          "1000",
+          "--population",
+          "native-pine",
+          "--pine-profile",
+          "diverse-short",
+          "--sustained-input",
+          "--prewarm-bars",
+          "64",
+          "--warmup",
+          "20",
+          "--seconds",
+          "30",
+          "--interval-ms",
+          "50",
+          "--require-diagnostics",
+          "--plugin-dir",
+          "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\plugins",
+          "--pine-in-process"
+        ],
+        "exit_code": 0,
+        "report": "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\abba-20x\\03-native\\bots-1000\\report.json",
+        "failure": null,
+        "steps_per_wall_second": 20.006655011041868,
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": true,
+          "configured_40_steps_per_second": null,
+          "literal_step_rate": true,
+          "all_languages_initialized": true,
+          "no_bot_errors": true,
+          "no_input_feed_errors": true,
+          "recent_nonempty_input": true,
+          "no_closed_bar_backlog": true,
+          "all_pine_lookbacks_exercised": null,
+          "all_native_pine_lookbacks_exercised": true,
+          "all_horizon_groups_exercised": true,
+          "compiler_quiet": true,
+          "no_parallel_benchmark_server": true,
+          "diagnostic_stages_present": true
+        },
+        "latency": {
+          "view": {
+            "count": 58,
+            "p50_ms": 17.860099999779777,
+            "p95_ms": 19.355199999608885,
+            "max_ms": 27.228899999954592
+          },
+          "place": {
+            "count": 56,
+            "p50_ms": 16.588099999808037,
+            "p95_ms": 18.15260000012131,
+            "max_ms": 19.890200000190816
+          },
+          "cancel": {
+            "count": 56,
+            "p50_ms": 14.926800000012008,
+            "p95_ms": 16.437999999652675,
+            "max_ms": 27.486899999985326
+          }
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 0,
+              "p95_ms": 0,
+              "max_ms": 0
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "native-pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 194431,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 11000,
+              "p95_ms": 11000,
+              "max_ms": 11000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "instances_behind_closed_bars": 0
+          }
+        },
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 373.2734375,
+          "peak_processes": 2,
+          "average_logical_cores": 0.5972550344799435,
+          "seen_pids": [
+            26676,
+            37084
+          ],
+          "per_process": {
+            "37084": {
+              "first_elapsed": 0.031928899999911664,
+              "first_cpu_seconds": 0.0,
+              "peak_rss_bytes": 7307264,
+              "last_elapsed": 72.91169179999997,
+              "last_cpu_seconds": 0.0,
+              "average_logical_cores_while_sampled": 0.0
+            },
+            "26676": {
+              "first_elapsed": 0.031928899999911664,
+              "first_cpu_seconds": 0.03125,
+              "peak_rss_bytes": 384118784,
+              "last_elapsed": 72.91169179999997,
+              "last_cpu_seconds": 43.546875,
+              "average_logical_cores_while_sampled": 0.5970879057291769
+            }
+          },
+          "compiler_nonempty_samples": 0,
+          "other_server_nonempty_samples": 0,
+          "measurement": {
+            "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+            "samples": 113,
+            "average_logical_cores": 0.8455695227753528,
+            "peak_sampled_rss_mib": 373.1171875
+          },
+          "errors": []
+        },
+        "peak_memory_mib": 383.1875,
+        "average_logical_cores": 0.8452545004054376,
+        "server_sha256": "157b27b442e83b9471e1dbca0295be7839701d0b2361f18d25639ed2bed9bef8",
+        "recipe_sha256": "f98c2d506a5e7e1f543f757fc702d67dff2956032fed8f6b585f75fda41415a9",
+        "diagnostics": {
+          "stages": {
+            "directory_wait": {
+              "count": 7650,
+              "total_wall_ms": 5.6974,
+              "mean_wall_ms": 0.0007447581699346405,
+              "max_wall_ms": 0.0298,
+              "p95_upper_wall_ms": 0.002048
+            },
+            "room_wait": {
+              "count": 7650,
+              "total_wall_ms": 68.7601,
+              "mean_wall_ms": 0.008988248366013071,
+              "max_wall_ms": 6.3929,
+              "p95_upper_wall_ms": 0.002048
+            },
+            "room_held": {
+              "count": 7650,
+              "total_wall_ms": 7987.4136,
+              "mean_wall_ms": 1.0441063529411765,
+              "max_wall_ms": 31.4628,
+              "p95_upper_wall_ms": 4.194304
+            },
+            "venue_wait": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "venue_compute": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "venue_commit": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "venue_fallback": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "order_prepare": {
+              "count": 2640,
+              "total_wall_ms": 703.5828,
+              "mean_wall_ms": 0.26650863636363636,
+              "max_wall_ms": 2.0021,
+              "p95_upper_wall_ms": 1.048576
+            },
+            "order_apply": {
+              "count": 2640,
+              "total_wall_ms": 495.7697,
+              "mean_wall_ms": 0.18779155303030304,
+              "max_wall_ms": 1.5399,
+              "p95_upper_wall_ms": 0.524288
+            },
+            "order_receipt": {
+              "count": 2640,
+              "total_wall_ms": 16.5476,
+              "mean_wall_ms": 0.006268030303030303,
+              "max_wall_ms": 0.0894,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "order_journal": {
+              "count": 2640,
+              "total_wall_ms": 316.5598,
+              "mean_wall_ms": 0.11990901515151516,
+              "max_wall_ms": 6.3904,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "order_publish": {
+              "count": 2640,
+              "total_wall_ms": 12.7727,
+              "mean_wall_ms": 0.004838143939393939,
+              "max_wall_ms": 0.1058,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "bot_state_copy": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_blocking_wait": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_turn": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_observation": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_wave_build": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_wave_reuse": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_event_prefilter": {
+              "count": 985289,
+              "total_wall_ms": 100309.7852,
+              "mean_wall_ms": 0.10180747496419833,
+              "max_wall_ms": 5.3491,
+              "p95_upper_wall_ms": 0.524288
+            },
+            "bot_event_index": {
+              "count": 1001,
+              "total_wall_ms": 90.7845,
+              "mean_wall_ms": 0.09069380619380618,
+              "max_wall_ms": 0.3478,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "bot_event_skip": {
+              "count": 913549,
+              "total_wall_ms": 74.401,
+              "mean_wall_ms": 8.14417179592994e-05,
+              "max_wall_ms": 0.2793,
+              "p95_upper_wall_ms": 0.000256
+            },
+            "bot_trigger": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_evaluate": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_native_pine_evaluate": {
+              "count": 71740,
+              "total_wall_ms": 15021.6166,
+              "mean_wall_ms": 0.20938969333705046,
+              "max_wall_ms": 1.1793,
+              "p95_upper_wall_ms": 0.524288
+            },
+            "bot_worker_acquire": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_wire_encode": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_worker_roundtrip": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_wire_decode": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "scheduler_admission": {
+              "count": 4238,
+              "total_wall_ms": 61.7124,
+              "mean_wall_ms": 0.014561680037753657,
+              "max_wall_ms": 0.321,
+              "p95_upper_wall_ms": 0.065536
+            },
+            "scheduler_apply": {
+              "count": 4238,
+              "total_wall_ms": 1952.8257,
+              "mean_wall_ms": 0.4607894525719679,
+              "max_wall_ms": 5.8892,
+              "p95_upper_wall_ms": 2.097152
+            },
+            "scheduler_mutation_build": {
+              "count": 4238,
+              "total_wall_ms": 62.7721,
+              "mean_wall_ms": 0.01481172722982539,
+              "max_wall_ms": 2.2862,
+              "p95_upper_wall_ms": 0.008192
+            },
+            "scheduler_checkpoint": {
+              "count": 2530,
+              "total_wall_ms": 0.6697,
+              "mean_wall_ms": 0.00026470355731225296,
+              "max_wall_ms": 0.0305,
+              "p95_upper_wall_ms": 0.001024
+            },
+            "scheduler_install": {
+              "count": 4238,
+              "total_wall_ms": 95.6098,
+              "mean_wall_ms": 0.022560122699386502,
+              "max_wall_ms": 0.7827,
+              "p95_upper_wall_ms": 0.131072
+            },
+            "scheduler_materialize": {
+              "count": 62,
+              "total_wall_ms": 53.4173,
+              "mean_wall_ms": 0.8615693548387097,
+              "max_wall_ms": 2.2845,
+              "p95_upper_wall_ms": 2.097152
+            },
+            "scheduler_delta_clone": {
+              "count": 2485,
+              "total_wall_ms": 7.0103,
+              "mean_wall_ms": 0.002821046277665996,
+              "max_wall_ms": 0.0295,
+              "p95_upper_wall_ms": 0.008192
+            },
+            "scheduler_delta_between": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "scheduler_publish": {
+              "count": 7650,
+              "total_wall_ms": 388.1624,
+              "mean_wall_ms": 0.05074018300653595,
+              "max_wall_ms": 0.7794,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "journal_request_clone": {
+              "count": 4625,
+              "total_wall_ms": 15.072,
+              "mean_wall_ms": 0.003258810810810811,
+              "max_wall_ms": 0.8166,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "journal_queue": {
+              "count": 16105,
+              "total_wall_ms": 737.5891,
+              "mean_wall_ms": 0.04579876435889475,
+              "max_wall_ms": 23.9089,
+              "p95_upper_wall_ms": 0.065536
+            },
+            "journal_operation": {
+              "count": 16105,
+              "total_wall_ms": 4293.5618,
+              "mean_wall_ms": 0.266598062713443,
+              "max_wall_ms": 28.3017,
+              "p95_upper_wall_ms": 2.097152
+            },
+            "journal_validate": {
+              "count": 4625,
+              "total_wall_ms": 2262.3607,
+              "mean_wall_ms": 0.4891590702702703,
+              "max_wall_ms": 20.4906,
+              "p95_upper_wall_ms": 2.097152
+            },
+            "journal_serialize": {
+              "count": 4626,
+              "total_wall_ms": 246.7524,
+              "mean_wall_ms": 0.053340337224383916,
+              "max_wall_ms": 3.5727,
+              "p95_upper_wall_ms": 0.131072
+            },
+            "journal_compress": {
+              "count": 4626,
+              "total_wall_ms": 428.1887,
+              "mean_wall_ms": 0.09256132728058798,
+              "max_wall_ms": 3.606,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "bot_worker_start": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_request_clone": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_state_restore": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_inprocess_call": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_inprocess_rebuild": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_inprocess_append": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_dispatch_queue": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_queue_discard": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "journal_full_validate": {
+              "count": 64,
+              "total_wall_ms": 1058.3031,
+              "mean_wall_ms": 16.5359859375,
+              "max_wall_ms": 20.4897,
+              "p95_upper_wall_ms": 33.554432
+            },
+            "journal_full_serialize": {
+              "count": 64,
+              "total_wall_ms": 160.2543,
+              "mean_wall_ms": 2.5039734375,
+              "max_wall_ms": 3.5723,
+              "p95_upper_wall_ms": 4.194304
+            }
+          },
+          "scope": "whole run including startup/warmup; nested cumulative wall times include waits and must not be summed",
+          "p95": "power-of-two nanosecond histogram upper bound, not exact sample P95",
+          "worker_roundtrip": "pipe send, Python decode/decision/encode, output receive; not interpreter-only CPU time",
+          "worker_acquire": "affinity-slot wait plus cold process startup when needed",
+          "measurement_deltas": {
+            "directory_wait": {
+              "count": 3410,
+              "total_wall_ms": 2.9031000000000002
+            },
+            "room_wait": {
+              "count": 3410,
+              "total_wall_ms": 40.1862
+            },
+            "room_held": {
+              "count": 3410,
+              "total_wall_ms": 4353.8289
+            },
+            "venue_wait": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "venue_compute": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "venue_commit": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "venue_fallback": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "order_prepare": {
+              "count": 890,
+              "total_wall_ms": 446.89590000000004
+            },
+            "order_apply": {
+              "count": 890,
+              "total_wall_ms": 173.3116
+            },
+            "order_receipt": {
+              "count": 890,
+              "total_wall_ms": 5.884699999999999
+            },
+            "order_journal": {
+              "count": 890,
+              "total_wall_ms": 135.4842
+            },
+            "order_publish": {
+              "count": 890,
+              "total_wall_ms": 4.532400000000001
+            },
+            "bot_state_copy": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_blocking_wait": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_turn": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_observation": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_wave_build": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_wave_reuse": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_event_prefilter": {
+              "count": 590341,
+              "total_wall_ms": 66752.14970000001
+            },
+            "bot_event_index": {
+              "count": 600,
+              "total_wall_ms": 55.678
+            },
+            "bot_event_skip": {
+              "count": 547724,
+              "total_wall_ms": 44.4984
+            },
+            "bot_trigger": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_evaluate": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_native_pine_evaluate": {
+              "count": 42617,
+              "total_wall_ms": 9174.069199999998
+            },
+            "bot_worker_acquire": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_wire_encode": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_worker_roundtrip": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_wire_decode": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "scheduler_admission": {
+              "count": 2517,
+              "total_wall_ms": 38.2304
+            },
+            "scheduler_apply": {
+              "count": 2517,
+              "total_wall_ms": 1121.1075
+            },
+            "scheduler_mutation_build": {
+              "count": 2517,
+              "total_wall_ms": 39.3903
+            },
+            "scheduler_checkpoint": {
+              "count": 1422,
+              "total_wall_ms": 0.39509999999999995
+            },
+            "scheduler_install": {
+              "count": 2517,
+              "total_wall_ms": 53.988800000000005
+            },
+            "scheduler_materialize": {
+              "count": 37,
+              "total_wall_ms": 34.1121
+            },
+            "scheduler_delta_clone": {
+              "count": 1395,
+              "total_wall_ms": 3.8215
+            },
+            "scheduler_delta_between": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "scheduler_publish": {
+              "count": 3410,
+              "total_wall_ms": 219.38299999999998
+            },
+            "journal_request_clone": {
+              "count": 2518,
+              "total_wall_ms": 6.2089
+            },
+            "journal_queue": {
+              "count": 6393,
+              "total_wall_ms": 429.5975
+            },
+            "journal_operation": {
+              "count": 6393,
+              "total_wall_ms": 2458.4962000000005
+            },
+            "journal_validate": {
+              "count": 2518,
+              "total_wall_ms": 1379.9207000000001
+            },
+            "journal_serialize": {
+              "count": 2518,
+              "total_wall_ms": 147.85539999999997
+            },
+            "journal_compress": {
+              "count": 2518,
+              "total_wall_ms": 260.3595
+            },
+            "bot_worker_start": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_request_clone": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_state_restore": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_inprocess_call": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_inprocess_rebuild": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_inprocess_append": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_dispatch_queue": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_queue_discard": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "journal_full_validate": {
+              "count": 37,
+              "total_wall_ms": 644.5070000000001
+            },
+            "journal_full_serialize": {
+              "count": 37,
+              "total_wall_ms": 95.9393
+            }
+          },
+          "measurement_delta_scope": "counter snapshot after warmup through final paused metrics; includes final quiescence; P95/max remain whole-run values"
+        },
+        "errors": [],
+        "failed_qualification_gates": [],
+        "strategy_state_bytes": {
+          "instances": 1000,
+          "total": 5560781,
+          "mean": 5560.781,
+          "max": 5916
+        }
+      },
+      {
+        "label": "04-pine",
+        "population": "pine",
+        "command": [
+          "E:\\projects\\MarketForge\\.venv\\Scripts\\python.exe",
+          "E:\\projects\\MarketForge\\scripts\\benchmark_strategy_runtime.py",
+          "--server",
+          "E:\\projects\\MarketForge\\target\\native-pine-20261013\\release\\exchange-server.exe",
+          "--output",
+          "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\abba-20x\\04-pine",
+          "--counts",
+          "1000",
+          "--population",
+          "pine",
+          "--pine-profile",
+          "diverse-short",
+          "--sustained-input",
+          "--prewarm-bars",
+          "64",
+          "--warmup",
+          "20",
+          "--seconds",
+          "30",
+          "--interval-ms",
+          "50",
+          "--require-diagnostics",
+          "--plugin-dir",
+          "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\plugins",
+          "--pine-in-process"
+        ],
+        "exit_code": 0,
+        "report": "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\abba-20x\\04-pine\\bots-1000\\report.json",
+        "failure": null,
+        "steps_per_wall_second": 13.974967556678143,
+        "qualified": {
+          "order_p95_under_250ms": true,
+          "configured_step_rate": false,
+          "configured_40_steps_per_second": null,
+          "literal_step_rate": false,
+          "all_languages_initialized": true,
+          "no_bot_errors": true,
+          "no_input_feed_errors": true,
+          "recent_nonempty_input": true,
+          "no_closed_bar_backlog": false,
+          "all_pine_lookbacks_exercised": true,
+          "all_native_pine_lookbacks_exercised": null,
+          "all_horizon_groups_exercised": true,
+          "compiler_quiet": true,
+          "no_parallel_benchmark_server": true,
+          "diagnostic_stages_present": true
+        },
+        "latency": {
+          "view": {
+            "count": 55,
+            "p50_ms": 22.326300000258925,
+            "p95_ms": 109.7420000000966,
+            "max_ms": 256.2804999997752
+          },
+          "place": {
+            "count": 52,
+            "p50_ms": 31.410300000061397,
+            "p95_ms": 131.496199999674,
+            "max_ms": 163.77959999999803
+          },
+          "cancel": {
+            "count": 52,
+            "p50_ms": 16.084300000329677,
+            "p95_ms": 72.77760000033595,
+            "max_ms": 86.10790000011548
+          }
+        },
+        "language_groups": {
+          "native": {
+            "instances": 38,
+            "initialized": 38,
+            "evaluated_bars": 0,
+            "observed": 38,
+            "lag_sim_ms": {
+              "count": 38,
+              "p50_ms": 3000,
+              "p95_ms": 5000,
+              "max_ms": 5000
+            },
+            "closed_bar_backlog": null,
+            "instances_behind_closed_bars": 0
+          },
+          "pine": {
+            "instances": 1000,
+            "initialized": 1000,
+            "evaluated_bars": 175504,
+            "observed": 1000,
+            "lag_sim_ms": {
+              "count": 1000,
+              "p50_ms": 13000,
+              "p95_ms": 37000,
+              "max_ms": 40000
+            },
+            "closed_bar_backlog": {
+              "count": 1000,
+              "p50": 1,
+              "p95": 2,
+              "max": 2
+            },
+            "instances_behind_closed_bars": 631
+          }
+        },
+        "process_tree": {
+          "scope": "server and live descendants, sampled every 250ms including startup/warmup/measurement",
+          "limitations": "sampled summed working set; shared pages counted per process; short-lived processes may be missed",
+          "peak_sampled_rss_mib": 3813.58203125,
+          "peak_processes": 2,
+          "average_logical_cores": 4.151257133206481,
+          "seen_pids": [
+            34952,
+            37852
+          ],
+          "per_process": {
+            "34952": {
+              "first_elapsed": 0.030232900000100926,
+              "first_cpu_seconds": 0.015625,
+              "peak_rss_bytes": 3991547904,
+              "last_elapsed": 80.86782249999987,
+              "last_cpu_seconds": 335.6875,
+              "average_logical_cores_while_sampled": 4.15242310738074
+            },
+            "37852": {
+              "first_elapsed": 0.030232900000100926,
+              "first_cpu_seconds": 0.015625,
+              "peak_rss_bytes": 7303168,
+              "last_elapsed": 80.60386199999994,
+              "last_cpu_seconds": 0.015625,
+              "average_logical_cores_while_sampled": 0.0
+            }
+          },
+          "compiler_nonempty_samples": 0,
+          "other_server_nonempty_samples": 0,
+          "measurement": {
+            "scope": "samples wholly inside the requested measurement window; excludes prewarm/startup/warmup",
+            "samples": 110,
+            "average_logical_cores": 6.431321996943511,
+            "peak_sampled_rss_mib": 3813.58203125
+          },
+          "errors": []
+        },
+        "peak_memory_mib": 3855.13671875,
+        "average_logical_cores": 6.432001932949405,
+        "server_sha256": "157b27b442e83b9471e1dbca0295be7839701d0b2361f18d25639ed2bed9bef8",
+        "recipe_sha256": "16dda3d26595820d47a057d00348c09a7b9d4001c9b1827fe05ca4d27df38099",
+        "diagnostics": {
+          "stages": {
+            "directory_wait": {
+              "count": 4409,
+              "total_wall_ms": 3.9267,
+              "mean_wall_ms": 0.0008906101156724881,
+              "max_wall_ms": 0.0963,
+              "p95_upper_wall_ms": 0.004096
+            },
+            "room_wait": {
+              "count": 4409,
+              "total_wall_ms": 175.1032,
+              "mean_wall_ms": 0.039714946699931954,
+              "max_wall_ms": 64.2416,
+              "p95_upper_wall_ms": 0.004096
+            },
+            "room_held": {
+              "count": 4409,
+              "total_wall_ms": 38074.0779,
+              "mean_wall_ms": 8.635535926513949,
+              "max_wall_ms": 250.024,
+              "p95_upper_wall_ms": 67.108864
+            },
+            "venue_wait": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "venue_compute": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "venue_commit": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "venue_fallback": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "order_prepare": {
+              "count": 2120,
+              "total_wall_ms": 505.5132,
+              "mean_wall_ms": 0.23844962264150943,
+              "max_wall_ms": 1.5048,
+              "p95_upper_wall_ms": 1.048576
+            },
+            "order_apply": {
+              "count": 2120,
+              "total_wall_ms": 520.6842,
+              "mean_wall_ms": 0.24560575471698115,
+              "max_wall_ms": 1.9748,
+              "p95_upper_wall_ms": 1.048576
+            },
+            "order_receipt": {
+              "count": 2120,
+              "total_wall_ms": 15.5201,
+              "mean_wall_ms": 0.007320801886792453,
+              "max_wall_ms": 0.2016,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "order_journal": {
+              "count": 2120,
+              "total_wall_ms": 295.5678,
+              "mean_wall_ms": 0.13941877358490568,
+              "max_wall_ms": 8.8309,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "order_publish": {
+              "count": 2120,
+              "total_wall_ms": 12.8748,
+              "mean_wall_ms": 0.006073018867924529,
+              "max_wall_ms": 0.0608,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "bot_state_copy": {
+              "count": 43866,
+              "total_wall_ms": 261.0663,
+              "mean_wall_ms": 0.005951449870058816,
+              "max_wall_ms": 0.2814,
+              "p95_upper_wall_ms": 0.016384
+            },
+            "bot_blocking_wait": {
+              "count": 43866,
+              "total_wall_ms": 1332.801,
+              "mean_wall_ms": 0.03038346327451785,
+              "max_wall_ms": 0.9404,
+              "p95_upper_wall_ms": 0.131072
+            },
+            "bot_turn": {
+              "count": 43866,
+              "total_wall_ms": 342064.2058,
+              "mean_wall_ms": 7.797934751288014,
+              "max_wall_ms": 26.2235,
+              "p95_upper_wall_ms": 16.777216
+            },
+            "bot_observation": {
+              "count": 43866,
+              "total_wall_ms": 10174.4452,
+              "mean_wall_ms": 0.23194376510281312,
+              "max_wall_ms": 6.0474,
+              "p95_upper_wall_ms": 1.048576
+            },
+            "bot_wave_build": {
+              "count": 948,
+              "total_wall_ms": 447.2845,
+              "mean_wall_ms": 0.4718190928270042,
+              "max_wall_ms": 1.9994,
+              "p95_upper_wall_ms": 1.048576
+            },
+            "bot_wave_reuse": {
+              "count": 27424,
+              "total_wall_ms": 2.3106,
+              "mean_wall_ms": 8.42546674445741e-05,
+              "max_wall_ms": 0.0545,
+              "p95_upper_wall_ms": 0.000128
+            },
+            "bot_event_prefilter": {
+              "count": 112414,
+              "total_wall_ms": 70838.339,
+              "mean_wall_ms": 0.630155843578202,
+              "max_wall_ms": 12.877,
+              "p95_upper_wall_ms": 8.388608
+            },
+            "bot_event_index": {
+              "count": 730,
+              "total_wall_ms": 74.4766,
+              "mean_wall_ms": 0.1020227397260274,
+              "max_wall_ms": 6.3315,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "bot_event_skip": {
+              "count": 28927,
+              "total_wall_ms": 1.1457,
+              "mean_wall_ms": 3.960659591385211e-05,
+              "max_wall_ms": 0.0014,
+              "p95_upper_wall_ms": 0.000128
+            },
+            "bot_trigger": {
+              "count": 43866,
+              "total_wall_ms": 4733.4426,
+              "mean_wall_ms": 0.10790686636575024,
+              "max_wall_ms": 0.6957,
+              "p95_upper_wall_ms": 0.262144
+            },
+            "bot_evaluate": {
+              "count": 43866,
+              "total_wall_ms": 272370.2088,
+              "mean_wall_ms": 6.2091416769251815,
+              "max_wall_ms": 22.4645,
+              "p95_upper_wall_ms": 16.777216
+            },
+            "bot_native_pine_evaluate": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_worker_acquire": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_wire_encode": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_worker_roundtrip": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_wire_decode": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "scheduler_admission": {
+              "count": 1517,
+              "total_wall_ms": 22.168,
+              "mean_wall_ms": 0.014613052076466711,
+              "max_wall_ms": 0.1084,
+              "p95_upper_wall_ms": 0.065536
+            },
+            "scheduler_apply": {
+              "count": 1517,
+              "total_wall_ms": 4087.7902,
+              "mean_wall_ms": 2.694654054054054,
+              "max_wall_ms": 64.4883,
+              "p95_upper_wall_ms": 16.777216
+            },
+            "scheduler_mutation_build": {
+              "count": 1517,
+              "total_wall_ms": 58.0876,
+              "mean_wall_ms": 0.038291100856954516,
+              "max_wall_ms": 5.4383,
+              "p95_upper_wall_ms": 0.032768
+            },
+            "scheduler_checkpoint": {
+              "count": 1325,
+              "total_wall_ms": 0.519,
+              "mean_wall_ms": 0.0003916981132075472,
+              "max_wall_ms": 0.0078,
+              "p95_upper_wall_ms": 0.001024
+            },
+            "scheduler_install": {
+              "count": 1517,
+              "total_wall_ms": 143.7751,
+              "mean_wall_ms": 0.09477593935398813,
+              "max_wall_ms": 0.9382,
+              "p95_upper_wall_ms": 0.524288
+            },
+            "scheduler_materialize": {
+              "count": 28,
+              "total_wall_ms": 49.5613,
+              "mean_wall_ms": 1.7700464285714286,
+              "max_wall_ms": 5.4367,
+              "p95_upper_wall_ms": 4.194304
+            },
+            "scheduler_delta_clone": {
+              "count": 1297,
+              "total_wall_ms": 7.3713,
+              "mean_wall_ms": 0.005683346183500386,
+              "max_wall_ms": 0.4259,
+              "p95_upper_wall_ms": 0.032768
+            },
+            "scheduler_delta_between": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "scheduler_publish": {
+              "count": 4409,
+              "total_wall_ms": 360.0117,
+              "mean_wall_ms": 0.08165382172828306,
+              "max_wall_ms": 1.8973,
+              "p95_upper_wall_ms": 0.524288
+            },
+            "journal_request_clone": {
+              "count": 1904,
+              "total_wall_ms": 22.8312,
+              "mean_wall_ms": 0.011991176470588236,
+              "max_wall_ms": 1.7011,
+              "p95_upper_wall_ms": 0.065536
+            },
+            "journal_queue": {
+              "count": 11126,
+              "total_wall_ms": 22886.4795,
+              "mean_wall_ms": 2.0570267391695127,
+              "max_wall_ms": 236.2725,
+              "p95_upper_wall_ms": 33.554432
+            },
+            "journal_operation": {
+              "count": 11126,
+              "total_wall_ms": 32264.5535,
+              "mean_wall_ms": 2.8999239169512854,
+              "max_wall_ms": 240.3985,
+              "p95_upper_wall_ms": 33.554432
+            },
+            "journal_validate": {
+              "count": 1904,
+              "total_wall_ms": 26367.6426,
+              "mean_wall_ms": 13.848551785714285,
+              "max_wall_ms": 175.2194,
+              "p95_upper_wall_ms": 67.108864
+            },
+            "journal_serialize": {
+              "count": 1905,
+              "total_wall_ms": 2500.9041,
+              "mean_wall_ms": 1.3128105511811023,
+              "max_wall_ms": 42.5776,
+              "p95_upper_wall_ms": 4.194304
+            },
+            "journal_compress": {
+              "count": 1905,
+              "total_wall_ms": 1931.3968,
+              "mean_wall_ms": 1.0138565879265091,
+              "max_wall_ms": 37.7925,
+              "p95_upper_wall_ms": 4.194304
+            },
+            "bot_worker_start": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "bot_request_clone": {
+              "count": 43866,
+              "total_wall_ms": 14247.0765,
+              "mean_wall_ms": 0.32478631514156747,
+              "max_wall_ms": 2.194,
+              "p95_upper_wall_ms": 1.048576
+            },
+            "bot_state_restore": {
+              "count": 39242,
+              "total_wall_ms": 69.0733,
+              "mean_wall_ms": 0.001760188063809184,
+              "max_wall_ms": 0.2807,
+              "p95_upper_wall_ms": 0.004096
+            },
+            "bot_inprocess_call": {
+              "count": 43866,
+              "total_wall_ms": 195586.1386,
+              "mean_wall_ms": 4.458718337664705,
+              "max_wall_ms": 21.2384,
+              "p95_upper_wall_ms": 16.777216
+            },
+            "bot_inprocess_rebuild": {
+              "count": 1000,
+              "total_wall_ms": 5399.2667,
+              "mean_wall_ms": 5.3992667,
+              "max_wall_ms": 17.199,
+              "p95_upper_wall_ms": 16.777216
+            },
+            "bot_inprocess_append": {
+              "count": 42318,
+              "total_wall_ms": 77450.7352,
+              "mean_wall_ms": 1.8302078359090694,
+              "max_wall_ms": 10.352,
+              "p95_upper_wall_ms": 4.194304
+            },
+            "bot_dispatch_queue": {
+              "count": 43866,
+              "total_wall_ms": 18289151.5527,
+              "mean_wall_ms": 416.9322836068937,
+              "max_wall_ms": 1004.7107,
+              "p95_upper_wall_ms": 1073.741824
+            },
+            "bot_queue_discard": {
+              "count": 0,
+              "total_wall_ms": 0.0,
+              "mean_wall_ms": null,
+              "max_wall_ms": 0.0,
+              "p95_upper_wall_ms": null
+            },
+            "journal_full_validate": {
+              "count": 30,
+              "total_wall_ms": 2356.6619,
+              "mean_wall_ms": 78.55539666666667,
+              "max_wall_ms": 175.2187,
+              "p95_upper_wall_ms": 268.435456
+            },
+            "journal_full_serialize": {
+              "count": 30,
+              "total_wall_ms": 755.9323,
+              "mean_wall_ms": 25.19774333333333,
+              "max_wall_ms": 42.5764,
+              "p95_upper_wall_ms": 67.108864
+            }
+          },
+          "scope": "whole run including startup/warmup; nested cumulative wall times include waits and must not be summed",
+          "p95": "power-of-two nanosecond histogram upper bound, not exact sample P95",
+          "worker_roundtrip": "pipe send, Python decode/decision/encode, output receive; not interpreter-only CPU time",
+          "worker_acquire": "affinity-slot wait plus cold process startup when needed",
+          "measurement_deltas": {
+            "directory_wait": {
+              "count": 1430,
+              "total_wall_ms": 1.4907999999999997
+            },
+            "room_wait": {
+              "count": 1430,
+              "total_wall_ms": 126.95849999999999
+            },
+            "room_held": {
+              "count": 1431,
+              "total_wall_ms": 22427.173499999997
+            },
+            "venue_wait": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "venue_compute": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "venue_commit": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "venue_fallback": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "order_prepare": {
+              "count": 566,
+              "total_wall_ms": 290.4682
+            },
+            "order_apply": {
+              "count": 566,
+              "total_wall_ms": 168.66430000000003
+            },
+            "order_receipt": {
+              "count": 566,
+              "total_wall_ms": 4.7865
+            },
+            "order_journal": {
+              "count": 566,
+              "total_wall_ms": 109.69279999999998
+            },
+            "order_publish": {
+              "count": 566,
+              "total_wall_ms": 4.3645
+            },
+            "bot_state_copy": {
+              "count": 24758,
+              "total_wall_ms": 146.4071
+            },
+            "bot_blocking_wait": {
+              "count": 24758,
+              "total_wall_ms": 776.7203
+            },
+            "bot_turn": {
+              "count": 24774,
+              "total_wall_ms": 206246.4903
+            },
+            "bot_observation": {
+              "count": 24758,
+              "total_wall_ms": 6607.0566
+            },
+            "bot_wave_build": {
+              "count": 534,
+              "total_wall_ms": 282.831
+            },
+            "bot_wave_reuse": {
+              "count": 15320,
+              "total_wall_ms": 1.22
+            },
+            "bot_event_prefilter": {
+              "count": 63251,
+              "total_wall_ms": 50460.01670000001
+            },
+            "bot_event_index": {
+              "count": 423,
+              "total_wall_ms": 37.13
+            },
+            "bot_event_skip": {
+              "count": 15949,
+              "total_wall_ms": 0.6507999999999999
+            },
+            "bot_trigger": {
+              "count": 24758,
+              "total_wall_ms": 2770.0278000000003
+            },
+            "bot_evaluate": {
+              "count": 24774,
+              "total_wall_ms": 157185.7808
+            },
+            "bot_native_pine_evaluate": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_worker_acquire": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_wire_encode": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_worker_roundtrip": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_wire_decode": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "scheduler_admission": {
+              "count": 861,
+              "total_wall_ms": 11.9658
+            },
+            "scheduler_apply": {
+              "count": 861,
+              "total_wall_ms": 2284.0267
+            },
+            "scheduler_mutation_build": {
+              "count": 861,
+              "total_wall_ms": 34.321200000000005
+            },
+            "scheduler_checkpoint": {
+              "count": 743,
+              "total_wall_ms": 0.2637
+            },
+            "scheduler_install": {
+              "count": 862,
+              "total_wall_ms": 73.03420000000001
+            },
+            "scheduler_materialize": {
+              "count": 16,
+              "total_wall_ms": 30.055400000000002
+            },
+            "scheduler_delta_clone": {
+              "count": 727,
+              "total_wall_ms": 3.6361999999999997
+            },
+            "scheduler_delta_between": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "scheduler_publish": {
+              "count": 1431,
+              "total_wall_ms": 183.1116
+            },
+            "journal_request_clone": {
+              "count": 862,
+              "total_wall_ms": 10.1115
+            },
+            "journal_queue": {
+              "count": 3326,
+              "total_wall_ms": 14359.411800000002
+            },
+            "journal_operation": {
+              "count": 3327,
+              "total_wall_ms": 19457.180200000003
+            },
+            "journal_validate": {
+              "count": 863,
+              "total_wall_ms": 16070.6022
+            },
+            "journal_serialize": {
+              "count": 863,
+              "total_wall_ms": 1515.6921000000002
+            },
+            "journal_compress": {
+              "count": 863,
+              "total_wall_ms": 1200.7116999999998
+            },
+            "bot_worker_start": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_request_clone": {
+              "count": 24758,
+              "total_wall_ms": 7732.246399999999
+            },
+            "bot_state_restore": {
+              "count": 22686,
+              "total_wall_ms": 39.7641
+            },
+            "bot_inprocess_call": {
+              "count": 24774,
+              "total_wall_ms": 112985.6662
+            },
+            "bot_inprocess_rebuild": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "bot_inprocess_append": {
+              "count": 24627,
+              "total_wall_ms": 46387.4822
+            },
+            "bot_dispatch_queue": {
+              "count": 24758,
+              "total_wall_ms": 11743596.347900001
+            },
+            "bot_queue_discard": {
+              "count": 0,
+              "total_wall_ms": 0.0
+            },
+            "journal_full_validate": {
+              "count": 16,
+              "total_wall_ms": 1582.6171
+            },
+            "journal_full_serialize": {
+              "count": 16,
+              "total_wall_ms": 450.34240000000005
+            }
+          },
+          "measurement_delta_scope": "counter snapshot after warmup through final paused metrics; includes final quiescence; P95/max remain whole-run values"
+        },
+        "errors": [],
+        "failed_qualification_gates": [
+          "configured_step_rate",
+          "literal_step_rate",
+          "no_closed_bar_backlog"
+        ],
+        "strategy_state_bytes": {
+          "instances": 1000,
+          "total": 58623691,
+          "mean": 58623.691,
+          "max": 88768
+        }
+      }
+    ],
+    "normalized_recipe_hashes": [
+      "83c807b3f8c89916e3c8dc5066817fffcb0925e91b2b60639c6c8ee1ad42930b",
+      "83c807b3f8c89916e3c8dc5066817fffcb0925e91b2b60639c6c8ee1ad42930b",
+      "83c807b3f8c89916e3c8dc5066817fffcb0925e91b2b60639c6c8ee1ad42930b",
+      "83c807b3f8c89916e3c8dc5066817fffcb0925e91b2b60639c6c8ee1ad42930b"
+    ],
+    "initial_candle_hashes": [
+      "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2",
+      "11b84c02f79a67dca989f0370cd45c26c42074be7e10a51df1bc5f959d4f11a2"
+    ],
+    "identical_normalized_recipes": true,
+    "identical_initial_candles": true,
+    "scope": "same binary, same initial market, source parameters, funds and account identities; subsequent asynchronous trajectories and work counts may differ; memory journal, short bounded windows",
+    "original_raw_order_receipt": "E:\\projects\\MarketForge\\.local\\native-pine-20261013\\abba-20x\\comparison.json",
+    "raw_order_normalized_recipe_hashes": [
+      "16dda3d26595820d47a057d00348c09a7b9d4001c9b1827fe05ca4d27df38099",
+      "9dc455d8dafc8777cebe9e9e69593f0dd76180f68d0404c38422d39f7cadeff3",
+      "9dc455d8dafc8777cebe9e9e69593f0dd76180f68d0404c38422d39f7cadeff3",
+      "16dda3d26595820d47a057d00348c09a7b9d4001c9b1827fe05ca4d27df38099"
+    ],
+    "normalization_correction": "Raw normalized recipe JSON differed only in object key insertion order. Full parsed objects are equal; these hashes use sorted compact JSON. Original raw-order receipt and failed guard log retained.",
+    "summary_rows": [
+      {
+        "label": "01-pine",
+        "population": "pine",
+        "steps_per_second": 14.384414807931007,
+        "average_logical_cores": 6.971929908513762,
+        "peak_sampled_rss_mib": 3741.47265625,
+        "average_strategy_state_bytes": 59745.226,
+        "place_probe_p95_ms": 62.19809999993231,
+        "cancel_probe_p95_ms": 77.49760000024253,
+        "decision_invocations": 25997,
+        "decision_wall_mean_ms": 6.891040546986191,
+        "instances_behind_closed_bars": 612,
+        "backlog_p95_bars": 2,
+        "backlog_max_bars": 2,
+        "initialized": 1000,
+        "evaluated_bars": 179563,
+        "failed_qualification_gates": [
+          "configured_step_rate",
+          "literal_step_rate",
+          "no_closed_bar_backlog"
+        ]
+      },
+      {
+        "label": "02-native",
+        "population": "native-pine",
+        "steps_per_second": 20.005717106771378,
+        "average_logical_cores": 0.835099063280214,
+        "peak_sampled_rss_mib": 338.6796875,
+        "average_strategy_state_bytes": 5560.046,
+        "place_probe_p95_ms": 18.317800000204443,
+        "cancel_probe_p95_ms": 18.427599999995437,
+        "decision_invocations": 40354,
+        "decision_wall_mean_ms": 0.21161954700897062,
+        "instances_behind_closed_bars": 152,
+        "backlog_p95_bars": 1,
+        "backlog_max_bars": 1,
+        "initialized": 1000,
+        "evaluated_bars": 194612,
+        "failed_qualification_gates": [
+          "no_closed_bar_backlog"
+        ]
+      },
+      {
+        "label": "03-native",
+        "population": "native-pine",
+        "steps_per_second": 20.006655011041868,
+        "average_logical_cores": 0.8455695227753528,
+        "peak_sampled_rss_mib": 373.1171875,
+        "average_strategy_state_bytes": 5560.781,
+        "place_probe_p95_ms": 18.15260000012131,
+        "cancel_probe_p95_ms": 16.437999999652675,
+        "decision_invocations": 42617,
+        "decision_wall_mean_ms": 0.21526783208578731,
+        "instances_behind_closed_bars": 0,
+        "backlog_p95_bars": 0,
+        "backlog_max_bars": 0,
+        "initialized": 1000,
+        "evaluated_bars": 194431,
+        "failed_qualification_gates": []
+      },
+      {
+        "label": "04-pine",
+        "population": "pine",
+        "steps_per_second": 13.974967556678143,
+        "average_logical_cores": 6.431321996943511,
+        "peak_sampled_rss_mib": 3813.58203125,
+        "average_strategy_state_bytes": 58623.691,
+        "place_probe_p95_ms": 131.496199999674,
+        "cancel_probe_p95_ms": 72.77760000033595,
+        "decision_invocations": 24774,
+        "decision_wall_mean_ms": 6.344788116573827,
+        "instances_behind_closed_bars": 631,
+        "backlog_p95_bars": 2,
+        "backlog_max_bars": 2,
+        "initialized": 1000,
+        "evaluated_bars": 175504,
+        "failed_qualification_gates": [
+          "configured_step_rate",
+          "literal_step_rate",
+          "no_closed_bar_backlog"
+        ]
+      }
+    ],
+    "two_case_medians": {
+      "pine": {
+        "steps_per_second": 14.179691182304575,
+        "average_logical_cores": 6.701625952728637,
+        "peak_sampled_rss_mib": 3777.52734375,
+        "average_strategy_state_bytes": 59184.4585,
+        "place_probe_p95_ms": 96.84714999980315,
+        "cancel_probe_p95_ms": 75.13760000028924,
+        "decision_wall_mean_ms": 6.617914331780009
+      },
+      "native-pine": {
+        "steps_per_second": 20.00618605890662,
+        "average_logical_cores": 0.8403342930277834,
+        "peak_sampled_rss_mib": 355.8984375,
+        "average_strategy_state_bytes": 5560.413500000001,
+        "place_probe_p95_ms": 18.235200000162877,
+        "cancel_probe_p95_ms": 17.432799999824056,
+        "decision_wall_mean_ms": 0.21344368954737897
+      }
+    },
+    "descriptive_resource_changes": {
+      "step_rate_ratio": 1.4109042151688869,
+      "cpu_reduction_percent": 87.46074014044856,
+      "sampled_peak_rss_reduction_percent": 90.57853444558538,
+      "state_bytes_reduction_percent": 90.60494318791477
+    },
+    "metric_limitations": [
+      "Two-run medians summarize this recipe only; percentile values are per-run percentiles, not pooled.",
+      "Decision wall means include different no-new-bar invocation mixes and final quiescence; not pure-compute speedup.",
+      "Place/cancel latency is an independent empty-book HTTP probe, not bot intent-to-fill latency.",
+      "Fixed-price input and asynchronous trajectories provide dispatch/state load, not complete-trade throughput.",
+      "Native01 has152 instances onebar behind; native02 haszero. Zero-backlog gate not consistently satisfied.",
+      "Rate capped at configured20step/s; maximum native capacity and long-run PostgreSQL capacity unmeasured."
+    ]
+  },
+  "qualification_limits": [
+    "fixed three spot long-only closed-bar scripts",
+    "bounded candle audit after host history rolls",
+    "complete own-fill prefix and at most4095 own fills",
+    "no Pine state migration",
+    "long-run stability and PostgreSQL load capacity unqualified"
+  ],
+  "measurement_source_manifest": {
+    "source_sha256": {
+      "Cargo.lock": "8b4d0c658069475e7c53e1fd37ebf85ba698b6177364ebc717043af67b1add01",
+      "exchange-core/Cargo.toml": "bd6bf3384a0132da6622285644aa6bc721764eb7876085056b1d3e4a604124d6",
+      "exchange-core/src/native_pine.rs": "f8211d6488bd84d5834f89a6a0158482da83de4c21dd5b6c4731962f0d8dd088",
+      "exchange-core/src/native_pine_tests.rs": "4c01686a385b24158eb398856470cdb531761790ccc0ab77829ba856364e5a84",
+      "exchange-core/src/bots.rs": "f70826b1c87aa13dd85632c8b4b1c377615af18ddd7150f3ba41f2fc50cc39bd",
+      "exchange-core/src/lib.rs": "268e34b5f99ccbd22711ce1d7b6d59a8d10f921950ec0b6ab3aabf704a8829c0",
+      "exchange-server/src/bench_execution_timing.rs": "2ed20ec1db82d69711d784a8fcf5594c7a7cd7bc9ba957be8f819da34f584a15",
+      "exchange-server/src/realtime.rs": "7696b90572460d8d62e4981ccabe83e4d93daeb7efba9142da30c840603da786",
+      "exchange-server/examples/native_pine_probe.rs": "ecf2348b1bf5f85c98d0a6a01a102cd53fae5ee98df948e3c17cb938f7c80be0",
+      "scripts/benchmark_strategy_runtime.py": "086da702d352f9aa73b98203b8f7e8ee6eb805d6363b13e30b896461f38cbf92",
+      "python/tests/test_native_pine.py": "7f2ef1ca1cc567a4254709990ea73d3e93b4b7091404cf66bae1ad7578b17114",
+      "python/tests/test_native_pine_http.py": "60f140b60fa01f1473cd4b7340eb5e90b6522ae4fe13ac4db3bfc2c9c23a80bb",
+      "python/tests/test_native_pine_benchmark.py": "2df604298955cb6ef1449cb0fb07b9fb2528476accab1c6a9558a0cfb291f34d",
+      "bot-plugins/pine-strategy/bot.py": "2e179d11ed47d9f4c7fd51aa8be630eb76d01e52a6224d7072d1affbd5978e5a",
+      "bot-plugins/pine-strategy/broker.py": "fbb7e965870ced850514774e0910601dc14b043189a05b80bfb52a8bcf9fbd41",
+      "bot-plugins/pine-strategy/incremental.py": "1e6eb50d8d170288d56721774901349d206df004faa7f4c5197ad481933e2d51",
+      "bot-plugins/pine-strategy/bot.json": "9b8d7956b3693fb883cf94b8eb4580b001ec587ffdbeb35f709d241cf53a3e8c",
+      "bot-plugins/pine-strategy/scripts/ma.pine": "5b05dac3d2bd42aff7d3d0d75e6a4d5cd41b64ea6d9e34dfd8d861f3f0b3c165",
+      "bot-plugins/pine-strategy/scripts/rsi.pine": "2a8c15eed0be312d956b1e0f4672006e04f77aa4c9798f4abcc8ee890699b3fc",
+      "bot-plugins/pine-strategy/scripts/breakout.pine": "0b3ca54621fa9c57a6979a34f2e1c3bb2f9e5ffa03904a740925283cc697f784"
+    },
+    "binary_sha256": {
+      "target/native-pine-20261013/release/exchange-server.exe": "157b27b442e83b9471e1dbca0295be7839701d0b2361f18d25639ed2bed9bef8",
+      "target/native-pine-20261013/release/examples/native_pine_probe.exe": "9fd0bd3a1e94e5a2e5e551e5b6be32ea8e4b3660662bfa22a9c48fb9860d123f",
+      "target/native-pine-20261013/release/examples/pine_inprocess_probe.exe": "ec866eaf98190fc5eeb651e0f64eb67279c85f30f6b182113642547214cced7b"
+    },
+    "note": "Captured before the post-measurement normalized-recipe key-order serialization repair; this stored manifest was generated immediately before ABBA."
+  }
+}

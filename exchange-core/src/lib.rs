@@ -24,6 +24,7 @@ pub mod market_events;
 #[cfg(test)]
 mod market_microstructure_integration_tests;
 pub mod model;
+pub mod native_pine;
 pub mod observation;
 #[cfg(feature = "bench-observation-timing")]
 pub mod observation_timing;

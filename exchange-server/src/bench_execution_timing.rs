@@ -108,6 +108,7 @@ pub(crate) static BOT_EVENT_INDEX: Counter = Counter::new();
 pub(crate) static BOT_EVENT_SKIP: Counter = Counter::new();
 pub(crate) static BOT_TRIGGER: Counter = Counter::new();
 pub(crate) static BOT_EVALUATE: Counter = Counter::new();
+pub(crate) static BOT_NATIVE_PINE_EVALUATE: Counter = Counter::new();
 pub(crate) static BOT_WORKER_ACQUIRE: Counter = Counter::new();
 pub(crate) static BOT_WIRE_ENCODE: Counter = Counter::new();
 pub(crate) static BOT_WORKER_ROUNDTRIP: Counter = Counter::new();
@@ -213,6 +214,7 @@ pub(crate) fn append_metrics(body: &mut String) {
         ("bot_event_skip", &BOT_EVENT_SKIP),
         ("bot_trigger", &BOT_TRIGGER),
         ("bot_evaluate", &BOT_EVALUATE),
+        ("bot_native_pine_evaluate", &BOT_NATIVE_PINE_EVALUATE),
         ("bot_worker_acquire", &BOT_WORKER_ACQUIRE),
         ("bot_wire_encode", &BOT_WIRE_ENCODE),
         ("bot_worker_roundtrip", &BOT_WORKER_ROUNDTRIP),

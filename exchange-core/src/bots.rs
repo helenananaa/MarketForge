@@ -462,6 +462,7 @@ impl BotRegistry {
         let mut registry = Self::default();
         crate::agents::register_builtin_bots(&mut registry);
         crate::market_bots::register_market_bots(&mut registry);
+        crate::native_pine::register_native_pine_bots(&mut registry);
         registry
     }
     pub fn register(&mut self, factory: impl BotFactory + 'static) -> Result<(), BotError> {
@@ -730,11 +731,14 @@ mod tests {
         ))
         .unwrap();
         let room = spec.scenario.room_id.clone();
-        let mut rooms = crate::RoomManager::new();
-        rooms.create_room(spec.scenario).unwrap();
         let mut actions_seen = 0;
         let mut next_order_id = 1_000_000;
         for descriptor in registry.descriptors() {
+            // Keep each factory's input account/history independent. Earlier
+            // factories can leave resting orders and self trades; the Pine
+            // broker domain correctly refuses those invalid own-fill receipts.
+            let mut rooms = crate::RoomManager::new();
+            rooms.create_room(spec.scenario.clone()).unwrap();
             let instrument = if matches!(
                 descriptor.id.as_str(),
                 "FundingRateTrader" | "LeveragedTrendTrader"
@@ -754,7 +758,11 @@ mod tests {
                 state_version: 1,
                 config_version: 1,
                 seed: 7,
-                config: serde_json::json!({}),
+                config: if descriptor.id.starts_with("NativePine") {
+                    serde_json::json!({"initial_avg_price_tick":100})
+                } else {
+                    serde_json::json!({})
+                },
             });
             assert!(registry.supports_instance_reuse(&template));
             let mut saved = template.initial_state();
@@ -845,7 +853,7 @@ mod tests {
     #[test]
     fn all_builtins_accept_unified_config_and_legacy_state_still_serializes() {
         let registry = BotRegistry::with_builtins();
-        assert_eq!(registry.descriptors().len(), 15);
+        assert_eq!(registry.descriptors().len(), 31);
         for descriptor in registry.descriptors() {
             let template = AgentTemplate::Plugin(BotConfig {
                 participant: participant(),

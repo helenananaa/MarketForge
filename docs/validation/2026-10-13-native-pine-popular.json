@@ -1,0 +1,5217 @@
+{
+  "date": "2026-10-13",
+  "base_commit": "5a3e5f4b302b1dbac9ac4f71308c1733afb1bb48",
+  "source_state": "uncommitted; eight pre-existing staged source-library files preserved",
+  "scope": "MarketForge formula adaptations, spot long/flat closed bars; not full published strategies",
+  "reference_runtime": "pine-compat-runtime==0.3.1",
+  "implementation": {
+    "new_ports": 13,
+    "total_native_pine_ports": 16,
+    "builtin_catalog_count": 31,
+    "rewrite_agents": "three GPT-6 Luna groups; root integration, correction and qualification",
+    "indicator_parameters": "frozen",
+    "default_qty": 1
+  },
+  "catalog_path": "docs/native-pine-popular-catalog.json",
+  "catalog_sha256": "6d2007dd11a565db3f9f54231787122414121a45de75e78fd59952bbdd7781f7",
+  "source_sha256": {
+    "exchange-core/src/native_pine.rs": "c13435e72f4440865d2cec5e1eddeaf28779edcb9a3c15fc97c5dc885c520295",
+    "exchange-core/src/native_pine_extended/mod.rs": "46dea0b152d846f178f9d8a650e83af2c6863317cbe9c346f236744d3e540eaa",
+    "exchange-core/src/native_pine_extended/common_a.rs": "a7f5916a8bd246443cdad51681d8e9c1245fc4fa0f2924f96717937615b472b9",
+    "exchange-core/src/native_pine_extended/common_b.rs": "9b018500ba283e63e315bd87f20b2bf9c6c5ffd759ba7273b433a77d54fcfdf3",
+    "exchange-core/src/native_pine_extended/popular.rs": "7a9893a6cbd9b7e9f224e36a6c68484639455ca1ce77cf0ad223b12ae2fc352a",
+    "exchange-server/examples/native_pine_probe.rs": "ecf2348b1bf5f85c98d0a6a01a102cd53fae5ee98df948e3c17cb938f7c80be0",
+    "bot-plugins/pine-strategy/bot.py": "2e179d11ed47d9f4c7fd51aa8be630eb76d01e52a6224d7072d1affbd5978e5a",
+    "bot-plugins/pine-strategy/broker.py": "fbb7e965870ced850514774e0910601dc14b043189a05b80bfb52a8bcf9fbd41",
+    "bot-plugins/pine-strategy/incremental.py": "1e6eb50d8d170288d56721774901349d206df004faa7f4c5197ad481933e2d51",
+    "bot-plugins/pine-strategy/bot.json": "9b8d7956b3693fb883cf94b8eb4580b001ec587ffdbeb35f709d241cf53a3e8c",
+    "python/tests/test_native_pine_popular.py": "7792c20f8d0fc303b07e2e80802be1acbbf64d1215df0801fe52c845a1f4495a",
+    "bot-plugins/pine-strategy/scripts/native_ema_cross.pine": "25e5098a875a2ce4974b8a19b5fb3ba3716370ede7059ac996d2957cf0df1558",
+    "bot-plugins/pine-strategy/scripts/native_macd.pine": "e33a6232f03b6f34e880b90ce2e385fe34ed164ef846e1774514ab94ec776fd0",
+    "bot-plugins/pine-strategy/scripts/native_bb_reversion.pine": "788d927fef77d3b1341a98fa75a2c0fc1aed1a26ad33162434ef9e3d86ccd262",
+    "bot-plugins/pine-strategy/scripts/native_roc.pine": "9e9e7e8100701884b6a0845a7c6d63a94259ab4bbcaea8323b861f796ce72fe1",
+    "bot-plugins/pine-strategy/scripts/native_stochastic.pine": "4fae0ed9e683d3711c87883e8b69fadf64e95411dca3f3aae6703ed58f0f5713",
+    "bot-plugins/pine-strategy/scripts/native_cci.pine": "56f6b7835efca24bf5991aacd8b09c244dad66b4c5b90cf426aab786043f9c63",
+    "bot-plugins/pine-strategy/scripts/native_williams.pine": "e489308a21deec229e724be2bfd4e2cc85442647a7cb145de3b24e6b73ab8ae4",
+    "bot-plugins/pine-strategy/scripts/native_adx.pine": "15b3e047670c0274be1f5bbdfabd5cb4b6f25a3ac70dec14196175d35026ec6d",
+    "bot-plugins/pine-strategy/scripts/native_supertrend.pine": "c58c9dcd3204bdba79cd5cf722a4ff3aa2565ff618c1cdc16e2d9b6ca64f0804",
+    "bot-plugins/pine-strategy/scripts/native_ut_atr.pine": "ab4bd9d491cd921b68a89a8ad8ea7f6579823bbea45267dad6e47428a5c03a40",
+    "bot-plugins/pine-strategy/scripts/native_ssl.pine": "a9181cf5824d96ab9c68bbd2c21363b3ed7668325df3d16e1a7fdfb2ff897d56",
+    "bot-plugins/pine-strategy/scripts/native_wavetrend.pine": "c8790f5dd861fb22d3dd1dac9dcf84946708ca60a91d8d75cbde8ee4d8bbb030",
+    "bot-plugins/pine-strategy/scripts/native_squeeze.pine": "e07eba3da44406b73173536f054079ddd7efa1482a1d891e5e06899d4f0156b0",
+    "Cargo.lock": "8b4d0c658069475e7c53e1fd37ebf85ba698b6177364ebc717043af67b1add01",
+    "exchange-core/Cargo.toml": "bd6bf3384a0132da6622285644aa6bc721764eb7876085056b1d3e4a604124d6",
+    "exchange-core/src/native_pine_tests.rs": "ca43d09ac13304049e3c98774d653f508018e83ab7dac15e277c817ad9443faa",
+    "exchange-core/src/bots.rs": "b0209b71a08ff4a36d339f7a1b62db47099a30297b939b42a56909d76e78837e",
+    "exchange-core/src/lib.rs": "268e34b5f99ccbd22711ce1d7b6d59a8d10f921950ec0b6ab3aabf704a8829c0",
+    "exchange-server/src/realtime.rs": "88fb4f903533221e6dd569ac6342340fed84c42d000d2e936b03da6cdacc3a4d",
+    "exchange-server/src/bench_execution_timing.rs": "2ed20ec1db82d69711d784a8fcf5594c7a7cd7bc9ba957be8f819da34f584a15",
+    "scripts/benchmark_strategy_runtime.py": "c3f0021d734d4e6f4cb2c83c7ca522d39f4115ea59398b84e276a86a5bb1a263",
+    "python/tests/test_native_pine_popular_http.py": "f46da81b12b32f9f102f0643e6e9307d7b15faabe6ad1889359fb22b5469e170"
+  },
+  "binary_sha256": {
+    "target/native-pine-20261013/release/exchange-server.exe": "a602643a9f35547b7f220a06ca58c260e462d7c50105afd41d5834245cecca83",
+    "target/native-pine-20261013/release/examples/native_pine_probe.exe": "2b485ef84af473955d57e5c80ffb55a2cd97b9d99d0df730ff7ee8d121360d6a",
+    "target/native-pine-20261013/release/examples/pine_inprocess_probe.exe": "df72da364a959fe8c571dd2974e0e2f0dca5f4a834854e88030dea543aada2db"
+  },
+  "validation": {
+    "workspace_passed": 674,
+    "workspace_ignored": 15,
+    "workspace_failed": 0,
+    "required_postgres_tests_passed": 9,
+    "native_tests_passed": 38,
+    "postgres_durability": {
+      "fsync": "on",
+      "full_page_writes": "on",
+      "synchronous_commit": "on"
+    },
+    "clippy_all_targets_all_features_warnings_denied": true,
+    "formula_matrix": {
+      "strategies": 13,
+      "regimes": 6,
+      "bars_each": 128,
+      "paired_observations": 9984,
+      "exact_signals_and_actions": true,
+      "numeric_abs_tolerance": 1e-09,
+      "numeric_rel_tolerance": 1e-09,
+      "hot_and_json_restore_each_bar": true,
+      "duplicate_each_bar": true,
+      "authoritative_simulated_qty_one_fills_and_fees": true,
+      "same_bar_rejections": true,
+      "strategies_summary": [
+        {
+          "script": "native_ema_cross.pine",
+          "bot_id": "NativePineEmaCross",
+          "buy_predicate_bars": 256,
+          "sell_predicate_bars": 259,
+          "buy_orders": 12,
+          "sell_orders": 9,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 6340.0,
+          "median_pine_state_bytes_at_bar_128": 46272.0
+        },
+        {
+          "script": "native_macd.pine",
+          "bot_id": "NativePineMacd",
+          "buy_predicate_bars": 205,
+          "sell_predicate_bars": 270,
+          "buy_orders": 19,
+          "sell_orders": 16,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 6453.0,
+          "median_pine_state_bytes_at_bar_128": 46115.5
+        },
+        {
+          "script": "native_bb_reversion.pine",
+          "bot_id": "NativePineBollingerReversion",
+          "buy_predicate_bars": 42,
+          "sell_predicate_bars": 272,
+          "buy_orders": 9,
+          "sell_orders": 7,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 6432.5,
+          "median_pine_state_bytes_at_bar_128": 45823.5
+        },
+        {
+          "script": "native_roc.pine",
+          "bot_id": "NativePineRoc",
+          "buy_predicate_bars": 200,
+          "sell_predicate_bars": 266,
+          "buy_orders": 13,
+          "sell_orders": 10,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 6337.0,
+          "median_pine_state_bytes_at_bar_128": 46153.0
+        },
+        {
+          "script": "native_stochastic.pine",
+          "bot_id": "NativePineStochastic",
+          "buy_predicate_bars": 32,
+          "sell_predicate_bars": 31,
+          "buy_orders": 9,
+          "sell_orders": 6,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 6819.5,
+          "median_pine_state_bytes_at_bar_128": 45876.5
+        },
+        {
+          "script": "native_cci.pine",
+          "bot_id": "NativePineCci",
+          "buy_predicate_bars": 168,
+          "sell_predicate_bars": 220,
+          "buy_orders": 12,
+          "sell_orders": 10,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 6530.5,
+          "median_pine_state_bytes_at_bar_128": 46183.0
+        },
+        {
+          "script": "native_williams.pine",
+          "bot_id": "NativePineWilliams",
+          "buy_predicate_bars": 166,
+          "sell_predicate_bars": 178,
+          "buy_orders": 11,
+          "sell_orders": 9,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 6391.5,
+          "median_pine_state_bytes_at_bar_128": 46140.0
+        },
+        {
+          "script": "native_adx.pine",
+          "bot_id": "NativePineAdx",
+          "buy_predicate_bars": 204,
+          "sell_predicate_bars": 270,
+          "buy_orders": 10,
+          "sell_orders": 8,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 6560.5,
+          "median_pine_state_bytes_at_bar_128": 46153.0
+        },
+        {
+          "script": "native_supertrend.pine",
+          "bot_id": "NativePineSupertrend",
+          "buy_predicate_bars": 193,
+          "sell_predicate_bars": 521,
+          "buy_orders": 8,
+          "sell_orders": 5,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 6611.0,
+          "median_pine_state_bytes_at_bar_128": 46016.0
+        },
+        {
+          "script": "native_ut_atr.pine",
+          "bot_id": "NativePineUtAtr",
+          "buy_predicate_bars": 12,
+          "sell_predicate_bars": 14,
+          "buy_orders": 12,
+          "sell_orders": 9,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 6455.5,
+          "median_pine_state_bytes_at_bar_128": 45561.5
+        },
+        {
+          "script": "native_ssl.pine",
+          "bot_id": "NativePineSsl",
+          "buy_predicate_bars": 253,
+          "sell_predicate_bars": 254,
+          "buy_orders": 14,
+          "sell_orders": 12,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 6509.0,
+          "median_pine_state_bytes_at_bar_128": 46211.0
+        },
+        {
+          "script": "native_wavetrend.pine",
+          "bot_id": "NativePineWaveTrend",
+          "buy_predicate_bars": 11,
+          "sell_predicate_bars": 7,
+          "buy_orders": 4,
+          "sell_orders": 1,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 7052.5,
+          "median_pine_state_bytes_at_bar_128": 45116.0
+        },
+        {
+          "script": "native_squeeze.pine",
+          "bot_id": "NativePineSqueeze",
+          "buy_predicate_bars": 4,
+          "sell_predicate_bars": 231,
+          "buy_orders": 4,
+          "sell_orders": 3,
+          "trade_alignment_qualified": true,
+          "alignment_limit": null,
+          "median_native_state_bytes_at_bar_128": 7829.5,
+          "median_pine_state_bytes_at_bar_128": 45279.0
+        }
+      ]
+    },
+    "large_price_rolling_restore": {
+      "close_tick_base": 1000000000000,
+      "cold_bars": 512,
+      "last_bar": 576,
+      "native_rolling_bars": 64,
+      "paired_observations": 845,
+      "all_13_passed": true,
+      "cash": 0,
+      "trade_coverage": false
+    },
+    "real_gateway_postgres_restart": {
+      "strategy_pairs": 13,
+      "rooms": 26,
+      "bars_each": 128,
+      "paired_observations": 1664,
+      "restart_at_bar": 64,
+      "all_13_bought_and_sold": true,
+      "strategies_summary": [
+        {
+          "bot_id": "NativePineEmaCross",
+          "bars": 128,
+          "bot_buy_fills": 9,
+          "bot_sell_fills": 9,
+          "all_public_trades_including_fixture": 146,
+          "accepted_bot_receipts": 18,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 9845,
+                "position_qty": 1,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 9845,
+                "available_position": 1,
+                "fees_paid": 23
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 100
+                }
+              ],
+              "asks": [
+                {
+                  "price_tick": 113,
+                  "qty": 1
+                }
+              ]
+            },
+            "public_trades": [
+              {
+                "trade_id": 47,
+                "maker_order_id": "bar-36-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-36-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 48,
+                "maker_order_id": "bar-36-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-229",
+                "taker_account_id": 300,
+                "price_tick": 99,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 49,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 50,
+                "maker_order_id": "bar-37-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-236",
+                "taker_account_id": 300,
+                "price_tick": 102,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 51,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 52,
+                "maker_order_id": "bar-38-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-242",
+                "taker_account_id": 300,
+                "price_tick": 99,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 53,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 54,
+                "maker_order_id": "bar-39-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-249",
+                "taker_account_id": 300,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 55,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 56,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 57,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 58,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 64,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 65,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 66,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 67,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 68,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 69,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 70,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 71,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 72,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 73,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 74,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 75,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 76,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 77,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 78,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              }
+            ],
+            "receipts": {
+              "pine": [],
+              "native": []
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        },
+        {
+          "bot_id": "NativePineMacd",
+          "bars": 128,
+          "bot_buy_fills": 5,
+          "bot_sell_fills": 5,
+          "all_public_trades_including_fixture": 138,
+          "accepted_bot_receipts": 10,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 9988,
+                "position_qty": 0,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 9988,
+                "available_position": 0,
+                "fees_paid": 13
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 100
+                }
+              ],
+              "asks": [
+                {
+                  "price_tick": 113,
+                  "qty": 1
+                }
+              ]
+            },
+            "public_trades": [
+              {
+                "trade_id": 40,
+                "maker_order_id": "bar-36-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-225",
+                "taker_account_id": 300,
+                "price_tick": 99,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 41,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 42,
+                "maker_order_id": "bar-37-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-232",
+                "taker_account_id": 300,
+                "price_tick": 102,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 43,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 44,
+                "maker_order_id": "bar-38-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-238",
+                "taker_account_id": 300,
+                "price_tick": 99,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 45,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 46,
+                "maker_order_id": "bar-39-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-245",
+                "taker_account_id": 300,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 47,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 48,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 49,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 50,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 51,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 52,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 53,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 54,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 55,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 56,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 57,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 58,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 64,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 65,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 66,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 67,
+                "maker_order_id": "bar-59-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-365",
+                "taker_account_id": 300,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 68,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 69,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 70,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 71,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              }
+            ],
+            "receipts": {
+              "pine": [],
+              "native": []
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        },
+        {
+          "bot_id": "NativePineBollingerReversion",
+          "bars": 128,
+          "bot_buy_fills": 2,
+          "bot_sell_fills": 1,
+          "all_public_trades_including_fixture": 131,
+          "accepted_bot_receipts": 3,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 9885,
+                "position_qty": 1,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 9885,
+                "available_position": 1,
+                "fees_paid": 2
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 100
+                }
+              ],
+              "asks": []
+            },
+            "public_trades": [
+              {
+                "trade_id": 33,
+                "maker_order_id": "bar-33-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-33-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 34,
+                "maker_order_id": "bar-34-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-34-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 35,
+                "maker_order_id": "bar-35-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-35-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 36,
+                "maker_order_id": "bar-36-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-36-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 37,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 38,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 39,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 40,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 41,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 42,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 43,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 44,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 45,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 46,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 47,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 48,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 49,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 50,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 51,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 52,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 53,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 54,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 55,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 56,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 57,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 58,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 64,
+                "maker_order_id": "bar-63-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-386",
+                "taker_account_id": 300,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              }
+            ],
+            "receipts": {
+              "pine": [
+                {
+                  "accepted": true,
+                  "action": {
+                    "PlaceProtected": {
+                      "expires_at_market_time_ms": null,
+                      "order_type": "ImmediateOrCancel",
+                      "price_tick": 115,
+                      "qty": 1,
+                      "reduce_only": false,
+                      "side": "Buy",
+                      "valid_until_market_time_ms": null
+                    }
+                  },
+                  "command_seq": 386,
+                  "error": null,
+                  "instrument_id": "V-BTC-SPOT",
+                  "key": "db976bd49e44f578d9f257cbb852e458e2be9adde2f17948",
+                  "market_time_ms": 64000,
+                  "order_id": 22211
+                }
+              ],
+              "native": [
+                {
+                  "accepted": true,
+                  "action": {
+                    "PlaceProtected": {
+                      "expires_at_market_time_ms": null,
+                      "order_type": "ImmediateOrCancel",
+                      "price_tick": 115,
+                      "qty": 1,
+                      "reduce_only": false,
+                      "side": "Buy",
+                      "valid_until_market_time_ms": null
+                    }
+                  },
+                  "command_seq": 386,
+                  "error": null,
+                  "instrument_id": "V-BTC-SPOT",
+                  "key": "869cf1cc40b84a4802f8ddab315ea27fea404b6558edad8c",
+                  "market_time_ms": 64000,
+                  "order_id": 22216
+                }
+              ]
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        },
+        {
+          "bot_id": "NativePineRoc",
+          "bars": 128,
+          "bot_buy_fills": 2,
+          "bot_sell_fills": 2,
+          "all_public_trades_including_fixture": 132,
+          "accepted_bot_receipts": 4,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 9996,
+                "position_qty": 0,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 9996,
+                "available_position": 0,
+                "fees_paid": 4
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 99
+                }
+              ],
+              "asks": [
+                {
+                  "price_tick": 113,
+                  "qty": 1
+                }
+              ]
+            },
+            "public_trades": [
+              {
+                "trade_id": 34,
+                "maker_order_id": "bar-34-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-34-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 35,
+                "maker_order_id": "bar-35-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-35-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 36,
+                "maker_order_id": "bar-36-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-36-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 37,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 38,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 39,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 40,
+                "maker_order_id": "bar-39-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-242",
+                "taker_account_id": 300,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 41,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 42,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 43,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 44,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 45,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 46,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 47,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 48,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 49,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 50,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 51,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 52,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 53,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 54,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 55,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 56,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 57,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 58,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 64,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 65,
+                "maker_order_id": "bar-63-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-386",
+                "taker_account_id": 300,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Sell"
+              }
+            ],
+            "receipts": {
+              "pine": [
+                {
+                  "accepted": true,
+                  "action": {
+                    "PlaceProtected": {
+                      "expires_at_market_time_ms": null,
+                      "order_type": "ImmediateOrCancel",
+                      "price_tick": 109,
+                      "qty": 1,
+                      "reduce_only": false,
+                      "side": "Sell",
+                      "valid_until_market_time_ms": null
+                    }
+                  },
+                  "command_seq": 386,
+                  "error": null,
+                  "instrument_id": "V-BTC-SPOT",
+                  "key": "6abb9bd402552134a0bb953de857c46672a9ff8fa1de6277",
+                  "market_time_ms": 64000,
+                  "order_id": 22221
+                }
+              ],
+              "native": [
+                {
+                  "accepted": true,
+                  "action": {
+                    "PlaceProtected": {
+                      "expires_at_market_time_ms": null,
+                      "order_type": "ImmediateOrCancel",
+                      "price_tick": 109,
+                      "qty": 1,
+                      "reduce_only": false,
+                      "side": "Sell",
+                      "valid_until_market_time_ms": null
+                    }
+                  },
+                  "command_seq": 386,
+                  "error": null,
+                  "instrument_id": "V-BTC-SPOT",
+                  "key": "c0ab36be8e9f99a939bcffbe5ac37f7f73180631d1dbd358",
+                  "market_time_ms": 64000,
+                  "order_id": 22226
+                }
+              ]
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        },
+        {
+          "bot_id": "NativePineStochastic",
+          "bars": 128,
+          "bot_buy_fills": 1,
+          "bot_sell_fills": 1,
+          "all_public_trades_including_fixture": 130,
+          "accepted_bot_receipts": 2,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 10000,
+                "position_qty": 0,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 10000,
+                "available_position": 0,
+                "fees_paid": 0
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 100
+                }
+              ],
+              "asks": [
+                {
+                  "price_tick": 113,
+                  "qty": 1
+                }
+              ]
+            },
+            "public_trades": [
+              {
+                "trade_id": 32,
+                "maker_order_id": "bar-32-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-32-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 33,
+                "maker_order_id": "bar-33-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-33-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 34,
+                "maker_order_id": "bar-34-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-34-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 35,
+                "maker_order_id": "bar-35-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-35-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 36,
+                "maker_order_id": "bar-36-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-36-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 37,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 38,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 39,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 40,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 41,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 42,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 43,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 44,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 45,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 46,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 47,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 48,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 49,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 50,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 51,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 52,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 53,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 54,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 55,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 56,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 57,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 58,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              }
+            ],
+            "receipts": {
+              "pine": [],
+              "native": []
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        },
+        {
+          "bot_id": "NativePineCci",
+          "bars": 128,
+          "bot_buy_fills": 2,
+          "bot_sell_fills": 1,
+          "all_public_trades_including_fixture": 131,
+          "accepted_bot_receipts": 3,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 9885,
+                "position_qty": 1,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 9885,
+                "available_position": 1,
+                "fees_paid": 2
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 100
+                }
+              ],
+              "asks": []
+            },
+            "public_trades": [
+              {
+                "trade_id": 33,
+                "maker_order_id": "bar-33-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-33-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 34,
+                "maker_order_id": "bar-34-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-34-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 35,
+                "maker_order_id": "bar-35-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-35-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 36,
+                "maker_order_id": "bar-36-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-36-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 37,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 38,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 39,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 40,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 41,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 42,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 43,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 44,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 45,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 46,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 47,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 48,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 49,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 50,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 51,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 52,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 53,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 54,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 55,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 56,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 57,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 58,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 64,
+                "maker_order_id": "bar-63-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-386",
+                "taker_account_id": 300,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              }
+            ],
+            "receipts": {
+              "pine": [
+                {
+                  "accepted": true,
+                  "action": {
+                    "PlaceProtected": {
+                      "expires_at_market_time_ms": null,
+                      "order_type": "ImmediateOrCancel",
+                      "price_tick": 115,
+                      "qty": 1,
+                      "reduce_only": false,
+                      "side": "Buy",
+                      "valid_until_market_time_ms": null
+                    }
+                  },
+                  "command_seq": 386,
+                  "error": null,
+                  "instrument_id": "V-BTC-SPOT",
+                  "key": "74bca604a790ded7213242ff9d89e183d46b8c4040bbefe9",
+                  "market_time_ms": 64000,
+                  "order_id": 22239
+                }
+              ],
+              "native": [
+                {
+                  "accepted": true,
+                  "action": {
+                    "PlaceProtected": {
+                      "expires_at_market_time_ms": null,
+                      "order_type": "ImmediateOrCancel",
+                      "price_tick": 115,
+                      "qty": 1,
+                      "reduce_only": false,
+                      "side": "Buy",
+                      "valid_until_market_time_ms": null
+                    }
+                  },
+                  "command_seq": 386,
+                  "error": null,
+                  "instrument_id": "V-BTC-SPOT",
+                  "key": "e9f07865bba63b812396c634a3fb0deed18972ec4969c6df",
+                  "market_time_ms": 64000,
+                  "order_id": 22244
+                }
+              ]
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        },
+        {
+          "bot_id": "NativePineWilliams",
+          "bars": 128,
+          "bot_buy_fills": 15,
+          "bot_sell_fills": 14,
+          "all_public_trades_including_fixture": 157,
+          "accepted_bot_receipts": 29,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 9823,
+                "position_qty": 1,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 9823,
+                "available_position": 1,
+                "fees_paid": 54
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 100
+                }
+              ],
+              "asks": [
+                {
+                  "price_tick": 113,
+                  "qty": 1
+                }
+              ]
+            },
+            "public_trades": [
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-36-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-235",
+                "taker_account_id": 300,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-37-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-241",
+                "taker_account_id": 300,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-38-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-248",
+                "taker_account_id": 300,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 64,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 65,
+                "maker_order_id": "bar-39-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-254",
+                "taker_account_id": 300,
+                "price_tick": 109,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 66,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 67,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 68,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 69,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 70,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 71,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 72,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 73,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 74,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 75,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 76,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 77,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 78,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 79,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 80,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 81,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 82,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 83,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 84,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 85,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 86,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 87,
+                "maker_order_id": "bar-60-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-381",
+                "taker_account_id": 300,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 88,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 89,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 90,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              }
+            ],
+            "receipts": {
+              "pine": [],
+              "native": []
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        },
+        {
+          "bot_id": "NativePineAdx",
+          "bars": 128,
+          "bot_buy_fills": 2,
+          "bot_sell_fills": 2,
+          "all_public_trades_including_fixture": 132,
+          "accepted_bot_receipts": 4,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 9992,
+                "position_qty": 0,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 9992,
+                "available_position": 0,
+                "fees_paid": 4
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 100
+                }
+              ],
+              "asks": [
+                {
+                  "price_tick": 113,
+                  "qty": 1
+                }
+              ]
+            },
+            "public_trades": [
+              {
+                "trade_id": 34,
+                "maker_order_id": "bar-34-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-34-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 35,
+                "maker_order_id": "bar-35-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-35-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 36,
+                "maker_order_id": "bar-36-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-36-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 37,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 38,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 39,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 40,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 41,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 42,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 43,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 44,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 45,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 46,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 47,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 48,
+                "maker_order_id": "bar-47-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-290",
+                "taker_account_id": 300,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 49,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 50,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 51,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 52,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 53,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 54,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 55,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 56,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 57,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 58,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 64,
+                "maker_order_id": "bar-62-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-380",
+                "taker_account_id": 300,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 65,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              }
+            ],
+            "receipts": {
+              "pine": [],
+              "native": []
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        },
+        {
+          "bot_id": "NativePineSupertrend",
+          "bars": 128,
+          "bot_buy_fills": 2,
+          "bot_sell_fills": 2,
+          "all_public_trades_including_fixture": 132,
+          "accepted_bot_receipts": 4,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 10008,
+                "position_qty": 0,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 10008,
+                "available_position": 0,
+                "fees_paid": 4
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 100
+                }
+              ],
+              "asks": [
+                {
+                  "price_tick": 113,
+                  "qty": 1
+                }
+              ]
+            },
+            "public_trades": [
+              {
+                "trade_id": 34,
+                "maker_order_id": "bar-34-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-34-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 35,
+                "maker_order_id": "bar-35-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-35-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 36,
+                "maker_order_id": "bar-36-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-36-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 37,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 38,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 39,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 40,
+                "maker_order_id": "bar-39-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-242",
+                "taker_account_id": 300,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 41,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 42,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 43,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 44,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 45,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 46,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 47,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 48,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 49,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 50,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 51,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 52,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 53,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 54,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 55,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 56,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 57,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 58,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-57-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-350",
+                "taker_account_id": 300,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 64,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 65,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              }
+            ],
+            "receipts": {
+              "pine": [],
+              "native": []
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        },
+        {
+          "bot_id": "NativePineUtAtr",
+          "bars": 128,
+          "bot_buy_fills": 3,
+          "bot_sell_fills": 3,
+          "all_public_trades_including_fixture": 134,
+          "accepted_bot_receipts": 6,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 10002,
+                "position_qty": 0,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 10002,
+                "available_position": 0,
+                "fees_paid": 7
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 100
+                }
+              ],
+              "asks": [
+                {
+                  "price_tick": 113,
+                  "qty": 1
+                }
+              ]
+            },
+            "public_trades": [
+              {
+                "trade_id": 36,
+                "maker_order_id": "bar-34-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-34-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 37,
+                "maker_order_id": "bar-35-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-35-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 38,
+                "maker_order_id": "bar-36-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-36-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 39,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 40,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 41,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 42,
+                "maker_order_id": "bar-39-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-243",
+                "taker_account_id": 300,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 43,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 44,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 45,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 46,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 47,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 48,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 49,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 50,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 51,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 52,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 53,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 54,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 55,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 56,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 57,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 58,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-57-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-351",
+                "taker_account_id": 300,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 64,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 65,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 66,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 67,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              }
+            ],
+            "receipts": {
+              "pine": [],
+              "native": []
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        },
+        {
+          "bot_id": "NativePineSsl",
+          "bars": 128,
+          "bot_buy_fills": 11,
+          "bot_sell_fills": 11,
+          "all_public_trades_including_fixture": 150,
+          "accepted_bot_receipts": 22,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 9953,
+                "position_qty": 0,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 9953,
+                "available_position": 0,
+                "fees_paid": 31
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 100
+                }
+              ],
+              "asks": [
+                {
+                  "price_tick": 113,
+                  "qty": 1
+                }
+              ]
+            },
+            "public_trades": [
+              {
+                "trade_id": 52,
+                "maker_order_id": "bar-36-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-231",
+                "taker_account_id": 300,
+                "price_tick": 99,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 53,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 54,
+                "maker_order_id": "bar-37-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-238",
+                "taker_account_id": 300,
+                "price_tick": 102,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 55,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 56,
+                "maker_order_id": "bar-38-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-244",
+                "taker_account_id": 300,
+                "price_tick": 99,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 57,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 58,
+                "maker_order_id": "bar-39-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-251",
+                "taker_account_id": 300,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 64,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 65,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 66,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 67,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 68,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 69,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 70,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 71,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 72,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 73,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 74,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 75,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 76,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 77,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 78,
+                "maker_order_id": "bar-58-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-365",
+                "taker_account_id": 300,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 79,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 80,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 81,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 82,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 83,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              }
+            ],
+            "receipts": {
+              "pine": [],
+              "native": []
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        },
+        {
+          "bot_id": "NativePineWaveTrend",
+          "bars": 128,
+          "bot_buy_fills": 1,
+          "bot_sell_fills": 1,
+          "all_public_trades_including_fixture": 130,
+          "accepted_bot_receipts": 2,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 10000,
+                "position_qty": 0,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 10000,
+                "available_position": 0,
+                "fees_paid": 0
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 100
+                }
+              ],
+              "asks": [
+                {
+                  "price_tick": 113,
+                  "qty": 1
+                }
+              ]
+            },
+            "public_trades": [
+              {
+                "trade_id": 32,
+                "maker_order_id": "bar-32-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-32-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 33,
+                "maker_order_id": "bar-33-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-33-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 34,
+                "maker_order_id": "bar-34-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-34-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 35,
+                "maker_order_id": "bar-35-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-35-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 36,
+                "maker_order_id": "bar-36-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-36-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 37,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 38,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 39,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 40,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 41,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 42,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 43,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 44,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 45,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 46,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 47,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 48,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 49,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 50,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 51,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 52,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 53,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 54,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 55,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 56,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 57,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 58,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              }
+            ],
+            "receipts": {
+              "pine": [],
+              "native": []
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        },
+        {
+          "bot_id": "NativePineSqueeze",
+          "bars": 128,
+          "bot_buy_fills": 1,
+          "bot_sell_fills": 1,
+          "all_public_trades_including_fixture": 130,
+          "accepted_bot_receipts": 2,
+          "restart_at_bar": 64,
+          "restart_evidence": {
+            "account": {
+              "Spot": {
+                "account_id": 300,
+                "cash_balance": 10012,
+                "position_qty": 0,
+                "reserved_cash": 0,
+                "reserved_position": 0,
+                "available_cash": 10012,
+                "available_position": 0,
+                "fees_paid": 4
+              }
+            },
+            "book": {
+              "bids": [
+                {
+                  "price_tick": 111,
+                  "qty": 100
+                }
+              ],
+              "asks": [
+                {
+                  "price_tick": 113,
+                  "qty": 1
+                }
+              ]
+            },
+            "public_trades": [
+              {
+                "trade_id": 34,
+                "maker_order_id": "bar-34-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-34-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 35,
+                "maker_order_id": "bar-35-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-35-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 36,
+                "maker_order_id": "bar-36-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-36-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 37,
+                "maker_order_id": "bar-37-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-37-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 101,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 38,
+                "maker_order_id": "bar-38-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-38-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 100,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 39,
+                "maker_order_id": "bar-39-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-39-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 110,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 40,
+                "maker_order_id": "bar-39-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bot-command-242",
+                "taker_account_id": 300,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 41,
+                "maker_order_id": "bar-40-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-40-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 111,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 42,
+                "maker_order_id": "bar-41-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-41-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 43,
+                "maker_order_id": "bar-42-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-42-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 113,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 44,
+                "maker_order_id": "bar-43-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-43-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 114,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 45,
+                "maker_order_id": "bar-44-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-44-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 115,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 46,
+                "maker_order_id": "bar-45-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-45-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 47,
+                "maker_order_id": "bar-46-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-46-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 48,
+                "maker_order_id": "bar-47-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-47-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 49,
+                "maker_order_id": "bar-48-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-48-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 119,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 50,
+                "maker_order_id": "bar-49-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-49-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 120,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 51,
+                "maker_order_id": "bar-50-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-50-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 121,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 52,
+                "maker_order_id": "bar-51-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-51-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 53,
+                "maker_order_id": "bar-52-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-52-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 54,
+                "maker_order_id": "bar-53-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-53-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 55,
+                "maker_order_id": "bar-54-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-54-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 125,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 56,
+                "maker_order_id": "bar-55-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-55-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 126,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 57,
+                "maker_order_id": "bar-56-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-56-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 128,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 58,
+                "maker_order_id": "bar-56-bid",
+                "maker_account_id": 20,
+                "taker_order_id": "bot-command-344",
+                "taker_account_id": 300,
+                "price_tick": 127,
+                "qty": 1,
+                "taker_side": "Sell"
+              },
+              {
+                "trade_id": 59,
+                "maker_order_id": "bar-57-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-57-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 124,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 60,
+                "maker_order_id": "bar-58-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-58-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 123,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 61,
+                "maker_order_id": "bar-59-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-59-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 122,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 62,
+                "maker_order_id": "bar-60-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-60-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 118,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 63,
+                "maker_order_id": "bar-61-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-61-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 117,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 64,
+                "maker_order_id": "bar-62-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-62-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 116,
+                "qty": 1,
+                "taker_side": "Buy"
+              },
+              {
+                "trade_id": 65,
+                "maker_order_id": "bar-63-print-ask",
+                "maker_account_id": 10,
+                "taker_order_id": "bar-63-print-bid",
+                "taker_account_id": 20,
+                "price_tick": 112,
+                "qty": 1,
+                "taker_side": "Buy"
+              }
+            ],
+            "receipts": {
+              "pine": [],
+              "native": []
+            },
+            "persisted_responses_equal": true,
+            "duplicate_step_equal": true,
+            "observations_equal": true
+          }
+        }
+      ]
+    },
+    "original_ports_differential_tests": 5,
+    "rust_pine_regression_tests": 6,
+    "benchmark_recipe_tests": 9,
+    "original_ports_http_tests": {
+      "passed": 3,
+      "build": "preceding release, before expression-boundary correction; original port code unchanged"
+    }
+  },
+  "corrected_during_validation": [
+    "Squeeze center uses rolling extrema, release uses immediately prior squeeze state",
+    "Pinned SMA ordinary versus for_bar Sterbenz paths remain separate; evict/recovery/append order and zero reset match",
+    "Floating rolling-sum restoration retains rounding metadata without recomputation drift",
+    "Pine script comparisons apply absolute 1e-10 equality boundary; builtin TA crossings and internal rules remain exact"
+  ],
+  "limits": [
+    "Formula adaptations of fixed spot long/flat closed-bar references, not full community strategies",
+    "No direct TradingView numeric equivalence or profitability qualification",
+    "No thousand-instance benchmark or long-duration capacity qualification for these 13 ports",
+    "Prior three-port performance results do not transfer to this new batch",
+    "Existing Pine bot state is not migrated; explicit native bot selection required",
+    "Cold history bounded at 4095 bars; rolling audit checks saved 64-bar intersection; complete own fills below 4096 required"
+  ],
+  "logs": {
+    "workspace-final.log": {
+      "path": ".local/native-pine-popular-20261013/workspace-final.log",
+      "sha256": "0b7e18bc99754d38927b8146e65c794a81a707b372d258ed253f445068f6cdae"
+    },
+    "core-final.log": {
+      "path": ".local/native-pine-popular-20261013/core-final.log",
+      "sha256": "ac80b9fb51ab15cb797f2806ba66eeb3e543658e9b657dc65ef35cf6534f45bb"
+    },
+    "clippy-final.log": {
+      "path": ".local/native-pine-popular-20261013/clippy-final.log",
+      "sha256": "4d48382805377429e0706a770705eaef575f97e323dc5d68cf36c241d4635f59"
+    },
+    "build-final.log": {
+      "path": ".local/native-pine-popular-20261013/build-final.log",
+      "sha256": "f907f6c23e2543a3c6f055e4cca07a162aac41e686e176a5691c602ebd28f9ee"
+    },
+    "differential-final.log": {
+      "path": ".local/native-pine-popular-20261013/differential-final.log",
+      "sha256": "2f0abd98ab731845f261d1586c59014c7c9dab19c30c472c1db74c55a3435e88"
+    },
+    "http-final-popular.log": {
+      "path": ".local/native-pine-popular-20261013/http-final-popular.log",
+      "sha256": "2641709649ba9337af071cf3af953c4379e79ff51d3ea790430da528c189c6a5"
+    },
+    "http-final.log": {
+      "path": ".local/native-pine-popular-20261013/http-final.log",
+      "sha256": "3d7a47341ea15272fc6a2b94c8d770ef6b9034bbbdde0ce5d7ede485624ff5fb"
+    },
+    "original-differential.log": {
+      "path": ".local/native-pine-popular-20261013/original-differential.log",
+      "sha256": "b958ab9b639821840a29a5e15a3d97906e8f5ef7e8c578b4c46bcfdb5b7b206e"
+    },
+    "inprocess-regression.log": {
+      "path": ".local/native-pine-popular-20261013/inprocess-regression.log",
+      "sha256": "fb9bb276290e384b38fb27e2261ed56d1ddfcbabe4726a8ce952849a9c481836"
+    },
+    "recipe-regression.log": {
+      "path": ".local/native-pine-popular-20261013/recipe-regression.log",
+      "sha256": "6573f6f0ab58c619b80708582d5ef427f8bcd2b9d4dfc903fa705db69251b60c"
+    }
+  },
+  "raw_receipts": {
+    "native-pine-popular-formula-matrix.json": {
+      "path": ".local/native-pine-popular-20261013/native-pine-popular-formula-matrix.json",
+      "sha256": "81ee9c2d0ac58740c3510a9f9c3883b2832f30f36ab88fa1b9f003170e791a0f"
+    },
+    "native-pine-popular-large-snapshots.json": {
+      "path": ".local/native-pine-popular-20261013/native-pine-popular-large-snapshots.json",
+      "sha256": "2b5b3ffcca3b778df55591bd418c05171a8b76ff35de7b30ca6d2d68eb348545"
+    },
+    "http-popular/test_all_13_ports_restart_at_bar_64_and_continue_paired_execution.json": {
+      "path": ".local/native-pine-popular-20261013/http-popular/test_all_13_ports_restart_at_bar_64_and_continue_paired_execution.json",
+      "sha256": "dadfbcd0a07d664e0c5ca07b495c3748e98b02294a19adc330fa9e2edd26279e"
+    }
+  },
+  "historical_failures_retained": [
+    "popular-failure-native_ema_cross.pine-flat-1.json",
+    "popular-failure-native_wavetrend.pine-trend_reversal-77.json",
+    "popular-large-failure-native_macd.pine-512.json"
+  ]
+}

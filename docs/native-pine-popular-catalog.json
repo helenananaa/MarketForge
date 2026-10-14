@@ -1,0 +1,252 @@
+{
+  "date": "2026-10-13",
+  "reference_runtime": "pine-compat-runtime==0.3.1",
+  "scope": "MarketForge formula adaptations, spot long/flat closed bars; not full published strategies",
+  "ports": [
+    {
+      "bot_id": "NativePineEmaCross",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_ema_cross.pine",
+      "family": "trend",
+      "formula": "fast = ta.ema(close, 12)\nslow = ta.ema(close, 26)",
+      "entry": "fast > slow",
+      "exit": "fast < slow",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "fast",
+        "slow"
+      ],
+      "reference_sha256": "e6c148b4585c6085de9feaf7d89df98ded0fecba9940fb4cccda617c63a84b21",
+      "installed_sha256": "25e5098a875a2ce4974b8a19b5fb3ba3716370ede7059ac996d2957cf0df1558",
+      "selection": "common indicator formula"
+    },
+    {
+      "bot_id": "NativePineMacd",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_macd.pine",
+      "family": "trend",
+      "formula": "[m, s, h] = ta.macd(close, 12, 26, 9)",
+      "entry": "m > s",
+      "exit": "m < s",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "macd",
+        "signal",
+        "histogram"
+      ],
+      "reference_sha256": "253d13f81c930088e2db4038a7e643a540e89487b7152adf458cfcc4ee80d424",
+      "installed_sha256": "e33a6232f03b6f34e880b90ce2e385fe34ed164ef846e1774514ab94ec776fd0",
+      "selection": "common indicator formula"
+    },
+    {
+      "bot_id": "NativePineBollingerReversion",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_bb_reversion.pine",
+      "family": "reversion",
+      "formula": "[mid, upper, lower] = ta.bb(close, 20, 2.0)",
+      "entry": "close < lower",
+      "exit": "close > mid",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "mid",
+        "upper",
+        "lower"
+      ],
+      "reference_sha256": "ad23c305a6cd5204355a203327a32cd31d2ebca224077aa65302631fb4bfe855",
+      "installed_sha256": "788d927fef77d3b1341a98fa75a2c0fc1aed1a26ad33162434ef9e3d86ccd262",
+      "selection": "common indicator formula"
+    },
+    {
+      "bot_id": "NativePineRoc",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_roc.pine",
+      "family": "trend",
+      "formula": "r = ta.roc(close, 20)",
+      "entry": "r > 2",
+      "exit": "r < 0",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "roc"
+      ],
+      "reference_sha256": "497b04f6f14cc75d9ed526a10a957859e507aaf0f83acab4b616e8d3e4da9f28",
+      "installed_sha256": "9e9e7e8100701884b6a0845a7c6d63a94259ab4bbcaea8323b861f796ce72fe1",
+      "selection": "common indicator formula"
+    },
+    {
+      "bot_id": "NativePineStochastic",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_stochastic.pine",
+      "family": "reversion",
+      "formula": "k = ta.sma(ta.stoch(close, high, low, 14), 3)\nd = ta.sma(k, 3)",
+      "entry": "ta.crossover(k, d) and k < 25",
+      "exit": "ta.crossunder(k, d) and k > 75",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "k",
+        "d"
+      ],
+      "reference_sha256": "eae9a803a4fecea855ba17ef7cb91cbef793347b7c45bd205dfd1288302e651c",
+      "installed_sha256": "4fae0ed9e683d3711c87883e8b69fadf64e95411dca3f3aae6703ed58f0f5713",
+      "selection": "common indicator formula"
+    },
+    {
+      "bot_id": "NativePineCci",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_cci.pine",
+      "family": "reversion",
+      "formula": "c = ta.cci(hlc3, 20)",
+      "entry": "c < -100",
+      "exit": "c > 50",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "cci"
+      ],
+      "reference_sha256": "1519ad6297f8c66f974f9112cde37f68275d61e54fbeb6479a10e35f639fbfab",
+      "installed_sha256": "56f6b7835efca24bf5991aacd8b09c244dad66b4c5b90cf426aab786043f9c63",
+      "selection": "common indicator formula"
+    },
+    {
+      "bot_id": "NativePineWilliams",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_williams.pine",
+      "family": "reversion",
+      "formula": "w = ta.wpr(14)",
+      "entry": "w < -80",
+      "exit": "w > -20",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "williams"
+      ],
+      "reference_sha256": "41cc52908d9ac85e13b397fce90d81665b2ef5f647fd7dbe5894d9d5ee3d1fda",
+      "installed_sha256": "e489308a21deec229e724be2bfd4e2cc85442647a7cb145de3b24e6b73ab8ae4",
+      "selection": "common indicator formula"
+    },
+    {
+      "bot_id": "NativePineAdx",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_adx.pine",
+      "family": "trend",
+      "formula": "[plus, minus, adx] = ta.dmi(14, 14)",
+      "entry": "plus > minus and adx > 25",
+      "exit": "plus < minus",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "plus",
+        "minus",
+        "adx"
+      ],
+      "reference_sha256": "0eedfb941fb26afcb407993e98ba4e7ab7d9b8c95c8ae896f5e141839a54d710",
+      "installed_sha256": "15b3e047670c0274be1f5bbdfabd5cb4b6f25a3ac70dec14196175d35026ec6d",
+      "selection": "common indicator formula"
+    },
+    {
+      "bot_id": "NativePineSupertrend",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_supertrend.pine",
+      "family": "trend",
+      "formula": "[line, direction] = ta.supertrend(3.0, 10)",
+      "entry": "direction < 0",
+      "exit": "direction > 0",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "supertrend",
+        "direction"
+      ],
+      "reference_sha256": "7d2fdfb535dd4a0f055557da0966208770f4769f882f3399388e504570e0d101",
+      "installed_sha256": "c58c9dcd3204bdba79cd5cf722a4ff3aa2565ff618c1cdc16e2d9b6ca64f0804",
+      "selection": "popular public indicator family",
+      "family_author": "KivancOzbilgic",
+      "family_source": "https://www.tradingview.com/script/r6dAP7yi/",
+      "variant": "Pinned ta.supertrend 3/10; no optional community ATR mode or filters.",
+      "popularity_basis": "Archived public-page boosts on 2026-10-10; selection evidence only, not ranking or profitability."
+    },
+    {
+      "bot_id": "NativePineUtAtr",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_ut_atr.pine",
+      "family": "trend",
+      "formula": "loss = ta.atr(10)\nvar float trail = 0.0\nprev = nz(trail[1], 0.0)\ntrail := close > prev and close[1] > prev ? math.max(prev, close - loss) : close < prev and close[1] < prev ? math.min(prev, close + loss) : close > prev ? close - loss : close + loss",
+      "entry": "ta.crossover(close, trail)",
+      "exit": "ta.crossunder(close, trail)",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "atr",
+        "trail"
+      ],
+      "reference_sha256": "f6440454d2440c67929d5cdc7cc737855c7d48e1a1fa68b30abeb58d8a9f3256",
+      "installed_sha256": "ab4bd9d491cd921b68a89a8ad8ea7f6579823bbea45267dad6e47428a5c03a40",
+      "selection": "popular public indicator family",
+      "family_author": "QuantNomad",
+      "family_source": "https://www.tradingview.com/script/n8ss8BID-UT-Bot-Alerts/",
+      "variant": "ATR 10 key 1 close trail; no HA, shorts or reversals. HPotter is credited by the public UT family.",
+      "popularity_basis": "Archived public-page boosts on 2026-10-10; selection evidence only, not ranking or profitability."
+    },
+    {
+      "bot_id": "NativePineSsl",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_ssl.pine",
+      "family": "trend",
+      "formula": "hi = ta.sma(high, 10)\nlo = ta.sma(low, 10)\nvar int side = 0\nside := close > hi ? 1 : close < lo ? -1 : side",
+      "entry": "side == 1",
+      "exit": "side == -1",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "high_ma",
+        "low_ma",
+        "side"
+      ],
+      "reference_sha256": "f0da1e1987ae3730cabfb265ff165123e8bbe8601c3534a96e0ce61ba0820711",
+      "installed_sha256": "a9181cf5824d96ab9c68bbd2c21363b3ed7668325df3d16e1a7fdfb2ff897d56",
+      "selection": "popular public indicator family",
+      "family_author": "ErwinBeckers",
+      "family_source": "https://www.tradingview.com/script/xzIoaIJC-SSL-channel/",
+      "variant": "10-bar high/low channel and side only; own fixed long/flat rules.",
+      "popularity_basis": "Archived public-page boosts on 2026-10-10; selection evidence only, not ranking or profitability."
+    },
+    {
+      "bot_id": "NativePineWaveTrend",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_wavetrend.pine",
+      "family": "reversion",
+      "formula": "ap = hlc3\nesa = ta.ema(ap, 10)\nd = ta.ema(math.abs(ap - esa), 10)\nci = d > 0 ? (ap - esa) / (0.015 * d) : 0.0\nwt = ta.ema(ci, 21)\nsig = ta.sma(wt, 4)",
+      "entry": "ta.crossover(wt, sig) and wt < -53",
+      "exit": "ta.crossunder(wt, sig) and wt > 53",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "wt",
+        "signal"
+      ],
+      "reference_sha256": "af3c7ea0879bbaa700f70530c2f993d7612654b6e8481e0733e8f4b06be3420f",
+      "installed_sha256": "c8790f5dd861fb22d3dd1dac9dcf84946708ca60a91d8d75cbde8ee4d8bbb030",
+      "selection": "popular public indicator family",
+      "family_author": "LazyBear",
+      "family_source": "https://www.tradingview.com/script/2KE8wTuF-Indicator-WaveTrend-Oscillator-WT/",
+      "variant": "10/10/21/4 core oscillator; own -53/+53 trading gates, no published session strategy.",
+      "popularity_basis": "Archived public-page boosts on 2026-10-10; selection evidence only, not ranking or profitability."
+    },
+    {
+      "bot_id": "NativePineSqueeze",
+      "pine_source": "bot-plugins/pine-strategy/scripts/native_squeeze.pine",
+      "family": "volatility_release",
+      "formula": "mid = ta.sma(close, 20)\ndev = 2.0 * ta.stdev(close, 20)\nkrange = 1.5 * ta.sma(ta.tr(true), 20)\nsqueezed = dev < krange\ncenter = ((ta.highest(high, 20) + ta.lowest(low, 20)) / 2.0 + mid) / 2.0\nmom = ta.linreg(close - center, 20, 0)",
+      "entry": "squeezed[1] and not squeezed and mom > 0",
+      "exit": "mom < mom[1]",
+      "qty": 1,
+      "indicator_parameters": "fixed",
+      "diagnostics": [
+        "mid",
+        "deviation",
+        "k_range",
+        "momentum",
+        "squeezed"
+      ],
+      "reference_sha256": "aee5664f7b23505362a5829d279f1614534a13f801ef68b36dbe29cf8bafb02c",
+      "installed_sha256": "e07eba3da44406b73173536f054079ddd7efa1482a1d891e5e06899d4f0156b0",
+      "selection": "popular public indicator family",
+      "family_author": "LazyBear",
+      "family_source": "https://www.tradingview.com/script/nqQ1DT5a-Squeeze-Momentum-Indicator-LazyBear/",
+      "variant": "BB 2.0 / TR KC 1.5; differs from older BB multiplier typo; own release and falling-momentum rules.",
+      "popularity_basis": "Archived public-page boosts on 2026-10-10; selection evidence only, not ranking or profitability."
+    }
+  ]
+}
