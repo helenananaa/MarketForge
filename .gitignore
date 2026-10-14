@@ -21,3 +21,9 @@ __pycache__/
 /.local/strategy-runtime-20261011/
 /.local/pine-incremental-build/
 /bot-plugins/pine-strategy/.runtime/
+
+# Downloaded strategy libraries, research runs and generated Pine samples
+/.local/strategy-library-*/
+/.local/strategy-research-*/
+/.local/native-pine-*/
+/bot-plugins/pine-strategy/scripts/native_*.pine

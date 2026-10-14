@@ -1,0 +1,4083 @@
+{
+  "date": "2026-10-10",
+  "host_commit": "71b58e9",
+  "runtime_version": "0.3.1",
+  "evidence_scope": "offline_synthetic_compatibility_and_in_process_adapter_fixture",
+  "adaptations": [
+    {
+      "name": "ema_cross",
+      "family": "trend",
+      "kind": "formula_adaptation",
+      "sha256": "e6c148b4585c6085de9feaf7d89df98ded0fecba9940fb4cccda617c63a84b21",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 2,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 14,
+          "trades": 7,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 23,
+          "trades": 11,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 16,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 11,
+          "trades": 5,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 4,
+        "sells": 3,
+        "final_qty": 1,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 2.4866
+    },
+    {
+      "name": "macd",
+      "family": "trend",
+      "kind": "formula_adaptation",
+      "sha256": "253d13f81c930088e2db4038a7e643a540e89487b7152adf458cfcc4ee80d424",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 108,
+          "trades": 54,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 12,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 26,
+          "trades": 13,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 15,
+          "trades": 7,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 34,
+          "trades": 17,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 3,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 2.3457
+    },
+    {
+      "name": "rsi_reversion",
+      "family": "reversion",
+      "kind": "formula_adaptation",
+      "sha256": "a013e9fca5a3e20f94716b72bb91ad4be249fc410f272348b9c8eb30a0404607",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 1,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 20,
+          "trades": 10,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 4,
+          "trades": 2,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 3,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 2.2908
+    },
+    {
+      "name": "bb_reversion",
+      "family": "reversion",
+      "kind": "formula_adaptation",
+      "sha256": "ad23c305a6cd5204355a203327a32cd31d2ebca224077aa65302631fb4bfe855",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 1,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 21,
+          "trades": 10,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 19,
+          "trades": 9,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 17,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 3,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 2.2304
+    },
+    {
+      "name": "bb_breakout",
+      "family": "breakout",
+      "kind": "formula_adaptation",
+      "sha256": "e2e0586e6be53018bac01f857770e7c0031bb39ece6d744d0d84607b069d847a",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 2,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 12,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 22,
+          "trades": 11,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 18,
+          "trades": 9,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 22,
+          "trades": 11,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 3,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 2.2651
+    },
+    {
+      "name": "donchian",
+      "family": "breakout",
+      "kind": "formula_adaptation",
+      "sha256": "1e8d7f9339d719be1cb465c0c5f15ff8455a7ec50c9459b0bb4001f109c7ed1e",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 2,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 12,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 14,
+          "trades": 7,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 16,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 16,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 3,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.1912
+    },
+    {
+      "name": "turtle",
+      "family": "breakout",
+      "kind": "formula_adaptation",
+      "sha256": "312b43033be86468a90b6ecd6e3855f3ab6ab588d8df763dd84cc76323e7dff4",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 2,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 12,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 8,
+          "trades": 4,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 2,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 2,
+        "final_qty": 1,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.0314
+    },
+    {
+      "name": "supertrend",
+      "family": "trend",
+      "kind": "formula_adaptation",
+      "sha256": "7d2fdfb535dd4a0f055557da0966208770f4769f882f3399388e504570e0d101",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 2,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 12,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 16,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 14,
+          "trades": 7,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 2,
+        "final_qty": 1,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.1501
+    },
+    {
+      "name": "ut_atr",
+      "family": "trend",
+      "kind": "formula_adaptation",
+      "sha256": "f6440454d2440c67929d5cdc7cc737855c7d48e1a1fa68b30abeb58d8a9f3256",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 2,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 18,
+          "trades": 9,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 20,
+          "trades": 10,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 18,
+          "trades": 9,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 62,
+          "trades": 31,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 4,
+        "sells": 4,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.4208
+    },
+    {
+      "name": "ssl",
+      "family": "trend",
+      "kind": "formula_adaptation",
+      "sha256": "f0da1e1987ae3730cabfb265ff165123e8bbe8601c3534a96e0ce61ba0820711",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 2,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 14,
+          "trades": 7,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 18,
+          "trades": 9,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 16,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 44,
+          "trades": 22,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 4,
+        "sells": 4,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.1143
+    },
+    {
+      "name": "wavetrend",
+      "family": "reversion",
+      "kind": "formula_adaptation",
+      "sha256": "af3c7ea0879bbaa700f70530c2f993d7612654b6e8481e0733e8f4b06be3420f",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 1,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 4,
+          "trades": 2,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 3,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 1,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 3,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.3873
+    },
+    {
+      "name": "squeeze",
+      "family": "volatility_release",
+      "kind": "formula_adaptation",
+      "sha256": "aee5664f7b23505362a5829d279f1614534a13f801ef68b36dbe29cf8bafb02c",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 12,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 4,
+          "trades": 2,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 12,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 14,
+          "trades": 7,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 3,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.455
+    },
+    {
+      "name": "cci",
+      "family": "reversion",
+      "kind": "formula_adaptation",
+      "sha256": "1519ad6297f8c66f974f9112cde37f68275d61e54fbeb6479a10e35f639fbfab",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 1,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 25,
+          "trades": 12,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 31,
+          "trades": 15,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 21,
+          "trades": 10,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 3,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.1017
+    },
+    {
+      "name": "stochastic",
+      "family": "reversion",
+      "kind": "formula_adaptation",
+      "sha256": "eae9a803a4fecea855ba17ef7cb91cbef793347b7c45bd205dfd1288302e651c",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 1,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 26,
+          "trades": 13,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 12,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 3,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.1288
+    },
+    {
+      "name": "stoch_rsi",
+      "family": "reversion",
+      "kind": "formula_adaptation",
+      "sha256": "3c9451596b5c8dd42d387166582cb1800df380ef67b5122fc40d0043be7e0b90",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 17,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 24,
+          "trades": 12,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 14,
+          "trades": 7,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 22,
+          "trades": 11,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 4,
+        "sells": 3,
+        "final_qty": 1,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.3076
+    },
+    {
+      "name": "williams",
+      "family": "reversion",
+      "kind": "formula_adaptation",
+      "sha256": "41cc52908d9ac85e13b397fce90d81665b2ef5f647fd7dbe5894d9d5ee3d1fda",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 1,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 19,
+          "trades": 9,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 19,
+          "trades": 9,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 25,
+          "trades": 12,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 4,
+        "sells": 3,
+        "final_qty": 1,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.0656
+    },
+    {
+      "name": "adx",
+      "family": "trend",
+      "kind": "formula_adaptation",
+      "sha256": "0eedfb941fb26afcb407993e98ba4e7ab7d9b8c95c8ae896f5e141839a54d710",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 2,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 16,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 20,
+          "trades": 10,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 14,
+          "trades": 7,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 16,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 4,
+        "sells": 3,
+        "final_qty": 1,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.132
+    },
+    {
+      "name": "vwap_reversion",
+      "family": "reversion",
+      "kind": "formula_adaptation",
+      "sha256": "d239e919d449c56b3b719dd14cd825f3f264aaec2ee6477bf85c000732750758",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 1,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 16,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 7,
+          "trades": 3,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 3,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.0203
+    },
+    {
+      "name": "obv",
+      "family": "volume_trend",
+      "kind": "formula_adaptation",
+      "sha256": "d5f4480113b430848205e89e7f14241cf390032f4b3f29ce2cf65d46cb856af8",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 4,
+          "trades": 2,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 12,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 25,
+          "trades": 12,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 26,
+          "trades": 13,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 12,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 3,
+        "final_qty": 0,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.1353
+    },
+    {
+      "name": "ichimoku",
+      "family": "trend",
+      "kind": "formula_adaptation",
+      "sha256": "402ef3789c7b5f48afcda6199715a65e31d66789a6d5b7910d1c576c36886dc5",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 2,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 12,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 27,
+          "trades": 13,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 18,
+          "trades": 9,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 13,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 2,
+        "final_qty": 1,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.41
+    },
+    {
+      "name": "roc",
+      "family": "trend",
+      "kind": "formula_adaptation",
+      "sha256": "497b04f6f14cc75d9ed526a10a957859e507aaf0f83acab4b616e8d3e4da9f28",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 2,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 14,
+          "trades": 7,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 18,
+          "trades": 9,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 16,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 26,
+          "trades": 13,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 4,
+        "sells": 3,
+        "final_qty": 1,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 2.9064
+    },
+    {
+      "name": "keltner",
+      "family": "breakout",
+      "kind": "formula_adaptation",
+      "sha256": "0f7ecf5c8b522d7ea192b3526c41071b0b1f92c81548a676a5f270cf7ecc1b6b",
+      "runs": {
+        "flat": {
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "trend_reversal": {
+          "orders": 2,
+          "trades": 1,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "range": {
+          "orders": 12,
+          "trades": 6,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "squeeze_release": {
+          "orders": 16,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "jumps": {
+          "orders": 14,
+          "trades": 7,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        "random_walk": {
+          "orders": 10,
+          "trades": 5,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      },
+      "prefix_checks": 12,
+      "status": "pass",
+      "active_regimes": [
+        "trend_reversal",
+        "range",
+        "squeeze_release",
+        "jumps",
+        "random_walk"
+      ],
+      "bot_fixture": {
+        "buys": 3,
+        "sells": 2,
+        "final_qty": 1,
+        "fixture_only": true
+      },
+      "elapsed_seconds": 3.0991
+    }
+  ],
+  "boundaries": [
+    {
+      "name": "short",
+      "source": "//@version=6\nstrategy(\"Short\")\nif bar_index == 1\n    strategy.entry(\"S\", strategy.short, qty=1)",
+      "native": {
+        "status": "pass",
+        "orders": 1,
+        "trades": 0,
+        "plots": 0,
+        "alerts": 0,
+        "diagnostics": [],
+        "strategy_diagnostics": []
+      },
+      "adapter": {
+        "status": "rejected",
+        "error": "Pine v1 cannot short spot inventory"
+      }
+    },
+    {
+      "name": "limit",
+      "source": "//@version=6\nstrategy(\"Limit\")\nif bar_index == 1\n    strategy.entry(\"L\", strategy.long, qty=1, limit=close)",
+      "native": {
+        "status": "pass",
+        "orders": 1,
+        "trades": 0,
+        "plots": 0,
+        "alerts": 0,
+        "diagnostics": [],
+        "strategy_diagnostics": []
+      },
+      "adapter": {
+        "status": "rejected",
+        "error": "Pine v1 does not support resting, stop, bracket or trailing orders"
+      }
+    },
+    {
+      "name": "bracket",
+      "source": "//@version=6\nstrategy(\"Bracket\")\nif bar_index == 1\n    strategy.entry(\"L\", strategy.long, qty=1)\nif bar_index == 2\n    strategy.exit(\"X\", \"L\", stop=close*0.95, limit=close*1.05)",
+      "native": {
+        "status": "pass",
+        "orders": 2,
+        "trades": 1,
+        "plots": 0,
+        "alerts": 0,
+        "diagnostics": [],
+        "strategy_diagnostics": []
+      },
+      "adapter": {
+        "status": "rejected",
+        "error": "Pine v1 supports market long entry, close and close_all only"
+      }
+    },
+    {
+      "name": "peer_security",
+      "source": "//@version=6\nstrategy(\"Peer\")\np = request.security(\"V-BTC-PERP\", \"1\", close)\nplot(p-close)",
+      "native": {
+        "status": "pass",
+        "orders": 0,
+        "trades": 0,
+        "plots": 1,
+        "alerts": 0,
+        "diagnostics": [],
+        "strategy_diagnostics": [],
+        "spread_checked": true
+      },
+      "adapter": {
+        "status": "rejected",
+        "error": "missing request data for symbol `V-BTC-PERP` timeframe `1`"
+      }
+    },
+    {
+      "name": "library",
+      "source": "//@version=6\nimport jdehorty/MLExtensions/2 as ml\nindicator(\"ML\")\nplot(ml.n_rsi(close,14,1))",
+      "native": {
+        "status": "rejected",
+        "error": "E_IMPORT_MISSING_LIBRARY:Error:2:1: missing library source for import `jdehorty/MLExtensions/2`\nE_UNKNOWN_FUNCTION:Error:4:6: unknown function `ml.n_rsi`"
+      },
+      "adapter": {
+        "status": "rejected",
+        "error": "E_IMPORT_MISSING_LIBRARY:Error:2:1: missing library source for import `jdehorty/MLExtensions/2`\nE_UNKNOWN_FUNCTION:Error:4:6: unknown function `ml.n_rsi`"
+      }
+    },
+    {
+      "name": "ut_heikin_ashi_enabled",
+      "status": "rejected",
+      "error": "legacy security at source span 283..365: missing request data for symbol `{\"chart\":\"heikinashi\",\"symbol\":\"V-BTC-SPOT\"}` timeframe `1`"
+    }
+  ],
+  "public_corpora": [
+    {
+      "repo": "TradingView rendered source captures",
+      "commit": null,
+      "regime": "range",
+      "bars": 512,
+      "files": [
+        {
+          "name": "chandelier",
+          "sha256": "d505921fb4b9b7933b45a443cd3c13c255b30fa6c6216e7061844d3fb62eceda",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 26,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "squeeze",
+          "sha256": "a51a53f55e73bc999819b1e683486a75d6f9123dedc22157540c65ccdcd35050",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ssl",
+          "sha256": "5e74bda36605f4d11f3d4d2839b7922cc9a33095d4d9b99d52c951ee2152a45c",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "supertrend",
+          "sha256": "3ddd7b5dc61b285ff7c3932255bd0d66ce427a9e17edcca87322b05a384a6ce8",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 26,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ut_alerts",
+          "sha256": "76c5ca34bf1c8781bc336fac79ced144835f8a66aa5235a9f509ee2cc1b8a708",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 0,
+          "alerts": 19,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ut_strategy",
+          "sha256": "00d88457c8ffcb8aa67b9a2ebecc413045719e341d1ad389557cc0bcc58343fd",
+          "status": "pass",
+          "orders": 19,
+          "trades": 18,
+          "plots": 0,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "wavetrend",
+          "sha256": "c05c8f0909f25d1e6e356d6332e846edbf78d4a756c42109154f0c7a9d25aeff",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 8,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      ]
+    },
+    {
+      "repo": "everget/tradingview-pinescript-indicators",
+      "commit": "7037c4bcc3181ab24af4b15a8ecf265487841126",
+      "regime": "range",
+      "bars": 512,
+      "files": [
+        {
+          "name": "acceleration_bands",
+          "path": "bands_and_channels\\acceleration_bands.pine",
+          "sha256": "2a7ba32a65d33e3350d7b772d0884acaebe955ec3a50ce8bc512f137b8548667",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "interquartile_range_bands",
+          "path": "bands_and_channels\\interquartile_range_bands.pine",
+          "sha256": "725515e300e3c7eac50b9aff7d22abb74459703b63ceb169ebec63bac8959db5",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:10:6: unknown function `percentile_nearest_rank`\nE_UNKNOWN_FUNCTION:Error:11:9: unknown function `percentile_nearest_rank`\nE_UNKNOWN_FUNCTION:Error:12:6: unknown function `percentile_nearest_rank`\nE_OPERATOR_TYPE:Error:14:7: operator `-` expects numeric operands, got series na and series na\nE_OPERATOR_TYPE:Error:16:18: operator `*` expects numeric operands, got input float and series na\nE_OPERATOR_TYPE:Error:17:18: operator `*` expects numeric operands, got input float and series na\nE_CALL_ARG_TYPE:Error:19:22: `plot` argument `series` expects series/simple numeric, got series na\nE_CALL_ARG_TYPE:Error:20:6: `plot` argument `series` expects series/simple numeric, got series na\nE_CALL_ARG_TYPE:Error:21:22: `plot` argument `series` expects series/simple numeric, got series na\nE_LEGACY_V3_NA_INFERENCE:Error:10:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:11:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:12:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:14:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:16:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:17:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "kirshenbaum_bands",
+          "path": "bands_and_channels\\kirshenbaum_bands.pine",
+          "sha256": "2dff60ced48ca5f872c24559686177d5a53a74ad1dec04ed3f46bcd81a386bc0",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "mean_absolute_deviation_bands",
+          "path": "bands_and_channels\\mean_absolute_deviation_bands.pine",
+          "sha256": "212c7b3384b8122948bd013bbf5e2498bf1cc681ef2925b9fec1e6d31d279169",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:11:14: unknown function `dev`\nE_OPERATOR_TYPE:Error:12:9: operator `+` expects numeric or string operands, got series float and series na\nE_OPERATOR_TYPE:Error:13:9: operator `-` expects numeric operands, got series float and series na\nE_CALL_ARG_TYPE:Error:16:18: `plot` argument `series` expects series/simple numeric, got series na\nE_CALL_ARG_TYPE:Error:17:18: `plot` argument `series` expects series/simple numeric, got series na"
+        },
+        {
+          "name": "moving_average_channel",
+          "path": "bands_and_channels\\moving_average_channel.pine",
+          "sha256": "d19d083eed0fa4c8bd5269df5a932d62c0591581aa01767f19ff789c12830d67",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "stoller_average_range_channels",
+          "path": "bands_and_channels\\stoller_average_range_channels.pine",
+          "sha256": "efb52fa3a451c8b8bb6e858745f527192da8ec8fe7d9cf9569bd451a76deeeb1",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "vortex_bands",
+          "path": "bands_and_channels\\vortex_bands.pine",
+          "sha256": "ae64b9081f4e718baf16fc54a9722d6f812728804dce0d95fbaa8ac5381cf8c1",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "bitmex_withdrawals_cutoff_time",
+          "path": "highlighters\\bitmex_withdrawals_cutoff_time.pine",
+          "sha256": "d57625eb913ec3c2309fe01d18658ec850bcdeabc3aac4baf9bb037ac08676f8",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 0,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "leap_years",
+          "path": "highlighters\\leap_years.pine",
+          "sha256": "841474e63b0d0a7b1abdc8b1f6b84647856992f8d9044709681ae8e9d24d7d29",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 0,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "quarters",
+          "path": "highlighters\\quarters.pine",
+          "sha256": "05ad36144fd8dc1a4a97396c48be3dfcaaf357a502c97eb3f69f88f655f49c47",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 0,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "range_candles",
+          "path": "highlighters\\range_candles.pine",
+          "sha256": "89d3c31f016cee1e89561a6d2e69bcaa8c8cb3476841c4eac94cf7ee7f7fe647",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 0,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "weekdays_gaps",
+          "path": "highlighters\\weekdays_gaps.pine",
+          "sha256": "86cc866965e48d93772440cf88f71a2c591eaec5826f243d40d75170e789be8f",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 0,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "adaptive_laguerre_filter",
+          "path": "movings\\adaptive_laguerre_filter.pine",
+          "sha256": "68519b7ab0749700de77d9e2e5d2e75e1d2bf2c71e6bdda349b58d593b19f8c3",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:13:2: unknown function `percentile_nearest_rank`"
+        },
+        {
+          "name": "adaptive_rsi_moving_average",
+          "path": "movings\\adaptive_rsi_moving_average.pine",
+          "sha256": "95cdee5108b200d98e7a3e817c32316c45b009b53dcff8069a4ce59c0c15ec0d",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ahrens_moving_average",
+          "path": "movings\\ahrens_moving_average.pine",
+          "sha256": "32896b90bb62aea72f1a5129820e46f781a42f5ec619ca49da4110cb5392e1e4",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "alpha_decreasing_exponential_moving_average",
+          "path": "movings\\alpha_decreasing_exponential_moving_average.pine",
+          "sha256": "0c38d6823a715bfd51b007375c2b731d53f3abc782911b63f27d68552327e567",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "apirine_adaptive_exponential_moving_average",
+          "path": "movings\\apirine_adaptive_exponential_moving_average.pine",
+          "sha256": "f16123f64a0587b7fd87c43d8841fa8b2246a4338a03e4536852653ffc15b2dd",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "apirine_adaptive_moving_average",
+          "path": "movings\\apirine_adaptive_moving_average.pine",
+          "sha256": "491849388e2396d9e17d63d8bd64597f8bf465da851bde9036ce2c0d6c0c22d3",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "arnaud_legoux_moving_average",
+          "path": "movings\\arnaud_legoux_moving_average.pine",
+          "sha256": "ddfa6e09df4d3fa287f96eed7ef4b992fd4baeac67d581e31b16ca8db1c19662",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "bryant_adaptive_moving_average",
+          "path": "movings\\bryant_adaptive_moving_average.pine",
+          "sha256": "d063cf92228621baa532bf65bff7827beda2bf0d7254a4aab0b921cf5dd3e3e4",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "butterworth_filter",
+          "path": "movings\\butterworth_filter.pine",
+          "sha256": "7a79715f92a9272647fae1a7d08948e52ff0299df9307dcd6b6717446fb62834",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "corrected_moving_average",
+          "path": "movings\\corrected_moving_average.pine",
+          "sha256": "9c61c7af7cbc1d837f0f6148c35e4bf9e02b19bb855d28f8bef377573c48941a",
+          "status": "failed",
+          "error": "E_CALL_ARG_NAME:Error:5:84: `indicator` has no argument named `behind_chart`"
+        },
+        {
+          "name": "distance_coefficient_filter",
+          "path": "movings\\distance_coefficient_filter.pine",
+          "sha256": "a75dca5b8d2c0da78a6c5446b1d55cc7bea43a60727a75da0e7b02a8a90a7116",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "distance_weighted_moving_average",
+          "path": "movings\\distance_weighted_moving_average.pine",
+          "sha256": "a9dd55f76450f2d3bee1c2689ccce5c3a7cdc540ffedc24e46e23d29afd57257",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "double_exponential_moving_average",
+          "path": "movings\\double_exponential_moving_average.pine",
+          "sha256": "b57679a8c60c761c26847e2b5860acf519dbdb84a9af006661dc5f640fbb2cf0",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "double_weighted_moving_average",
+          "path": "movings\\double_weighted_moving_average.pine",
+          "sha256": "0e29b5bdf6fa5b9bd82e4ba941c4bef3c89823dfb69b7c830e6d1d9050a04019",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ehlers_deviation_scaled_moving_average",
+          "path": "movings\\ehlers_deviation_scaled_moving_average.pine",
+          "sha256": "1fd6ae99f8e45cdbad0de6069a110e24474c9886cb88352a192c4b59005bbc84",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ehlers_distance_coefficient_filter",
+          "path": "movings\\ehlers_distance_coefficient_filter.pine",
+          "sha256": "3846be2c284d0f70de67eeaa23803c945a84ac7cbf00e27a4157ff6f177efd2e",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ehlers_leading_indicator",
+          "path": "movings\\ehlers_leading_indicator.pine",
+          "sha256": "918494e4355e11a38ff16952dbeac98d07fc653d8e7aa834374b37a3819c350f",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ehlers_mesa_adaptive_moving_averages",
+          "path": "movings\\ehlers_mesa_adaptive_moving_averages.pine",
+          "sha256": "b389abf0963950d3cbdb3cace67c90b76e22af7ce3f85a0a639724303b196118",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ehlers_modified_optimum_elliptic_filter",
+          "path": "movings\\ehlers_modified_optimum_elliptic_filter.pine",
+          "sha256": "27a91012d63b52fe4585809eb0b55c46004019f996508167e089f3b24e658148",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ehlers_optimum_elliptic_filter",
+          "path": "movings\\ehlers_optimum_elliptic_filter.pine",
+          "sha256": "d89b7f240741d16f4f624b60c53d0ef4d7943eaf980eeedc2de41d15903061f2",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ehlers_super_smoother_filter",
+          "path": "movings\\ehlers_super_smoother_filter.pine",
+          "sha256": "62322a431314e64524564c51f99aa5d0f7c6dbca2919a844f18b9c7a675e8c80",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "elastic_volume_weighted_moving_average",
+          "path": "movings\\elastic_volume_weighted_moving_average.pine",
+          "sha256": "03159841d5017403bff2b5308a9911f9a48a1c901da3305e58ae8b7abc752691",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "exponential_moving_average",
+          "path": "movings\\exponential_moving_average.pine",
+          "sha256": "f3167862e2a13bae3f4368fd292c72a7a18479538100e7551bc884cf14b9e420",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "farey_sequence_weighted_moving_average",
+          "path": "movings\\farey_sequence_weighted_moving_average.pine",
+          "sha256": "aebaf8ad212f3de13b8111599a4975631df03b38b04c878a4b7222a1a241ff4c",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "fibonacci_weighted_moving_average",
+          "path": "movings\\fibonacci_weighted_moving_average.pine",
+          "sha256": "6a680bd06c413a9cf58bb25a9b18e740a6df29a757a2cd2df368554e6d46da64",
+          "status": "failed",
+          "error": "E_CALL_ARG_NAME:Error:5:93: `indicator` has no argument named `behind_chart`"
+        },
+        {
+          "name": "finite_impulse_response_filter",
+          "path": "movings\\finite_impulse_response_filter.pine",
+          "sha256": "7bdc62252a279e1e8a9de0af1749f627846189d9abd075a02dbed0f828b400ac",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "fractal_adaptive_moving_average",
+          "path": "movings\\fractal_adaptive_moving_average.pine",
+          "sha256": "c3960cfa188aa716c6580b32ef4612759a4d2ccc1bfcf90e77b3f2a249bab644",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "gaussian_filter",
+          "path": "movings\\gaussian_filter.pine",
+          "sha256": "7bdbdb89e25913dc758fe55a7168cb87e3e41dfc1cf216ee491487677cf7ffde",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "hampel_filter",
+          "path": "movings\\hampel_filter.pine",
+          "sha256": "71ed1ca2feeca6628d978d21a4b474208308783d3e5ba026e67f98363543ff73",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:11:2: unknown function `percentile_nearest_rank`\nE_OPERATOR_TYPE:Error:16:19: operator `-` expects numeric operands, got series float and series na\nE_UNKNOWN_FUNCTION:Error:11:2: unknown function `percentile_nearest_rank`\nE_OPERATOR_TYPE:Error:18:10: operator `-` expects numeric operands, got series float and series na\nE_OPERATOR_TYPE:Error:18:33: operator `*` expects numeric operands, got input float and series na\nE_CALL_ARG_TYPE:Error:23:10: `ta.ema` argument `source` expects series numeric, got series na"
+        },
+        {
+          "name": "henderson_weighted_moving_average",
+          "path": "movings\\henderson_weighted_moving_average.pine",
+          "sha256": "0aa36ffe1b3e1ffb07eb272b985218982e24345e79372f5578e6c218064ca966",
+          "status": "failed",
+          "error": "E_CALL_ARG_NAME:Error:5:93: `indicator` has no argument named `behind_chart`"
+        },
+        {
+          "name": "holt_exponential_moving_average",
+          "path": "movings\\holt_exponential_moving_average.pine",
+          "sha256": "2a0503440e6429707a45334af664006a3c89f4c8b4d9134fbe2ca39213a74dac",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "hull_moving_average",
+          "path": "movings\\hull_moving_average.pine",
+          "sha256": "a786d2576d0d516d57c8acbbd5fb6e7586e877d87e8aecbb04e61e826d898977",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "infinite_impulse_response_filter",
+          "path": "movings\\infinite_impulse_response_filter.pine",
+          "sha256": "4ff6bbfb1a9580350d50848ad7f95049a6c9c37a385b511c3449655b4cae4eb3",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "inverse_distance_weighted_moving_average",
+          "path": "movings\\inverse_distance_weighted_moving_average.pine",
+          "sha256": "1a69031dba1e6b3988dc03e6ac0721156f888e29954a30297540bcbdbbc01f9c",
+          "status": "failed",
+          "error": "E_CALL_ARG_NAME:Error:5:100: `indicator` has no argument named `behind_chart`"
+        },
+        {
+          "name": "jurik_moving_average",
+          "path": "movings\\jurik_moving_average.pine",
+          "sha256": "965cbfbcc90d2c68e0aaefc90220c6d19c6bee758558c90ad8dccb9436061991",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "kaufman_adaptive_moving_average",
+          "path": "movings\\kaufman_adaptive_moving_average.pine",
+          "sha256": "c8e3e87fd1c887ada1e7b0949b19dbceca71c7aebee9b87752e3a701ffdf1900",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "laguerre_filter",
+          "path": "movings\\laguerre_filter.pine",
+          "sha256": "64f6e2fccb2585aa816169931094c31400b2820fcde6877da7631af411ed7a20",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "least_squares_moving_average",
+          "path": "movings\\least_squares_moving_average.pine",
+          "sha256": "5c6bfecb4346d978d34e00ad5d7598802e410ed2c601d881af03ad4f9df91c1c",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "leo_moving_average",
+          "path": "movings\\leo_moving_average.pine",
+          "sha256": "2e886a653cb7772f305041d5c16f0e58594be192bf11b8ffee294ef8910c0c4c",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "linear_weighted_moving_average",
+          "path": "movings\\linear_weighted_moving_average.pine",
+          "sha256": "5c03bda7d4085bb39000a51a8cce1c2921008ce39dfa5e5b3d947badc65955cb",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "mcginley_dynamic",
+          "path": "movings\\mcginley_dynamic.pine",
+          "sha256": "cfdebb581cb9a3780a39280feacbb954acd5ce2131ea50bddc73ee0f6f3b2ab8",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "mcnicholl_moving_average",
+          "path": "movings\\mcnicholl_moving_average.pine",
+          "sha256": "a2a4b1c2c64212d9c5747853a9410175371bf0867263b5b6849e8f8f9aa8ead8",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "middle_high_low_moving_average",
+          "path": "movings\\middle_high_low_moving_average.pine",
+          "sha256": "970e4d29f9174c6d82c7639fa4066d9fabf49158d6974c05be5bae6d69bd4927",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "moving_geometric_mean",
+          "path": "movings\\moving_geometric_mean.pine",
+          "sha256": "ed528a79ea5a17eba2e861dbefca73dc28cded795230fc780a41d3faf88a093c",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "moving_harmonic_mean",
+          "path": "movings\\moving_harmonic_mean.pine",
+          "sha256": "0e13fdeef45b543a2a14d35b4bd104b06fb12cdc3ac34b0eab266d2594a39929",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "moving_median",
+          "path": "movings\\moving_median.pine",
+          "sha256": "67fa3f6be23845f57efaaf6b329b712e6918381589a9f48a5439886cec88124e",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:10:10: unknown function `percentile_nearest_rank`\nE_OPERATOR_TYPE:Error:12:27: operator `>` expects numeric operands, got series na and series na\nE_CALL_ARG_TYPE:Error:13:6: `plot` argument `series` expects series/simple numeric, got series na"
+        },
+        {
+          "name": "moving_quadratic_mean",
+          "path": "movings\\moving_quadratic_mean.pine",
+          "sha256": "933a3fb5af04bcd32e4852dc0afdd7dcb7e0fb810a709e108c1c94fca0a6c527",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "multiple_hull_moving_average",
+          "path": "movings\\multiple_hull_moving_average.pine",
+          "sha256": "04b982305a665ed3068723d50d8ca3ee531b830600f4956b1e8b495cca5c1a3e",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "parabolic_sar",
+          "path": "movings\\parabolic_sar.pine",
+          "sha256": "95e0cb91e8d0139870887eaacd832ba877ddd5d3a1b01a028421eb70b2b0858e",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:10:8: unknown function `sar`\nE_CALL_ARG_TYPE:Error:12:6: `plot` argument `series` expects series/simple numeric, got series na\nE_LEGACY_V3_NA_INFERENCE:Error:10:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "parabolic_weighted_moving_average",
+          "path": "movings\\parabolic_weighted_moving_average.pine",
+          "sha256": "fb86be2aa78dea502c5636c529ac6c6fc62a7c93a7451a0161ec4a7f850ee1f7",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "pentuple_exponential_moving_average",
+          "path": "movings\\pentuple_exponential_moving_average.pine",
+          "sha256": "5bd19baf43e74f1e2362cec9f63c1be415ce840a01ee2d25c568a91ba3f00b4b",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "quadruple_exponential_moving_average",
+          "path": "movings\\quadruple_exponential_moving_average.pine",
+          "sha256": "420998d9319114561efcb47f2899f1b67158b5b9a7a269d9d79b1f2dc3e70352",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "quick_moving_average",
+          "path": "movings\\quick_moving_average.pine",
+          "sha256": "40ec50e2cdccd3eb38cc6e75fa4754314f0c7c089c5d599a8eb8884c00bc51af",
+          "status": "failed",
+          "error": "E_CALL_ARG_NAME:Error:6:80: `indicator` has no argument named `behind_chart`"
+        },
+        {
+          "name": "recursive_median_filter",
+          "path": "movings\\recursive_median_filter.pine",
+          "sha256": "59cd791f4bbd32eab366b167ee9014ca7c9061e397c2887a6836adb85abcf41f",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:20:28: unknown function `sin`\nE_UNKNOWN_FUNCTION:Error:12:2: unknown function `percentile_nearest_rank`"
+        },
+        {
+          "name": "recursive_median_oscillator",
+          "path": "movings\\recursive_median_oscillator.pine",
+          "sha256": "e2a1865b71a6e8ab7ef0e3d5de2bf7f202e720683f2266a0a818d1d5d6c59003",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:18:48: unknown function `sin`\nE_UNKNOWN_FUNCTION:Error:11:2: unknown function `percentile_nearest_rank`"
+        },
+        {
+          "name": "recursive_moving_trend_average",
+          "path": "movings\\recursive_moving_trend_average.pine",
+          "sha256": "1a39f64836a7232b946bd1c42ce37f2f1fbc9c77dfcb72e4e5e97239428fcf97",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "regularized_exponential_moving_average",
+          "path": "movings\\regularized_exponential_moving_average.pine",
+          "sha256": "821bc62e783de47ab74acb93a1d8e5bdfcfde36eb2480cfcd0b41ce11a41f2a9",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "self_weighted_moving_average",
+          "path": "movings\\self_weighted_moving_average.pine",
+          "sha256": "880506c79892c50cf85c65f8c217d0b3180f73108e38d9ca507fdaeb7373c671",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "sharp_modified_moving_average",
+          "path": "movings\\sharp_modified_moving_average.pine",
+          "sha256": "5f5aa884976989a0e8f6ca4067241ae8e4741b66142de5a5c4ce0b87600043b6",
+          "status": "failed",
+          "error": "E_CALL_ARG_NAME:Error:5:89: `indicator` has no argument named `behind_chart`"
+        },
+        {
+          "name": "simple_moving_average",
+          "path": "movings\\simple_moving_average.pine",
+          "sha256": "88bcc053d31cde910c6dbab531a96ad7c33c8388076b18bd5e018a802d2ba336",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "sine_weighted_moving_average",
+          "path": "movings\\sine_weighted_moving_average.pine",
+          "sha256": "5b429f312c441a566178865b2b34524f068d1ed6b1980a09299b42e074ce13ac",
+          "status": "failed",
+          "error": "E_CALL_ARG_NAME:Error:5:88: `indicator` has no argument named `behind_chart`"
+        },
+        {
+          "name": "spencer_15_point_moving_average",
+          "path": "movings\\spencer_15_point_moving_average.pine",
+          "sha256": "ed4c2ad7c57cb8cfe13e9e3edae00ac574ea64487091111b4de90f6f8a955c5a",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "spencer_21_point_moving_average",
+          "path": "movings\\spencer_21_point_moving_average.pine",
+          "sha256": "eb44e2a4c79380597e00fb004e584d28a439ccbf6f30c3726d0617301e15c70e",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "t3_moving_average",
+          "path": "movings\\t3_moving_average.pine",
+          "sha256": "8833d9d262f038d526bd2013fb4f4b5d6352d3737444cdf6cc3fadb44f5dbb66",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "triangular_moving_average",
+          "path": "movings\\triangular_moving_average.pine",
+          "sha256": "0fcf65ab210e67439b62ca34ac267f37e2cd55c4a73505d7989a49b304104280",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "trimean",
+          "path": "movings\\trimean.pine",
+          "sha256": "946b4cc5b36e8145c6f324e3bcf6ac87e2c597881dd5f796fc66cb6731af20c9",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:10:6: unknown function `percentile_nearest_rank`\nE_UNKNOWN_FUNCTION:Error:11:10: unknown function `percentile_nearest_rank`\nE_UNKNOWN_FUNCTION:Error:12:6: unknown function `percentile_nearest_rank`\nE_OPERATOR_TYPE:Error:14:17: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:16:28: operator `>` expects numeric operands, got series na and series na\nE_CALL_ARG_TYPE:Error:17:6: `plot` argument `series` expects series/simple numeric, got series na"
+        },
+        {
+          "name": "vidya_variable_index_dynamic_average",
+          "path": "movings\\vidya_variable_index_dynamic_average.pine",
+          "sha256": "f15673fd568995ce8a7e13656b991b6bec11618a7038146462291d6b86f29728",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "weighted_moving_average",
+          "path": "movings\\weighted_moving_average.pine",
+          "sha256": "d80f63d32f43833b5d739dae492dc5121e35d7f73b24cef99a895c3bf1257960",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "wilder_modified_moving_average",
+          "path": "movings\\wilder_modified_moving_average.pine",
+          "sha256": "cb9998f0b3781300d61e3722bc0da6c932802132eac7bcedc26dbf2dcc357529",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "zero_lag_exponential_moving_average",
+          "path": "movings\\zero_lag_exponential_moving_average.pine",
+          "sha256": "534ab8d03b362ce61adea2e117ecd6deaae60dd578b1a6e07beecded8a6c70d6",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "accelerator_oscillator",
+          "path": "oscillators\\accelerator_oscillator.pine",
+          "sha256": "91e1eaf3df466645c1eaee31d345c658fa101c592b2155b6e9509132fd41e1fd",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "accumulative_swing_index",
+          "path": "oscillators\\accumulative_swing_index.pine",
+          "sha256": "5405b38c36a0c57221c144b88d5c86be9c1b407e8199c2642ffa4d2e8af61aa4",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:20:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:22:12: operator `>=` expects numeric operands, got series na and series na\nE_CALL_ARG_TYPE:Error:24:6: `plot` argument `series` expects series/simple numeric, got series na\nE_LEGACY_V3_NA_INFERENCE:Error:20:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:22:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "asymmetrical_rsi",
+          "path": "oscillators\\asymmetrical_rsi.pine",
+          "sha256": "e5da584793efbb533ad84a57978f6f9bbe2f66902e03e155ebdeb2b51ef52585",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:12:7: unknown function `roc`\nE_OPERATOR_TYPE:Error:14:15: operator `>=` expects numeric operands, got series na and const int\nE_OPERATOR_TYPE:Error:18:21: operator `>=` expects numeric operands, got series na and const int\nE_OPERATOR_TYPE:Error:24:25: operator `>=` expects numeric operands, got series na and const int"
+        },
+        {
+          "name": "awesome_oscillator",
+          "path": "oscillators\\awesome_oscillator.pine",
+          "sha256": "d44d26916968ee69d9c58ce092dac205016b045edf4823c96d17c2fc2b3dab2a",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "cci_commodity_channel_index",
+          "path": "oscillators\\cci_commodity_channel_index.pine",
+          "sha256": "9efc853a67ebf04888fb6056db748f2e98f3446a72bf48aa25c94e9b3088016c",
+          "status": "failed",
+          "error": "E_UNKNOWN_SYMBOL:Error:74:10: unknown symbol `accdist`\nE_UNKNOWN_FUNCTION:Error:76:10: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:78:14: unknown function `roc`\nE_UNKNOWN_FUNCTION:Error:78:10: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:83:43: unknown function `dev`\nE_OPERATOR_TYPE:Error:85:12: operator `>` expects numeric operands, got series na and input int\nE_OPERATOR_TYPE:Error:85:38: operator `<` expects numeric operands, got series na and input int\nE_CALL_ARG_TYPE:Error:86:6: `plot` argument `series` expects series/simple numeric, got series na\nE_OPERATOR_TYPE:Error:98:15: operator `>` expects numeric operands, got series na and input int\nE_OPERATOR_TYPE:Error:99:15: operator `<` expects numeric operands, got series na and input int\nE_CALL_ARG_TYPE:Error:104:16: `ta.crossover` argument `source1` expects series/simple numeric, got series na\nE_CALL_ARG_TYPE:Error:105:17: `ta.crossunder` argument `source1` expects series/simple numeric, got series na\nE_LEGACY_V3_NA_INFERENCE:Error:83:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:85:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:98:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:99:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "center_of_gravity_oscillator",
+          "path": "oscillators\\center_of_gravity_oscillator.pine",
+          "sha256": "831193c1631aaf64f4159bab08955ef72671695aa9ba597cf709bf98c387d1ac",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "chande_momentum_oscillator",
+          "path": "oscillators\\chande_momentum_oscillator.pine",
+          "sha256": "f184c1eba6d8eb0dcc3e8d90c0f7eb531f3e3b261ab3e0907b53ae0537089a85",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "coppock_curve",
+          "path": "oscillators\\coppock_curve.pine",
+          "sha256": "7fcf1f36d1932f25612e17cd8c6e4c1e2b96a482fbd7b42e3814c11fbdc20fb4",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:11:15: unknown function `roc`\nE_UNKNOWN_FUNCTION:Error:11:41: unknown function `roc`"
+        },
+        {
+          "name": "demarker",
+          "path": "oscillators\\demarker.pine",
+          "sha256": "735e259782c557dfe1aef899a9d9ca407d6fc9351ce34a397e8acfbf326acc19",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "derivative_oscillator",
+          "path": "oscillators\\derivative_oscillator.pine",
+          "sha256": "5990c7a11e88fa0d65847f5909dd9123294fcc5d8d183d03b9c4df07378f434f",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "didi_index",
+          "path": "oscillators\\didi_index.pine",
+          "sha256": "11976a72a7ac4953a27d5311e3dd96a2a6babb0203e5332c796a2e84f7970fbd",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "disparity_index",
+          "path": "oscillators\\disparity_index.pine",
+          "sha256": "769d3756f8ea788d952776f6bbd0877cb68c04154124ee7efd710238feee9dd3",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "dorsey_inertia",
+          "path": "oscillators\\dorsey_inertia.pine",
+          "sha256": "633ac3053bc112cfad651e6881b023f5a2cc05da55cef64355d0ca233d54b72a",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "dynamic_momentum_index",
+          "path": "oscillators\\dynamic_momentum_index.pine",
+          "sha256": "df76962e09b40a6f909d3d08310704ef4004c9b1610758c2ae45d0ffd38a67e5",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ehlers_cyber_cycle",
+          "path": "oscillators\\ehlers_cyber_cycle.pine",
+          "sha256": "9cb5dbe756100247d990ff31e5a2e4b71e0908eeaddc3ba74691544033ec0c7b",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ehlers_decycler_oscillator",
+          "path": "oscillators\\ehlers_decycler_oscillator.pine",
+          "sha256": "63247c034c0cc3e2059048c9606eb6be5b7e638e9fbe01072c6a020c78693a48",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:23:29: unknown function `sin`\nE_UNKNOWN_FUNCTION:Error:23:29: unknown function `sin`\nE_UNKNOWN_FUNCTION:Error:23:29: unknown function `sin`\nE_UNKNOWN_FUNCTION:Error:23:29: unknown function `sin`"
+        },
+        {
+          "name": "ehlers_fisherized_deviation_scaled_oscillator",
+          "path": "oscillators\\ehlers_fisherized_deviation_scaled_oscillator.pine",
+          "sha256": "6de7215ca56f7f82dac1918a074411da8156e11c72266bbf6b12aae4aac52a0d",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ehlers_roofing_filter",
+          "path": "oscillators\\ehlers_roofing_filter.pine",
+          "sha256": "a3f9bd510a76d89186262aaeff89e27db12aea42ceb2936474a75c54d471e26d",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:43:23: unknown function `sin`"
+        },
+        {
+          "name": "ehlers_smoothed_adaptive_momentum",
+          "path": "oscillators\\ehlers_smoothed_adaptive_momentum.pine",
+          "sha256": "33147c6ce626755bcc05ae014e5bd76057f3a5f09c5f5fbce755da8f4ed17002",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:12:5: unknown function `percentile_nearest_rank`\nE_OPERATOR_TYPE:Error:85:15: operator `/` expects numeric operands, got const float and series na\nE_LEGACY_V3_NA_INFERENCE:Error:77:5: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "ehlers_stochastic",
+          "path": "oscillators\\ehlers_stochastic.pine",
+          "sha256": "041250d90ae3069d5bcbd5eeb19414699e0675a2c96cbb83564ccb69f2a585fb",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:46:23: unknown function `sin`"
+        },
+        {
+          "name": "ehlers_stochastic_cyber_cycle",
+          "path": "oscillators\\ehlers_stochastic_cyber_cycle.pine",
+          "sha256": "fe05151a2c54bb7fdf2c37e2a12ee6c9d0a55c737ecb800c3e767e8dde85fe1e",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ehlers_super_passband_filter",
+          "path": "oscillators\\ehlers_super_passband_filter.pine",
+          "sha256": "d3b03dff6b2799d8d3b1a76254a3820d086e3baf1a087ffb4e3c8c42d2dc902b",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ehlers_triple_delay_line_detrender",
+          "path": "oscillators\\ehlers_triple_delay_line_detrender.pine",
+          "sha256": "d2ce1926c1ddc46b3e63773d3d5f6b722813c573392884855a9f142cd2d20ef2",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ergodic_oscillator",
+          "path": "oscillators\\ergodic_oscillator.pine",
+          "sha256": "0acf6982fcbf57373e4433b08f336baa274f366ee3b35ae7f9674f1e15f7f1db",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "forecast_oscillator",
+          "path": "oscillators\\forecast_oscillator.pine",
+          "sha256": "9bea13321f0776126b87885bbd7b86abc4a6af761822eb99c45c33b28b926536",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "gator_oscillator",
+          "path": "oscillators\\gator_oscillator.pine",
+          "sha256": "54b2f1d41b6e36570a980537af236181b821eab4c33448bb4d82ef189ccd2acf",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "intraday_momentum_index",
+          "path": "oscillators\\intraday_momentum_index.pine",
+          "sha256": "fb9119be6f1c7855d7efe8c56fb203e1545274c60463eeee5eb6a9f5a4ab88e6",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "jurik_rsx",
+          "path": "oscillators\\jurik_rsx.pine",
+          "sha256": "f2759c59b8e25bc05d86ab7fd2323bd9dd98efd6a8d30435d3105da720a29899",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "kairi_relative_index",
+          "path": "oscillators\\kairi_relative_index.pine",
+          "sha256": "071d276e683b8923739f5f47d565c2416616e1211517ef666d181d8b17726ca0",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "laguerre_rsi",
+          "path": "oscillators\\laguerre_rsi.pine",
+          "sha256": "e6fc4df58381d85ca6a63dbab916aa415a5410de2bcb3e6c73d00a9e30077de1",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "laguerre_rsi_self_adjusting_alpha_with_fractals_energy",
+          "path": "oscillators\\laguerre_rsi_self_adjusting_alpha_with_fractals_energy.pine",
+          "sha256": "67463318d71eba11261425c70745f693094fa564c66ad4d1914768d5ba35ce75",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "mass_index",
+          "path": "oscillators\\mass_index.pine",
+          "sha256": "2becc08dc008aebe420463ce034e8918f07041c2bd20f60bf19ef1f33deb258a",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "mfi_money_flow_index",
+          "path": "oscillators\\mfi_money_flow_index.pine",
+          "sha256": "7d27829845a37745d3e3fb0be4e32b6dfd927844c81e2a9f1f957d51e5219cde",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "normalized_relative_vigor_index",
+          "path": "oscillators\\normalized_relative_vigor_index.pine",
+          "sha256": "5e3db21f2f88727740799de52132d645e004b05c3a057bb0adbf7bcc1f3178b6",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:9:12: unknown function `swma`\nE_UNKNOWN_FUNCTION:Error:9:46: unknown function `swma`\nE_UNKNOWN_FUNCTION:Error:10:10: unknown function `swma`\nE_OPERATOR_TYPE:Error:13:19: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:15:29: operator `>` expects numeric operands, got series float and series na\nE_LEGACY_V3_NA_INFERENCE:Error:10:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:15:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "percentage_price_oscillator",
+          "path": "oscillators\\percentage_price_oscillator.pine",
+          "sha256": "05169fe97758d7e88e32e24cd8905952cf21dec00f61fe799407ba5c48322d59",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "percentage_volume_oscillator",
+          "path": "oscillators\\percentage_volume_oscillator.pine",
+          "sha256": "987d308a146fadb477e9e860d0a325919fdb2e6b372d4432ebcac385ad9f8ac4",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "phase_change_index",
+          "path": "oscillators\\phase_change_index.pine",
+          "sha256": "db9f5d6156606d826e544c7f47bce18ee4a66ef6310a44eeb1fb78f4f1233c8f",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "pretty_good_oscillator",
+          "path": "oscillators\\pretty_good_oscillator.pine",
+          "sha256": "bf2aa52fd7023f5be66619909048f3d582b2920cc341d8cc7b48e65f3a99fc6a",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "price_momentum_oscillator",
+          "path": "oscillators\\price_momentum_oscillator.pine",
+          "sha256": "5eef82db01e29a3ee9a2d09fa1b9385adcf56d90808f608f7b237e4fa49b36dc",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:13:27: unknown function `roc`"
+        },
+        {
+          "name": "pring_special_k",
+          "path": "oscillators\\pring_special_k.pine",
+          "sha256": "e14305de8e57d7cba6e4676796591cd50c0e8a7ccad4eb9b7f178ceb5f505538",
+          "status": "failed",
+          "error": "E_PARSE_EXPR:Error:8:30: expected expression\nE_PARSE_EXPR:Error:9:1: expected expression\nE_PARSE_EXPR:Error:10:29: expected expression\nE_PARSE_EXPR:Error:11:29: expected expression\nE_PARSE_EXPR:Error:12:25: expected expression\nE_PARSE_EXPR:Error:13:29: expected expression\nE_PARSE_EXPR:Error:14:29: expected expression\nE_PARSE_EXPR:Error:15:31: expected expression\nE_PARSE_EXPR:Error:16:27: expected expression\nE_PARSE_EXPR:Error:17:31: expected expression\nE_PARSE_EXPR:Error:18:31: expected expression\nE_PARSE_EXPR:Error:21:1: expected expression\nE_UNKNOWN_FUNCTION:Error:19:6: unknown function `roc`\nE_UNKNOWN_SYMBOL:Error:23:6: unknown symbol `psk`\nE_UNKNOWN_SYMBOL:Error:23:43: unknown symbol `pskColor`"
+        },
+        {
+          "name": "rainbow_oscillator",
+          "path": "oscillators\\rainbow_oscillator.pine",
+          "sha256": "aedf792f7b35118b780b89ed5af4543c254fa7bd0e0886ccb559077ee5cac98d",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 4,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "random_walk_index",
+          "path": "oscillators\\random_walk_index.pine",
+          "sha256": "dd34c860b9e21269d934db26962f96d79b1206393d1b086edffe50504642bb4d",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "range_action_verification_index",
+          "path": "oscillators\\range_action_verification_index.pine",
+          "sha256": "2ac308c4227a1aefc3df15c3d7979324c1bab63b0ba9296ee9270e781aac6b47",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "rapid_rsi",
+          "path": "oscillators\\rapid_rsi.pine",
+          "sha256": "15350d56df4eace2956cf3816e790a32693ab9aefe48ec698007073951c58e0c",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "recursive_median_oscillator",
+          "path": "oscillators\\recursive_median_oscillator.pine",
+          "sha256": "1936899a46cace26d8ff53d0a92563d601ef36f5eb63693b03e1721005838b19",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:17:28: unknown function `sin`\nE_UNKNOWN_FUNCTION:Error:12:2: unknown function `percentile_nearest_rank`\nE_OPERATOR_TYPE:Error:20:45: operator `-` expects numeric operands, got const int and series na\nE_UNKNOWN_FUNCTION:Error:23:28: unknown function `sin`\nE_OPERATOR_TYPE:Error:26:16: operator `/` expects numeric operands, got series na and const int\nE_OPERATOR_TYPE:Error:26:73: operator `-` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:26:104: operator `-` expects numeric operands, got const int and series na\nE_LEGACY_V3_NA_INFERENCE:Error:17:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:23:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "regression_oscillator",
+          "path": "oscillators\\regression_oscillator.pine",
+          "sha256": "d9ae74cf3a6de3d2f92ba8e488dd29174f240d2993de56c1ff5452c7f3a90e87",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "relative_momentum_index",
+          "path": "oscillators\\relative_momentum_index.pine",
+          "sha256": "6578a3ef85bbaa17177b1cb0b0c567e9f021f6484f29a5b3f866484dbee683fd",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "relative_spread_strength",
+          "path": "oscillators\\relative_spread_strength.pine",
+          "sha256": "223480d020ecdd5b94bb842eb934079d63ea3eaf92bf101a18a2169c4165f22d",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "relative_volatility_index",
+          "path": "oscillators\\relative_volatility_index.pine",
+          "sha256": "c6e440dac04650a9aebaac1189f77c910f889ac1315a3628eef9a7016c6efa02",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "repulse",
+          "path": "oscillators\\repulse.pine",
+          "sha256": "4271f0aa80300affb5966702dd6abc408928e097dddbc770b8658f9941d3cc20",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "rocket_rsi",
+          "path": "oscillators\\rocket_rsi.pine",
+          "sha256": "865ebc24272f6943587919b94e39bf0c0af863012ff2740725872676b20eb0e8",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "rsi_relative_strength_index",
+          "path": "oscillators\\rsi_relative_strength_index.pine",
+          "sha256": "593f943b819088188a1413c8c6a5b94651865199d1ce6575680e99486d6037dc",
+          "status": "failed",
+          "error": "E_UNKNOWN_SYMBOL:Error:69:10: unknown symbol `accdist`\nE_UNKNOWN_FUNCTION:Error:71:10: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:73:10: unknown function `cum`"
+        },
+        {
+          "name": "rsx",
+          "path": "oscillators\\rsx.pine",
+          "sha256": "50827bbee3ad892e90cbea9e27c0e0a981e22bc5eda75f36775e5299267f34fc",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "self_adjusting_rsi",
+          "path": "oscillators\\self_adjusting_rsi.pine",
+          "sha256": "a31914a7d549309539e7c252a11e9b58b7001afefbc542b8f8ec8669ea2e3f29",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 4,
+          "alerts": 21,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "smoothed_rate_of_change",
+          "path": "oscillators\\smoothed_rate_of_change.pine",
+          "sha256": "2dfa6a6aba7e1997e7f4e9f3601da37c1b58418a2898cd7b11e157d3dd371a3a",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "stc_schaff_trend_cycle",
+          "path": "oscillators\\stc_schaff_trend_cycle.pine",
+          "sha256": "ec2215ccd924d2bf3ce3ba88abcef5dbf7d193898b83e99e7e39e50572bc3cc1",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 36,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "stiffness_indicator",
+          "path": "oscillators\\stiffness_indicator.pine",
+          "sha256": "d9ab978cf574b44d63b5ad787dcdea2528b9c5be17513655027710af1bb7ffd3",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "stochastic",
+          "path": "oscillators\\stochastic.pine",
+          "sha256": "8446175dd0e77ad8fc68e2cf33432e35331e470c04b581e50c8fbceb476615ca",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "stochastic_connors_rsi",
+          "path": "oscillators\\stochastic_connors_rsi.pine",
+          "sha256": "6c9e4dfd720554e1fc9fb2a9c42d4bbdbcbabcf5fdb5dd88e3d7b75ee49b68eb",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:32:27: unknown function `roc`\nE_UNKNOWN_FUNCTION:Error:32:15: unknown function `percentrank`\nE_LEGACY_V3_NA_INFERENCE:Error:32:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "stochastic_momentum_index",
+          "path": "oscillators\\stochastic_momentum_index.pine",
+          "sha256": "57097926c1083cd66016307b3f4c37250d18424d675c31f9c58f2509a4f5682d",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "tick_line_momentum_oscillator",
+          "path": "oscillators\\tick_line_momentum_oscillator.pine",
+          "sha256": "4a48e814c12557256894e11c69bcbbb7844154649136d3ecdfaae1c6348e757c",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:26:47: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:26:43: unknown function `roc`\nE_UNKNOWN_FUNCTION:Error:27:42: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:27:38: unknown function `roc`\nE_UNKNOWN_FUNCTION:Error:28:44: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:28:40: unknown function `roc`\nE_UNKNOWN_FUNCTION:Error:29:42: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:29:38: unknown function `roc`"
+        },
+        {
+          "name": "total_power_indicator",
+          "path": "oscillators\\total_power_indicator.pine",
+          "sha256": "810f9208a2a67b85a5be11ab9b9e83cd9f6413e6eec9a7ef8ac4ee8051df99d1",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "trend_continuation_factor",
+          "path": "oscillators\\trend_continuation_factor.pine",
+          "sha256": "a34853834eb5d080b083d9ebced1fdfcb930f8eff529aa8a53ed9f78f632cf8b",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "trend_detection_index",
+          "path": "oscillators\\trend_detection_index.pine",
+          "sha256": "9f4a2a1a1ba38b52ac57c0edc610a5111f83d95194ef11a1a3abd281bbfc80a1",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "trend_intensity_index",
+          "path": "oscillators\\trend_intensity_index.pine",
+          "sha256": "0ad5e5c9910901a0e98ef37d0a95d8c6e96bcadaacc45bce623f556f4e949b56",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "trend_trigger_factor",
+          "path": "oscillators\\trend_trigger_factor.pine",
+          "sha256": "fbd1be95c30faac2702bea6b081ef859e8792a1ac3ef8bf94c3d9007c248f627",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "trendscore",
+          "path": "oscillators\\trendscore.pine",
+          "sha256": "9d0e8f703fc9c3da17ffa722030ab525796259a799ebeb30ab4eb14b42030d7f",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "trix",
+          "path": "oscillators\\trix.pine",
+          "sha256": "d62c03a64191fdea94a37f6909e2a7ce02f0084a0938e834be821ed840f7e040",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:19:15: unknown function `roc`\nE_CALL_ARG_TYPE:Error:20:36: `ta.sma` argument `source` expects series numeric, got series na\nE_CALL_ARG_TYPE:Error:20:62: `ta.ema` argument `source` expects series numeric, got series na\nE_OPERATOR_TYPE:Error:22:8: operator `-` expects numeric operands, got series na and series float\nE_OPERATOR_TYPE:Error:23:13: operator `>=` expects numeric operands, got series na and const int\nE_OPERATOR_TYPE:Error:23:26: operator `<` expects numeric operands, got series na and series na\nE_OPERATOR_TYPE:Error:23:65: operator `<` expects numeric operands, got series na and series na\nE_CALL_ARG_TYPE:Error:24:6: `plot` argument `series` expects series/simple numeric, got series na\nE_OPERATOR_TYPE:Error:27:14: operator `>` expects numeric operands, got series na and series float\nE_OPERATOR_TYPE:Error:29:42: operator `>` expects numeric operands, got series na and const int\nE_CALL_ARG_TYPE:Error:32:17: `plot` argument `series` expects series/simple numeric, got series na\nE_OPERATOR_TYPE:Error:40:47: operator `>` expects numeric operands, got series na and const int\nE_CALL_ARG_TYPE:Error:43:45: `ta.crossover` argument `source1` expects series/simple numeric, got series na\nE_CALL_ARG_TYPE:Error:43:11: `plotshape` argument `series` expects series/simple numeric or bool, got series na\nE_CALL_ARG_TYPE:Error:44:46: `ta.crossunder` argument `source1` expects series/simple numeric, got series na\nE_CALL_ARG_TYPE:Error:44:11: `plotshape` argument `series` expects series/simple numeric or bool, got series na\nE_LEGACY_V3_NA_INFERENCE:Error:19:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:22:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:23:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:27:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:29:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:40:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "true_range_double",
+          "path": "oscillators\\true_range_double.pine",
+          "sha256": "2c2ff611b43795779d2e459bab09c02be2111cfb81a3ae2240d74fdbcadff1f2",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "tsi_true_strength_index",
+          "path": "oscillators\\tsi_true_strength_index.pine",
+          "sha256": "d6e2b4dba112e735760ec2a3ab4056b26dd025360e6e4d43bc51f8fb26ed34ca",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "v_macd",
+          "path": "oscillators\\v_macd.pine",
+          "sha256": "8fcb309b45b2deec4d81e8cf85116f4d04dabb6e098d4b32c6e122f9a368e517",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "vertical_horizontal_filter",
+          "path": "oscillators\\vertical_horizontal_filter.pine",
+          "sha256": "202ea75992531a4c3faab83434c1140c65db7e48fba17cc35bbf61d8ca930f90",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "vw_macd",
+          "path": "oscillators\\vw_macd.pine",
+          "sha256": "4ed570d3e18f18e0b246fa778a383896f586dec2da280944b816f5d2eff21215",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "chart_type_identifier",
+          "path": "research\\chart_type_identifier.pine",
+          "sha256": "e0fe5b08278056ea44fe40d2fdd2f4e939fe08ae8d6154b251948d51f162ff99",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:33:15: unknown function `cum`\nE_OPERATOR_TYPE:Error:34:11: operator `/` expects numeric operands, got series na and series int\nE_UNKNOWN_FUNCTION:Error:117:12: unknown function `min`\nE_OPERATOR_TYPE:Error:112:18: operator `-` expects numeric operands, got series na and const int"
+        },
+        {
+          "name": "custom_median_vs_built_in_median",
+          "path": "research\\custom_median_vs_built_in_median.pine",
+          "sha256": "b3304504bcddcee3b41924cbf4dbde6fd3d98fa76d740ec6a98368c50f046d98",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:11:5: unknown function `percentile_nearest_rank`\nE_UNKNOWN_FUNCTION:Error:23:17: unknown function `min`\nE_UNKNOWN_FUNCTION:Error:23:17: unknown function `min`\nE_LOOP_RANGE_TYPE:Error:16:15: for loop range must be int, got input float\nE_UNKNOWN_FUNCTION:Error:23:17: unknown function `min`\nE_CALL_ARG_TYPE:Error:41:6: `plot` argument `series` expects series/simple numeric, got series na\nE_LEGACY_V3_NA_INFERENCE:Error:39:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "dashed_line_style",
+          "path": "research\\dashed_line_style.pine",
+          "sha256": "b0eec57a06456b052e021bb33e877f7d75bfa07157bf4644fa26086acc3761c4",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "fancy_shapes",
+          "path": "research\\fancy_shapes.pine",
+          "sha256": "02d196fe6ea43c41023fd0c48f09f2f3c63aa4064be88aeda325ec286531ec6c",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 0,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "heikin_ashi_chart_identifier",
+          "path": "research\\heikin_ashi_chart_identifier.pine",
+          "sha256": "898599684c95dbda6e6b5474890e7c8ad26023b8e8ff51e207e1ebccb4d2cf55",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 0,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "kagi_chart_identifier",
+          "path": "research\\kagi_chart_identifier.pine",
+          "sha256": "c5ccb1d82c093bcbbfb59bca2afd44b074431f1439e4dc9953b3fce449de1574",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 0,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "litecoin_halving_utc_countdown",
+          "path": "research\\litecoin_halving_utc_countdown.pine",
+          "sha256": "e701ed542f109f058d6fc1db002c1260df639317c8793a8ed68d1974aa3a54f5",
+          "status": "failed",
+          "error": "timenow requires an explicit execution timestamp for this script execution"
+        },
+        {
+          "name": "mean_absolute_deviation",
+          "path": "research\\mean_absolute_deviation.pine",
+          "sha256": "3c9f782212600e6c42f6c352ab489216741a1a8c17976ae68286147bf637cc40",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:14:8: unknown function `dev`\nE_UNKNOWN_FUNCTION:Error:12:5: unknown function `percentile_nearest_rank`\nE_UNKNOWN_FUNCTION:Error:12:5: unknown function `percentile_nearest_rank`\nE_CALL_ARG_TYPE:Error:27:6: `plot` argument `series` expects series/simple numeric, got series na\nE_CALL_ARG_TYPE:Error:32:6: `plot` argument `series` expects series/simple numeric, got series na\nE_LEGACY_V3_NA_INFERENCE:Error:14:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:19:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "momentum",
+          "path": "research\\momentum.pine",
+          "sha256": "e039c537aa51261e306aeedb55fe7f61ae6aff6f55bb8ab0500fdc54ddf1f26a",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:13:8: unknown function `mom`\nE_CALL_ARG_TYPE:Error:20:6: `plot` argument `series` expects series/simple numeric, got series na\nE_LEGACY_V3_NA_INFERENCE:Error:13:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "percentrank_bug",
+          "path": "research\\percentrank_bug.pine",
+          "sha256": "39a7061612c7a624a5fb4a045378249b01c232aee69fea57a26485a609938acb",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:9:6: unknown function `percentrank`\nE_CALL_ARG_TYPE:Error:10:6: `plot` argument `series` expects series/simple numeric, got series na\nE_LEGACY_V3_NA_INFERENCE:Error:9:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "point_and_figure_pnf_chart_identifier",
+          "path": "research\\point_and_figure_pnf_chart_identifier.pine",
+          "sha256": "1ff378745b0a74580905552514e9a7b8a7bb3ea36c23c604be2b2d026ca0c137",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:13:18: unknown function `cum`"
+        },
+        {
+          "name": "rate_of_change",
+          "path": "research\\rate_of_change.pine",
+          "sha256": "4837dca328c070fd2de20c02b38a27e44ffcb24d5ef0ff1d4149415440281ce8",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:9:7: unknown function `roc`\nE_CALL_ARG_TYPE:Error:17:6: `plot` argument `series` expects series/simple numeric, got series na\nE_LEGACY_V3_NA_INFERENCE:Error:9:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "renko_chart_identifier",
+          "path": "research\\renko_chart_identifier.pine",
+          "sha256": "ab4c0addbb2e6651dba0957a39d10ed289a9f5c88d86d581441c1a1e3cc3be1b",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:11:15: unknown function `cum`\nE_OPERATOR_TYPE:Error:12:11: operator `/` expects numeric operands, got series na and series int"
+        },
+        {
+          "name": "script_with_expiration_time",
+          "path": "research\\script_with_expiration_time.pine",
+          "sha256": "be4b750879611fbbfcd5b4c4ece5c493405525337445228b9303cde73c45abe0",
+          "status": "failed",
+          "error": "timenow requires an explicit execution timestamp for this script execution"
+        },
+        {
+          "name": "symbol_info_helper",
+          "path": "research\\symbol_info_helper.pine",
+          "sha256": "ab626503a95ace66d40830864a9753fe2c78a36e09cacfef7979cc807519bf9f",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 0,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "utc_clock",
+          "path": "research\\utc_clock.pine",
+          "sha256": "0dd03a47bc8541fd1763b9737e555c50809de894cc0d7e6480e9b9cbcfcb1665",
+          "status": "failed",
+          "error": "timenow requires an explicit execution timestamp for this script execution"
+        },
+        {
+          "name": "all_time_high_days",
+          "path": "statistics\\all_time_high_days.pine",
+          "sha256": "0d485cc28314c2d5268b16a723d57b3f82fc5c8a668e13e060db50344823ae23",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "all_time_high_percent_drop",
+          "path": "statistics\\all_time_high_percent_drop.pine",
+          "sha256": "b6278596cd856249f87135ed90cd71fed76237427351bd9929b83006c4f16664",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 12,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "bitcoin_ath_hash_rate_level",
+          "path": "statistics\\bitcoin_ath_hash_rate_level.pine",
+          "sha256": "5319fbcd2bb141f56da1451cf2821908775a4d6094d4f4d6ab89d916543cdc70",
+          "status": "failed",
+          "error": "legacy security at source span 429..472: missing request data for symbol `QUANDL:BCHAIN/HRATE` timeframe `D`"
+        },
+        {
+          "name": "bullish_bearish_candle_series_distribution",
+          "path": "statistics\\bullish_bearish_candle_series_distribution.pine",
+          "sha256": "2e3f860691e8d4246edafe83c0689789657269e851584f3b4d0056becc164c23",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 58,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "candles_history",
+          "path": "statistics\\candles_history.pine",
+          "sha256": "cca4d3ee71e02b7767af1daf482d1879428e06a478ac03b9161577dbec23ff4e",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:41:16: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:42:15: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:68:11: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:69:11: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:71:16: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:72:16: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:92:33: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:93:45: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:94:45: unknown function `cum`\nE_OPERATOR_TYPE:Error:99:49: operator `/` expects numeric operands, got series na and simple float\nE_OPERATOR_TYPE:Error:103:54: operator `/` expects numeric operands, got series na and simple float\nE_LEGACY_V3_NA_INFERENCE:Error:41:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:42:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:68:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:69:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:71:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type\nE_LEGACY_V3_NA_INFERENCE:Error:72:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "close_to_close_percent_change_distribution",
+          "path": "statistics\\close_to_close_percent_change_distribution.pine",
+          "sha256": "434a8105d8677ba3442a8c899ec1c0241816ecdb5c4ac86325c114e6293c5fa8",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:14:7: unknown function `roc`\nE_OPERATOR_TYPE:Error:17:12: operator `<=` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:17:25: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:17:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:18:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:21:11: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:21:27: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:21:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:22:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:24:12: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:24:27: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:24:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:25:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:27:10: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:27:26: operator `<` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:27:6: unknown function `cum`\nE_OPERATOR_TYPE:Error:28:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:30:12: operator `<=` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:30:25: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:30:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:31:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:34:11: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:34:27: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:34:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:35:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:37:12: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:37:27: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:37:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:38:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:40:10: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:40:26: operator `<` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:40:6: unknown function `cum`\nE_OPERATOR_TYPE:Error:41:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:43:12: operator `<=` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:43:25: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:43:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:44:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:47:11: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:47:27: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:47:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:48:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:50:12: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:50:27: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:50:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:51:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:53:10: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:53:26: operator `<` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:53:6: unknown function `cum`\nE_OPERATOR_TYPE:Error:54:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:56:12: operator `<=` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:56:25: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:56:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:57:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:60:11: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:60:27: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:60:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:61:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:63:12: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:63:27: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:63:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:64:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:66:10: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:66:26: operator `<` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:66:6: unknown function `cum`\nE_OPERATOR_TYPE:Error:67:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:69:12: operator `<=` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:69:25: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:69:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:70:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:73:11: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:73:27: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:73:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:74:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:76:12: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:76:27: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:76:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:77:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:79:10: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:79:26: operator `<` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:79:6: unknown function `cum`\nE_OPERATOR_TYPE:Error:80:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:82:12: operator `<=` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:82:25: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:82:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:83:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:86:11: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:86:27: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:86:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:87:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:89:12: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:89:27: operator `<` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:89:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:90:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:92:10: operator `<=` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:92:26: operator `<` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:92:6: unknown function `cum`\nE_OPERATOR_TYPE:Error:93:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:95:12: operator `>=` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:95:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:96:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:101:12: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:101:28: operator `<` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:101:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:102:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:104:11: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:104:26: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:104:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:105:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:107:12: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:107:28: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:107:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:108:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:110:10: operator `<` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:110:23: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:110:6: unknown function `cum`\nE_OPERATOR_TYPE:Error:111:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:113:12: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:113:28: operator `<=` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:113:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:114:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:117:11: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:117:26: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:117:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:118:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:120:12: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:120:28: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:120:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:121:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:123:10: operator `<` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:123:23: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:123:6: unknown function `cum`\nE_OPERATOR_TYPE:Error:124:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:126:12: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:126:28: operator `<=` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:126:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:127:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:130:11: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:130:26: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:130:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:131:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:133:12: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:133:28: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:133:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:134:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:136:10: operator `<` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:136:23: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:136:6: unknown function `cum`\nE_OPERATOR_TYPE:Error:137:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:139:12: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:139:28: operator `<=` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:139:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:140:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:143:11: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:143:26: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:143:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:144:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:146:12: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:146:28: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:146:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:147:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:149:10: operator `<` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:149:23: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:149:6: unknown function `cum`\nE_OPERATOR_TYPE:Error:150:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:152:12: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:152:28: operator `<=` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:152:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:153:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:156:11: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:156:26: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:156:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:157:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:159:12: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:159:28: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:159:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:160:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:162:10: operator `<` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:162:23: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:162:6: unknown function `cum`\nE_OPERATOR_TYPE:Error:163:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:165:12: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:165:28: operator `<=` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:165:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:166:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:169:11: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:169:26: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:169:7: unknown function `cum`\nE_OPERATOR_TYPE:Error:170:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:172:12: operator `<` expects numeric operands, got const float and series na\nE_OPERATOR_TYPE:Error:172:28: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:172:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:173:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:175:10: operator `<` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:175:23: operator `<=` expects numeric operands, got series na and const float\nE_UNKNOWN_FUNCTION:Error:175:6: unknown function `cum`\nE_OPERATOR_TYPE:Error:176:6: operator `*` expects numeric operands, got const int and series na\nE_OPERATOR_TYPE:Error:178:12: operator `<=` expects numeric operands, got series na and const int\nE_UNKNOWN_FUNCTION:Error:178:8: unknown function `cum`\nE_OPERATOR_TYPE:Error:179:6: operator `*` expects numeric operands, got const int and series na"
+        },
+        {
+          "name": "dividends_per_share_dps_yearly",
+          "path": "statistics\\dividends_per_share_dps_yearly.pine",
+          "sha256": "d1a1f441fe66423618d602f11ea873e202841035bac217cef360de616de8e491",
+          "status": "failed",
+          "error": "legacy security at source span 562..607: missing request data for symbol `ESD_FACTSET:;V-BTC-SPOT;DIVIDENDS` timeframe `D`"
+        },
+        {
+          "name": "earnings_per_share_eps_yearly",
+          "path": "statistics\\earnings_per_share_eps_yearly.pine",
+          "sha256": "b0e13217dbe6179eaed8c2c1b76f31abf24f1b4b1f94825789f67aa3557e2bf9",
+          "status": "failed",
+          "error": "legacy security at source span 559..604: missing request data for symbol `ESD_FACTSET:;V-BTC-SPOT;EARNINGS` timeframe `D`"
+        },
+        {
+          "name": "gaps_percent_size_distribution",
+          "path": "statistics\\gaps_percent_size_distribution.pine",
+          "sha256": "d12104b93387f035b4860b3336911710a000b83a5d8b571efca8c408ce148116",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 0,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "kendall_rank_correlation_coefficient",
+          "path": "statistics\\kendall_rank_correlation_coefficient.pine",
+          "sha256": "4d7888ecf12285b9c6fb109fe8bfd76abf84cef5c88a3706f95734d1b82d1c67",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:25:15: unknown function `correlation`\nE_CALL_ARG_TYPE:Error:28:6: `plot` argument `series` expects series/simple numeric, got series na\nE_LEGACY_V3_NA_INFERENCE:Error:25:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "kurtosis_indicator",
+          "path": "statistics\\kurtosis_indicator.pine",
+          "sha256": "d6380653c42b70d669a981ff8f7df8a99524bf64eb574ca2a3b36d10da474fe5",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "linear_regression_all_data",
+          "path": "statistics\\linear_regression_all_data.pine",
+          "sha256": "743178f4da41fa807b2901567ecc9bc63b753114f9f1590e391189e5d581d615",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:12:8: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:13:8: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:14:9: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:15:9: unknown function `cum`\nE_UNKNOWN_FUNCTION:Error:16:9: unknown function `cum`\nE_OPERATOR_TYPE:Error:19:6: operator `*` expects numeric operands, got series int and series na\nE_OPERATOR_TYPE:Error:19:18: operator `*` expects numeric operands, got series na and series na\nE_OPERATOR_TYPE:Error:19:39: operator `*` expects numeric operands, got series int and series na\nE_OPERATOR_TYPE:Error:19:68: operator `*` expects numeric operands, got series int and series na\nE_OPERATOR_TYPE:Error:24:9: operator `/` expects numeric operands, got series na and series int\nE_OPERATOR_TYPE:Error:25:9: operator `/` expects numeric operands, got series na and series int\nE_OPERATOR_TYPE:Error:27:10: operator `*` expects numeric operands, got series int and series na\nE_OPERATOR_TYPE:Error:27:22: operator `*` expects numeric operands, got series na and series na\nE_OPERATOR_TYPE:Error:27:38: operator `*` expects numeric operands, got series int and series na\nE_OPERATOR_TYPE:Error:28:21: operator `*` expects numeric operands, got series na and series na\nE_OPERATOR_TYPE:Error:31:10: operator `*` expects numeric operands, got series na and series int\nE_OPERATOR_TYPE:Error:32:8: operator `*` expects numeric operands, got series na and series int"
+        },
+        {
+          "name": "roi_return_on_investment",
+          "path": "statistics\\roi_return_on_investment.pine",
+          "sha256": "1f7ab746de3659e6b285102a92a1c9827ba633abbcf0343930579a7e694328f8",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 4,
+          "alerts": 19,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ticker_performance_by_us_president",
+          "path": "statistics\\ticker_performance_by_us_president.pine",
+          "sha256": "68961a6ee2c864cab830900441f32717f2d24e599fc23acd18a323c09247a914",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 24,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "us_treasury_yields",
+          "path": "statistics\\us_treasury_yields.pine",
+          "sha256": "64a0cd43e245b15b50367f5114439aae12069871f7e2da6e6bbbfe130a05be29",
+          "status": "failed",
+          "error": "legacy security at source span 615..695: missing request data for symbol `TVC:US30Y` timeframe `1`"
+        },
+        {
+          "name": "ytd_year_to_date_percent_return",
+          "path": "statistics\\ytd_year_to_date_percent_return.pine",
+          "sha256": "a6add32f40f556373dd7c1df8d70cc436c91284f962c4d713c41d2d29a04c0c4",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 8,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "z_score",
+          "path": "statistics\\z_score.pine",
+          "sha256": "76a002ae0fcafbdc1f3f17d7f5d6c2fd6245854817631bdd637ce3af9ed78edf",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "chandelier_exit",
+          "path": "trailing_stops\\chandelier_exit.pine",
+          "sha256": "d505921fb4b9b7933b45a443cd3c13c255b30fa6c6216e7061844d3fb62eceda",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 26,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "halftrend",
+          "path": "trailing_stops\\halftrend.pine",
+          "sha256": "efa1915b4d0812d8126bd27c7667f9408e90aeed94988058b1b1edeaa23f4a3c",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 11,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "nrtr_nick_rypock_trailing_reverse",
+          "path": "trailing_stops\\nrtr_nick_rypock_trailing_reverse.pine",
+          "sha256": "fc6ca261396d923fdd1adfa3865727c116d8b0b240adb9322115c7dc7700203b",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 25,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "parabolic_sar",
+          "path": "trailing_stops\\parabolic_sar.pine",
+          "sha256": "da661b77d5f1934b8455decc53c8c7b9d525fa46d230f9dd7467ad545ccd97ce",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 72,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "supertrend",
+          "path": "trailing_stops\\supertrend.pine",
+          "sha256": "f693c60a20960bbd156455744838dc97892f2a5662810770c7677a66e9b5705d",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 26,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "session_input_parser",
+          "path": "utils\\session_input_parser.pine",
+          "sha256": "c2a5b53da5e78dee242190f28a185eaddd1b5b69c7f8a9c95c06d2281fe19a7f",
+          "status": "failed",
+          "error": "E_UNKNOWN_FUNCTION:Error:15:15: unknown function `tonumber`\nE_UNKNOWN_FUNCTION:Error:15:15: unknown function `tonumber`\nE_UNKNOWN_FUNCTION:Error:15:15: unknown function `tonumber`\nE_UNKNOWN_FUNCTION:Error:15:15: unknown function `tonumber`\nE_UNKNOWN_FUNCTION:Error:15:15: unknown function `tonumber`\nE_UNSUPPORTED_FEATURE:Error:47:13: `function_side_effect` is not supported: collection mutation via `array.push` is not supported inside user-defined functions\nE_UNKNOWN_FUNCTION:Error:15:15: unknown function `tonumber`\nE_UNKNOWN_FUNCTION:Error:15:15: unknown function `tonumber`\nE_UNKNOWN_FUNCTION:Error:15:15: unknown function `tonumber`\nE_UNKNOWN_FUNCTION:Error:15:15: unknown function `tonumber`\nE_UNKNOWN_FUNCTION:Error:15:15: unknown function `tonumber`\nE_UNSUPPORTED_FEATURE:Error:47:13: `function_side_effect` is not supported: collection mutation via `array.push` is not supported inside user-defined functions\nE_UNKNOWN_SYMBOL:Error:55:36: unknown symbol `hStart1`\nE_CALL_ARITY:Error:55:27: `tostring` is missing required Pine v4 argument `x`\nE_UNKNOWN_SYMBOL:Error:56:38: unknown symbol `mStart1`\nE_CALL_ARITY:Error:56:29: `tostring` is missing required Pine v4 argument `x`\nE_UNKNOWN_SYMBOL:Error:57:34: unknown symbol `hEnd1`\nE_CALL_ARITY:Error:57:25: `tostring` is missing required Pine v4 argument `x`\nE_UNKNOWN_SYMBOL:Error:58:36: unknown symbol `mEnd1`\nE_CALL_ARITY:Error:58:27: `tostring` is missing required Pine v4 argument `x`\nE_UNKNOWN_SYMBOL:Error:59:34: unknown symbol `weekdays1`\nE_CALL_ARITY:Error:59:25: `tostring` is missing required Pine v4 argument `x`\nE_UNKNOWN_SYMBOL:Error:62:36: unknown symbol `hStart2`\nE_CALL_ARITY:Error:62:27: `tostring` is missing required Pine v4 argument `x`\nE_UNKNOWN_SYMBOL:Error:63:38: unknown symbol `mStart2`\nE_CALL_ARITY:Error:63:29: `tostring` is missing required Pine v4 argument `x`\nE_UNKNOWN_SYMBOL:Error:64:34: unknown symbol `hEnd2`\nE_CALL_ARITY:Error:64:25: `tostring` is missing required Pine v4 argument `x`\nE_UNKNOWN_SYMBOL:Error:65:36: unknown symbol `mEnd2`\nE_CALL_ARITY:Error:65:27: `tostring` is missing required Pine v4 argument `x`\nE_UNKNOWN_SYMBOL:Error:66:34: unknown symbol `weekdays2`\nE_CALL_ARITY:Error:66:25: `tostring` is missing required Pine v4 argument `x`"
+        },
+        {
+          "name": "unit_testing_framework",
+          "path": "utils\\unit_testing_framework.pine",
+          "sha256": "02b9dcd04cd5ea2990297dd7d216f00f294ed2fa7c745489a58a0bd8492c82ce",
+          "status": "failed",
+          "error": "E_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:65:13: `function_side_effect` is not supported: collection mutation via `array.concat` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:101:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:102:3: `function_side_effect` is not supported: collection mutation via `array.sort` is not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:137:22: `function_side_effect` is not supported: indicator, strategy, input, plot, plotchar, plotshape, plotarrow, plotbar, plotcandle, hline, fill, bgcolor, barcolor, alert, alertcondition, drawing calls, and strategy order calls are not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:138:20: `function_side_effect` is not supported: indicator, strategy, input, plot, plotchar, plotshape, plotarrow, plotbar, plotcandle, hline, fill, bgcolor, barcolor, alert, alertcondition, drawing calls, and strategy order calls are not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:139:20: `function_side_effect` is not supported: indicator, strategy, input, plot, plotchar, plotshape, plotarrow, plotbar, plotcandle, hline, fill, bgcolor, barcolor, alert, alertcondition, drawing calls, and strategy order calls are not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:140:21: `function_side_effect` is not supported: indicator, strategy, input, plot, plotchar, plotshape, plotarrow, plotbar, plotcandle, hline, fill, bgcolor, barcolor, alert, alertcondition, drawing calls, and strategy order calls are not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:248:26: `function_side_effect` is not supported: indicator, strategy, input, plot, plotchar, plotshape, plotarrow, plotbar, plotcandle, hline, fill, bgcolor, barcolor, alert, alertcondition, drawing calls, and strategy order calls are not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:263:10: `function_side_effect` is not supported: indicator, strategy, input, plot, plotchar, plotshape, plotarrow, plotbar, plotcandle, hline, fill, bgcolor, barcolor, alert, alertcondition, drawing calls, and strategy order calls are not supported inside user-defined functions\nE_UNSUPPORTED_FEATURE:Error:266:14: `function_side_effect` is not supported: indicator, strategy, input, plot, plotchar, plotshape, plotarrow, plotbar, plotcandle, hline, fill, bgcolor, barcolor, alert, alertcondition, drawing calls, and strategy order calls are not supported inside user-defined functions"
+        },
+        {
+          "name": "damping_index",
+          "path": "volatility\\damping_index.pine",
+          "sha256": "f4e1e399c88e82d389267b6ec6f51b712ce58dc16d5ac3cd107cfbc5adeb37f3",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "gopalakrishnan_range_index",
+          "path": "volatility\\gopalakrishnan_range_index.pine",
+          "sha256": "9aa70a8a67e50080334b2e49e58781223961630de59aebff38d15e7b3d070e01",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "mayer_multiple",
+          "path": "volatility\\mayer_multiple.pine",
+          "sha256": "c5d6d4bbde43de5e49aedb47a5cb26802722a7071a899c768b963eca4830c14d",
+          "status": "failed",
+          "error": "legacy security at source span 343..376: missing request data for symbol `BTCUSD` timeframe `1`"
+        },
+        {
+          "name": "normalized_average_true_range",
+          "path": "volatility\\normalized_average_true_range.pine",
+          "sha256": "aa646498e598b6ac98fe8607b02e7438ec4996b67874a62fc168cbd0e798a17c",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "ulcer_index",
+          "path": "volatility\\ulcer_index.pine",
+          "sha256": "2c3af10fb0d9abaddb3a9a9176f6f4202f4d27b73bce96a2e7dd91bef3cc4195",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "volatility_ratio",
+          "path": "volatility\\volatility_ratio.pine",
+          "sha256": "3699c989aad4abfe83b8a0aed06a117640ee59071e75cacd957fee2f09cd9ad1",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "accumulation_distribution_line",
+          "path": "volume\\accumulation_distribution_line.pine",
+          "sha256": "bd80c6743ef869013906c7fecdf17b2f3d47416bcb91494476e2141f6ecfe2c6",
+          "status": "failed",
+          "error": "E_UNKNOWN_SYMBOL:Error:12:36: unknown symbol `accdist`\nE_UNKNOWN_SYMBOL:Error:12:65: unknown symbol `accdist`\nE_UNKNOWN_SYMBOL:Error:14:14: unknown symbol `accdist`\nE_UNKNOWN_SYMBOL:Error:19:15: unknown symbol `accdist`\nE_UNKNOWN_SYMBOL:Error:27:21: unknown symbol `accdist`\nE_UNKNOWN_SYMBOL:Error:27:64: unknown symbol `accdist`\nE_UNKNOWN_SYMBOL:Error:28:22: unknown symbol `accdist`\nE_UNKNOWN_SYMBOL:Error:28:65: unknown symbol `accdist`\nE_LEGACY_V3_NA_INFERENCE:Error:14:1: Pine v3 untyped `na` declaration has no stable scalar assignment from which to infer its type"
+        },
+        {
+          "name": "klinger_volume_oscillator",
+          "path": "volume\\klinger_volume_oscillator.pine",
+          "sha256": "da92eed522d62fd695173c429b26eb185a97b371a2cfc8ac7883121080d6bd96",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "negative_volume_index",
+          "path": "volume\\negative_volume_index.pine",
+          "sha256": "4776ec0f4376e26bbad2bbd5a24a1f05a132ecb5fe69618e8974dddbe2049c9c",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "net_volume",
+          "path": "volume\\net_volume.pine",
+          "sha256": "db9406bd9f735e064150da037b6392edb68d6b12c18521266fbee8274d917a59",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "on_balance_volume",
+          "path": "volume\\on_balance_volume.pine",
+          "sha256": "ea390e7259b6e04e7ac1f80693d6839058f10ee06bcd5a602832bad704ee30a1",
+          "status": "failed",
+          "error": "E_PARSE_EXPR:Error:10:1: expected expression\nE_PARSE_EXPR:Error:13:1: expected expression\nE_UNKNOWN_SYMBOL:Error:9:1: unknown symbol `enum`\nE_UNKNOWN_SYMBOL:Error:9:6: unknown symbol `MovingAverageType`\nE_UNKNOWN_SYMBOL:Error:24:10: unknown symbol `signalType`\nE_OPERATOR_TYPE:Error:28:14: operator `>` expects numeric operands, got series float and series na\nE_CALL_ARG_TYPE:Error:34:19: `plot` argument `series` expects series/simple numeric, got series na\nE_OPERATOR_TYPE:Error:38:29: operator `>` expects numeric operands, got series float and series na\nE_CALL_ARG_TYPE:Error:41:29: `ta.crossover` argument `source2` expects series/simple numeric, got series na\nE_CALL_ARG_TYPE:Error:42:30: `ta.crossunder` argument `source2` expects series/simple numeric, got series na"
+        },
+        {
+          "name": "percent_volume",
+          "path": "volume\\percent_volume.pine",
+          "sha256": "815e4a10df0f149d67e6f9530d567026cc9c9bd8735b956e2b565e5dfc7e8a36",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 7,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "positive_volume_index",
+          "path": "volume\\positive_volume_index.pine",
+          "sha256": "f43e9ba87101292afaf382a6e1e5edf4825c7a1b6df936f4be4f0b9910a40417",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "price_volume_trend",
+          "path": "volume\\price_volume_trend.pine",
+          "sha256": "3c9f3cc6cab53074b662fedba6132e124e21c2cbc4a910eaf6b633b874db86fa",
+          "status": "failed",
+          "error": "E_UNKNOWN_SYMBOL:Error:13:36: unknown symbol `pvt`\nE_UNKNOWN_SYMBOL:Error:13:61: unknown symbol `pvt`\nE_UNKNOWN_SYMBOL:Error:15:14: unknown symbol `pvt`\nE_UNKNOWN_SYMBOL:Error:19:16: unknown symbol `pvt`\nE_UNKNOWN_SYMBOL:Error:27:22: unknown symbol `pvt`\nE_UNKNOWN_SYMBOL:Error:28:24: unknown symbol `pvt`\nE_UNKNOWN_SYMBOL:Error:30:46: unknown symbol `pvt`\nE_UNKNOWN_SYMBOL:Error:31:47: unknown symbol `pvt`"
+        },
+        {
+          "name": "volume_accumulation",
+          "path": "volume\\volume_accumulation.pine",
+          "sha256": "3446348436d3588fb9f89d5c6dfd02b9b5349be82855fd8e4636d65069148070",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 512,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      ]
+    },
+    {
+      "repo": "jamesbachini/Pine-Script-Examples",
+      "commit": "6d14308f8ce42b2d60ec6c80eb224e8f4ffb3a79",
+      "regime": "range",
+      "bars": 512,
+      "files": [
+        {
+          "name": "breakout_sniper",
+          "path": "breakout_sniper.ps",
+          "sha256": "4915a745d670040284624cc4b7cef3ab5c4184187266be8ac6f0172b1105100b",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "crossover",
+          "path": "crossover.ps",
+          "sha256": "7947943ecd177b7fa262ebdded885e109c14e7f2e3ec80410349506f20423640",
+          "status": "pass",
+          "orders": 17,
+          "trades": 8,
+          "plots": 2,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "fear_greed",
+          "path": "fear_greed.ps",
+          "sha256": "fccd9404cd54eca90e5c6dd297e8d29d07223cfafc23e92673d81ff504bc0a78",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 0,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "gaussian_regression",
+          "path": "gaussian_regression.ps",
+          "sha256": "e8445f12450134827d60a5e8a9749b2f2430f8785b59cdebe9bb98f0425dad71",
+          "status": "failed",
+          "error": "E_CALL_ARITY:Error:37:98: `matrix.sum` expects at most 1 argument(s), got 2\nE_METHOD_RECEIVER_TYPE:Error:38:27: method `pinv` is not supported for series float"
+        },
+        {
+          "name": "price_channels",
+          "path": "price_channels.ps",
+          "sha256": "6ac9bd52f40e2537deb88f250213be19a8d97e5b4e2451c636935433cbb4f495",
+          "status": "pass",
+          "orders": 13,
+          "trades": 6,
+          "plots": 3,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        },
+        {
+          "name": "sma",
+          "path": "sma.ps",
+          "sha256": "b360bf62a97783d2d15ac42c6015ced8606a1c7db37737d44cd2a66e80c29758",
+          "status": "pass",
+          "orders": 0,
+          "trades": 0,
+          "plots": 1,
+          "alerts": 0,
+          "diagnostics": [],
+          "strategy_diagnostics": []
+        }
+      ]
+    }
+  ]
+}
