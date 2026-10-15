@@ -158,5 +158,6 @@ pub use bots::{
 
 mod adaptive_liquidity;
 pub mod conditional_orders;
+mod endogenous_value;
 pub mod position_protection;
 pub use position_protection::{PositionProtection, PositionProtectionSpec, ProtectionTrigger};
