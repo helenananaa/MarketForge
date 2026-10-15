@@ -195,6 +195,30 @@ fn chasers_follow_a_rising_market_and_faders_lean_against_it() {
 }
 
 #[test]
+fn a_moving_price_draws_more_orders_than_a_flat_one() {
+    assert_eq!(attention(0., 3.), 1.);
+    assert!((attention(-1., 3.) - 4.).abs() < 1e-12);
+    assert_eq!(attention(100., 3.), 16.);
+    let t = template(
+        13,
+        json!({"attention_ppm":4000000,"excitation_ppm":0,"move_scale_ppm":1000,
+            "move_half_life_ms":120000,"base_interval_ms":10000}),
+    );
+    let (mut flat, mut moving) = (make(&t), make(&t));
+    let (mut flat_orders, mut moving_orders) = (0, 0);
+    for s in 0..600u64 {
+        flat_orders += orders(&flat.decide(&observation(s, 100, vec![])).unwrap()).len();
+        // 1% over ten minutes, the move scale is 0.1%.
+        let mid = 100 + (s as i64 / 60);
+        moving_orders += orders(&moving.decide(&observation(s, mid, vec![])).unwrap()).len();
+    }
+    assert!(
+        moving_orders > flat_orders * 2,
+        "moving {moving_orders} flat {flat_orders}"
+    );
+}
+
+#[test]
 fn snapshot_restore_matches_continuous_execution() {
     let t = template(11, json!({"aggressive_ppm":500000}));
     let registry = BotRegistry::with_builtins();

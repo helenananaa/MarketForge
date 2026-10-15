@@ -24,6 +24,7 @@ struct Config {
     short_half_life_ms: u64,
     long_half_life_ms: u64,
     excitation_ppm: u32,
+    attention_ppm: u32,
     move_half_life_ms: u64,
     move_scale_ppm: u32,
     chase_ppm: i64,
@@ -59,6 +60,7 @@ pub(crate) fn register(r: &mut BotRegistry) {
         ("short_half_life_ms".into(), n(20000, 1000, 86400000)),
         ("long_half_life_ms".into(), n(600000, 1000, 86400000)),
         ("excitation_ppm".into(), n(1000000, 0, 5000000)),
+        ("attention_ppm".into(), n(0, 0, 20000000)),
         ("move_half_life_ms".into(), n(60000, 1000, 86400000)),
         ("move_scale_ppm".into(), n(500, 1, 1000000)),
         ("chase_ppm".into(), n(500000, -2000000, 2000000)),
@@ -204,6 +206,12 @@ pub(crate) fn excitation(rate_short: f64, rate_long: f64, exponent: f64) -> f64 
     (rate_short / rate_long).powf(exponent).clamp(0.25, 8.)
 }
 
+/// Arrival-rate multiplier from the size of the recent observed move, in
+/// units of `move_scale`; capped so a crash cannot make the rate unbounded.
+pub(crate) fn attention(moved: f64, weight: f64) -> f64 {
+    1. + weight * moved.abs().min(5.)
+}
+
 /// Probability of buying. `pressure` combines chasing/fading and herding;
 /// `inventory` is the signed distance from target as a fraction of the cap.
 pub(crate) fn buy_probability(pressure: f64, inventory: f64, pull: f64) -> f64 {
@@ -291,11 +299,14 @@ impl Trader {
             return Ok(vec![]);
         }
         let s = &mut self.state;
+        let moved = s.reference.map_or(0., |r| mid / r - 1.) / (self.c.move_scale_ppm as f64 / 1e6);
+        // Attention: a moving price draws traders in, so volume comes with
+        // large candles and fades when the price is quiet.
         let factor = excitation(
             s.rate_short,
             s.rate_long,
             self.c.excitation_ppm as f64 / 1e6,
-        );
+        ) * attention(moved, self.c.attention_ppm as f64 / 1e6);
         let wait = (-s.uniform().ln() * self.c.base_interval_ms as f64 / factor)
             .clamp(1000., self.c.base_interval_ms as f64 * 20.);
         s.next_ms = now.saturating_add(wait as u64);
@@ -325,7 +336,6 @@ impl Trader {
         ) else {
             return Ok(vec![]);
         };
-        let moved = s.reference.map_or(0., |r| mid / r - 1.) / (self.c.move_scale_ppm as f64 / 1e6);
         let imbalance = if s.flow_total > 0. {
             s.flow_signed / s.flow_total
         } else {

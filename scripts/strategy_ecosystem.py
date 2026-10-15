@@ -49,10 +49,11 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     if price_scale<1 or int(price_scale)!=price_scale:raise ValueError('price scale must be a positive integer')
     if fast_flow and flow_mix!='rebalanced':raise ValueError('fast flow requires --flow-mix rebalanced')
     price_scale=int(price_scale);capital_scale*=price_scale
-    # Fast flow defaults: fast-refreshing makers quote thinner books (perp
-    # deeper, as it carries more volume) so net flow moves price ~3-5 bp/min.
-    if maker_depth_scale is None:maker_depth_scale=.25 if fast_flow else 1.0
-    if perp_maker_depth_scale is None:perp_maker_depth_scale=.55 if fast_flow else maker_depth_scale
+    # Fast flow defaults: fast-refreshing makers quote thin, closely spaced
+    # levels (perp deeper, as it carries more volume), so net taker flow moves
+    # the price while the touch stays one or two ticks wide.
+    if maker_depth_scale is None:maker_depth_scale=.08 if fast_flow else 1.0
+    if perp_maker_depth_scale is None:perp_maker_depth_scale=.18 if fast_flow else maker_depth_scale
     if not(0<maker_depth_scale<=1 and 0<perp_maker_depth_scale<=1):raise ValueError('maker depth scales must be within (0, 1]')
     anchor=10000*price_scale
     for market in (spot,perp):
@@ -162,7 +163,9 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                             config.update(refresh_ms=fr.choice([1000,1000,2000]),jitter_ms=fr.randrange(0,1001),
                                 quote_ttl_ms=fr.choice([10000,20000,30000]))
                         if leg=='perp':
-                            config['index_weight_ppm']=fr.choice([300000,500000,700000])
+                            # Perp quotes follow perp trading; basis pairs keep the
+                            # link to spot through actual trades.
+                            config['index_weight_ppm']=fr.choice([0,50000,100000])
                             # Perp flow is persistently one-sided (levered switchers);
                             # strong widening left a bounce-dominated perp spread.
                             config['flow_widen_ppm']=fr.choice([0,250000])
@@ -239,7 +242,10 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                 # thirds fade the recent move), so persistent flow does not
                 # turn into predictable one-minute trends.
                 chase=nr.choice([200000,400000,600000])*(1 if nr.random()<.35 else -1)
-                add(role,i,'ReactiveFlowTrader','1.0.0',{'base_interval_ms':nr.choice([2000,4000,8000,15000]),
+                add(role,i,'ReactiveFlowTrader','1.0.0',{'base_interval_ms':nr.choice([4000,8000,15000,30000]),
+                    # Attention: arrivals rise with the observed move, so large
+                    # candles carry large volume and quiet minutes stay quiet.
+                    'attention_ppm':nr.choice([4000000,8000000,12000000]),
                     'short_half_life_ms':nr.choice([10000,20000,40000]),'long_half_life_ms':nr.choice([600000,1200000]),
                     # Moderate excitation: activity clusters, but quiet periods keep
                     # a baseline flow instead of going dead.
@@ -333,6 +339,16 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                       'half_spread_ticks','inventory_skew_ticks','withdraw_volatility_ticks','size_volatility_ticks'):
                 if k in c:c[k]*=price_scale
             if 'min_half_spread_ticks' in c:c['min_half_spread_ticks']=max(1,c['min_half_spread_ticks']*price_scale//10)
+            if fast_flow and agent['Plugin']['plugin_id']=='AdaptiveLiquidityMaker':
+                # Competing makers: a one-tick floor, half of them capped at a
+                # few ticks, and closely spaced levels, so the touch is tight
+                # and depth is continuous instead of lumpy.
+                c['min_half_spread_ticks']=1
+                c['level_spacing_ticks']=max(1,c['level_spacing_ticks']//5)
+                if child_seed(seed,'tight-'+agent['Plugin']['participant']['participant_id'])%2==0:
+                    # Touch makers: one tick either side of their center,
+                    # re-quoting every step so a swept touch is restored at once.
+                    c.update(max_half_spread_ticks=1,refresh_ms=1000,jitter_ms=0)
     assert len(spec['agents'])==count
     assert sum(pools.values())==int(100_000_000*capital_scale)
     return spec,roster
