@@ -14,6 +14,12 @@ use std::{
 };
 
 const ID: &str = "AdaptiveLiquidityMaker";
+/// 1.0.0 is frozen. 1.1.0 adds optional reaction to observed one-sided taker
+/// flow; its parameters have no descriptor defaults, so 1.0.0 configs,
+/// identities and snapshots are byte-identical to the original release.
+const VERSION: &str = "1.0.0";
+const FLOW_VERSION: &str = "1.1.0";
+const FLOW_PARAMETERS: [&str; 3] = ["flow_skew_ppm", "flow_widen_ppm", "flow_half_life_ms"];
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Config {
@@ -38,6 +44,12 @@ struct Config {
     target_leverage: u32,
     fallback_price_tick: i64,
     jitter_ms: u64,
+    #[serde(default)]
+    flow_skew_ppm: u32,
+    #[serde(default)]
+    flow_widen_ppm: u32,
+    #[serde(default)]
+    flow_half_life_ms: u64,
 }
 fn n(default: i64, min: i64, max: i64) -> BotParameter {
     BotParameter {
@@ -72,6 +84,15 @@ pub(crate) fn register(r: &mut BotRegistry) {
         ("fallback_price_tick".into(), n(10000, 1, 1000000000)),
         ("jitter_ms".into(), n(3000, 0, 86400000)),
     ]);
+    for (name, max) in FLOW_PARAMETERS.into_iter().zip([2000000, 3000000, 3600000]) {
+        parameters.insert(
+            name.into(),
+            BotParameter {
+                default: None,
+                ..n(0, 0, max)
+            },
+        );
+    }
     parameters.insert(
         "model".into(),
         BotParameter {
@@ -86,7 +107,7 @@ pub(crate) fn register(r: &mut BotRegistry) {
     r.register(Factory(BotDescriptor {
         id: ID.into(),
         name: "自适应库存风险做市".into(),
-        version: "1.0.0".into(),
+        version: VERSION.into(),
         protocol_version: BOT_PROTOCOL_VERSION.into(),
         state_version: 1,
         runtime: "builtin".into(),
@@ -100,8 +121,18 @@ impl Factory {
         let AgentTemplate::Plugin(p) = t else {
             return Err(BotError("maker plugin required".into()));
         };
-        if p.plugin_id != ID || p.plugin_version != "1.0.0" || p.state_version != 1 {
+        if p.plugin_id != ID
+            || ![VERSION, FLOW_VERSION].contains(&p.plugin_version.as_str())
+            || p.state_version != 1
+        {
             return Err(BotError("maker identity mismatch".into()));
+        }
+        let flow_keys = p
+            .config
+            .as_object()
+            .is_some_and(|c| FLOW_PARAMETERS.iter().any(|k| c.contains_key(*k)));
+        if p.plugin_version == VERSION && flow_keys {
+            return Err(BotError("flow parameters require maker 1.1.0".into()));
         }
         let mut p = p.clone();
         p.config = self.0.validate_config(&p.config)?;
@@ -109,6 +140,7 @@ impl Factory {
         if c.min_samples > c.window
             || c.min_half_spread_ticks > c.max_half_spread_ticks
             || c.inventory_target.unsigned_abs() > c.inventory_cap as u64
+            || ((c.flow_skew_ppm > 0 || c.flow_widen_ppm > 0) && c.flow_half_life_ms < 1000)
         {
             return Err(BotError("invalid maker limits".into()));
         }
@@ -119,6 +151,9 @@ impl Factory {
 impl BotFactory for Factory {
     fn descriptor(&self) -> &BotDescriptor {
         &self.0
+    }
+    fn supports_plugin_version(&self, version: &str) -> bool {
+        [VERSION, FLOW_VERSION].contains(&version)
     }
     fn supports_native_batching(&self) -> bool {
         true
@@ -151,7 +186,7 @@ impl BotFactory for Factory {
         else {
             return Err(BotError("maker state required".into()));
         };
-        if plugin_id != ID || plugin_version != "1.0.0" || *state_version != 1 {
+        if plugin_id != ID || *plugin_version != p.plugin_version || *state_version != 1 {
             return Err(BotError("maker state version mismatch".into()));
         }
         let state = if data.is_null() {
@@ -180,6 +215,9 @@ impl BotFactory for Factory {
             || state.k <= 0.
             || state.rng == 0
             || state.sigma < 0.
+            || !state.flow_signed.is_finite()
+            || !state.flow_total.is_finite()
+            || state.flow_total < state.flow_signed.abs()
             || state.frames.iter().any(|f| {
                 !f.dt.is_finite()
                     || f.dt <= 0.
@@ -221,6 +259,16 @@ struct State {
     quoted: u64,
     cancelled: u64,
     born: BTreeMap<u64, u64>,
+    // 1.1.0 only; omitted from 1.0.0 snapshots.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    flow_signed: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    flow_total: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_trade_id: Option<u64>,
+}
+fn is_zero(v: &f64) -> bool {
+    *v == 0.
 }
 struct Maker {
     p: BotConfig,
@@ -236,6 +284,29 @@ fn glft(gamma: f64, a: f64, k: f64) -> (f64, f64) {
     (c1, c2)
 }
 impl Maker {
+    /// Decayed signed/total taker quantity from public trades not yet seen.
+    fn observe_flow(&mut self, v: &ParticipantObservationView<'_>) {
+        if let Some(old_ms) = self.state.last_ms {
+            let decay =
+                0.5f64.powf((v.market_time_ms - old_ms) as f64 / self.c.flow_half_life_ms as f64);
+            self.state.flow_signed *= decay;
+            self.state.flow_total *= decay;
+        }
+        let mut newest = self.state.last_trade_id;
+        for t in v.public_trades {
+            if self.state.last_trade_id.is_some_and(|id| t.trade_id <= id) {
+                continue;
+            }
+            let qty = t.qty as f64;
+            self.state.flow_signed += if t.taker_side == Side::Buy { qty } else { -qty };
+            self.state.flow_total += qty;
+            newest = newest.max(Some(t.trade_id));
+        }
+        self.state.last_trade_id = newest;
+        // Keep tiny residues from round-off from tripping the state check.
+        self.state.flow_total = self.state.flow_total.max(self.state.flow_signed.abs());
+    }
+
     fn decide_view(
         &mut self,
         v: &ParticipantObservationView<'_>,
@@ -333,6 +404,9 @@ impl Maker {
                 }
             }
         }
+        if self.p.plugin_version == FLOW_VERSION && self.c.flow_half_life_ms > 0 {
+            self.observe_flow(v);
+        }
         self.state.last_ms = Some(v.market_time_ms);
         self.state.last_mid = Some(mid);
         if v.market_time_ms < self.state.next_ms {
@@ -397,6 +471,17 @@ impl Maker {
             self.c.min_half_spread_ticks as f64,
             self.c.max_half_spread_ticks as f64,
         );
+        if self.p.plugin_version == FLOW_VERSION && self.state.flow_total > 0. {
+            // Treat persistent one-sided taker flow as information: widen
+            // against adverse selection and lean quotes toward the flow, so
+            // replenished depth no longer pins the price to its old level.
+            let imbalance = self.state.flow_signed / self.state.flow_total;
+            self.state.half_spread = (self.state.half_spread
+                * (1. + imbalance.abs() * self.c.flow_widen_ppm as f64 / 1e6))
+                .min(self.c.max_half_spread_ticks as f64);
+            self.state.center +=
+                imbalance * self.state.half_spread * self.c.flow_skew_ppm as f64 / 1e6 * tick;
+        }
         let mut desired = BTreeMap::new();
         for level in 0..self.c.levels {
             let dist =
@@ -509,7 +594,7 @@ impl ScheduledBot for Maker {
     fn snapshot(&self) -> PersistedAgentKindState {
         PersistedAgentKindState::Plugin {
             plugin_id: ID.into(),
-            plugin_version: "1.0.0".into(),
+            plugin_version: self.p.plugin_version.clone(),
             state_version: 1,
             data: Arc::new(serde_json::to_value(&self.state).expect("finite maker state")),
         }
@@ -519,6 +604,143 @@ impl ScheduledBot for Maker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{BookLevel, BookSnapshot, ParticipantConfig, ParticipantKind, SpotAccount};
+
+    fn template(version: &str, config: serde_json::Value) -> AgentTemplate {
+        AgentTemplate::Plugin(BotConfig {
+            participant: ParticipantConfig {
+                participant_id: "maker-test".into(),
+                kind: ParticipantKind::MarketMaker,
+                room_id: "maker".into(),
+                account_id: 20,
+                instrument_id: Some("TEST".into()),
+            },
+            plugin_id: ID.into(),
+            plugin_version: version.into(),
+            state_version: 1,
+            config_version: 1,
+            seed: 7,
+            config,
+        })
+    }
+
+    fn observation(second: u64, trades: Vec<Trade>) -> ParticipantObservation {
+        ParticipantObservation {
+            version: 1,
+            room_id: "maker".into(),
+            venue_id: "default-venue".into(),
+            instrument_id: "TEST".into(),
+            instrument: None,
+            status: MarketStatus::Running,
+            step: second,
+            market_time_ms: second * 1000,
+            book: BookSnapshot {
+                bids: vec![BookLevel {
+                    price_tick: 9990,
+                    qty: 100,
+                }],
+                asks: vec![BookLevel {
+                    price_tick: 10010,
+                    qty: 100,
+                }],
+            },
+            public_trades: trades,
+            own_orders: vec![],
+            related_markets: vec![],
+            market_events: vec![],
+            own_account: Some(AccountSnapshot::Spot(
+                SpotAccount {
+                    account_id: 20,
+                    cash_balance: 10_000_000,
+                    position_qty: 50,
+                    reserved_cash: 0,
+                    reserved_position: 0,
+                    fees_paid: 0,
+                }
+                .snapshot(),
+            )),
+            bot_market_data: None,
+            position_protections: vec![],
+            risk: None,
+            perp_price: None,
+        }
+    }
+
+    fn buy(id: u64) -> Trade {
+        Trade {
+            trade_id: id,
+            maker_order_id: 1,
+            maker_account_id: 1,
+            taker_order_id: 100 + id,
+            taker_account_id: 2,
+            price_tick: 10010,
+            qty: 10,
+            taker_side: Side::Buy,
+            maker_position_side: Default::default(),
+            taker_position_side: Default::default(),
+        }
+    }
+
+    fn data(bot: &dyn ScheduledBot) -> serde_json::Value {
+        let PersistedAgentKindState::Plugin { data, .. } = bot.snapshot() else {
+            panic!("plugin state")
+        };
+        data.as_ref().clone()
+    }
+
+    #[test]
+    fn flow_parameters_are_versioned_and_frozen_release_is_unchanged() {
+        let registry = BotRegistry::with_builtins();
+        let flow = serde_json::json!({"inventory_target":50,"flow_skew_ppm":500000,"flow_half_life_ms":10000});
+        let old = template(VERSION, flow.clone());
+        assert!(registry.create(&old, &old.initial_state()).is_err());
+        let new = template(FLOW_VERSION, flow);
+        let mut bot = registry.create(&new, &new.initial_state()).unwrap();
+        bot.decide(&observation(0, vec![buy(1)])).unwrap();
+        assert_eq!(data(bot.as_ref())["last_trade_id"], 1);
+        let missing_life = template(FLOW_VERSION, serde_json::json!({"flow_skew_ppm":1}));
+        assert!(
+            registry
+                .create(&missing_life, &missing_life.initial_state())
+                .is_err()
+        );
+
+        let plain = template(VERSION, serde_json::json!({"inventory_target":50}));
+        let mut bot = registry.create(&plain, &plain.initial_state()).unwrap();
+        bot.decide(&observation(0, vec![buy(1)])).unwrap();
+        let state = data(bot.as_ref());
+        for key in ["flow_signed", "flow_total", "last_trade_id"] {
+            assert!(state.get(key).is_none(), "{key} leaked into 1.0.0 state");
+        }
+        let restored = registry.create(&plain, &bot.snapshot()).unwrap();
+        assert_eq!(restored.snapshot(), bot.snapshot());
+    }
+
+    #[test]
+    fn one_sided_buy_flow_leans_and_widens_quotes() {
+        let registry = BotRegistry::with_builtins();
+        let config = serde_json::json!({"inventory_target":50,"flow_skew_ppm":1000000,
+            "flow_widen_ppm":1000000,"flow_half_life_ms":30000,"jitter_ms":0,"refresh_ms":1000});
+        let t = template(FLOW_VERSION, config);
+        let (mut quiet, mut flowing) = (
+            registry.create(&t, &t.initial_state()).unwrap(),
+            registry.create(&t, &t.initial_state()).unwrap(),
+        );
+        for s in 0..5u64 {
+            quiet.decide(&observation(s, vec![])).unwrap();
+            flowing
+                .decide(&observation(s, (s * 3 + 1..s * 3 + 4).map(buy).collect()))
+                .unwrap();
+        }
+        let (q, f) = (data(quiet.as_ref()), data(flowing.as_ref()));
+        assert!(f["center"].as_f64() > q["center"].as_f64(), "{q} {f}");
+        assert!(f["half_spread"].as_f64() > q["half_spread"].as_f64());
+        assert_eq!(f["flow_signed"], f["flow_total"]);
+        // Already-seen trades are not double counted.
+        let before = f["flow_total"].as_f64().unwrap();
+        flowing.decide(&observation(5, vec![buy(15)])).unwrap();
+        assert!(data(flowing.as_ref())["flow_total"].as_f64().unwrap() < before);
+    }
     #[test]
     fn glft_coefficients_match_reference_and_inventory_risk() {
         let (c1, c2) = glft(0.05, 2., 0.4);
