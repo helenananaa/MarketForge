@@ -198,6 +198,36 @@ fn perpetual_positions_carry_exchange_stops_and_stop_outs_cool_down() {
 }
 
 #[test]
+fn internal_stop_mode_never_sends_venue_protection_and_exits_itself() {
+    let t = template(
+        5,
+        json!({"switch_ppm":1000000,"intensity_ppm":5000000,"target_leverage":3,"stop_mode":"Internal"}),
+    );
+    let mut bot = make(&t);
+    let mut position = 0;
+    for s in 0..80u64 {
+        let actions = bot.decide(&perp(s, 100 + s as i64, position)).unwrap();
+        assert!(
+            !actions
+                .iter()
+                .any(|a| matches!(a, OrderAction::SetPositionProtection { .. }))
+        );
+        position += fills(&actions);
+    }
+    assert!(position > 0);
+    let stop = state(bot.as_ref()).stop_tick.expect("internal stop level");
+    let mut exited = false;
+    for s in 80..90 {
+        let actions = bot.decide(&perp(s, stop - 5, position)).unwrap();
+        let f = fills(&actions);
+        exited |= f == -position;
+        position += f;
+    }
+    assert!(exited, "internal stop must flatten the whole position");
+    assert_eq!(state(bot.as_ref()).style, Style::Out);
+}
+
+#[test]
 fn snapshot_restore_matches_continuous_execution() {
     let t = template(
         9,

@@ -48,6 +48,7 @@ struct Config {
     warmup_ms: u64,
     fee_buffer_ppm: u32,
     fallback_price_tick: i64,
+    stop_mode: String,
 }
 
 fn n(default: i64, min: i64, max: i64) -> BotParameter {
@@ -62,7 +63,7 @@ fn n(default: i64, min: i64, max: i64) -> BotParameter {
 }
 
 pub(crate) fn register(r: &mut BotRegistry) {
-    let parameters = BTreeMap::from([
+    let mut parameters = BTreeMap::from([
         ("inventory_cap".into(), n(100, 1, 1000000)),
         ("equity_use_ppm".into(), n(300000, 1, 1000000)),
         ("target_leverage".into(), n(1, 1, 20)),
@@ -86,6 +87,17 @@ pub(crate) fn register(r: &mut BotRegistry) {
         ("fee_buffer_ppm".into(), n(1000, 0, 100000)),
         ("fallback_price_tick".into(), n(10000, 1, 1000000000)),
     ]);
+    parameters.insert(
+        "stop_mode".into(),
+        BotParameter {
+            kind: ParameterType::String,
+            required: false,
+            default: Some(json!("Exchange")),
+            minimum: None,
+            maximum: None,
+            choices: vec![json!("Exchange"), json!("Internal")],
+        },
+    );
     r.register(Factory(BotDescriptor {
         id: ID.into(),
         name: "风格切换与止损级联交易者".into(),
@@ -441,10 +453,18 @@ impl Trader {
         s.target = ((exposure * capacity).round() as i64).clamp(floor, self.c.inventory_cap);
 
         let mut actions = vec![];
-        // Spot has no exchange-side protection here: check the stop ourselves.
-        let stopped_spot =
-            spot && position > 0 && s.stop_tick.is_some_and(|stop| mid <= stop as f64);
-        if stopped_spot {
+        // Spot, or perpetual in Internal mode, checks the stop itself.
+        let internal = spot || self.c.stop_mode == "Internal";
+        let stopped_internally = internal
+            && position != 0
+            && s.stop_tick.is_some_and(|stop| {
+                if position > 0 {
+                    mid <= stop as f64
+                } else {
+                    mid >= stop as f64
+                }
+            });
+        if stopped_internally {
             s.stop_outs += 1;
             s.style = Style::Out;
             s.target = 0;
@@ -454,7 +474,7 @@ impl Trader {
         let min_trade = (capacity * self.c.min_trade_ppm as f64 / 1e6).max(lot as f64);
         if (delta.unsigned_abs() as f64) >= min_trade || (s.target == 0 && delta != 0) {
             let side = if delta > 0 { Side::Buy } else { Side::Sell };
-            let child_cap = if stopped_spot || s.style == Style::Out {
+            let child_cap = if stopped_internally || s.style == Style::Out {
                 delta.unsigned_abs()
             } else {
                 ((capacity * self.c.child_ppm as f64 / 1e6) as u64).max(lot)
@@ -516,7 +536,7 @@ impl Trader {
             });
         if stop != s.stop_tick {
             s.stop_tick = stop;
-            if !spot && let Some(stop_loss_tick) = stop {
+            if !internal && let Some(stop_loss_tick) = stop {
                 actions.insert(
                     0,
                     OrderAction::SetPositionProtection {

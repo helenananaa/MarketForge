@@ -160,7 +160,9 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                     'child_ppm':sr.choice([200000,350000,500000]),'min_trade_ppm':50000,'max_slippage_ppm':sr.choice([2000,3000,5000]),
                     'stop_lookback_ms':sr.choice([300000,900000,1800000]),'stop_buffer_ppm':sr.choice([0,500,1000,2000]),
                     'stop_cooldown_ms':sr.choice([120000,300000,600000]),'warmup_ms':sr.choice([600000,900000]),
-                    'fee_buffer_ppm':1000,'fallback_price_tick':anchor},leg,cash,0,None,'style_switching')
+                    # Internal stops: exchange-side protection is currently ~6.5x
+                    # slower in long runs; exits still go through real orders.
+                    'stop_mode':'Internal','fee_buffer_ppm':1000,'fallback_price_tick':anchor},leg,cash,0,None,'style_switching')
             elif role=='value'and value_model=='endogenous':
                 # Beliefs come only from each bot's own view of market history:
                 # an EWMA anchor over its own horizon, a private bias and a
