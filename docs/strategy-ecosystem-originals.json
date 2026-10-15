@@ -1,0 +1,2342 @@
+{
+  "qualification": "original bytes, offline execution, sampled prefix causality and order generation; not live broker qualification",
+  "sample_size": 80,
+  "qualified": [
+    {
+      "name": "Pivot Point Breakout",
+      "family_hint": "breakout",
+      "source_sha256": "5ce96cde866c4f2c8c2d3ccf0a0c340f701fc627517b9508c5e281e9847d4016",
+      "installed_sha256": "ed407824180f9ae8f11e4d353d2143f50c6acd19258fb1666ae5e1e7d9149102",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.string",
+          "isSource": false,
+          "title": "Order direction",
+          "default": "Long",
+          "options": [
+            "Both",
+            "Long",
+            "Short"
+          ]
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Left",
+          "default": 3,
+          "min": 0
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Right",
+          "default": 3,
+          "min": 0
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Left",
+          "default": 3,
+          "min": 0
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Right",
+          "default": 3,
+          "min": 0
+        },
+        {
+          "callSiteId": 6,
+          "name": "input.time",
+          "isSource": false,
+          "title": "Starting date",
+          "default": 0
+        },
+        {
+          "callSiteId": 7,
+          "name": "input.time",
+          "isSource": false,
+          "title": "Final date",
+          "default": 0
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 5,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 2,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 14,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 21,
+      "installed_script": "ecosystem/originals/5ce96cde866c4f2c.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "EMA SCALPEUR + RSi - SHORT",
+      "family_hint": "trend",
+      "source_sha256": "04d5bed293ace0cc07933ecc73006e12de5f1c53d70119d60f5cec3cfdb94c92",
+      "installed_sha256": "e1fa78a512744c0d5d7a86b6b8c200384ab050ecd7778f86576553e4bc19c515",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.int",
+          "isSource": false,
+          "title": "EMA_L",
+          "default": 9,
+          "min": 1,
+          "max": 100,
+          "step": 1
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.int",
+          "isSource": false,
+          "title": "EMA_L2",
+          "default": 26,
+          "min": 1,
+          "max": 100,
+          "step": 1
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.int",
+          "isSource": false,
+          "title": "EMA_S",
+          "default": 100,
+          "min": 1,
+          "max": 100,
+          "step": 1
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.int",
+          "isSource": false,
+          "title": "EMA_S2",
+          "default": 55,
+          "min": 1,
+          "max": 100,
+          "step": 1
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.int",
+          "isSource": false,
+          "title": "RSI",
+          "default": 5,
+          "min": 1,
+          "max": 20,
+          "step": 1
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 1,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 1,
+      "installed_script": "ecosystem/originals/04d5bed293ace0cc.pine",
+      "http_trade_qualified_markets": [
+        "PERP"
+      ]
+    },
+    {
+      "name": "BB Keltner Squeeze Strategy",
+      "family_hint": "breakout",
+      "source_sha256": "6b32bb2c56d45668511fe3d101991ec44e6a89b2c587e1d8412ec98c1f3bb0ec",
+      "installed_sha256": "c5f53ecb69b07da168a3e3700aa8bf2262bb813d9b8c7f8872fcfc73a9bddb78",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Length",
+          "default": 20,
+          "min": 0
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.source",
+          "isSource": true,
+          "title": "Source",
+          "default": null
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.string",
+          "isSource": false,
+          "title": "Squeeze Type",
+          "default": "Within",
+          "options": [
+            "Within",
+            "Width"
+          ]
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Squeeze Width Ratio",
+          "default": 1.0,
+          "step": 0.1
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.int",
+          "isSource": false,
+          "title": "From Month",
+          "default": 1,
+          "min": 1,
+          "max": 12
+        },
+        {
+          "callSiteId": 6,
+          "name": "input.int",
+          "isSource": false,
+          "title": "From Day",
+          "default": 1,
+          "min": 1,
+          "max": 31
+        },
+        {
+          "callSiteId": 7,
+          "name": "input.int",
+          "isSource": false,
+          "title": "From Year",
+          "default": 1970,
+          "min": 1970
+        },
+        {
+          "callSiteId": 8,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Thru Month",
+          "default": 1,
+          "min": 1,
+          "max": 12
+        },
+        {
+          "callSiteId": 9,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Thru Day",
+          "default": 1,
+          "min": 1,
+          "max": 31
+        },
+        {
+          "callSiteId": 10,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Thru Year",
+          "default": 2100,
+          "min": 1970
+        },
+        {
+          "callSiteId": 13,
+          "name": "input.float",
+          "isSource": false,
+          "title": "BB Multiplier",
+          "default": 2.0,
+          "min": 0.001,
+          "max": 50
+        },
+        {
+          "callSiteId": 20,
+          "name": "input.bool",
+          "isSource": false,
+          "title": null,
+          "default": true
+        },
+        {
+          "callSiteId": 21,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Keltner Multiplier",
+          "default": 1.5
+        },
+        {
+          "callSiteId": 28,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Partial 1 Profit %",
+          "default": 0,
+          "min": 0,
+          "step": 0.01
+        },
+        {
+          "callSiteId": 29,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Partial 1 Quantity (%)",
+          "default": 50
+        },
+        {
+          "callSiteId": 30,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Partial 2 Profit %",
+          "default": 0,
+          "min": 0,
+          "step": 0.01
+        },
+        {
+          "callSiteId": 31,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Partial 2 Quantity (%)",
+          "default": 50
+        },
+        {
+          "callSiteId": 32,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Take Profit %",
+          "default": 0,
+          "min": 0,
+          "step": 0.01
+        },
+        {
+          "callSiteId": 33,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Stop Loss %",
+          "default": 0,
+          "min": 0,
+          "step": 0.01
+        },
+        {
+          "callSiteId": 34,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Trailing Stop Loss %",
+          "default": 0,
+          "min": 0,
+          "step": 0.01
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 8,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 1,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 8,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 17,
+      "installed_script": "ecosystem/originals/6b32bb2c56d45668.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Combo Backtest 123 Reversal & Finite Volume Elements (FVE)",
+      "family_hint": "volume",
+      "source_sha256": "83011647aa6636429ec51307d90ac6b894cffb806f6b38926451d1f5d7fbcfa6",
+      "installed_sha256": "3cdd27959534d9ab9862670238ec64b264ae3d3a30238af812a887e0a4977872",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 15,
+          "min": 1
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 1,
+          "min": 1
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 3,
+          "min": 1
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 50,
+          "min": 1
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 18,
+          "min": 1
+        },
+        {
+          "callSiteId": 6,
+          "name": "input.float",
+          "isSource": false,
+          "title": null,
+          "default": 0.6,
+          "min": 0.1
+        },
+        {
+          "callSiteId": 7,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "Trade reverse",
+          "default": false
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 13,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 4,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 11,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 28,
+      "installed_script": "ecosystem/originals/83011647aa663642.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "D-Bot Alpha RSI Breakout Strategy",
+      "family_hint": "reversion",
+      "source_sha256": "3192d08b4f029daf069c008b25fd76c75d915df8791f3e6fa12f56fe0385f855",
+      "installed_sha256": "fdeee26dca92e02b59e393d8baf57917bf7b81826b6981f1b62840f37783b375",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input",
+          "isSource": false,
+          "title": "SMA Length",
+          "default": 200
+        },
+        {
+          "callSiteId": 2,
+          "name": "input",
+          "isSource": false,
+          "title": "RSI Length",
+          "default": 14
+        },
+        {
+          "callSiteId": 3,
+          "name": "input",
+          "isSource": false,
+          "title": "RSI Entry Level",
+          "default": 34
+        },
+        {
+          "callSiteId": 4,
+          "name": "input",
+          "isSource": false,
+          "title": "RSI Stop Loss Level",
+          "default": 30
+        },
+        {
+          "callSiteId": 5,
+          "name": "input",
+          "isSource": false,
+          "title": "RSI Take Profit Level",
+          "default": 50
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 2,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 2,
+      "installed_script": "ecosystem/originals/3192d08b4f029daf.pine",
+      "http_trade_qualified_markets": [
+        "SPOT"
+      ]
+    },
+    {
+      "name": "Crypto Squeeze Strategy",
+      "family_hint": "volatility",
+      "source_sha256": "8ff294de91488197c6ac2ef9e93f4c2372a1dd891eb4feb1d52fa32c49b90bc4",
+      "installed_sha256": "7d7d09ec298e41be2fb28bad3d54fa01770d0d86dd23ed982ed0d0c46cbd9bae",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "Enable Long Strategy",
+          "default": true
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Stoploss %",
+          "default": 50,
+          "min": 0.1
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Take Profit %",
+          "default": 50,
+          "min": 0.1
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "Enable Short Strategy",
+          "default": true
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Stoploss %",
+          "default": 50,
+          "min": 0.1
+        },
+        {
+          "callSiteId": 6,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Take Profit %",
+          "default": 50,
+          "min": 0.1
+        },
+        {
+          "callSiteId": 11,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Start Date",
+          "default": 1,
+          "min": 1,
+          "max": 31
+        },
+        {
+          "callSiteId": 12,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Start Month",
+          "default": 1,
+          "min": 1,
+          "max": 12
+        },
+        {
+          "callSiteId": 13,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Start Year",
+          "default": 1804,
+          "min": 1800,
+          "max": 3000
+        },
+        {
+          "callSiteId": 14,
+          "name": "input.int",
+          "isSource": false,
+          "title": "End Date",
+          "default": 1,
+          "min": 1,
+          "max": 3
+        },
+        {
+          "callSiteId": 15,
+          "name": "input.int",
+          "isSource": false,
+          "title": "End Month",
+          "default": 1,
+          "min": 1,
+          "max": 12
+        },
+        {
+          "callSiteId": 16,
+          "name": "input.int",
+          "isSource": false,
+          "title": "End Year",
+          "default": 2077,
+          "min": 1800,
+          "max": 3000
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 4,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 4,
+      "installed_script": "ecosystem/originals/8ff294de91488197.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "VOLLY PRICE CONVERGE",
+      "family_hint": "other",
+      "source_sha256": "13abe23a97640accebb6e77beda9305cb629d6b7d8a295042cba10582459a552",
+      "installed_sha256": "8b5e252bcd118b58454677169ae678f9d6ca58e900c6e7d69301f1cd4fabc109",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 64,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 48,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 70,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 182,
+      "installed_script": "ecosystem/originals/13abe23a97640acc.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "RSITrendStrategy",
+      "family_hint": "trend",
+      "source_sha256": "ec6f75e76d5a1480482699bfd28b4008ab8f390b33472e87ed4b5a5a023195a6",
+      "installed_sha256": "d881d3225da0254f4639f95a8c61620af0607fd6cca4732aca9b019237a87bc3",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.int",
+          "isSource": false,
+          "title": "MA 1",
+          "default": 5
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.int",
+          "isSource": false,
+          "title": "MA 1",
+          "default": 11
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.int",
+          "isSource": false,
+          "title": "MA 1",
+          "default": 6
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 9,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 2,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 4,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 15,
+      "installed_script": "ecosystem/originals/ec6f75e76d5a1480.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Williams -R Strategy",
+      "family_hint": "reversion",
+      "source_sha256": "110916ea63ef2b7339c060e82ae98beae940ba8390737af53b2cf73ec7c5275a",
+      "installed_sha256": "ce91ee9d2bc655ebb18f6a2b4040205ca4f86f516ead64ad22a6911bd95e9038",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input",
+          "isSource": false,
+          "title": "Length",
+          "default": 14
+        },
+        {
+          "callSiteId": 2,
+          "name": "input",
+          "isSource": false,
+          "title": "Overbought Level",
+          "default": -20
+        },
+        {
+          "callSiteId": 3,
+          "name": "input",
+          "isSource": false,
+          "title": "Oversold Level",
+          "default": -80
+        },
+        {
+          "callSiteId": 4,
+          "name": "input",
+          "isSource": false,
+          "title": "Enable Short Positions",
+          "default": false
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 8,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 1,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 17,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 26,
+      "installed_script": "ecosystem/originals/110916ea63ef2b73.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Channels Strategy [JoseMetal]",
+      "family_hint": "breakout",
+      "source_sha256": "6dc568bf7da46cb38571ae73e6885b9421521ac5abba0e263796f944555f3e2d",
+      "installed_sha256": "e8d7d8b04229a7d90bf60586fd1df3d3db662b3df9234be5aab6f8005088acac",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 8,
+          "name": "input.time",
+          "isSource": false,
+          "title": "• Fecha de inicio",
+          "default": 0
+        },
+        {
+          "callSiteId": 9,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "Fecha de finalización",
+          "default": false
+        },
+        {
+          "callSiteId": 10,
+          "name": "input.time",
+          "isSource": false,
+          "title": "",
+          "default": 32472144000000
+        },
+        {
+          "callSiteId": 12,
+          "name": "input.string",
+          "isSource": false,
+          "title": "Indicador",
+          "default": "Canales de Keltner",
+          "options": [
+            "Bandas de Bollinger",
+            "Canales de Keltner"
+          ]
+        },
+        {
+          "callSiteId": 13,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "¿LONGS?",
+          "default": true
+        },
+        {
+          "callSiteId": 14,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "¿SHORTS?",
+          "default": true
+        },
+        {
+          "callSiteId": 15,
+          "name": "input.string",
+          "isSource": false,
+          "title": "Condición de entrada",
+          "default": "Cierre fuera de la banda y luego cierre dentro",
+          "options": [
+            "Mecha fuera de la banda",
+            "Mecha fuera de la banda y luego cierre dentro",
+            "Cierre fuera de la banda",
+            "Cierre fuera de la banda y luego cierre dentro"
+          ]
+        },
+        {
+          "callSiteId": 16,
+          "name": "input.string",
+          "isSource": false,
+          "title": "Tipo de Stop Loss",
+          "default": "Banda extendida",
+          "options": [
+            "Mecha anterior",
+            "Banda extendida",
+            "ATR"
+          ]
+        },
+        {
+          "callSiteId": 17,
+          "name": "input.string",
+          "isSource": false,
+          "title": "Tipo de Take Profit",
+          "default": "Banda contraria",
+          "options": [
+            "Banda contraria",
+            "Media móvil",
+            "ATR"
+          ]
+        },
+        {
+          "callSiteId": 18,
+          "name": "input.float",
+          "isSource": false,
+          "title": "• (Solo ATR) Multiplicador Stop Loss / Take Profit",
+          "default": 1,
+          "min": 0.1,
+          "step": 0.1
+        },
+        {
+          "callSiteId": 19,
+          "name": "input.float",
+          "isSource": false,
+          "title": "",
+          "default": 1.8,
+          "min": 0.1,
+          "step": 0.1
+        },
+        {
+          "callSiteId": 20,
+          "name": "input.float",
+          "isSource": false,
+          "title": "• (Solo STOP LOSS con BB) Desviación estándar",
+          "default": 4.0,
+          "min": 0.01,
+          "step": 0.5
+        },
+        {
+          "callSiteId": 21,
+          "name": "input.float",
+          "isSource": false,
+          "title": "• (Solo STOP LOSS con KC) Multiplicador",
+          "default": 3,
+          "min": 0.01,
+          "step": 0.5
+        },
+        {
+          "callSiteId": 22,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "Take Profit dinámico",
+          "default": false
+        },
+        {
+          "callSiteId": 23,
+          "name": "input.source",
+          "isSource": true,
+          "title": "• Referencia / Longitud",
+          "default": null
+        },
+        {
+          "callSiteId": 24,
+          "name": "input.int",
+          "isSource": false,
+          "title": "",
+          "default": 7,
+          "min": 1
+        },
+        {
+          "callSiteId": 26,
+          "name": "input.int",
+          "isSource": false,
+          "title": "• Long. / Desv. ",
+          "default": 20,
+          "min": 1
+        },
+        {
+          "callSiteId": 27,
+          "name": "input.float",
+          "isSource": false,
+          "title": "",
+          "default": 2.0,
+          "min": 0.01,
+          "step": 0.5
+        },
+        {
+          "callSiteId": 30,
+          "name": "input.int",
+          "isSource": false,
+          "title": "• Long. / Mult. ",
+          "default": 35,
+          "min": 1
+        },
+        {
+          "callSiteId": 31,
+          "name": "input.float",
+          "isSource": false,
+          "title": "",
+          "default": 1.5,
+          "min": 0.01,
+          "step": 0.5
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 22,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 6,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 25,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 53,
+      "installed_script": "ecosystem/originals/6dc568bf7da46cb3.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Volume and Moving average,will this model working in real-trade-",
+      "family_hint": "volume",
+      "source_sha256": "f43fcbee28ba6f9d17fd246355be45dafde55598a286959c1dfcede4b09a4ce9",
+      "installed_sha256": "d7249904d6cd593f475c171b72b148c20a02d035cb9afbbd006f50241efa6f4a",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 1
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 3
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 7
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 14
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 20
+        },
+        {
+          "callSiteId": 6,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 60
+        },
+        {
+          "callSiteId": 7,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 120
+        },
+        {
+          "callSiteId": 19,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Daily MA length",
+          "default": 50,
+          "min": 1,
+          "max": 100
+        },
+        {
+          "callSiteId": 20,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Weekly MA length",
+          "default": 10,
+          "min": 1,
+          "max": 100
+        },
+        {
+          "callSiteId": 23,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 20,
+          "min": 1
+        },
+        {
+          "callSiteId": 24,
+          "name": "input.source",
+          "isSource": true,
+          "title": "Source",
+          "default": null
+        },
+        {
+          "callSiteId": 25,
+          "name": "input.float",
+          "isSource": false,
+          "title": "StdDev",
+          "default": 2.0,
+          "min": 0.001,
+          "max": 50
+        },
+        {
+          "callSiteId": 26,
+          "name": "input.float",
+          "isSource": false,
+          "title": "exp",
+          "default": 1.5,
+          "min": 0.001,
+          "max": 50
+        },
+        {
+          "callSiteId": 27,
+          "name": "input.float",
+          "isSource": false,
+          "title": "exp1",
+          "default": 1.0,
+          "min": 0.001,
+          "max": 50
+        },
+        {
+          "callSiteId": 32,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Offset",
+          "default": 0,
+          "min": -500,
+          "max": 500
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 2,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 6,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 8,
+      "installed_script": "ecosystem/originals/f43fcbee28ba6f9d.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Rudy's BB with Martingale",
+      "family_hint": "other",
+      "source_sha256": "73dd38b5fbd7cb3c4d6f0ac4c926bfb592536d165a4ae71a8f94c385c14c8197",
+      "installed_sha256": "9aefe32967a18947189501d9a934963030cde142ffad741cd3ab044a3aad1962",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Base Contract Size",
+          "default": 0.01
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 8,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 1,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 9,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 18,
+      "installed_script": "ecosystem/originals/73dd38b5fbd7cb3c.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "RSI Divergence X Ichimoku Cloud X 200EMA",
+      "family_hint": "trend",
+      "source_sha256": "3dd6601db7facd1b3040ab267899cabfe3c86b1d284780d2d9504fe01f4d44f2",
+      "installed_sha256": "d653c72c8f6d613e021763e7261836b487bfe1918a2a3bc90ecbf130cee7cdbf",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 14,
+          "min": 1
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.source",
+          "isSource": true,
+          "title": null,
+          "default": null
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 5
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 5
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 75,
+          "min": 70
+        },
+        {
+          "callSiteId": 6,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 25,
+          "min": 30
+        },
+        {
+          "callSiteId": 7,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 60
+        },
+        {
+          "callSiteId": 8,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 5
+        },
+        {
+          "callSiteId": 10,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 9,
+          "min": 1
+        },
+        {
+          "callSiteId": 11,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 26,
+          "min": 1
+        },
+        {
+          "callSiteId": 12,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 52,
+          "min": 1
+        },
+        {
+          "callSiteId": 13,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 26,
+          "min": 1
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 5,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 7,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 3,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 15,
+      "installed_script": "ecosystem/originals/3dd6601db7facd1b.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "EMA SCALPEUR SHORT",
+      "family_hint": "trend",
+      "source_sha256": "8db6ba7bc153ab6e00097ca2c6030b90026b0ed9c7332de55ac2dd4bfcd167e6",
+      "installed_sha256": "4b2f7b1d2b3e05504d167a6b794a316e1a47cf3c12de21e1bbbd0a692d2f3572",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.int",
+          "isSource": false,
+          "title": "EMA_L",
+          "default": 9,
+          "min": 1,
+          "max": 100,
+          "step": 1
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.int",
+          "isSource": false,
+          "title": "EMA_L2",
+          "default": 26,
+          "min": 1,
+          "max": 100,
+          "step": 1
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.int",
+          "isSource": false,
+          "title": "EMA_S",
+          "default": 100,
+          "min": 1,
+          "max": 100,
+          "step": 1
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.int",
+          "isSource": false,
+          "title": "EMA_S2",
+          "default": 55,
+          "min": 1,
+          "max": 100,
+          "step": 1
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 6,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 3,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 9,
+      "installed_script": "ecosystem/originals/8db6ba7bc153ab6e.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Ultimate Balance Strategy",
+      "family_hint": "other",
+      "source_sha256": "3b79b1d3565c2092ff19f9912aa1ce732667e063ce760d089b90cdb4f38de8c6",
+      "installed_sha256": "9f8da5a24e7c49cde25159c550b2b82994984fce2d939886a1c642f34f303b55",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Rate of Change (ROC) Weight",
+          "default": 2
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Relative Strength Index (RSI) Weight",
+          "default": 0.5
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Commodity Channel Index (CCI) Weight",
+          "default": 2
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Williams %R Weight",
+          "default": 0.5
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Average Directional Index (ADX) Weight",
+          "default": 0.5
+        },
+        {
+          "callSiteId": 6,
+          "name": "input",
+          "isSource": false,
+          "title": "Enable Short Positions",
+          "default": false
+        },
+        {
+          "callSiteId": 7,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Overbought Level",
+          "default": 0.75
+        },
+        {
+          "callSiteId": 8,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Oversold Level",
+          "default": 0.25
+        },
+        {
+          "callSiteId": 9,
+          "name": "input.string",
+          "isSource": false,
+          "title": "MA Type",
+          "default": "SMA",
+          "options": [
+            "SMA",
+            "EMA",
+            "WMA",
+            "DEMA"
+          ]
+        },
+        {
+          "callSiteId": 10,
+          "name": "input.int",
+          "isSource": false,
+          "title": "MA Length",
+          "default": 9,
+          "min": 1
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 8,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 1,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 12,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 21,
+      "installed_script": "ecosystem/originals/3b79b1d3565c2092.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "ATR + STC + MA",
+      "family_hint": "volatility",
+      "source_sha256": "85dcfbd2e885ad5ea1419bd8511bba454db69e5116bec3b10421fa20c0bc1ad5",
+      "installed_sha256": "688caf19168128927921ff328540a46f810d54ea6e74b2eea5e6a5a23cc28b7c",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input",
+          "isSource": false,
+          "title": "Length",
+          "default": 12
+        },
+        {
+          "callSiteId": 2,
+          "name": "input",
+          "isSource": false,
+          "title": "FastLength",
+          "default": 26
+        },
+        {
+          "callSiteId": 3,
+          "name": "input",
+          "isSource": false,
+          "title": "SlowLength",
+          "default": 50
+        },
+        {
+          "callSiteId": 14,
+          "name": "input",
+          "isSource": false,
+          "title": null,
+          "default": 5
+        },
+        {
+          "callSiteId": 15,
+          "name": "input",
+          "isSource": false,
+          "title": null,
+          "default": 3.5
+        },
+        {
+          "callSiteId": 31,
+          "name": "input",
+          "isSource": false,
+          "title": "MA Length",
+          "default": 200
+        },
+        {
+          "callSiteId": 33,
+          "name": "input",
+          "isSource": false,
+          "title": "Take Profit ATR Multiplier",
+          "default": 2
+        },
+        {
+          "callSiteId": 34,
+          "name": "input",
+          "isSource": false,
+          "title": "Stop Loss ATR Multiplier",
+          "default": 1
+        },
+        {
+          "callSiteId": 35,
+          "name": "input",
+          "isSource": false,
+          "title": "Close position when ATR changes color",
+          "default": true
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 13,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 7,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 20,
+      "installed_script": "ecosystem/originals/85dcfbd2e885ad5e.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Millebot",
+      "family_hint": "other",
+      "source_sha256": "8f19c712bab5fe66fc9447ff9104e7dc19a9ce364dc07f5bfcb1adb5960a7cda",
+      "installed_sha256": "9e3ba771a32023b76fb713dbb9bea8217f8775432e36ca1b9e14d257ab0390e7",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "=== Risk management settings ===",
+          "default": false
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.float",
+          "isSource": false,
+          "title": "% Risk",
+          "default": 1.0
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Risk Reward Ratio",
+          "default": 2,
+          "min": 0,
+          "max": 20,
+          "step": 0.1
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.int",
+          "isSource": false,
+          "title": "StopLoss %",
+          "default": 5,
+          "step": 0.25
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "=== Baseline - Switch L/S ===",
+          "default": false
+        },
+        {
+          "callSiteId": 6,
+          "name": "input.source",
+          "isSource": true,
+          "title": "McGinley source",
+          "default": null
+        },
+        {
+          "callSiteId": 7,
+          "name": "input.int",
+          "isSource": false,
+          "title": " McG length",
+          "default": 50,
+          "min": 1
+        },
+        {
+          "callSiteId": 11,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "=== Confirmation indicator ===",
+          "default": false
+        },
+        {
+          "callSiteId": 12,
+          "name": "input.bool",
+          "isSource": false,
+          "title": " Confirmation indicator Activation",
+          "default": false
+        },
+        {
+          "callSiteId": 13,
+          "name": "input.source",
+          "isSource": true,
+          "title": "Source",
+          "default": null
+        },
+        {
+          "callSiteId": 14,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Length",
+          "default": 5
+        },
+        {
+          "callSiteId": 16,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "=== Entry indicator configuration ===",
+          "default": false
+        },
+        {
+          "callSiteId": 17,
+          "name": "input.source",
+          "isSource": true,
+          "title": "Source",
+          "default": null
+        },
+        {
+          "callSiteId": 18,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Length HMA",
+          "default": 50
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 11,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 11,
+      "installed_script": "ecosystem/originals/8f19c712bab5fe66.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Merovinh - Mean Reversion Lowest low",
+      "family_hint": "reversion",
+      "source_sha256": "b12a703fc7a0c1ff56f1a91d6ae2135ba719382588476707fe46bcd3aadecdcb",
+      "installed_sha256": "2e1f6b1001accf504f4a8891147434acbdc4aee1d2aa6a1434ed8c85c62c865d",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input",
+          "isSource": false,
+          "title": "Minimum number of bars",
+          "default": 9
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.string",
+          "isSource": false,
+          "title": "Number of broken lows",
+          "default": "One",
+          "options": [
+            "One",
+            "Two",
+            "Three",
+            "Four"
+          ]
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.time",
+          "isSource": false,
+          "title": "Start date",
+          "default": 1627344000000
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.time",
+          "isSource": false,
+          "title": "Final date",
+          "default": 1924991940000
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 8,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 1,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 19,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 28,
+      "installed_script": "ecosystem/originals/b12a703fc7a0c1ff.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Combo Backtest 123 Reversal & Stochastic RSI",
+      "family_hint": "reversion",
+      "source_sha256": "85ded2599393374db8c9880d127f438f7e9f2dbd5994851288199c5bc81128b8",
+      "installed_sha256": "f9be0e660bcd676737fe0d06d9889f5bf61d79b0d54624c28a140e9870037e19",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "---- 123 Reversal ----",
+          "default": true
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 14,
+          "min": 1
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 1,
+          "min": 1
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 3,
+          "min": 1
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 50,
+          "min": 1
+        },
+        {
+          "callSiteId": 6,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "---- Stochastic RSI ----",
+          "default": true
+        },
+        {
+          "callSiteId": 7,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 80,
+          "step": 0.01
+        },
+        {
+          "callSiteId": 8,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 20,
+          "step": 0.01
+        },
+        {
+          "callSiteId": 9,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 14,
+          "min": 1
+        },
+        {
+          "callSiteId": 10,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 14,
+          "min": 1
+        },
+        {
+          "callSiteId": 11,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 3,
+          "min": 1
+        },
+        {
+          "callSiteId": 12,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 3,
+          "min": 1
+        },
+        {
+          "callSiteId": 13,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "Trade reverse",
+          "default": false
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 5,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 6,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 4,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 15,
+      "installed_script": "ecosystem/originals/85ded2599393374d.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "JS-TechTrading- VWAP Momentum_Pullback Strategy",
+      "family_hint": "volume",
+      "source_sha256": "e2041b34755aa2686d08819d313cdc28d6edb6f1f70e7fed64e9e2ff0350122e",
+      "installed_sha256": "861164762063bc59f8dec298b7904c3652efeda8276b61806a6556aa5e666a3e",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "Activate Long-Strategy",
+          "default": true
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Stop-Loss (SL) %",
+          "default": 3,
+          "min": 0
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Take-Profit (TP) %",
+          "default": 7,
+          "min": 0
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "Activate Short-Strategie",
+          "default": false
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Stop-Loss (SL) %",
+          "default": 50,
+          "min": 0
+        },
+        {
+          "callSiteId": 6,
+          "name": "input.float",
+          "isSource": false,
+          "title": "Take-Profit (TP) %",
+          "default": 50,
+          "min": 0
+        },
+        {
+          "callSiteId": 15,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Start Day",
+          "default": 1,
+          "min": 1,
+          "max": 31
+        },
+        {
+          "callSiteId": 16,
+          "name": "input.int",
+          "isSource": false,
+          "title": "until Day",
+          "default": 1,
+          "min": 1,
+          "max": 31
+        },
+        {
+          "callSiteId": 17,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Start Month",
+          "default": 10,
+          "min": 1,
+          "max": 12
+        },
+        {
+          "callSiteId": 18,
+          "name": "input.int",
+          "isSource": false,
+          "title": "until Month",
+          "default": 1,
+          "min": 1,
+          "max": 12
+        },
+        {
+          "callSiteId": 19,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Start Year",
+          "default": 2022,
+          "min": 1800,
+          "max": 3000
+        },
+        {
+          "callSiteId": 20,
+          "name": "input.int",
+          "isSource": false,
+          "title": "until Year",
+          "default": 2077,
+          "min": 1800,
+          "max": 3000
+        },
+        {
+          "callSiteId": 23,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Oversold Level",
+          "default": 40,
+          "min": 1
+        },
+        {
+          "callSiteId": 24,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Overbought Level",
+          "default": 70,
+          "min": 1
+        },
+        {
+          "callSiteId": 25,
+          "name": "input.int",
+          "isSource": false,
+          "title": "RSI Length",
+          "default": 14,
+          "min": 1
+        },
+        {
+          "callSiteId": 27,
+          "name": "input",
+          "isSource": true,
+          "title": "SMA source",
+          "default": null
+        },
+        {
+          "callSiteId": 28,
+          "name": "input.int",
+          "isSource": false,
+          "title": "SMA interval",
+          "default": 7,
+          "min": 0,
+          "max": 999,
+          "step": 1
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 0,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 2,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 2,
+      "installed_script": "ecosystem/originals/e2041b34755aa268.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Ichimoku Cloud with ADX (By Coinrule)",
+      "family_hint": "trend",
+      "source_sha256": "385e92ae607da22792c9eb79d05d30e923cc6f5c24d6b680eeeaec899bcb7345",
+      "installed_sha256": "b744ff9f6688b60b14ecdd4c5228cea2224e83560a54cf738fcd68bcf4dc6008",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input",
+          "isSource": false,
+          "title": "Show Date Range",
+          "default": true
+        },
+        {
+          "callSiteId": 3,
+          "name": "input",
+          "isSource": false,
+          "title": null,
+          "default": 1
+        },
+        {
+          "callSiteId": 4,
+          "name": "input",
+          "isSource": false,
+          "title": null,
+          "default": 5
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Tenkan-Sen Bars",
+          "default": 9,
+          "min": 1
+        },
+        {
+          "callSiteId": 6,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Kijun-Sen Bars",
+          "default": 26,
+          "min": 1
+        },
+        {
+          "callSiteId": 7,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Senkou-Span B Bars",
+          "default": 52,
+          "min": 1
+        },
+        {
+          "callSiteId": 8,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Chikou-Span Offset",
+          "default": 26,
+          "min": 1
+        },
+        {
+          "callSiteId": 9,
+          "name": "input.int",
+          "isSource": false,
+          "title": "Senkou-Span Offset",
+          "default": 26,
+          "min": 1
+        },
+        {
+          "callSiteId": 10,
+          "name": "input",
+          "isSource": false,
+          "title": "Long Entry",
+          "default": true
+        },
+        {
+          "callSiteId": 11,
+          "name": "input",
+          "isSource": false,
+          "title": "Short Entry",
+          "default": true
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 3,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 1,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 1,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 5,
+      "installed_script": "ecosystem/originals/385e92ae607da227.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Highest High and Lowest Low Channel Strategy",
+      "family_hint": "breakout",
+      "source_sha256": "cf05476380a30a0c97dfa0f9c4994cfc669491273b2cbc4808cf1cfe763c9da5",
+      "installed_sha256": "b6a363e9a07ff857dde70a85ff66bd5c7be4bad45a30c083b7ae4398d50fcbfd",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input",
+          "isSource": false,
+          "title": null,
+          "default": 20
+        },
+        {
+          "callSiteId": 2,
+          "name": "input",
+          "isSource": false,
+          "title": "Trade reverse",
+          "default": false
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 8,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 2,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 10,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 20,
+      "installed_script": "ecosystem/originals/cf05476380a30a0c.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Combo Backtest 123 Reversal & Volatility Finite Volume Elements",
+      "family_hint": "volume",
+      "source_sha256": "2cd5fb45ea721c07ffea70d4b5f03849ed913c121a271b5b4768568fd966098b",
+      "installed_sha256": "a401084edda69d61f35f51a4219219ee373be0b7cef73f6911ac27f02621854e",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 14,
+          "min": 1
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 1,
+          "min": 1
+        },
+        {
+          "callSiteId": 3,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 3,
+          "min": 1
+        },
+        {
+          "callSiteId": 4,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 50,
+          "min": 1
+        },
+        {
+          "callSiteId": 5,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 22,
+          "min": 1
+        },
+        {
+          "callSiteId": 6,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 40,
+          "min": 1
+        },
+        {
+          "callSiteId": 7,
+          "name": "input.float",
+          "isSource": false,
+          "title": null,
+          "default": 0.1
+        },
+        {
+          "callSiteId": 8,
+          "name": "input.float",
+          "isSource": false,
+          "title": null,
+          "default": 0.1
+        },
+        {
+          "callSiteId": 9,
+          "name": "input.bool",
+          "isSource": false,
+          "title": "Trade reverse",
+          "default": false
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 7,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 15,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 5,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 27,
+      "installed_script": "ecosystem/originals/2cd5fb45ea721c07.pine",
+      "http_trade_qualified_markets": []
+    },
+    {
+      "name": "Tendies Heist Auto Compounding Example",
+      "family_hint": "other",
+      "source_sha256": "34e96db09fff51b75451274c026c23d9b577f839dac92c8147c5faa6c38d04fe",
+      "installed_sha256": "79541bbeb6b7fd1f93f003626501e095ed06c5d4299c09d815f2f1214b87e186",
+      "source_transform": "remove page prose and line-number column when present; normalize NBSP and zero-width presentation whitespace",
+      "inputs": [
+        {
+          "callSiteId": 1,
+          "name": "input.int",
+          "isSource": false,
+          "title": null,
+          "default": 10000
+        },
+        {
+          "callSiteId": 2,
+          "name": "input.int",
+          "isSource": false,
+          "title": "max position size",
+          "default": 25
+        }
+      ],
+      "runs": [
+        {
+          "regime": "range",
+          "orders": 8,
+          "prefix_check": true
+        },
+        {
+          "regime": "trend_reversal",
+          "orders": 1,
+          "prefix_check": true
+        },
+        {
+          "regime": "random_walk",
+          "orders": 10,
+          "prefix_check": true
+        }
+      ],
+      "total_orders": 19,
+      "installed_script": "ecosystem/originals/34e96db09fff51b7.pine",
+      "http_trade_qualified_markets": []
+    }
+  ]
+}

@@ -12,3 +12,10 @@ the original deterministic execution budgets and numerical behavior apply.
 Its unused JSON snapshot dependency does not enable float_roundtrip globally;
 the host's existing JSON parser configuration is preserved. Reconstruction
 uses the frozen broker transcript rather than runtime JSON snapshots.
+
+The strategy ecosystem extension also resolves external order arguments from
+their canonical builtin slots, preserves `when` conditions, and evaluates
+notification/display arguments without changing order execution. The standalone
+patch is `runtime-patches/pine-compat-0.3.1-order-notifications.patch`. Its Python
+build installs into a separate private runtime directory; no published upstream
+version or general community-strategy compatibility is claimed.

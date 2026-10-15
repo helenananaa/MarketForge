@@ -1,0 +1,30 @@
+//@version=6
+// MarketForge configurable formula adaptation; original authors full scripts remain separate.
+strategy("MF Ichimoku", pyramiding=0)
+fast_length = input.int(9, title="fast")
+slow_length = input.int(26, title="slow")
+length = input.int(52, title="length")
+displacement = input.int(26, title="displacement")
+order_qty = input.int(2, title="qty", minval=1)
+allow_short = input.bool(false, title="allow_short")
+tenkan = (ta.highest(high, fast_length) + ta.lowest(low, fast_length)) / 2.0
+kijun = (ta.highest(high, slow_length) + ta.lowest(low, slow_length)) / 2.0
+a = ((tenkan + kijun) / 2.0)[displacement]
+b = ((ta.highest(high, length) + ta.lowest(low, length)) / 2.0)[displacement]
+long_entry = tenkan > kijun and close > a and close > b
+long_exit = tenkan < kijun or close < a
+short_entry = tenkan < kijun and close < a and close < b
+short_exit = tenkan > kijun or close > a
+if strategy.position_size == 0
+    if long_entry
+        strategy.entry("L", strategy.long, qty=order_qty)
+    else if allow_short and short_entry
+        strategy.entry("S", strategy.short, qty=order_qty)
+else if strategy.position_size > 0 and long_exit
+    strategy.close("L")
+else if strategy.position_size < 0 and short_exit
+    strategy.close("S")
+plot(long_entry ? 1 : 0, "long_entry")
+plot(long_exit ? 1 : 0, "long_exit")
+plot(short_entry ? 1 : 0, "short_entry")
+plot(short_exit ? 1 : 0, "short_exit")

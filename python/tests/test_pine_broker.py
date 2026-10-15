@@ -7,6 +7,21 @@ from unittest.mock import patch
 from test_pine_bot import bot, request
 
 
+class StrategyOrderGridTests(unittest.TestCase):
+    def test_opt_in_rounding_preserves_discrete_limit_and_trigger_conditions(self):
+        module=bot.broker_module();config={"quantize_strategy_orders":True}
+        self.assertEqual(module.strategy_price(100.4,"limit",2,"Buy",False,config),100)
+        self.assertEqual(module.strategy_price(100.4,"limit",2,"Sell",False,config),102)
+        self.assertEqual(module.strategy_price(100.4,"stop",2,"Buy",True,config),102)
+        self.assertEqual(module.strategy_price(100.4,"stop",2,"Sell",True,config),100)
+        self.assertEqual(module.quantized(5.9,"quantity",2),4)
+        self.assertEqual(module.quantized(.8,"quantity",1),0)
+        self.assertEqual(module.qty_for_close({"qty":1.8},5,True),1)
+        with self.assertRaises(ValueError):module.strategy_price(100.4,"limit",1,"Buy",False,{})
+        for value in (True,float('nan'),float('inf'),-1):
+            with self.assertRaises(ValueError):module.quantized(value,"quantity",1)
+
+
 def broker_request(prices, state=None):
     req = request(prices, state=state)
     req["config"]["execution_mode"] = "broker"
@@ -149,6 +164,22 @@ class PineBrokerTests(unittest.TestCase):
         result = self.run_source('strategy.exit("X",profit=10,loss=5)', req)
         protection = result["actions"][0]["BotOrder"]["action"]["SetPositionProtection"]["protection"]
         self.assertEqual((protection["take_profit_tick"], protection["stop_loss_tick"], protection["exit_qty"]), (110, 95, 2))
+
+    def test_fractional_original_strategy_exits_quantize_on_each_side(self):
+        for position, expected in [(2,(111,94)),(-2,(89,106))]:
+            req=perp(broker_request([100]),position=position,avg=100)
+            req['config']['quantize_strategy_orders']=True
+            req['observation']['public_trades']=[{'price_tick':100}]
+            result=self.run_source('strategy.exit("X",profit=10.4,loss=5.3)',req)
+            protection=result['actions'][0]['BotOrder']['action']['SetPositionProtection']['protection']
+            self.assertEqual((protection['take_profit_tick'],protection['stop_loss_tick']),expected)
+
+    def test_disabled_quantization_preserves_existing_identity(self):
+        req=broker_request([100])
+        first=self.run_source('plot(close)',req)
+        req['config']['quantize_strategy_orders']=False
+        second=self.run_source('plot(close)',req)
+        self.assertEqual(first,second)
 
     def test_perpetual_hedge_account_uses_selected_leg(self):
         req = perp(broker_request([100]), position=0)

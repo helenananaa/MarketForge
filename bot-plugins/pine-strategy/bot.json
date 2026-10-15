@@ -9,6 +9,7 @@
     "parameters": {
       "script": {"type": "string", "default": "ma.pine"},
       "execution_mode": {"type": "string", "default": "broker", "choices": ["broker", "legacy"]},
+      "quantize_strategy_orders": {"type": "boolean", "default": false},
       "related_instruments": {"type": "array", "default": []},
       "additional_intervals_ms": {"type": "array", "default": []},
       "position_side": {"type": "string", "default": "Both", "choices": ["Both", "Long", "Short"]},

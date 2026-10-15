@@ -31,7 +31,7 @@ const MAX_EXACT: i128 = (1i128 << 53) - 1;
 const MAX_INDICATOR_TICK: i64 = (MAX_EXACT / 4096) as i64;
 
 #[path = "native_pine_extended/mod.rs"]
-mod extended;
+pub(crate) mod extended;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 enum Strategy {

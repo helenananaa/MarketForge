@@ -1,0 +1,26 @@
+//@version=6
+// MarketForge configurable formula adaptation; original authors full scripts remain separate.
+strategy("MF Macd", pyramiding=0)
+fast_length = input.int(12, title="fast")
+slow_length = input.int(26, title="slow")
+signal_length = input.int(9, title="signal")
+order_qty = input.int(2, title="qty", minval=1)
+allow_short = input.bool(false, title="allow_short")
+[m, s, hist] = ta.macd(close, fast_length, slow_length, signal_length)
+long_entry = m > s
+long_exit = m < s
+short_entry = m < s
+short_exit = m > s
+if strategy.position_size == 0
+    if long_entry
+        strategy.entry("L", strategy.long, qty=order_qty)
+    else if allow_short and short_entry
+        strategy.entry("S", strategy.short, qty=order_qty)
+else if strategy.position_size > 0 and long_exit
+    strategy.close("L")
+else if strategy.position_size < 0 and short_exit
+    strategy.close("S")
+plot(long_entry ? 1 : 0, "long_entry")
+plot(long_exit ? 1 : 0, "long_exit")
+plot(short_entry ? 1 : 0, "short_entry")
+plot(short_exit ? 1 : 0, "short_exit")

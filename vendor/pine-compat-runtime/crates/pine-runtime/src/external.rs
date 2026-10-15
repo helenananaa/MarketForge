@@ -387,6 +387,34 @@ impl HistoricalRuntime<'_> {
         callee: &str,
         args: &[HirCallArg],
     ) -> Result<PineValue, RuntimeError> {
+        // The semantic binder canonicalizes supplied named arguments into
+        // positional HIR slots. Recover their names from the builtin signature;
+        // preserve omitted placeholders so default execution arguments stay absent.
+        let signature = pine_builtins::get_phase_1_builtin(callee)
+            .ok_or_else(|| external_error(format!("order API {callee}")))?;
+        let normalized: Vec<HirCallArg> = args
+            .iter()
+            .enumerate()
+            .map(|(index, arg)| {
+                let mut arg = arg.clone();
+                if arg.name.is_none() {
+                    arg.name = signature.params.get(index).map(|p| p.name.to_owned());
+                }
+                arg
+            })
+            .collect();
+        let args = normalized.as_slice();
+        let notification_names = [
+            "comment",
+            "comment_profit",
+            "comment_loss",
+            "comment_trailing",
+            "alert_message",
+            "alert_profit",
+            "alert_loss",
+            "alert_trailing",
+            "disable_alert",
+        ];
         let names: &[&str] = match callee {
             "strategy.entry" => &["id", "direction", "qty", "limit", "stop"],
             "strategy.close" => &["id", "qty", "qty_percent"],
@@ -413,15 +441,35 @@ impl HistoricalRuntime<'_> {
                 continue;
             }
             if arg.name.as_deref().map_or(index >= names.len(), |name| {
-                !names.contains(&name) && name != "when"
+                !names.contains(&name) && name != "when" && !notification_names.contains(&name)
             }) {
-                return Err(external_error("unsupported external order argument"));
+                return Err(external_error(format!(
+                    "unsupported external order argument {:?} at slot {index} for {callee}",
+                    arg.name
+                )));
             }
         }
         if let Some(arg) = args.iter().find(|arg| arg.name.as_deref() == Some("when"))
             && self.eval_expr(&arg.value)? != PineValue::Bool(true)
         {
             return Ok(PineValue::Void);
+        }
+        // Notification/display arguments do not alter the external order. Still
+        // evaluate them so series/function effects retain their Pine behavior.
+        // OCA, immediately and other execution arguments remain unsupported.
+        for arg in args.iter().filter(|arg| {
+            arg.name
+                .as_deref()
+                .is_some_and(|name| notification_names.contains(&name))
+        }) {
+            let value = self.eval_expr(&arg.value)?;
+            let valid = match arg.name.as_deref() {
+                Some("disable_alert") => matches!(value, PineValue::Bool(_) | PineValue::Na),
+                _ => matches!(value, PineValue::String(_) | PineValue::Na),
+            };
+            if !valid {
+                return Err(external_error("invalid external notification argument"));
+            }
         }
         let id = if ["strategy.close_all", "strategy.cancel_all"].contains(&callee) {
             String::new()

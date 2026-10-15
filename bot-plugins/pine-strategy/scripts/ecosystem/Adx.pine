@@ -1,0 +1,26 @@
+//@version=6
+// MarketForge configurable formula adaptation; original authors full scripts remain separate.
+strategy("MF Adx", pyramiding=0)
+length = input.int(14, title="length")
+signal_length = input.int(14, title="signal")
+high_gate = input.float(25.0, title="high")
+order_qty = input.int(2, title="qty", minval=1)
+allow_short = input.bool(false, title="allow_short")
+[plus, minus, adx] = ta.dmi(length, signal_length)
+long_entry = plus > minus and adx > high_gate
+long_exit = plus < minus
+short_entry = plus < minus and adx > high_gate
+short_exit = plus > minus
+if strategy.position_size == 0
+    if long_entry
+        strategy.entry("L", strategy.long, qty=order_qty)
+    else if allow_short and short_entry
+        strategy.entry("S", strategy.short, qty=order_qty)
+else if strategy.position_size > 0 and long_exit
+    strategy.close("L")
+else if strategy.position_size < 0 and short_exit
+    strategy.close("S")
+plot(long_entry ? 1 : 0, "long_entry")
+plot(long_exit ? 1 : 0, "long_exit")
+plot(short_entry ? 1 : 0, "short_entry")
+plot(short_exit ? 1 : 0, "short_exit")

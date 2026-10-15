@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 mod common_a;
 mod common_b;
-mod popular;
+pub(crate) mod popular;
 
 // Match pine-ir's pinned series-expression comparison boundary. Builtin TA
 // algorithms have their own exact comparisons and must not use this helper.

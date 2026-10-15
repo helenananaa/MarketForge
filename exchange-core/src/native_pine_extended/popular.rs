@@ -46,7 +46,7 @@ impl Window {
     /// Pine's `ta.sma` feeds its rolling sum through `push_for_bar`, including
     /// the exact nearby-value difference optimization. The other consumers
     /// (notably `ta.stdev`) use the ordinary push path above.
-    fn push_sma(&mut self, value: Option<f64>, length: usize) -> Option<f64> {
+    pub(crate) fn push_sma(&mut self, value: Option<f64>, length: usize) -> Option<f64> {
         self.push_inner(value, length, true)
     }
 
@@ -241,7 +241,7 @@ impl Window {
         })
     }
 
-    fn valid(&self, length: usize, bars: u64) -> bool {
+    pub(crate) fn valid(&self, length: usize, bars: u64) -> bool {
         let reconstructed = self
             .values
             .iter()

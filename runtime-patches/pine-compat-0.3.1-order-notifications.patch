@@ -1,0 +1,105 @@
+diff --git a/crates/pine-runtime/src/external.rs b/crates/pine-runtime/src/external.rs
+index 7a62dcf..fc6da61 100644
+--- a/crates/pine-runtime/src/external.rs
++++ b/crates/pine-runtime/src/external.rs
+@@ -387,6 +387,34 @@ impl HistoricalRuntime<'_> {
+         callee: &str,
+         args: &[HirCallArg],
+     ) -> Result<PineValue, RuntimeError> {
++        // The semantic binder canonicalizes supplied named arguments into
++        // positional HIR slots. Recover their names from the builtin signature;
++        // preserve omitted placeholders so default execution arguments stay absent.
++        let signature = pine_builtins::get_phase_1_builtin(callee)
++            .ok_or_else(|| external_error(format!("order API {callee}")))?;
++        let normalized: Vec<HirCallArg> = args
++            .iter()
++            .enumerate()
++            .map(|(index, arg)| {
++                let mut arg = arg.clone();
++                if arg.name.is_none() {
++                    arg.name = signature.params.get(index).map(|p| p.name.to_owned());
++                }
++                arg
++            })
++            .collect();
++        let args = normalized.as_slice();
++        let notification_names = [
++            "comment",
++            "comment_profit",
++            "comment_loss",
++            "comment_trailing",
++            "alert_message",
++            "alert_profit",
++            "alert_loss",
++            "alert_trailing",
++            "disable_alert",
++        ];
+         let names: &[&str] = match callee {
+             "strategy.entry" => &["id", "direction", "qty", "limit", "stop"],
+             "strategy.close" => &["id", "qty", "qty_percent"],
+@@ -413,9 +441,12 @@ impl HistoricalRuntime<'_> {
+                 continue;
+             }
+             if arg.name.as_deref().map_or(index >= names.len(), |name| {
+-                !names.contains(&name) && name != "when"
++                !names.contains(&name) && name != "when" && !notification_names.contains(&name)
+             }) {
+-                return Err(external_error("unsupported external order argument"));
++                return Err(external_error(format!(
++                    "unsupported external order argument {:?} at slot {index} for {callee}",
++                    arg.name
++                )));
+             }
+         }
+         if let Some(arg) = args.iter().find(|arg| arg.name.as_deref() == Some("when"))
+@@ -423,6 +454,23 @@ impl HistoricalRuntime<'_> {
+         {
+             return Ok(PineValue::Void);
+         }
++        // Notification/display arguments do not alter the external order. Still
++        // evaluate them so series/function effects retain their Pine behavior.
++        // OCA, immediately and other execution arguments remain unsupported.
++        for arg in args.iter().filter(|arg| {
++            arg.name
++                .as_deref()
++                .is_some_and(|name| notification_names.contains(&name))
++        }) {
++            let value = self.eval_expr(&arg.value)?;
++            let valid = match arg.name.as_deref() {
++                Some("disable_alert") => matches!(value, PineValue::Bool(_) | PineValue::Na),
++                _ => matches!(value, PineValue::String(_) | PineValue::Na),
++            };
++            if !valid {
++                return Err(external_error("invalid external notification argument"));
++            }
++        }
+         let id = if ["strategy.close_all", "strategy.cancel_all"].contains(&callee) {
+             String::new()
+         } else {
+diff --git a/crates/pine-runtime/src/tests/external.rs b/crates/pine-runtime/src/tests/external.rs
+index 4d2b201..6c8e5e2 100644
+--- a/crates/pine-runtime/src/tests/external.rs
++++ b/crates/pine-runtime/src/tests/external.rs
+@@ -48,6 +48,22 @@ fn external_mode_never_exposes_a_native_ledger_on_any_result_surface() {
+     assert!(!public_runtime_result_json(&runtime.result()).contains("\"strategy\""));
+ }
+ 
++#[test]
++fn external_notification_arguments_preserve_order_intents_and_when() {
++    let hir = program(
++        "strategy(\"Labels\")\nstrategy.entry(\"S\", strategy.short, qty=2, comment=\"ENTER\", alert_message=\"notice\", disable_alert=true)\nstrategy.close(\"S\", when=false, comment=\"NO CLOSE\")",
++    );
++    let mut runtime = HistoricalRuntime::new(&hir)
++        .with_external_accounts(vec![account(0, 0.0)])
++        .unwrap();
++    runtime.append_bar(bar(10.0)).unwrap();
++    let intents = runtime.external_intents().unwrap();
++    assert_eq!(intents.len(), 1);
++    assert_eq!(intents[0].id, "S");
++    assert_eq!(intents[0].qty, Some(2.0));
++    assert!(runtime.result().strategy.is_none());
++}
++
+ #[test]
+ fn unsupported_account_read_is_an_execution_error_and_disables_reuse() {
+     let hir = program("strategy(\"Unsupported\")\nplot(strategy.wintrades)");

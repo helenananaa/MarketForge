@@ -1,0 +1,31 @@
+//@version=6
+// MarketForge configurable formula adaptation; original authors full scripts remain separate.
+strategy("MF Squeeze", pyramiding=0)
+length = input.int(20, title="length")
+factor = input.float(2.0, title="factor")
+channel_factor = input.float(1.5, title="channel_factor")
+order_qty = input.int(2, title="qty", minval=1)
+allow_short = input.bool(false, title="allow_short")
+mid = ta.sma(close, length)
+dev = factor * ta.stdev(close, length)
+krange = channel_factor * ta.sma(ta.tr(true), length)
+squeezed = dev < krange
+center = ((ta.highest(high, length) + ta.lowest(low, length)) / 2.0 + mid) / 2.0
+mom = ta.linreg(close - center, length, 0)
+long_entry = squeezed[1] and not squeezed and mom > 0
+long_exit = mom < mom[1]
+short_entry = squeezed[1] and not squeezed and mom < 0
+short_exit = mom > mom[1]
+if strategy.position_size == 0
+    if long_entry
+        strategy.entry("L", strategy.long, qty=order_qty)
+    else if allow_short and short_entry
+        strategy.entry("S", strategy.short, qty=order_qty)
+else if strategy.position_size > 0 and long_exit
+    strategy.close("L")
+else if strategy.position_size < 0 and short_exit
+    strategy.close("S")
+plot(long_entry ? 1 : 0, "long_entry")
+plot(long_exit ? 1 : 0, "long_exit")
+plot(short_entry ? 1 : 0, "short_entry")
+plot(short_exit ? 1 : 0, "short_exit")

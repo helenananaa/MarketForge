@@ -19,6 +19,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-repo", type=Path, required=True)
     parser.add_argument("--install", action="store_true", help="install only into the Pine plugin's private .runtime directory")
+    parser.add_argument("--strategy-extensions", action="store_true", help="add qualified external order notification arguments in a separate private runtime")
     args = parser.parse_args()
     workspace = ROOT / ".local/pine-incremental-build"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -31,6 +32,9 @@ def main():
                 raise ValueError("archive path escapes isolated build")
         bundle.extractall(source)
     subprocess.run(["git", "apply", "--whitespace=error", str(PATCH)], cwd=source, check=True)
+    extension_patch = ROOT / "runtime-patches/pine-compat-0.3.1-order-notifications.patch"
+    if args.strategy_extensions:
+        subprocess.run(["git", "apply", "--whitespace=error", str(extension_patch)], cwd=source, check=True)
     env = os.environ.copy()
     env.update(CARGO_TARGET_DIR=str(workspace / "target"), PYO3_PYTHON=sys.executable)
     subprocess.run(["cargo", "build", "--locked", "--release", "-p", "pine-python"], cwd=source, env=env, check=True)
@@ -41,8 +45,13 @@ def main():
                "binary_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
                "source": str(source), "artifact": str(artifact),
                "scope": "private adapter build; not an upstream published release"}
+    if args.strategy_extensions:
+        receipt["extension_patch_sha256"] = hashlib.sha256(extension_patch.read_bytes()).hexdigest()
+        receipt["capabilities"] = ["external_comment", "external_alert_message", "external_disable_alert"]
     if args.install:
         destination = ROOT / "bot-plugins/pine-strategy/.runtime"
+        if args.strategy_extensions:
+            destination = destination / "strategy-ecosystem"
         destination.mkdir(parents=True, exist_ok=True)
         shutil.copy2(artifact, destination / ("pine_compat.pyd" if os.name == "nt" else "pine_compat.so"))
         shutil.copy2(source / "LICENSE", destination / "LICENSE")

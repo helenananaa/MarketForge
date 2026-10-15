@@ -30,6 +30,25 @@ def number(value, name, minimum=-MAX_EXACT):
     return int(value)
 
 
+def quantized(value, name, quantum, up=False):
+    """Explicit strategy-intent normalization; authoritative receipts stay exact."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 < value <= MAX_EXACT:
+        raise ValueError(f"{name}: expected a positive finite strategy value")
+    scaled = Fraction(str(value)) / quantum
+    units = -(-scaled.numerator // scaled.denominator) if up else scaled.numerator // scaled.denominator
+    return units * quantum
+
+
+def strategy_price(value, name, tick, side, stop, config):
+    if value is None: return None
+    if not config.get("quantize_strategy_orders", False): return number(value, name, 1)
+    # Limit buys floor / sells ceil; trigger buys ceil / sells floor. This
+    # preserves comparisons against prices on the exchange's discrete grid.
+    result = quantized(value, name, tick, up=(side == "Buy") if stop else (side == "Sell"))
+    if result <= 0: raise ValueError(f"{name}: below the exchange price grid")
+    return result
+
+
 def timeframe(interval):
     if interval == 86400000:
         return "1D"
@@ -331,9 +350,9 @@ def cancel_orders(state, view, names=None):
     return actions
 
 
-def qty_for_close(intent, position):
+def qty_for_close(intent, position, quantize=False):
     qty = abs(position)
-    if intent.get("qty") is not None: qty = min(qty, number(intent["qty"], "close quantity", 1))
+    if intent.get("qty") is not None: qty = min(qty, quantized(intent["qty"], "close quantity", 1) if quantize else number(intent["qty"], "close quantity", 1))
     elif intent.get("qty_percent") is not None:
         percent = intent["qty_percent"]
         if isinstance(percent, bool) or not isinstance(percent, (int, float)) or not 0 < percent <= 100: raise ValueError("invalid close percentage")
@@ -348,6 +367,9 @@ def submit_order(state, view, config, name, side, qty, limit=None, stop=None, re
     metadata = view.get("instrument") or {}
     tick = number(metadata.get("tick_size", 1), "tick size", 1)
     lot = number(metadata.get("lot_size", 1), "lot size", 1)
+    if config.get("quantize_strategy_orders", False):
+        qty = qty // lot * lot
+        if qty <= 0: return []
     if qty % lot: raise ValueError("order quantity must align with the exchange lot size")
     requested_qty = qty
     old = state["orders"].get(key)
@@ -371,8 +393,8 @@ def submit_order(state, view, config, name, side, qty, limit=None, stop=None, re
     qty = qty // lot * lot
     if qty <= 0:
         return [tracked(instrument, key, {"Cancel": {"order_id": live["order_id"]}})] if live else []
-    limit = number(limit, "limit price", 1) if limit is not None else None
-    stop = number(stop, "stop price", 1) if stop is not None else None
+    limit = strategy_price(limit, "limit price", tick, side, False, config)
+    stop = strategy_price(stop, "stop price", tick, side, True, config)
     if any(price is not None and price % tick for price in (limit, stop)):
         raise ValueError("order price must align with the exchange tick size")
     if stop is not None:
@@ -469,7 +491,8 @@ def translate(intents, pyramiding, views, primary, config, state):
             side = "Buy" if intent["direction"] == "long" else "Sell"
             if kind == "Spot" and side == "Sell" and not direct:
                 raise ValueError("spot account cannot open a short position")
-            qty = number(intent["qty"], "entry quantity", 1)
+            qty = quantized(intent["qty"], "entry quantity", (view.get("instrument") or {}).get("lot_size", 1)) if config.get("quantize_strategy_orders", False) else number(intent["qty"], "entry quantity", 1)
+            if qty <= 0: continue
             signed = 1 if side == "Buy" else -1
             if not direct and position * signed > 0:
                 active = [e for key, e in state["entries"].items() if key.startswith(instrument + "::") and e["qty"] * signed > 0]
@@ -484,7 +507,7 @@ def translate(intents, pyramiding, views, primary, config, state):
             owned = state["entries"].get(entry_name(instrument, name), {}).get("qty", 0)
             close_position = position if action == "close_all" else (min(abs(position), abs(owned)) * (1 if position > 0 else -1) if position * owned > 0 else 0)
             if not close_position: continue
-            qty = qty_for_close(intent, close_position)
+            qty = qty_for_close(intent, close_position, config.get("quantize_strategy_orders", False))
             actions.extend(submit_order(state, view, config, name + "_close", "Sell" if close_position > 0 else "Buy", qty, reduce=kind == "Perp", entry=name if action == "close" else None))
         elif action == "exit":
             if kind != "Perp": raise ValueError("exchange position protection requires a perpetual market")
@@ -518,7 +541,7 @@ def evaluate_exits(state, views, config):
         tick = number((view.get("instrument") or {}).get("tick_size", 1), "tick size", 1)
         owned = state["entries"].get(entry_name(spec["instrument"], spec["entry_id"]), {}).get("qty", 0) if spec["entry_id"] else position
         if owned * position <= 0: continue
-        qty = qty_for_close(intent, min(abs(position), abs(owned)))
+        qty = qty_for_close(intent, min(abs(position), abs(owned)), config.get("quantize_strategy_orders", False))
         if not qty: continue
         take, stop = intent.get("limit"), intent.get("stop")
         if take is None and intent.get("profit") is not None: take = avg + signed * intent["profit"] * tick
@@ -526,8 +549,9 @@ def evaluate_exits(state, views, config):
         last = view.get("public_trades", [])
         last_price = last[-1]["price_tick"] if last else None
         if last_price is None: continue
-        take = number(take, "take profit", 1) if take is not None else None
-        stop = number(stop, "stop loss", 1) if stop is not None else None
+        close_side = "Sell" if position > 0 else "Buy"
+        take = strategy_price(take, "take profit", tick, close_side, False, config)
+        stop = strategy_price(stop, "stop loss", tick, close_side, True, config)
         if any(price is not None and price % tick for price in (take, stop)):
             raise ValueError("exit price must align with the exchange tick size")
         if ((take is not None and signed * (last_price - take) >= 0) or
@@ -536,9 +560,10 @@ def evaluate_exits(state, views, config):
             continue
         activation = intent.get("trail_price")
         if activation is None and intent.get("trail_points") is not None: activation = avg + signed * intent["trail_points"] * tick
-        if activation is not None and signed * (last_price - number(activation, "trailing activation", 1)) >= 0:
+        activation = strategy_price(activation, "trailing activation", tick, "Buy" if signed > 0 else "Sell", True, config)
+        if activation is not None and signed * (last_price - activation) >= 0:
             spec["trail_active"] = True
-        trail = number(intent["trail_offset"] * tick, "trailing distance", 1) if spec["trail_active"] else None
+        trail = (quantized(intent["trail_offset"] * tick, "trailing distance", tick, up=True) if config.get("quantize_strategy_orders", False) else number(intent["trail_offset"] * tick, "trailing distance", 1)) if spec["trail_active"] else None
         if take is None and stop is None and trail is None: continue
         protection = {"take_profit_tick": take, "stop_loss_tick": stop, "trigger": "Last", "exit_qty": qty,
             "trailing_distance_tick": trail}
@@ -614,6 +639,7 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
     if request["protocol_version"] != "bot.v1" or request["plugin_id"] != "pine.strategy" or request["plugin_version"] not in ("1.0.0", "2.0.0") or request["state_version"] != 1:
         raise ValueError("unsupported Pine bot identity")
     config, observation = copy.deepcopy(request["config"]), request["observation"]
+    if not config.get("quantize_strategy_orders", False):config.pop("quantize_strategy_orders", None)
     primary = observation["instrument_id"]
     source = load_source(config["script"])
     identity = digest({"source": source, "config": config, "participant": request["participant"]})

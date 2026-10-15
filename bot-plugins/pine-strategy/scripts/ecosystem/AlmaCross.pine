@@ -1,0 +1,28 @@
+//@version=6
+// MarketForge configurable formula adaptation; original authors full scripts remain separate.
+strategy("MF AlmaCross", pyramiding=0)
+fast_length = input.int(9, title="fast")
+slow_length = input.int(21, title="slow")
+alma_offset = input.float(0.85, title="offset")
+alma_sigma = input.float(6.0, title="sigma")
+order_qty = input.int(2, title="qty", minval=1)
+allow_short = input.bool(false, title="allow_short")
+fast = ta.alma(close, fast_length, alma_offset, alma_sigma)
+slow = ta.alma(close, slow_length, alma_offset, alma_sigma)
+long_entry = fast > slow
+long_exit = fast < slow
+short_entry = fast < slow
+short_exit = fast > slow
+if strategy.position_size == 0
+    if long_entry
+        strategy.entry("L", strategy.long, qty=order_qty)
+    else if allow_short and short_entry
+        strategy.entry("S", strategy.short, qty=order_qty)
+else if strategy.position_size > 0 and long_exit
+    strategy.close("L")
+else if strategy.position_size < 0 and short_exit
+    strategy.close("S")
+plot(long_entry ? 1 : 0, "long_entry")
+plot(long_exit ? 1 : 0, "long_exit")
+plot(short_entry ? 1 : 0, "short_entry")
+plot(short_exit ? 1 : 0, "short_exit")

@@ -49,6 +49,22 @@ fn external_mode_never_exposes_a_native_ledger_on_any_result_surface() {
 }
 
 #[test]
+fn external_notification_arguments_preserve_order_intents_and_when() {
+    let hir = program(
+        "strategy(\"Labels\")\nstrategy.entry(\"S\", strategy.short, qty=2, comment=\"ENTER\", alert_message=\"notice\", disable_alert=true)\nstrategy.close(\"S\", when=false, comment=\"NO CLOSE\")",
+    );
+    let mut runtime = HistoricalRuntime::new(&hir)
+        .with_external_accounts(vec![account(0, 0.0)])
+        .unwrap();
+    runtime.append_bar(bar(10.0)).unwrap();
+    let intents = runtime.external_intents().unwrap();
+    assert_eq!(intents.len(), 1);
+    assert_eq!(intents[0].id, "S");
+    assert_eq!(intents[0].qty, Some(2.0));
+    assert!(runtime.result().strategy.is_none());
+}
+
+#[test]
 fn unsupported_account_read_is_an_execution_error_and_disables_reuse() {
     let hir = program("strategy(\"Unsupported\")\nplot(strategy.wintrades)");
     let mut runtime = HistoricalRuntime::new(&hir)

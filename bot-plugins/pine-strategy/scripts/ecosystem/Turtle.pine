@@ -1,0 +1,28 @@
+//@version=6
+// MarketForge configurable formula adaptation; original authors full scripts remain separate.
+strategy("MF Turtle", pyramiding=0)
+length = input.int(55, title="length")
+exit_length = input.int(20, title="exit_length")
+order_qty = input.int(2, title="qty", minval=1)
+allow_short = input.bool(false, title="allow_short")
+upper = ta.highest(high, length)[1]
+lower = ta.lowest(low, length)[1]
+exit_low = ta.lowest(low, exit_length)[1]
+exit_high = ta.highest(high, exit_length)[1]
+long_entry = close > upper
+long_exit = close < exit_low
+short_entry = close < lower
+short_exit = close > exit_high
+if strategy.position_size == 0
+    if long_entry
+        strategy.entry("L", strategy.long, qty=order_qty)
+    else if allow_short and short_entry
+        strategy.entry("S", strategy.short, qty=order_qty)
+else if strategy.position_size > 0 and long_exit
+    strategy.close("L")
+else if strategy.position_size < 0 and short_exit
+    strategy.close("S")
+plot(long_entry ? 1 : 0, "long_entry")
+plot(long_exit ? 1 : 0, "long_exit")
+plot(short_entry ? 1 : 0, "short_entry")
+plot(short_exit ? 1 : 0, "short_exit")

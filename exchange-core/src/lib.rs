@@ -45,6 +45,7 @@ pub mod scheduler;
 mod shared_map;
 pub mod simulation;
 pub mod spot;
+pub mod technical_trader;
 pub mod trading;
 pub mod training;
 pub mod training_scenarios;
@@ -155,6 +156,7 @@ pub use bots::{
     MAX_BOT_ACTIONS, ParameterType, ScheduledBot,
 };
 
+mod adaptive_liquidity;
 pub mod conditional_orders;
 pub mod position_protection;
 pub use position_protection::{PositionProtection, PositionProtectionSpec, ProtectionTrigger};

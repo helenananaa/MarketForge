@@ -459,13 +459,13 @@ struct MarketBot {
 // defaults to full notional; the two perpetual motive traders explicitly choose
 // a target leverage. Reductions remain possible without
 // available opening capital. Resting orders count against directional limits.
-struct Budget {
-    position: i128,
+pub(crate) struct Budget {
+    pub(crate) position: i128,
     buy_open: i128,
     sell_open: i128,
     cash: i128,
     spot_available: Option<i128>,
-    reduce_only: bool,
+    pub(crate) reduce_only: bool,
     cap: i128,
     fee_ppm: u32,
     leverage: u32,
@@ -473,6 +473,20 @@ struct Budget {
 
 impl Budget {
     fn new(view: &ParticipantObservationView<'_>, config: &Config) -> Option<Self> {
+        Self::for_limits(
+            view,
+            config.inventory_cap,
+            config.fee_buffer_ppm,
+            config.target_leverage,
+        )
+    }
+
+    pub(crate) fn for_limits(
+        view: &ParticipantObservationView<'_>,
+        inventory_cap: i64,
+        fee_buffer_ppm: u32,
+        target_leverage: u32,
+    ) -> Option<Self> {
         let (position, cash, spot_available, reduce_only) = match view.own_account.as_ref()? {
             AccountSnapshot::Spot(a) => (
                 a.position_qty,
@@ -498,9 +512,9 @@ impl Budget {
             cash,
             spot_available,
             reduce_only,
-            cap: config.inventory_cap.into(),
-            fee_ppm: config.fee_buffer_ppm,
-            leverage: config.target_leverage,
+            cap: inventory_cap.into(),
+            fee_ppm: fee_buffer_ppm,
+            leverage: target_leverage,
             buy_open: view
                 .own_orders
                 .iter()
@@ -516,7 +530,7 @@ impl Budget {
         })
     }
 
-    fn allocate(&mut self, side: Side, price: i64, requested: u64) -> u64 {
+    pub(crate) fn allocate(&mut self, side: Side, price: i64, requested: u64) -> u64 {
         let (capacity, reducing) = match side {
             Side::Buy => (
                 self.cap

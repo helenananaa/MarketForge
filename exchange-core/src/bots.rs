@@ -463,6 +463,8 @@ impl BotRegistry {
         crate::agents::register_builtin_bots(&mut registry);
         crate::market_bots::register_market_bots(&mut registry);
         crate::native_pine::register_native_pine_bots(&mut registry);
+        crate::technical_trader::register(&mut registry);
+        crate::adaptive_liquidity::register(&mut registry);
         registry
     }
     pub fn register(&mut self, factory: impl BotFactory + 'static) -> Result<(), BotError> {
@@ -758,7 +760,9 @@ mod tests {
                 state_version: 1,
                 config_version: 1,
                 seed: 7,
-                config: if descriptor.id.starts_with("NativePine") {
+                config: if descriptor.id.starts_with("NativePine")
+                    || descriptor.id == crate::technical_trader::ID
+                {
                     serde_json::json!({"initial_avg_price_tick":100})
                 } else {
                     serde_json::json!({})
@@ -853,7 +857,7 @@ mod tests {
     #[test]
     fn all_builtins_accept_unified_config_and_legacy_state_still_serializes() {
         let registry = BotRegistry::with_builtins();
-        assert_eq!(registry.descriptors().len(), 31);
+        assert_eq!(registry.descriptors().len(), 33);
         for descriptor in registry.descriptors() {
             let template = AgentTemplate::Plugin(BotConfig {
                 participant: participant(),

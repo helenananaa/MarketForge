@@ -1,0 +1,394 @@
+//! Research a strategy population using the existing frozen native observation
+//! wave and the real gateway. This changes no production scheduler or data path.
+use exchange_core::*;
+use std::collections::BTreeMap;
+#[path = "support/research_checkpoint.rs"]
+mod checkpoint;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    run(BotRegistry::with_builtins())
+}
+
+pub fn run(registry: BotRegistry) -> Result<(), Box<dyn std::error::Error>> {
+    let mut args = std::env::args().skip(1);
+    let recipe = args.next().ok_or("recipe path required")?;
+    let steps: u64 = args.next().unwrap_or_else(|| "600".into()).parse()?;
+    if !(1..=100000).contains(&steps) {
+        return Err("steps must be within 1..100000".into());
+    }
+    let seconds: u64 = args.next().unwrap_or_else(|| "1".into()).parse()?;
+    if !(1..=60).contains(&seconds) {
+        return Err("clock step must be 1..60 seconds".into());
+    }
+    let recipe_source = std::fs::read_to_string(&recipe)?;
+    let spec: population::BackgroundMarket = serde_json::from_str(&recipe_source)?;
+    let room = spec.scenario.room_id.clone();
+    let templates = spec.agents;
+    let mut bots = templates
+        .iter()
+        .map(|t| registry.create(t, &t.initial_state()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut rooms = RoomManager::new();
+    rooms
+        .create_room(spec.scenario)
+        .map_err(|e| format!("{e:?}"))?;
+    let mut order_id = 100000;
+    let mut result = if let Ok(path) = std::env::var("MF_RESEARCH_CHECKPOINT") {
+        checkpoint::run(
+            &registry,
+            &templates,
+            &room,
+            &mut rooms,
+            &mut bots,
+            &mut order_id,
+            steps,
+            seconds,
+            &recipe_source,
+            std::path::Path::new(&path),
+        )?
+    } else {
+        run_waves(
+            &registry,
+            &templates,
+            &room,
+            &mut rooms,
+            &mut bots,
+            &mut order_id,
+            steps,
+            seconds,
+        )?
+    };
+    if let Some(directory) = args
+        .next()
+        .filter(|_| result["steps"].as_u64() == Some(steps))
+    {
+        let directory = std::path::Path::new(&directory);
+        std::fs::create_dir_all(directory)?;
+        std::fs::write(directory.join("parent.json"), serde_json::to_vec(&result)?)?;
+        let frozen = fingerprint(&rooms, &room)?;
+        let states = bots.iter().map(|b| b.snapshot()).collect::<Vec<_>>();
+        let mut branches = vec![];
+        for instrument in ["V-BTC-SPOT", "V-BTC-PERP"] {
+            for (side, qty) in [
+                (Side::Buy, 0),
+                (Side::Buy, 10),
+                (Side::Sell, 10),
+                (Side::Buy, 100),
+                (Side::Sell, 100),
+                (Side::Buy, 1000),
+                (Side::Sell, 1000),
+            ] {
+                let name = format!("{}-{:?}-{}", instrument, side, qty);
+                if checkpoint::stopped() {
+                    result["fork_receipts"] = serde_json::json!(branches);
+                    result["fork_parent_unchanged"] = serde_json::json!(true);
+                    result["forks_complete"] = serde_json::json!(false);
+                    println!("{}", serde_json::to_string(&result)?);
+                    return Ok(());
+                }
+                eprintln!("fork={name}");
+                let mut branch_rooms = rooms.clone();
+                let mut branch_bots = templates
+                    .iter()
+                    .zip(&states)
+                    .map(|(t, s)| registry.create(t, s))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut branch_order_id = order_id;
+                let before = branch_rooms
+                    .book_snapshot_for(&room, instrument)
+                    .map_err(|e| format!("{e:?}"))?;
+                let mut intervention = serde_json::Value::Null;
+                if qty > 0 {
+                    let bid = before.bids.first().ok_or("probe requires bid")?.price_tick;
+                    let ask = before.asks.first().ok_or("probe requires ask")?.price_tick;
+                    let mid = bid + (ask - bid) / 2;
+                    let action = OrderAction::PlaceImmediateOrCancel {
+                        side,
+                        price_tick: Some(if side == Side::Buy {
+                            mid + 250
+                        } else {
+                            (mid - 250).max(1)
+                        }),
+                        qty,
+                    };
+                    let mut gateway =
+                        OrderGateway::new_scheduler(&mut branch_rooms, branch_order_id);
+                    let execution = gateway
+                        .submit_action(GatewayRequest {
+                            participant_id: "research-player".into(),
+                            room_id: room.clone(),
+                            instrument_id: Some(instrument.into()),
+                            account_id: 20,
+                            action,
+                        })
+                        .map_err(|e| format!("{e:?}"))?;
+                    branch_order_id = gateway.next_order_id();
+                    let mut filled = 0;
+                    let mut notional = 0_i128;
+                    let mut prints = vec![];
+                    if let ActorExecutionResult::Accepted(result) = &execution.execution.result {
+                        let events = match result {
+                            MarketExecution::Spot(r) => &r.events,
+                            MarketExecution::Perp(r) => &r.events,
+                        };
+                        for event in events {
+                            if let Event::TradePrinted(t) = &event.event {
+                                filled += t.qty;
+                                notional += i128::from(t.qty) * i128::from(t.price_tick);
+                                prints.push(serde_json::json!({"price_tick":t.price_tick,"qty":t.qty,"maker_account_id":t.maker_account_id,"taker_order_id":t.taker_order_id}));
+                            }
+                        }
+                    }
+                    intervention = serde_json::json!({"instrument_id":instrument,"side":side,"requested_qty":qty,"filled_qty":filled,"notional":notional.to_string(),"result":format!("{:?}",execution.execution.result),"time_ms":execution.execution.market_time_ms,"fills":prints,"command":execution.command});
+                }
+                let immediate = branch_rooms
+                    .book_snapshot_for(&room, instrument)
+                    .map_err(|e| format!("{e:?}"))?;
+                let mut branch = run_waves(
+                    &registry,
+                    &templates,
+                    &room,
+                    &mut branch_rooms,
+                    &mut branch_bots,
+                    &mut branch_order_id,
+                    (600 / seconds).max(1),
+                    seconds,
+                )?;
+                branch["intervention"] = intervention;
+                branch["before_book"] = serde_json::to_value(before)?;
+                branch["immediate_book"] = serde_json::to_value(immediate)?;
+                let path = directory.join(format!("{name}.json"));
+                std::fs::write(&path, serde_json::to_vec(&branch)?)?;
+                if fingerprint(&rooms, &room)? != frozen {
+                    return Err("research fork mutated the parent".into());
+                }
+                branches.push(path.to_string_lossy().to_string());
+            }
+        }
+        result["fork_receipts"] = serde_json::json!(branches);
+        result["fork_parent_unchanged"] = serde_json::json!(true);
+        result["forks_complete"] = serde_json::json!(true);
+    }
+    println!("{}", serde_json::to_string(&result)?);
+    Ok(())
+}
+
+fn fingerprint(
+    rooms: &RoomManager,
+    room: &str,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    Ok(
+        serde_json::json!({"time":rooms.clock(room).map_err(|e|format!("{e:?}"))?.market_time_ms(),"assets":rooms.net_worth_snapshot(room).map_err(|e|format!("{e:?}"))?,"spot":rooms.book_snapshot_for(room,"V-BTC-SPOT").map_err(|e|format!("{e:?}"))?,"perp":rooms.book_snapshot_for(room,"V-BTC-PERP").map_err(|e|format!("{e:?}"))?}),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_waves(
+    registry: &BotRegistry,
+    templates: &[AgentTemplate],
+    room: &str,
+    rooms: &mut RoomManager,
+    bots: &mut [Box<dyn ScheduledBot>],
+    order_id: &mut u64,
+    steps: u64,
+    seconds: u64,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let requests = templates
+        .iter()
+        .map(|t| registry.market_data_request(t))
+        .collect::<Result<Vec<_>, _>>()?;
+    let related = templates
+        .iter()
+        .map(|t| registry.related_instruments(t))
+        .collect::<Result<Vec<_>, _>>()?;
+    let intervals = templates
+        .iter()
+        .map(|t| registry.additional_intervals(t))
+        .collect::<Result<Vec<_>, _>>()?;
+    let before = rooms
+        .net_worth_snapshot(room)
+        .map_err(|e| format!("{e:?}"))?;
+    let owners: BTreeMap<_, _> = templates
+        .iter()
+        .map(|t| {
+            (
+                (
+                    t.config().account_id,
+                    t.config().instrument_id.clone().unwrap(),
+                ),
+                t.participant_id().to_owned(),
+            )
+        })
+        .collect();
+    let mut fills = BTreeMap::<String, u64>::new();
+    let mut rejections = BTreeMap::<String, u64>::new();
+    let mut trades = BTreeMap::<String, u64>::new();
+    let mut receipts = vec![];
+    let instruments = templates
+        .iter()
+        .map(|t| t.config().instrument_id.clone().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut book_snapshots = vec![];
+    let mut actions_per_bot = BTreeMap::<String, u64>::new();
+    let mut history_cursor = rooms
+        .execution_history_len(room)
+        .map_err(|e| format!("{e:?}"))?;
+    for step in 0..steps {
+        rooms
+            .advance_clock(room, seconds)
+            .map_err(|e| format!("{e:?}"))?;
+        let mut decisions = vec![];
+        {
+            let wave = rooms.clone().into_native_observation_wave(room.to_string());
+            let mut batch = wave.batch();
+            for (i, bot) in bots.iter_mut().enumerate() {
+                let t = &templates[i];
+                let cfg = t.config();
+                let instrument = cfg.instrument_id.as_ref().ok_or("instrument required")?;
+                let obs = batch
+                    .shared_bot_observation(instrument, cfg.account_id, requests[i], &related[i])
+                    .map_err(|e| format!("{e:?}"))?;
+                let actions = if registry.account_events(t) || !intervals[i].is_empty() {
+                    let mut owned = obs.to_owned_observation();
+                    batch
+                        .enrich_data(
+                            &mut owned,
+                            requests[i],
+                            &related[i],
+                            &intervals[i],
+                            registry.account_events(t),
+                            cfg.account_id,
+                        )
+                        .map_err(|e| format!("{e:?}"))?;
+                    bot.decide(&owned).map_err(|e| {
+                        format!(
+                            "participant={} step={} error={e}",
+                            t.participant_id(),
+                            step + 1
+                        )
+                    })?
+                } else {
+                    bot.decide_shared(&obs).map_err(|e| {
+                        format!(
+                            "participant={} step={} error={e}",
+                            t.participant_id(),
+                            step + 1
+                        )
+                    })?
+                };
+                if actions.len() > 64 {
+                    return Err("strategy exceeded action limit".into());
+                }
+                bots::validate_bot_orders(instrument, &related[i], &actions, &bot.snapshot())?;
+                *actions_per_bot
+                    .entry(t.participant_id().into())
+                    .or_default() += actions.len() as u64;
+                decisions.push(actions);
+            }
+        }
+        // All agents observe the same committed wave. Matching/risk still run
+        // on the current authoritative state for each ordered submission.
+        for (i, actions) in decisions.into_iter().enumerate() {
+            let t = &templates[i];
+            let cfg = t.config();
+            let instrument = cfg.instrument_id.as_ref().unwrap();
+            for action in actions {
+                let (instrument, resolved) = bots::resolve_bot_order(instrument, &action)?;
+                let mut gateway = OrderGateway::new_scheduler(rooms, *order_id);
+                let execution = gateway
+                    .submit_action(GatewayRequest {
+                        participant_id: t.participant_id().into(),
+                        room_id: room.to_string(),
+                        instrument_id: Some(instrument.to_string()),
+                        account_id: cfg.account_id,
+                        action: resolved.clone(),
+                    })
+                    .map_err(|e| format!("{e:?}"))?;
+                *order_id = gateway.next_order_id();
+                bots[i].execution_feedback(&action, &execution);
+                if matches!(action, OrderAction::BotOrder { .. }) {
+                    let mut state = bots[i].snapshot();
+                    bots::record_bot_execution(&mut state, &action, &execution);
+                    bots[i].prepare_reused_call(&state)?;
+                }
+                let ActorExecutionResult::Accepted(result) = &execution.execution.result else {
+                    *rejections
+                        .entry(format!("{:?}", execution.execution.result))
+                        .or_default() += 1;
+                    continue;
+                };
+                let events = match result {
+                    MarketExecution::Spot(r) => &r.events,
+                    MarketExecution::Perp(r) => &r.events,
+                };
+                for event in events {
+                    match &event.event {
+                        Event::OrderRejected { .. }
+                        | Event::RiskRejected { .. }
+                        | Event::CancelRejected { .. } => {
+                            *rejections.entry(format!("{:?}", event.event)).or_default() += 1;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        // The authoritative suffix also includes clock-triggered protection,
+        // funding/liquidation and cascaded executions, not just direct actions.
+        for execution in rooms
+            .execution_history_from(room, history_cursor)
+            .map_err(|e| format!("{e:?}"))?
+        {
+            if let ActorExecutionResult::Accepted(result) = &execution.result {
+                let events = match result {
+                    MarketExecution::Spot(r) => &r.events,
+                    MarketExecution::Perp(r) => &r.events,
+                };
+                for event in events {
+                    if let Event::TradePrinted(t) = &event.event {
+                        if t.maker_account_id == t.taker_account_id {
+                            return Err("self trade".into());
+                        }
+                        let instrument = &execution.instrument_id;
+                        *trades.entry(instrument.to_string()).or_default() += 1;
+                        receipts.push(serde_json::json!({"instrument_id":instrument,"time_ms":execution.market_time_ms,"price_tick":t.price_tick,"qty":t.qty,"taker_side":t.taker_side,"trade_id":t.trade_id,"taker_order_id":t.taker_order_id,"maker_account_id":t.maker_account_id,"taker_account_id":t.taker_account_id}));
+                        for account in [t.maker_account_id, t.taker_account_id] {
+                            if let Some(owner) = owners.get(&(account, instrument.to_string())) {
+                                *fills.entry(owner.clone()).or_default() += t.qty;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        history_cursor = rooms
+            .execution_history_len(room)
+            .map_err(|e| format!("{e:?}"))?;
+        // Read-only, after the complete action wave. These snapshots cannot
+        // reveal intra-wave depletion or cancellations between samples.
+        for instrument in &instruments {
+            let book = rooms
+                .book_snapshot_for(room, instrument)
+                .map_err(|e| format!("{e:?}"))?;
+            book_snapshots.push(serde_json::json!({
+                "instrument_id": instrument,
+                "time_ms": rooms.clock(room).map_err(|e|format!("{e:?}"))?.market_time_ms(),
+                "phase": "after_all_actions", "book": book
+            }));
+        }
+        if (step + 1) % 100 == 0 {
+            eprintln!(
+                "step={} trades={} active_bots={}",
+                step + 1,
+                trades.values().sum::<u64>(),
+                fills.len()
+            );
+        }
+    }
+    Ok(
+        serde_json::json!({"runner":"existing_native_observation_wave","bots":templates.len(),"steps":steps,"simulation_time_ms":rooms.clock(room).map_err(|e|format!("{e:?}"))?.market_time_ms(),
+        "trades":trades,"fills":fills,"trade_receipts":receipts,"book_snapshots":book_snapshots,"rejections":rejections,"assets_before":before,"assets_after":rooms.net_worth_snapshot(room).map_err(|e|format!("{e:?}"))?,"actions_per_bot":actions_per_bot,"clock_step_seconds":seconds,
+        "states":templates.iter().zip(bots.iter()).map(|(t,b)|serde_json::json!({"id":t.participant_id(),"state":b.snapshot()})).collect::<Vec<_>>(),
+        "qualification":"real finite-capital synthetic matching via the existing native delivery API; not live-market or durable-server qualification"}),
+    )
+}

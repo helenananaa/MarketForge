@@ -1,0 +1,26 @@
+//@version=6
+// MarketForge configurable formula adaptation; original authors full scripts remain separate.
+strategy("MF MfiReversion", pyramiding=0)
+length = input.int(14, title="length")
+low_gate = input.float(30.0, title="low")
+high_gate = input.float(60.0, title="high")
+order_qty = input.int(2, title="qty", minval=1)
+allow_short = input.bool(false, title="allow_short")
+m = ta.mfi(hlc3, length)
+long_entry = m < low_gate
+long_exit = m > high_gate
+short_entry = m > high_gate
+short_exit = m < low_gate
+if strategy.position_size == 0
+    if long_entry
+        strategy.entry("L", strategy.long, qty=order_qty)
+    else if allow_short and short_entry
+        strategy.entry("S", strategy.short, qty=order_qty)
+else if strategy.position_size > 0 and long_exit
+    strategy.close("L")
+else if strategy.position_size < 0 and short_exit
+    strategy.close("S")
+plot(long_entry ? 1 : 0, "long_entry")
+plot(long_exit ? 1 : 0, "long_exit")
+plot(short_entry ? 1 : 0, "short_entry")
+plot(short_exit ? 1 : 0, "short_exit")

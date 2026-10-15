@@ -239,7 +239,8 @@ def legacy_decide(request):
             "bot.v1", "pine.strategy", "1.0.0", 1):
         if (request["protocol_version"], request["plugin_id"], request["plugin_version"], request["state_version"]) != ("bot.v1", "pine.strategy", "2.0.0", 1):
             raise ValueError("unsupported Pine bot identity")
-    config = request["config"]
+    config = dict(request["config"])
+    if not config.get("quantize_strategy_orders", False):config.pop("quantize_strategy_orders", None)
     observation = request["observation"]
     data = observation.get("bot_market_data")
     if data is None or data["interval_ms"] != config["bar_interval_ms"]:
@@ -416,9 +417,13 @@ def encode_worker_response(response, encoded_response):
 
 
 if __name__ == "__main__":
+    extension = PACKAGE / ".runtime" / "strategy-ecosystem"
+    has_extension = (extension / "pine_compat.pyd").is_file() or (extension / "pine_compat.so").is_file()
+    if has_extension:
+        sys.path.insert(0, str(extension))
     if sys.argv[1:] == ["--worker"]:
         runtime = PACKAGE / ".runtime"
-        if runtime.is_dir():
+        if not has_extension and runtime.is_dir():
             sys.path.insert(0, str(runtime))
         serve_worker()
     else:

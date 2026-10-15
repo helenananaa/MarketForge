@@ -1,0 +1,27 @@
+//@version=6
+// MarketForge configurable formula adaptation; original authors full scripts remain separate.
+strategy("MF Obv", pyramiding=0)
+fast_length = input.int(10, title="fast")
+slow_length = input.int(30, title="slow")
+order_qty = input.int(2, title="qty", minval=1)
+allow_short = input.bool(false, title="allow_short")
+flow = ta.cum(close > close[1] ? volume : close < close[1] ? -volume : 0.0)
+f = ta.ema(flow, fast_length)
+s = ta.ema(flow, slow_length)
+long_entry = f > s
+long_exit = f < s
+short_entry = f < s
+short_exit = f > s
+if strategy.position_size == 0
+    if long_entry
+        strategy.entry("L", strategy.long, qty=order_qty)
+    else if allow_short and short_entry
+        strategy.entry("S", strategy.short, qty=order_qty)
+else if strategy.position_size > 0 and long_exit
+    strategy.close("L")
+else if strategy.position_size < 0 and short_exit
+    strategy.close("S")
+plot(long_entry ? 1 : 0, "long_entry")
+plot(long_exit ? 1 : 0, "long_exit")
+plot(short_entry ? 1 : 0, "short_entry")
+plot(short_exit ? 1 : 0, "short_exit")

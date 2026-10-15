@@ -1,0 +1,33 @@
+//@version=6
+// MarketForge configurable formula adaptation; original authors full scripts remain separate.
+strategy("MF WaveTrend", pyramiding=0)
+fast_length = input.int(10, title="fast")
+slow_length = input.int(21, title="slow")
+signal_length = input.int(4, title="signal")
+low_gate = input.float(-53.0, title="low")
+high_gate = input.float(53.0, title="high")
+order_qty = input.int(2, title="qty", minval=1)
+allow_short = input.bool(false, title="allow_short")
+ap = hlc3
+esa = ta.ema(ap, fast_length)
+d = ta.ema(math.abs(ap - esa), fast_length)
+ci = d > 0 ? (ap - esa) / (0.015 * d) : 0.0
+wt = ta.ema(ci, slow_length)
+sig = ta.sma(wt, signal_length)
+long_entry = ta.crossover(wt, sig) and wt < low_gate
+long_exit = ta.crossunder(wt, sig) and wt > high_gate
+short_entry = ta.crossunder(wt, sig) and wt > high_gate
+short_exit = ta.crossover(wt, sig) and wt < low_gate
+if strategy.position_size == 0
+    if long_entry
+        strategy.entry("L", strategy.long, qty=order_qty)
+    else if allow_short and short_entry
+        strategy.entry("S", strategy.short, qty=order_qty)
+else if strategy.position_size > 0 and long_exit
+    strategy.close("L")
+else if strategy.position_size < 0 and short_exit
+    strategy.close("S")
+plot(long_entry ? 1 : 0, "long_entry")
+plot(long_exit ? 1 : 0, "long_exit")
+plot(short_entry ? 1 : 0, "short_entry")
+plot(short_exit ? 1 : 0, "short_exit")
