@@ -157,6 +157,7 @@ pub use bots::{
 };
 
 mod adaptive_liquidity;
+mod basis_link;
 pub mod conditional_orders;
 mod endogenous_value;
 pub mod position_protection;

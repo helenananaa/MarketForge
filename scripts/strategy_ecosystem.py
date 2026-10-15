@@ -56,7 +56,9 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     makers=max(4,count//10);execution=max(4,round(count*(.15 if ecology else .1)));value=max(4,round(count*value_fraction))
     noise=round(count*noise_fraction) if ecology else 0
     switching=round(count*switching_fraction)
-    technical=count-makers-execution-value-noise-switching
+    # Two-sided basis pairs (two bots, one account) tie the perpetual to spot.
+    basis_pairs=max(2,count//60) if flow_mix=='rebalanced' else 0
+    technical=count-makers-execution-value-noise-switching-2*basis_pairs
     families=list(FORMULAS)
     if technical//2<len(families):raise ValueError('population does not cover each family on both instruments')
     rng=random.Random(seed)
@@ -80,10 +82,14 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
         # Directional demand comes mainly from valuation and parent orders;
         # technical capital becomes an overlay. Total cash is unchanged.
         pools.update(maker=int(30_000_000*capital_scale),execution=int(25_000_000*capital_scale),value=int(35_000_000*capital_scale))
+        pools['value']-=int(5_000_000*capital_scale);pools['basis']=int(5_000_000*capital_scale)
         if switching:
             # Style switchers take cash from every directional role.
-            pools.update(execution=int(20_000_000*capital_scale),value=int(27_000_000*capital_scale),switching=int(15_000_000*capital_scale))
+            pools.update(execution=int(20_000_000*capital_scale),value=int(25_000_000*capital_scale),switching=int(10_000_000*capital_scale))
             role_counts['switching']=switching
+        # Premium-based funding settles every 15 minutes without a constant
+        # bias, so a persistent perp/spot gap is actually charged.
+        perp['funding'].update(interval_ms=900000,base_rate_ppm=0)
         pools['technical']=int(100_000_000*capital_scale)-sum(v for k,v in pools.items()if k!='technical')
         if pools['technical']<=0:raise ValueError('technical cash pool exhausted')
     originals=[]
@@ -133,6 +139,8 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                         fr=random.Random(child_seed(seed,f'maker-flow-{i}'))
                         config.update(flow_skew_ppm=fr.choice([300000,600000,1000000]),flow_widen_ppm=fr.choice([0,500000,1000000]),
                             flow_half_life_ms=fr.choice([5000,15000,30000]));version='1.1.0'
+                        # Perpetual quotes lean on the spot index so the book cannot drift freely.
+                        if leg=='perp':config['index_weight_ppm']=fr.choice([300000,500000,700000])
                     add(role,i,'AdaptiveLiquidityMaker',version,config,leg,cash,inventory,model,'source_algorithm_adaptation')
                 else:add(role,i,'DynamicMarketMaker','1',config,leg,cash,inventory)
             elif role=='execution':
@@ -147,8 +155,8 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                 # Own stream; two thirds trade the perpetual, where leverage,
                 # exchange-side stops and venue liquidation can cascade.
                 sr=random.Random(child_seed(seed,f'style-switching-{i}'))
-                leg='spot'if i%3==0 else'perp'
-                leverage=sr.choice([2,3,5])if leg=='perp'else 1
+                leg='spot'if i%2==0 else'perp'
+                leverage=sr.choice([1,2,3])if leg=='perp'else 1
                 fast=sr.choice([30000,60000,120000,300000])
                 add(role,i,'StyleSwitchingTrader','1.0.0',{'inventory_cap':max(100,cash*leverage//anchor),
                     'equity_use_ppm':sr.choice([200000,400000,600000]),'target_leverage':leverage,
@@ -157,9 +165,9 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                     'saturation_ppm':sr.choice([1000,2000,4000]),'fitness_half_life_ms':sr.choice([300000,900000,1800000]),
                     'intensity_ppm':sr.choice([1000000,3000000,10000000]),'switch_ppm':sr.choice([50000,100000,200000]),
                     'herding_ppm':sr.choice([0,500000,1000000,2000000]),'flow_half_life_ms':sr.choice([30000,60000,120000]),
-                    'child_ppm':sr.choice([200000,350000,500000]),'min_trade_ppm':50000,'max_slippage_ppm':sr.choice([2000,3000,5000]),
-                    'stop_lookback_ms':sr.choice([300000,900000,1800000]),'stop_buffer_ppm':sr.choice([0,500,1000,2000]),
-                    'stop_cooldown_ms':sr.choice([120000,300000,600000]),'warmup_ms':sr.choice([600000,900000]),
+                    'child_ppm':sr.choice([100000,200000,300000]),'min_trade_ppm':150000,'max_slippage_ppm':sr.choice([2000,3000,5000]),
+                    'stop_lookback_ms':sr.choice([900000,1800000,3600000]),'stop_buffer_ppm':sr.choice([2000,4000,8000]),
+                    'stop_cooldown_ms':sr.choice([300000,600000,1200000]),'warmup_ms':sr.choice([600000,900000]),
                     # Internal stops: exchange-side protection is currently ~6.5x
                     # slower in long runs; exits still go through real orders.
                     'stop_mode':'Internal','fee_buffer_ppm':1000,'fallback_price_tick':anchor},leg,cash,0,None,'style_switching')
@@ -236,6 +244,24 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                     plugin,version='pine.strategy','2.0.0'
                 else:plugin,version='TechnicalStrategyTrader','1.0.0'
                 add(role,i,plugin,version,config,leg,cash,0,family,origin)
+    if basis_pairs:
+        br=random.Random(child_seed(seed,'basis-link'))
+        for j in range(basis_pairs):
+            account=100+len(spec['agents']);cash=pools['basis']//basis_pairs+(pools['basis']%basis_pairs if j==basis_pairs-1 else 0)
+            inventory=cash//anchor//4
+            scenario['accounts'].append({'Spot':{'account_id':account,'cash_balance':cash,'position_qty':inventory}})
+            common={'neutral_spot':inventory,'max_hedge':inventory,'step_qty':max(2,inventory//20),
+                'entry_ppm':br.choice([1500,2000,3000]),'exit_ppm':br.choice([300,500]),'max_slippage_ppm':2000,
+                'decision_interval_ms':br.choice([1000,2000,3000]),'jitter_ms':1000,'target_leverage':2,'fee_buffer_ppm':1000}
+            for leg,instrument,peer in (('Perp','V-BTC-PERP','V-BTC-SPOT'),('Spot','V-BTC-SPOT','V-BTC-PERP')):
+                name=f'basis-{leg.lower()}-{j}'
+                config={**common,'leg':leg,'hedge_instrument_id':peer}
+                spec['agents'].append({'Plugin':{'participant':{'participant_id':name,'kind':'RuleAgent','room_id':room,'account_id':account,'instrument_id':instrument},
+                    'plugin_id':'BasisLinkTrader','plugin_version':'1.0.0','state_version':1,'config_version':1,
+                    'seed':max(1,child_seed(seed,name)&(2**53-1)),'config':config}})
+                metadata.append({'participant_id':name,'account_id':account,'role':'basis','family':None,'instrument':instrument,'cash':cash if leg=='Perp' else 0,
+                    'initial_spot_inventory':inventory if leg=='Perp' else 0,'config':config,'origin':'basis_link'})
+        role_counts['basis']=2*basis_pairs
     # Account 10 owns a small finite initial quote, independent of the bot roster.
     scenario['accounts'].append({'Spot':{'account_id':10,'cash_balance':1000000,'position_qty':100}})
     for account in (20,30):

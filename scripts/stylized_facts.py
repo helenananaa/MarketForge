@@ -170,6 +170,26 @@ def main():
             print(f'  [{"PASS" if c["pass"] else "FAIL"}] {shown:>10}  {c["target"]}')
         if 'taker_volume_share_by_role' in metrics:
             print('  taker volume share:', metrics['taker_volume_share_by_role'])
+    legs = sorted(by_leg)
+    if len(legs) == 2:
+        # Spot/perpetual link: last actual prices on a 1-minute grid.
+        (sp, _, _), (pp, _, _) = (grid_prices(by_leg[l], skip, end, 60_000) for l in legs)
+        k = min(len(sp), len(pp))
+        gap = np.abs(pp[-k:] / sp[-k:] - 1) * 100 if k else np.array([])
+        link = {'minutes': int(k), 'median_abs_gap_pct': float(np.median(gap)) if k else None,
+                'p99_abs_gap_pct': float(np.percentile(gap, 99)) if k else None,
+                'max_abs_gap_pct': float(gap.max()) if k else None}
+        link['checks'] = [
+            {'target': 'median |perp/spot - 1| < 0.3%', 'value': link['median_abs_gap_pct'],
+             'pass': link['median_abs_gap_pct'] is not None and link['median_abs_gap_pct'] < 0.3},
+            {'target': 'p99 |perp/spot - 1| < 1.5%', 'value': link['p99_abs_gap_pct'],
+             'pass': link['p99_abs_gap_pct'] is not None and link['p99_abs_gap_pct'] < 1.5},
+        ]
+        report['spot_perp_link'] = link
+        print(f'{chr(10)}spot/perp link over {k} minutes (max gap {link["max_abs_gap_pct"]:.2f}%)' if k else f'{chr(10)}spot/perp link: no data')
+        for c in link['checks']:
+            v = c['value']
+            print(f'  [{"PASS" if c["pass"] else "FAIL"}] {str(v) if v is None else format(v, ".4f"):>10}  {c["target"]}')
     if a.output:
         a.output.parent.mkdir(parents=True, exist_ok=True)
         a.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
