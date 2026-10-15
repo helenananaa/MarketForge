@@ -252,7 +252,7 @@ impl State {
 }
 
 /// Fraction of a half-life elapsed as an EWMA weight on the new sample.
-fn ewma_weight(dt_ms: f64, half_life_ms: u64) -> f64 {
+pub(crate) fn ewma_weight(dt_ms: f64, half_life_ms: u64) -> f64 {
     1. - 0.5f64.powf(dt_ms / half_life_ms as f64)
 }
 

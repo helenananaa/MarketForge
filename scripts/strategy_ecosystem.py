@@ -24,13 +24,15 @@ def varied_parameters(family,index):
     return {k:p[k]for k in keys}
 
 def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',original_manifest=None,capital_scale=10.0,periods=None,
-               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default'):
+               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.):
     if not 100<=count<=10000:raise ValueError('population must be within 100..10000')
     if runtime not in ('native','pine','mixed'):raise ValueError('unknown runtime')
     if value_model not in ('static','endogenous'):raise ValueError('unknown value model')
     if not 0<value_fraction<.5:raise ValueError('value fraction must be within (0, 0.5)')
     periods=periods or PERIODS
     if flow_mix not in ('default','rebalanced'):raise ValueError('unknown flow mix')
+    if switching_fraction and(flow_mix!='rebalanced' or not 0<switching_fraction<.5):
+        raise ValueError('style switching requires --flow-mix rebalanced and a fraction within (0, 0.5)')
     if flow_mix=='rebalanced':
         if not ecology or value_model!='endogenous' or maker_model=='legacy':
             raise ValueError('rebalanced flow requires --ecology, --value-model endogenous and adaptive makers')
@@ -53,7 +55,8 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     spec.update(agents=[],agent_interval_ms=1000,autostart_agents=True)
     makers=max(4,count//10);execution=max(4,round(count*(.15 if ecology else .1)));value=max(4,round(count*value_fraction))
     noise=round(count*noise_fraction) if ecology else 0
-    technical=count-makers-execution-value-noise
+    switching=round(count*switching_fraction)
+    technical=count-makers-execution-value-noise-switching
     families=list(FORMULAS)
     if technical//2<len(families):raise ValueError('population does not cover each family on both instruments')
     rng=random.Random(seed)
@@ -77,6 +80,10 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
         # Directional demand comes mainly from valuation and parent orders;
         # technical capital becomes an overlay. Total cash is unchanged.
         pools.update(maker=int(30_000_000*capital_scale),execution=int(25_000_000*capital_scale),value=int(35_000_000*capital_scale))
+        if switching:
+            # Style switchers take cash from every directional role.
+            pools.update(execution=int(20_000_000*capital_scale),value=int(27_000_000*capital_scale),switching=int(15_000_000*capital_scale))
+            role_counts['switching']=switching
         pools['technical']=int(100_000_000*capital_scale)-sum(v for k,v in pools.items()if k!='technical')
         if pools['technical']<=0:raise ValueError('technical cash pool exhausted')
     originals=[]
@@ -136,6 +143,24 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                 add(role,i,'ExecutionTrader','1',{'side':direction,'target_qty':target,'horizon_ms':[1200000,3600000,7200000][(i//4)%3],
                     'start_after_ms':rng.randrange(0,36000000) if ecology else (i//4)%12*15000,'max_qty':[1,2,4][i%3],'max_slippage_ticks':30,'decision_interval_ms':[1000,3000,7000][i%3],
                     'jitter_ms':i%4*500,'inventory_cap':max(100,target*2),'fee_buffer_ppm':1000,'fallback_price_tick':anchor},leg,cash,position)
+            elif role=='switching':
+                # Own stream; two thirds trade the perpetual, where leverage,
+                # exchange-side stops and venue liquidation can cascade.
+                sr=random.Random(child_seed(seed,f'style-switching-{i}'))
+                leg='spot'if i%3==0 else'perp'
+                leverage=sr.choice([2,3,5])if leg=='perp'else 1
+                fast=sr.choice([30000,60000,120000,300000])
+                add(role,i,'StyleSwitchingTrader','1.0.0',{'inventory_cap':max(100,cash*leverage//anchor),
+                    'equity_use_ppm':sr.choice([200000,400000,600000]),'target_leverage':leverage,
+                    'decision_interval_ms':sr.choice([5000,10000,20000,40000]),'fast_half_life_ms':fast,
+                    'slow_half_life_ms':fast*sr.choice([4,8]),'anchor_half_life_ms':sr.choice([1800000,3600000,10800000,21600000]),
+                    'saturation_ppm':sr.choice([1000,2000,4000]),'fitness_half_life_ms':sr.choice([300000,900000,1800000]),
+                    'intensity_ppm':sr.choice([1000000,3000000,10000000]),'switch_ppm':sr.choice([50000,100000,200000]),
+                    'herding_ppm':sr.choice([0,500000,1000000,2000000]),'flow_half_life_ms':sr.choice([30000,60000,120000]),
+                    'child_ppm':sr.choice([200000,350000,500000]),'min_trade_ppm':50000,'max_slippage_ppm':sr.choice([2000,3000,5000]),
+                    'stop_lookback_ms':sr.choice([300000,900000,1800000]),'stop_buffer_ppm':sr.choice([0,500,1000,2000]),
+                    'stop_cooldown_ms':sr.choice([120000,300000,600000]),'warmup_ms':sr.choice([600000,900000]),
+                    'fee_buffer_ppm':1000,'fallback_price_tick':anchor},leg,cash,0,None,'style_switching')
             elif role=='value'and value_model=='endogenous':
                 # Beliefs come only from each bot's own view of market history:
                 # an EWMA anchor over its own horizon, a private bias and a
@@ -230,11 +255,11 @@ def main():
     p.add_argument('--maker-model',choices=['legacy','adaptive','GLFT','Avellaneda'],default='adaptive')
     p.add_argument('--original-runtime-manifest',type=Path)
     p.add_argument('--value-model',choices=['static','endogenous'],default='static');p.add_argument('--value-fraction',type=float,default=.1)
-    p.add_argument('--flow-mix',choices=['default','rebalanced'],default='default')
+    p.add_argument('--flow-mix',choices=['default','rebalanced'],default='default');p.add_argument('--switching-fraction',type=float,default=0.)
     a=p.parse_args();names=json.loads(a.original_runtime_manifest.read_text(encoding='utf-8'))['qualified_names'] if a.original_runtime_manifest else None
     spec,roster=population(a.room,a.seed,a.count,a.runtime,a.original_manifest,a.capital_scale,a.periods_ms,
         ecology=a.ecology,noise_fraction=a.noise_fraction,maker_model=a.maker_model,original_names=names,
-        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix)
+        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction)
     if a.export:
         a.export.parent.mkdir(parents=True,exist_ok=True);a.export.write_text(json.dumps(spec,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         a.export.with_suffix('.roster.json').write_text(json.dumps(roster,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')

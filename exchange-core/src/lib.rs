@@ -160,4 +160,5 @@ mod adaptive_liquidity;
 pub mod conditional_orders;
 mod endogenous_value;
 pub mod position_protection;
+mod style_switching;
 pub use position_protection::{PositionProtection, PositionProtectionSpec, ProtectionTrigger};
