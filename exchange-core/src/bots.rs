@@ -468,6 +468,7 @@ impl BotRegistry {
         crate::endogenous_value::register(&mut registry);
         crate::style_switching::register(&mut registry);
         crate::basis_link::register(&mut registry);
+        crate::reactive_flow::register(&mut registry);
         registry
     }
     pub fn register(&mut self, factory: impl BotFactory + 'static) -> Result<(), BotError> {
@@ -860,7 +861,7 @@ mod tests {
     #[test]
     fn all_builtins_accept_unified_config_and_legacy_state_still_serializes() {
         let registry = BotRegistry::with_builtins();
-        assert_eq!(registry.descriptors().len(), 36);
+        assert_eq!(registry.descriptors().len(), 37);
         for descriptor in registry.descriptors() {
             let template = AgentTemplate::Plugin(BotConfig {
                 participant: participant(),

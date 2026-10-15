@@ -24,7 +24,7 @@ def varied_parameters(family,index):
     return {k:p[k]for k in keys}
 
 def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',original_manifest=None,capital_scale=10.0,periods=None,
-               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False):
+               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False,maker_depth_scale=None,perp_maker_depth_scale=None):
     if not 100<=count<=10000:raise ValueError('population must be within 100..10000')
     if runtime not in ('native','pine','mixed'):raise ValueError('unknown runtime')
     if value_model not in ('static','endogenous'):raise ValueError('unknown value model')
@@ -49,6 +49,11 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     if price_scale<1 or int(price_scale)!=price_scale:raise ValueError('price scale must be a positive integer')
     if fast_flow and flow_mix!='rebalanced':raise ValueError('fast flow requires --flow-mix rebalanced')
     price_scale=int(price_scale);capital_scale*=price_scale
+    # Fast flow defaults: fast-refreshing makers quote thinner books (perp
+    # deeper, as it carries more volume) so net flow moves price ~3-5 bp/min.
+    if maker_depth_scale is None:maker_depth_scale=.25 if fast_flow else 1.0
+    if perp_maker_depth_scale is None:perp_maker_depth_scale=.55 if fast_flow else maker_depth_scale
+    if not(0<maker_depth_scale<=1 and 0<perp_maker_depth_scale<=1):raise ValueError('maker depth scales must be within (0, 1]')
     anchor=10000*price_scale
     for market in (spot,perp):
         market['clearing'].update(maker_fee_ppm=100,taker_fee_ppm=300)
@@ -90,12 +95,17 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
         pools['value']-=int(8_000_000*capital_scale);pools['basis']=int(8_000_000*capital_scale)
         if switching:
             # Style switchers take cash from every directional role.
-            pools.update(execution=int(20_000_000*capital_scale),value=int(25_000_000*capital_scale),switching=int(10_000_000*capital_scale))
+            # Switcher cash scales with their head count (10% at a 0.2 fraction);
+            # the remainder stays with valuation traders.
+            switching_cash=int(min(10_000_000,50_000_000*switching_fraction)*capital_scale)
+            pools.update(execution=int(20_000_000*capital_scale),value=int(35_000_000*capital_scale)-switching_cash,switching=switching_cash)
             role_counts['switching']=switching
         # Premium-based funding settles every 15 minutes without a constant
         # bias, so a persistent perp/spot gap is actually charged.
         perp['funding'].update(interval_ms=900000,base_rate_ppm=0)
-        if fast_flow:pools['noise']=int(5_000_000*capital_scale)
+        if fast_flow:
+            # Independent small-taker flow carries diffusive one-minute moves.
+            pools['noise']=int(8_000_000*capital_scale);pools['value']-=int(3_000_000*capital_scale)
         pools['technical']=int(100_000_000*capital_scale)-sum(v for k,v in pools.items()if k!='technical')
         if pools['technical']<=0:raise ValueError('technical cash pool exhausted')
     originals=[]
@@ -146,7 +156,21 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                         config.update(flow_skew_ppm=fr.choice([300000,600000,1000000]),flow_widen_ppm=fr.choice([0,500000,1000000]),
                             flow_half_life_ms=fr.choice([5000,15000,30000]));version='1.1.0'
                         # Perpetual quotes lean on the spot index so the book cannot drift freely.
-                        if leg=='perp':config['index_weight_ppm']=fr.choice([300000,500000,700000])
+                        if fast_flow:
+                            # Liquidity at the touch is replaced within a step or
+                            # two, as competing market makers do in liquid markets.
+                            config.update(refresh_ms=fr.choice([1000,1000,2000]),jitter_ms=fr.randrange(0,1001),
+                                quote_ttl_ms=fr.choice([10000,20000,30000]))
+                        if leg=='perp':
+                            config['index_weight_ppm']=fr.choice([300000,500000,700000])
+                            # Perp flow is persistently one-sided (levered switchers);
+                            # strong widening left a bounce-dominated perp spread.
+                            config['flow_widen_ppm']=fr.choice([0,250000])
+                    # Quoted size relative to directional flow sets how far a
+                    # minute's net flow moves the price; liquid markets refill a
+                    # book that flow actually consumes.
+                    scale=perp_maker_depth_scale if leg=='perp' else maker_depth_scale
+                    if scale<1:config['max_qty']=max(1,round(config['max_qty']*scale))
                     add(role,i,'AdaptiveLiquidityMaker',version,config,leg,cash,inventory,model,'source_algorithm_adaptation')
                 else:add(role,i,'DynamicMarketMaker','1',config,leg,cash,inventory)
             elif role=='execution':
@@ -205,14 +229,27 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                     'value_shift_ticks':0,'value_shift_at_ms':0,'decision_interval_ms':[5000,15000,60000][i%3],
                     'jitter_ms':5000,'max_qty':[1,2,3][i%3],'inventory_cap':max(100,cash//anchor//2),'fee_buffer_ppm':1000,'fallback_price_tick':anchor},leg,cash,position)
             elif role=='noise'and fast_flow:
-                # Many small, unsynchronized takers with heavy-tailed sizes; each
-                # draws only from its own seeded stream.
+                # Reactive small takers: arrival rate rises with observed trade
+                # activity (bursts), direction chases or fades the observed move,
+                # sizes are heavy-tailed. Own seeded stream per bot.
                 nr=random.Random(child_seed(seed,f'fast-flow-{i}'))
-                position=max(5,min(300,cash//anchor//4)) if leg=='spot' else 0
-                add(role,i,'AdaptiveNoiseTrader','1',{'arrival_mode':'Poisson','decision_interval_ms':nr.choice([1000,2000,3000,5000]),'jitter_ms':0,
-                    'activity_ppm':nr.choice([300000,450000,600000]),'market_order_ratio_ppm':nr.choice([500000,700000,900000]),
-                    'side_persistence_ppm':nr.choice([500000,600000,700000]),'max_qty':nr.choice([1,1,2,3,5,8,13,20]),
-                    'inventory_cap':300,'price_radius_ticks':12,'order_ttl_ms':30000,'fallback_price_tick':anchor},leg,cash,position)
+                position=max(5,min(600,cash//anchor//4)) if leg=='spot' else 0
+                cap=max(300,cash//anchor,2*position)
+                # Weak reaction, tilted contrarian (about a third chase, two
+                # thirds fade the recent move), so persistent flow does not
+                # turn into predictable one-minute trends.
+                chase=nr.choice([200000,400000,600000])*(1 if nr.random()<.35 else -1)
+                add(role,i,'ReactiveFlowTrader','1.0.0',{'base_interval_ms':nr.choice([2000,4000,8000,15000]),
+                    'short_half_life_ms':nr.choice([10000,20000,40000]),'long_half_life_ms':nr.choice([600000,1200000]),
+                    # Moderate excitation: activity clusters, but quiet periods keep
+                    # a baseline flow instead of going dead.
+                    'excitation_ppm':nr.choice([600000,1000000,1300000]),'move_half_life_ms':nr.choice([30000,60000,180000]),
+                    'move_scale_ppm':nr.choice([1000,2000,5000]),'chase_ppm':chase,'herd_ppm':nr.choice([0,150000,300000]),
+                    'inventory_target':position,'inventory_pull_ppm':nr.choice([300000,800000]),'min_qty':2,
+                    'max_qty':nr.choice([60,150,300]),'size_alpha_ppm':nr.choice([1300000,1500000,1800000]),
+                    'aggressive_ppm':nr.choice([600000,800000,950000]),'max_slippage_ppm':nr.choice([500,1000,2000]),
+                    'order_ttl_ms':nr.choice([10000,20000,40000]),'inventory_cap':cap,
+                    'target_leverage':nr.choice([1,2]) if leg=='perp' else 1,'fee_buffer_ppm':1000,'fallback_price_tick':anchor},leg,cash,position)
             elif role=='noise':
                 position=max(5,min(50,cash//anchor//4)) if leg=='spot' else 0
                 add(role,i,'AdaptiveNoiseTrader','1',{'activity_ppm':100000,'market_order_ratio_ppm':500000,'side_persistence_ppm':550000,
@@ -282,19 +319,20 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     for account in (20,30):
         scenario['accounts'].append({'Spot':{'account_id':account,'cash_balance':(50000000 if ecology and account==20 else 1000000)*price_scale,'position_qty':2000 if ecology and account==20 else 100}})
     scenario['seed_orders']=[{'NewOrder':{'order_id':1+j,'account_id':10,'side':side,'kind':{'Limit':{'price_tick':anchor+offset*price_scale}},'qty':10,'reduce_only':False}}for j,(side,offset)in enumerate([('Buy',-4),('Sell',4)])]
-    roster={'scope':'finite-capital strategy ecosystem','count':count,'flow_mix':flow_mix,'price_scale':price_scale,'fast_flow':fast_flow,'runtime':runtime,'seed':seed,'role_counts':role_counts,'maker_model':maker_model if ecology else 'legacy','value_model':value_model,
+    roster={'scope':'finite-capital strategy ecosystem','count':count,'flow_mix':flow_mix,'price_scale':price_scale,'fast_flow':fast_flow,'maker_depth_scale':maker_depth_scale,'perp_maker_depth_scale':perp_maker_depth_scale,'runtime':runtime,'seed':seed,'role_counts':role_counts,'maker_model':maker_model if ecology else 'legacy','value_model':value_model,
         'role_cash_pools':pools,'total_cash_pool':sum(pools.values()),'initial_spot_inventory':sum(m['initial_spot_inventory']for m in metadata),
         'families':families,'periods_ms':sorted(set(m['config']['bar_interval_ms']for m in metadata if m['role']=='technical')),
         'participants':metadata,'qualification':'candidate population; inspect actual warmup, activity, fills, account budgets and market outcomes'}
     if price_scale>1:
         # Tick-denominated parameters keep their basis-point meaning; maker
-        # spread floors shrink by half to use the finer grid.
+        # spread floors drop to a few fine ticks so the quoted spread stays
+        # small next to one-minute moves, as in liquid markets.
         for agent in spec['agents']:
             c=agent['Plugin']['config']
             for k in ('max_half_spread_ticks','level_spacing_ticks','max_slippage_ticks','price_radius_ticks','slippage_ticks',
                       'half_spread_ticks','inventory_skew_ticks','withdraw_volatility_ticks','size_volatility_ticks'):
                 if k in c:c[k]*=price_scale
-            if 'min_half_spread_ticks' in c:c['min_half_spread_ticks']=max(1,c['min_half_spread_ticks']*price_scale//2)
+            if 'min_half_spread_ticks' in c:c['min_half_spread_ticks']=max(1,c['min_half_spread_ticks']*price_scale//10)
     assert len(spec['agents'])==count
     assert sum(pools.values())==int(100_000_000*capital_scale)
     return spec,roster
@@ -309,10 +347,11 @@ def main():
     p.add_argument('--value-model',choices=['static','endogenous'],default='static');p.add_argument('--value-fraction',type=float,default=.1)
     p.add_argument('--flow-mix',choices=['default','rebalanced'],default='default');p.add_argument('--switching-fraction',type=float,default=0.)
     p.add_argument('--price-scale',type=int,default=1);p.add_argument('--fast-flow',action='store_true')
+    p.add_argument('--maker-depth-scale',type=float);p.add_argument('--perp-maker-depth-scale',type=float)
     a=p.parse_args();names=json.loads(a.original_runtime_manifest.read_text(encoding='utf-8'))['qualified_names'] if a.original_runtime_manifest else None
     spec,roster=population(a.room,a.seed,a.count,a.runtime,a.original_manifest,a.capital_scale,a.periods_ms,
         ecology=a.ecology,noise_fraction=a.noise_fraction,maker_model=a.maker_model,original_names=names,
-        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction,price_scale=a.price_scale,fast_flow=a.fast_flow)
+        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction,price_scale=a.price_scale,fast_flow=a.fast_flow,maker_depth_scale=a.maker_depth_scale,perp_maker_depth_scale=a.perp_maker_depth_scale)
     if a.export:
         a.export.parent.mkdir(parents=True,exist_ok=True);a.export.write_text(json.dumps(spec,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         a.export.with_suffix('.roster.json').write_text(json.dumps(roster,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')

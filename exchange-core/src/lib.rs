@@ -161,5 +161,6 @@ mod basis_link;
 pub mod conditional_orders;
 mod endogenous_value;
 pub mod position_protection;
+mod reactive_flow;
 mod style_switching;
 pub use position_protection::{PositionProtection, PositionProtectionSpec, ProtectionTrigger};
