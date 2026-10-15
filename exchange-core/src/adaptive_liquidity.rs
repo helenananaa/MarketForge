@@ -218,6 +218,8 @@ impl BotFactory for Factory {
             || !state.flow_signed.is_finite()
             || !state.flow_total.is_finite()
             || state.flow_total < state.flow_signed.abs()
+            || !state.pending_signed.is_finite()
+            || state.pending_total < state.pending_signed.abs()
             || state.frames.iter().any(|f| {
                 !f.dt.is_finite()
                     || f.dt <= 0.
@@ -266,6 +268,11 @@ struct State {
     flow_total: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     last_trade_id: Option<u64>,
+    // Taker quantity since the last quote; consumed when quoting.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pending_signed: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pending_total: f64,
 }
 fn is_zero(v: &f64) -> bool {
     *v == 0.
@@ -300,6 +307,8 @@ impl Maker {
             let qty = t.qty as f64;
             self.state.flow_signed += if t.taker_side == Side::Buy { qty } else { -qty };
             self.state.flow_total += qty;
+            self.state.pending_signed += if t.taker_side == Side::Buy { qty } else { -qty };
+            self.state.pending_total += qty;
             newest = newest.max(Some(t.trade_id));
         }
         self.state.last_trade_id = newest;
@@ -471,16 +480,22 @@ impl Maker {
             self.c.min_half_spread_ticks as f64,
             self.c.max_half_spread_ticks as f64,
         );
-        if self.p.plugin_version == FLOW_VERSION && self.state.flow_total > 0. {
-            // Treat persistent one-sided taker flow as information: widen
-            // against adverse selection and lean quotes toward the flow, so
-            // replenished depth no longer pins the price to its old level.
-            let imbalance = self.state.flow_signed / self.state.flow_total;
-            self.state.half_spread = (self.state.half_spread
-                * (1. + imbalance.abs() * self.c.flow_widen_ppm as f64 / 1e6))
-                .min(self.c.max_half_spread_ticks as f64);
+        if self.p.plugin_version == FLOW_VERSION {
+            // Persistent one-sided flow (decayed memory) only widens against
+            // adverse selection. The quote leans once per unit of *new* flow
+            // since the previous quote: a permanent, non-compounding impact,
+            // so the lean is not re-applied on top of a mid that already
+            // contains it.
+            if self.state.flow_total > 0. {
+                let imbalance = self.state.flow_signed / self.state.flow_total;
+                self.state.half_spread = (self.state.half_spread
+                    * (1. + imbalance.abs() * self.c.flow_widen_ppm as f64 / 1e6))
+                    .min(self.c.max_half_spread_ticks as f64);
+            }
+            let own_depth = (self.c.max_qty * u64::from(self.c.levels)) as f64;
+            let fresh = self.state.pending_signed / (self.state.pending_total + own_depth);
             self.state.center +=
-                imbalance * self.state.half_spread * self.c.flow_skew_ppm as f64 / 1e6 * tick;
+                fresh * self.state.half_spread * self.c.flow_skew_ppm as f64 / 1e6 * tick;
         }
         let mut desired = BTreeMap::new();
         for level in 0..self.c.levels {
@@ -530,6 +545,10 @@ impl Maker {
             self.state.cancelled += cancels.len() as u64;
             return Ok(cancels);
         }
+        // Pending flow is consumed only by quotes actually placed; a
+        // cancel-only decision keeps it for the replacement quotes.
+        self.state.pending_signed = 0.;
+        self.state.pending_total = 0.;
         let mut actions = vec![];
         for ((s, price), target) in desired {
             let side = if s == 0 { Side::Buy } else { Side::Sell };
@@ -709,7 +728,13 @@ mod tests {
         let mut bot = registry.create(&plain, &plain.initial_state()).unwrap();
         bot.decide(&observation(0, vec![buy(1)])).unwrap();
         let state = data(bot.as_ref());
-        for key in ["flow_signed", "flow_total", "last_trade_id"] {
+        for key in [
+            "flow_signed",
+            "flow_total",
+            "last_trade_id",
+            "pending_signed",
+            "pending_total",
+        ] {
             assert!(state.get(key).is_none(), "{key} leaked into 1.0.0 state");
         }
         let restored = registry.create(&plain, &bot.snapshot()).unwrap();
@@ -736,6 +761,15 @@ mod tests {
         assert!(f["center"].as_f64() > q["center"].as_f64(), "{q} {f}");
         assert!(f["half_spread"].as_f64() > q["half_spread"].as_f64());
         assert_eq!(f["flow_signed"], f["flow_total"]);
+        // Once flow stops, the next quote carries no lean: only the decayed
+        // memory keeps the spread wider.
+        let mut stopped = registry.create(&t, &flowing.snapshot()).unwrap();
+        let mut calm = registry.create(&t, &quiet.snapshot()).unwrap();
+        stopped.decide(&observation(5, vec![])).unwrap();
+        calm.decide(&observation(5, vec![])).unwrap();
+        let (c, st) = (data(calm.as_ref()), data(stopped.as_ref()));
+        assert_eq!(st["center"], c["center"]);
+        assert!(st["half_spread"].as_f64() > c["half_spread"].as_f64());
         // Already-seen trades are not double counted.
         let before = f["flow_total"].as_f64().unwrap();
         flowing.decide(&observation(5, vec![buy(15)])).unwrap();
