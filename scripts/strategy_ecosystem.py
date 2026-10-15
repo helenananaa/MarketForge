@@ -24,7 +24,7 @@ def varied_parameters(family,index):
     return {k:p[k]for k in keys}
 
 def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',original_manifest=None,capital_scale=10.0,periods=None,
-               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.):
+               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False):
     if not 100<=count<=10000:raise ValueError('population must be within 100..10000')
     if runtime not in ('native','pine','mixed'):raise ValueError('unknown runtime')
     if value_model not in ('static','endogenous'):raise ValueError('unknown value model')
@@ -44,7 +44,12 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     scenario=spec['scenario'];scenario['room_id']=room;scenario['accounts']=[];scenario['seed_orders']=[];scenario['routed_seed_orders']=[];scenario['market_events']=[]
     scenario['initial_portfolios']=[];scenario['initial_allocations']=[];scenario['routed_initial_allocations']=[]
     spot=scenario['market']['Spot'];perp=scenario['extra_markets'][0]['Perp']
-    anchor=10000
+    # price_scale>1 prices the same asset in finer ticks (tick = 1/price_scale
+    # basis points at the anchor). Cash scales with price so lot counts match.
+    if price_scale<1 or int(price_scale)!=price_scale:raise ValueError('price scale must be a positive integer')
+    if fast_flow and flow_mix!='rebalanced':raise ValueError('fast flow requires --flow-mix rebalanced')
+    price_scale=int(price_scale);capital_scale*=price_scale
+    anchor=10000*price_scale
     for market in (spot,perp):
         market['clearing'].update(maker_fee_ppm=100,taker_fee_ppm=300)
         market['risk']={'allow_short':False}if market is spot else{}
@@ -54,7 +59,7 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     perp['funding'].update(interval_ms=28800000,base_rate_ppm=100)
     spec.update(agents=[],agent_interval_ms=1000,autostart_agents=True)
     makers=max(4,count//10);execution=max(4,round(count*(.15 if ecology else .1)));value=max(4,round(count*value_fraction))
-    noise=round(count*noise_fraction) if ecology else 0
+    noise=round(count*(.1 if fast_flow else noise_fraction)) if ecology else 0
     switching=round(count*switching_fraction)
     # Two-sided basis pairs (two bots, one account) tie the perpetual to spot.
     basis_pairs=max(2,count//60) if flow_mix=='rebalanced' else 0
@@ -82,7 +87,7 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
         # Directional demand comes mainly from valuation and parent orders;
         # technical capital becomes an overlay. Total cash is unchanged.
         pools.update(maker=int(30_000_000*capital_scale),execution=int(25_000_000*capital_scale),value=int(35_000_000*capital_scale))
-        pools['value']-=int(5_000_000*capital_scale);pools['basis']=int(5_000_000*capital_scale)
+        pools['value']-=int(8_000_000*capital_scale);pools['basis']=int(8_000_000*capital_scale)
         if switching:
             # Style switchers take cash from every directional role.
             pools.update(execution=int(20_000_000*capital_scale),value=int(25_000_000*capital_scale),switching=int(10_000_000*capital_scale))
@@ -90,6 +95,7 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
         # Premium-based funding settles every 15 minutes without a constant
         # bias, so a persistent perp/spot gap is actually charged.
         perp['funding'].update(interval_ms=900000,base_rate_ppm=0)
+        if fast_flow:pools['noise']=int(5_000_000*capital_scale)
         pools['technical']=int(100_000_000*capital_scale)-sum(v for k,v in pools.items()if k!='technical')
         if pools['technical']<=0:raise ValueError('technical cash pool exhausted')
     originals=[]
@@ -157,10 +163,10 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                 sr=random.Random(child_seed(seed,f'style-switching-{i}'))
                 leg='spot'if i%2==0 else'perp'
                 leverage=sr.choice([1,2,3])if leg=='perp'else 1
-                fast=sr.choice([30000,60000,120000,300000])
+                fast=sr.choice([10000,20000,60000,120000] if fast_flow else [30000,60000,120000,300000])
                 add(role,i,'StyleSwitchingTrader','1.0.0',{'inventory_cap':max(100,cash*leverage//anchor),
                     'equity_use_ppm':sr.choice([200000,400000,600000]),'target_leverage':leverage,
-                    'decision_interval_ms':sr.choice([5000,10000,20000,40000]),'fast_half_life_ms':fast,
+                    'decision_interval_ms':sr.choice([2000,5000,10000,20000] if fast_flow else [5000,10000,20000,40000]),'fast_half_life_ms':fast,
                     'slow_half_life_ms':fast*sr.choice([4,8]),'anchor_half_life_ms':sr.choice([1800000,3600000,10800000,21600000]),
                     'saturation_ppm':sr.choice([1000,2000,4000]),'fitness_half_life_ms':sr.choice([300000,900000,1800000]),
                     'intensity_ppm':sr.choice([1000000,3000000,10000000]),'switch_ppm':sr.choice([50000,100000,200000]),
@@ -198,6 +204,15 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                 add(role,i,'ValueTrader','1',{'fair_price_tick':belief,'edge_ticks':[8,16,30][i%3],
                     'value_shift_ticks':0,'value_shift_at_ms':0,'decision_interval_ms':[5000,15000,60000][i%3],
                     'jitter_ms':5000,'max_qty':[1,2,3][i%3],'inventory_cap':max(100,cash//anchor//2),'fee_buffer_ppm':1000,'fallback_price_tick':anchor},leg,cash,position)
+            elif role=='noise'and fast_flow:
+                # Many small, unsynchronized takers with heavy-tailed sizes; each
+                # draws only from its own seeded stream.
+                nr=random.Random(child_seed(seed,f'fast-flow-{i}'))
+                position=max(5,min(300,cash//anchor//4)) if leg=='spot' else 0
+                add(role,i,'AdaptiveNoiseTrader','1',{'arrival_mode':'Poisson','decision_interval_ms':nr.choice([1000,2000,3000,5000]),'jitter_ms':0,
+                    'activity_ppm':nr.choice([300000,450000,600000]),'market_order_ratio_ppm':nr.choice([500000,700000,900000]),
+                    'side_persistence_ppm':nr.choice([500000,600000,700000]),'max_qty':nr.choice([1,1,2,3,5,8,13,20]),
+                    'inventory_cap':300,'price_radius_ticks':12,'order_ttl_ms':30000,'fallback_price_tick':anchor},leg,cash,position)
             elif role=='noise':
                 position=max(5,min(50,cash//anchor//4)) if leg=='spot' else 0
                 add(role,i,'AdaptiveNoiseTrader','1',{'activity_ppm':100000,'market_order_ratio_ppm':500000,'side_persistence_ppm':550000,
@@ -250,9 +265,9 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
             account=100+len(spec['agents']);cash=pools['basis']//basis_pairs+(pools['basis']%basis_pairs if j==basis_pairs-1 else 0)
             inventory=cash//anchor//4
             scenario['accounts'].append({'Spot':{'account_id':account,'cash_balance':cash,'position_qty':inventory}})
-            common={'neutral_spot':inventory,'max_hedge':inventory,'step_qty':max(2,inventory//20),
+            common={'neutral_spot':inventory,'max_hedge':inventory,'step_qty':max(2,inventory//5),
                 'entry_ppm':br.choice([1500,2000,3000]),'exit_ppm':br.choice([300,500]),'max_slippage_ppm':2000,
-                'decision_interval_ms':br.choice([1000,2000,3000]),'jitter_ms':1000,'target_leverage':2,'fee_buffer_ppm':1000}
+                'decision_interval_ms':br.choice([1000,1000,2000]),'jitter_ms':500,'target_leverage':2,'fee_buffer_ppm':1000}
             for leg,instrument,peer in (('Perp','V-BTC-PERP','V-BTC-SPOT'),('Spot','V-BTC-SPOT','V-BTC-PERP')):
                 name=f'basis-{leg.lower()}-{j}'
                 config={**common,'leg':leg,'hedge_instrument_id':peer}
@@ -263,14 +278,23 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                     'initial_spot_inventory':inventory if leg=='Perp' else 0,'config':config,'origin':'basis_link'})
         role_counts['basis']=2*basis_pairs
     # Account 10 owns a small finite initial quote, independent of the bot roster.
-    scenario['accounts'].append({'Spot':{'account_id':10,'cash_balance':1000000,'position_qty':100}})
+    scenario['accounts'].append({'Spot':{'account_id':10,'cash_balance':1000000*price_scale,'position_qty':100}})
     for account in (20,30):
-        scenario['accounts'].append({'Spot':{'account_id':account,'cash_balance':50000000 if ecology and account==20 else 1000000,'position_qty':2000 if ecology and account==20 else 100}})
-    scenario['seed_orders']=[{'NewOrder':{'order_id':1+j,'account_id':10,'side':side,'kind':{'Limit':{'price_tick':anchor+offset}},'qty':10,'reduce_only':False}}for j,(side,offset)in enumerate([('Buy',-4),('Sell',4)])]
-    roster={'scope':'finite-capital strategy ecosystem','count':count,'flow_mix':flow_mix,'runtime':runtime,'seed':seed,'role_counts':role_counts,'maker_model':maker_model if ecology else 'legacy','value_model':value_model,
+        scenario['accounts'].append({'Spot':{'account_id':account,'cash_balance':(50000000 if ecology and account==20 else 1000000)*price_scale,'position_qty':2000 if ecology and account==20 else 100}})
+    scenario['seed_orders']=[{'NewOrder':{'order_id':1+j,'account_id':10,'side':side,'kind':{'Limit':{'price_tick':anchor+offset*price_scale}},'qty':10,'reduce_only':False}}for j,(side,offset)in enumerate([('Buy',-4),('Sell',4)])]
+    roster={'scope':'finite-capital strategy ecosystem','count':count,'flow_mix':flow_mix,'price_scale':price_scale,'fast_flow':fast_flow,'runtime':runtime,'seed':seed,'role_counts':role_counts,'maker_model':maker_model if ecology else 'legacy','value_model':value_model,
         'role_cash_pools':pools,'total_cash_pool':sum(pools.values()),'initial_spot_inventory':sum(m['initial_spot_inventory']for m in metadata),
         'families':families,'periods_ms':sorted(set(m['config']['bar_interval_ms']for m in metadata if m['role']=='technical')),
         'participants':metadata,'qualification':'candidate population; inspect actual warmup, activity, fills, account budgets and market outcomes'}
+    if price_scale>1:
+        # Tick-denominated parameters keep their basis-point meaning; maker
+        # spread floors shrink by half to use the finer grid.
+        for agent in spec['agents']:
+            c=agent['Plugin']['config']
+            for k in ('max_half_spread_ticks','level_spacing_ticks','max_slippage_ticks','price_radius_ticks','slippage_ticks',
+                      'half_spread_ticks','inventory_skew_ticks','withdraw_volatility_ticks','size_volatility_ticks'):
+                if k in c:c[k]*=price_scale
+            if 'min_half_spread_ticks' in c:c['min_half_spread_ticks']=max(1,c['min_half_spread_ticks']*price_scale//2)
     assert len(spec['agents'])==count
     assert sum(pools.values())==int(100_000_000*capital_scale)
     return spec,roster
@@ -284,10 +308,11 @@ def main():
     p.add_argument('--original-runtime-manifest',type=Path)
     p.add_argument('--value-model',choices=['static','endogenous'],default='static');p.add_argument('--value-fraction',type=float,default=.1)
     p.add_argument('--flow-mix',choices=['default','rebalanced'],default='default');p.add_argument('--switching-fraction',type=float,default=0.)
+    p.add_argument('--price-scale',type=int,default=1);p.add_argument('--fast-flow',action='store_true')
     a=p.parse_args();names=json.loads(a.original_runtime_manifest.read_text(encoding='utf-8'))['qualified_names'] if a.original_runtime_manifest else None
     spec,roster=population(a.room,a.seed,a.count,a.runtime,a.original_manifest,a.capital_scale,a.periods_ms,
         ecology=a.ecology,noise_fraction=a.noise_fraction,maker_model=a.maker_model,original_names=names,
-        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction)
+        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction,price_scale=a.price_scale,fast_flow=a.fast_flow)
     if a.export:
         a.export.parent.mkdir(parents=True,exist_ok=True);a.export.write_text(json.dumps(spec,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         a.export.with_suffix('.roster.json').write_text(json.dumps(roster,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')

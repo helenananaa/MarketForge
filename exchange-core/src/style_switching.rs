@@ -474,10 +474,13 @@ impl Trader {
         let min_trade = (capacity * self.c.min_trade_ppm as f64 / 1e6).max(lot as f64);
         if (delta.unsigned_abs() as f64) >= min_trade || (s.target == 0 && delta != 0) {
             let side = if delta > 0 { Side::Buy } else { Side::Sell };
+            // Exits (stop-outs, going flat) are worked at twice the normal
+            // child size so one bot cannot sweep a thin book in one order.
+            let normal = ((capacity * self.c.child_ppm as f64 / 1e6) as u64).max(lot);
             let child_cap = if stopped_internally || s.style == Style::Out {
-                delta.unsigned_abs()
+                normal.saturating_mul(2)
             } else {
-                ((capacity * self.c.child_ppm as f64 / 1e6) as u64).max(lot)
+                normal
             };
             let wanted = delta.unsigned_abs().min(child_cap) / lot * lot;
             let slip = mid * self.c.max_slippage_ppm as f64 / 1e6;

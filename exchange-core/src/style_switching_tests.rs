@@ -216,14 +216,13 @@ fn internal_stop_mode_never_sends_venue_protection_and_exits_itself() {
     }
     assert!(position > 0);
     let stop = state(bot.as_ref()).stop_tick.expect("internal stop level");
-    let mut exited = false;
-    for s in 80..90 {
+    for s in 80..140 {
         let actions = bot.decide(&perp(s, stop - 5, position)).unwrap();
         let f = fills(&actions);
-        exited |= f == -position;
+        assert!(f <= 0, "a stopped long only sells");
         position += f;
     }
-    assert!(exited, "internal stop must flatten the whole position");
+    assert_eq!(position, 0, "internal stop must flatten the whole position");
     assert_eq!(state(bot.as_ref()).style, Style::Out);
 }
 
