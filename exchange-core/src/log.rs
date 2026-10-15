@@ -31,6 +31,31 @@ mod tests {
         assert_ne!(live.commands()[1].command, recovered.commands()[1].command);
         assert_eq!(checkpoint.into_parts().0.len(), 1);
     }
+
+    #[test]
+    fn events_after_matches_a_full_scan() {
+        let mut log = EventLog::new();
+        for id in 0..5 {
+            log.record(
+                Command::CancelOrder(CancelOrder { order_id: id }),
+                vec![Event::OrderAccepted { order_id: id }; id as usize % 3],
+            );
+        }
+        for seq in [0, 1, 2, 3, 4, 5, 100] {
+            let scan: Vec<_> = log.events().iter().filter(|e| e.seq > seq).collect();
+            assert_eq!(
+                events_after(log.events(), seq).iter().collect::<Vec<_>>(),
+                scan
+            );
+        }
+        assert!(events_after(&[], 0).is_empty());
+    }
+}
+
+/// Records strictly after `seq`. Event sequence numbers are assigned in
+/// append order, so this is a binary search rather than a full-log scan.
+pub(crate) fn events_after(events: &[EventRecord], seq: LogSeq) -> &[EventRecord] {
+    &events[events.partition_point(|e| e.seq <= seq)..]
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

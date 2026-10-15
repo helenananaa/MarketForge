@@ -225,7 +225,7 @@ impl ExchangeActor {
                     book_delta: None,
                     is_liquidation: false,
                     wallet_updates: Vec::new(),
-                margin_updates: Vec::new(),
+                    margin_updates: Vec::new(),
                 });
             }
         };
@@ -474,10 +474,8 @@ impl ExchangeActor {
                 let MarketEngine::Perp(engine) = &self.markets[&p.instrument_id].engine else {
                     continue;
                 };
-                engine
-                    .event_log()
+                crate::log::events_after(engine.event_log(), p.last_checked_event_seq)
                     .iter()
-                    .filter(|e| e.seq > p.last_checked_event_seq)
                     .find_map(|e| match &e.event {
                         crate::Event::TradePrinted(t) => crossed(t.price_tick)
                             .filter(|r| {
