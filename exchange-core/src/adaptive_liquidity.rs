@@ -496,6 +496,11 @@ impl Maker {
             let fresh = self.state.pending_signed / (self.state.pending_total + own_depth);
             self.state.center +=
                 fresh * self.state.half_spread * self.c.flow_skew_ppm as f64 / 1e6 * tick;
+            // Inventory skew scales with volatility in ticks and is otherwise
+            // unbounded; at fine tick sizes it could park a bid percent away
+            // from the market. Keep the center within the widest half-spread.
+            let reach = self.c.max_half_spread_ticks as f64 * tick;
+            self.state.center = self.state.center.clamp(mid - reach, mid + reach);
         }
         let mut desired = BTreeMap::new();
         for level in 0..self.c.levels {
@@ -739,6 +744,31 @@ mod tests {
         }
         let restored = registry.create(&plain, &bot.snapshot()).unwrap();
         assert_eq!(restored.snapshot(), bot.snapshot());
+    }
+
+    #[test]
+    fn flow_version_keeps_quote_center_near_the_market() {
+        let registry = BotRegistry::with_builtins();
+        // Huge inventory relative to the cap would skew the 1.0.0 center far away.
+        let config = serde_json::json!({"inventory_target":0,"inventory_cap":10,"skew_ppm":1000000,
+            "max_half_spread_ticks":5,"flow_half_life_ms":10000,"jitter_ms":0,"refresh_ms":1000,"min_samples":4,"window":16});
+        let t = template(FLOW_VERSION, config);
+        let mut bot = registry.create(&t, &t.initial_state()).unwrap();
+        for s in 0..20u64 {
+            let mut v = observation(s, vec![]);
+            // A volatile mid so the volatility-scaled skew is large.
+            let shift = if s % 2 == 0 { 0 } else { 40 };
+            v.book.bids[0].price_tick += shift;
+            v.book.asks[0].price_tick += shift;
+            bot.decide(&v).unwrap();
+            let state = data(bot.as_ref());
+            let mid = 10000. + shift as f64;
+            let center = state["center"].as_f64().unwrap();
+            assert!(
+                (center - mid).abs() <= 5. + 1e-9,
+                "second {s}: center {center} mid {mid}"
+            );
+        }
     }
 
     #[test]
