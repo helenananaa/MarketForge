@@ -52,8 +52,8 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     # Fast flow defaults: fast-refreshing makers quote thin, closely spaced
     # levels (perp deeper, as it carries more volume), so net taker flow moves
     # the price while the touch stays one or two ticks wide.
-    if maker_depth_scale is None:maker_depth_scale=.08 if fast_flow else 1.0
-    if perp_maker_depth_scale is None:perp_maker_depth_scale=.18 if fast_flow else maker_depth_scale
+    if maker_depth_scale is None:maker_depth_scale=.05 if fast_flow else 1.0
+    if perp_maker_depth_scale is None:perp_maker_depth_scale=.12 if fast_flow else maker_depth_scale
     if not(0<maker_depth_scale<=1 and 0<perp_maker_depth_scale<=1):raise ValueError('maker depth scales must be within (0, 1]')
     anchor=10000*price_scale
     for market in (spot,perp):
@@ -162,6 +162,9 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                             # two, as competing market makers do in liquid markets.
                             config.update(refresh_ms=fr.choice([1000,1000,2000]),jitter_ms=fr.randrange(0,1001),
                                 quote_ttl_ms=fr.choice([10000,20000,30000]))
+                            # Price off other participants' quotes: a maker's own
+                            # skewed quotes must not become its next reference.
+                            config['external_reference']=True
                         if leg=='perp':
                             # Perp quotes follow perp trading; basis pairs keep the
                             # link to spot through actual trades.

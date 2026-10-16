@@ -17,9 +17,12 @@ const ID: &str = "AdaptiveLiquidityMaker";
 /// 1.0.0 is frozen. 1.1.0 adds optional reaction to observed one-sided taker
 /// flow; its parameters have no descriptor defaults, so 1.0.0 configs,
 /// identities and snapshots are byte-identical to the original release.
+/// `external_reference` (1.1.0 only, also without a default) prices quotes
+/// from other participants' resting orders instead of the whole book.
 const VERSION: &str = "1.0.0";
 const FLOW_VERSION: &str = "1.1.0";
 const FLOW_PARAMETERS: [&str; 3] = ["flow_skew_ppm", "flow_widen_ppm", "flow_half_life_ms"];
+const EXTERNAL_REFERENCE: &str = "external_reference";
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Config {
@@ -50,6 +53,8 @@ struct Config {
     flow_widen_ppm: u32,
     #[serde(default)]
     flow_half_life_ms: u64,
+    #[serde(default)]
+    external_reference: bool,
 }
 fn n(default: i64, min: i64, max: i64) -> BotParameter {
     BotParameter {
@@ -94,6 +99,17 @@ pub(crate) fn register(r: &mut BotRegistry) {
         );
     }
     parameters.insert(
+        EXTERNAL_REFERENCE.into(),
+        BotParameter {
+            kind: ParameterType::Boolean,
+            required: false,
+            default: None,
+            minimum: None,
+            maximum: None,
+            choices: vec![],
+        },
+    );
+    parameters.insert(
         "model".into(),
         BotParameter {
             kind: ParameterType::String,
@@ -130,7 +146,10 @@ impl Factory {
         let flow_keys = p
             .config
             .as_object()
-            .is_some_and(|c| FLOW_PARAMETERS.iter().any(|k| c.contains_key(*k)));
+            .is_some_and(|c| {
+                c.contains_key(EXTERNAL_REFERENCE)
+                    || FLOW_PARAMETERS.iter().any(|k| c.contains_key(*k))
+            });
         if p.plugin_version == VERSION && flow_keys {
             return Err(BotError("flow parameters require maker 1.1.0".into()));
         }
@@ -235,6 +254,19 @@ impl BotFactory for Factory {
 fn err(e: impl std::fmt::Display) -> BotError {
     BotError(e.to_string())
 }
+/// Best price and quantity resting from other participants on one side: the
+/// maker's own orders are taken out, so its previous quotes (and the skew
+/// already in them) never come back as its reference price.
+fn external_best(levels: &[BookLevel], side: Side, own: &[Order]) -> Option<(i64, u64)> {
+    levels.iter().find_map(|l| {
+        let mine = own
+            .iter()
+            .filter(|o| o.side == side && o.price_tick == l.price_tick)
+            .map(|o| o.remaining_qty)
+            .sum::<u64>();
+        (l.qty > mine).then(|| (l.price_tick, l.qty - mine))
+    })
+}
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Frame {
@@ -336,8 +368,22 @@ impl Maker {
         let tick = precision.0.max(1) as f64;
         let bid = v.book.bids.first();
         let ask = v.book.asks.first();
-        let mid = match (bid, ask) {
-            (Some(b), Some(a)) => (b.price_tick as f64 + a.price_tick as f64) / 2.,
+        // Reference touch: the whole book, or only other participants' orders.
+        // A maker alone at the touch then keeps its last external reference
+        // instead of re-applying inventory skew to its own skewed quotes.
+        let (ref_bid, ref_ask) = if self.c.external_reference {
+            (
+                external_best(&v.book.bids, Side::Buy, v.own_orders),
+                external_best(&v.book.asks, Side::Sell, v.own_orders),
+            )
+        } else {
+            (
+                bid.map(|l| (l.price_tick, l.qty)),
+                ask.map(|l| (l.price_tick, l.qty)),
+            )
+        };
+        let mid = match (ref_bid, ref_ask) {
+            (Some(b), Some(a)) => (b.0 as f64 + a.0 as f64) / 2.,
             _ => self
                 .state
                 .last_mid
@@ -460,10 +506,9 @@ impl Maker {
                 gamma * self.state.sigma,
             )
         };
-        let micro = match (bid, ask) {
-            (Some(b), Some(a)) if b.qty as f64 + a.qty as f64 > 0. => {
-                (b.price_tick as f64 * a.qty as f64 + a.price_tick as f64 * b.qty as f64)
-                    / (b.qty as f64 + a.qty as f64)
+        let micro = match (ref_bid, ref_ask) {
+            (Some(b), Some(a)) if b.1 as f64 + a.1 as f64 > 0. => {
+                (b.0 as f64 * a.1 as f64 + a.0 as f64 * b.1 as f64) / (b.1 as f64 + a.1 as f64)
             }
             _ => mid,
         };
@@ -729,6 +774,9 @@ mod tests {
                 .is_err()
         );
 
+        let external = template(VERSION, serde_json::json!({"external_reference":true}));
+        assert!(registry.create(&external, &external.initial_state()).is_err());
+
         let plain = template(VERSION, serde_json::json!({"inventory_target":50}));
         let mut bot = registry.create(&plain, &plain.initial_state()).unwrap();
         bot.decide(&observation(0, vec![buy(1)])).unwrap();
@@ -769,6 +817,72 @@ mod tests {
                 "second {s}: center {center} mid {mid}"
             );
         }
+    }
+
+    /// A long maker alone in the book, no trades: returns how far its quote
+    /// center moved over two minutes.
+    fn lone_maker_drift(external: bool) -> f64 {
+        let registry = BotRegistry::with_builtins();
+        let mut config = serde_json::json!({"inventory_target":0,"inventory_cap":100,"skew_ppm":1000000,
+            "max_half_spread_ticks":5,"flow_half_life_ms":10000,"jitter_ms":0,"refresh_ms":1000,"min_samples":4,"window":16});
+        if external {
+            config[EXTERNAL_REFERENCE] = true.into();
+        }
+        let t = template(FLOW_VERSION, config);
+        let mut bot = registry.create(&t, &t.initial_state()).unwrap();
+        // A volatile market first, so the inventory skew is not zero.
+        for s in 0..20u64 {
+            let mut v = observation(s, vec![]);
+            let shift = if s % 2 == 0 { 0 } else { 40 };
+            v.book.bids[0].price_tick += shift;
+            v.book.asks[0].price_tick += shift;
+            bot.decide(&v).unwrap();
+        }
+        let start = data(bot.as_ref())["center"].as_f64().unwrap();
+        let mut own: Vec<Order> = vec![];
+        for s in 20..140u64 {
+            let mut v = observation(s, vec![]);
+            let mut levels = BTreeMap::<(u8, i64), u64>::new();
+            for o in &own {
+                *levels.entry((o.side as u8, o.price_tick)).or_default() += o.remaining_qty;
+            }
+            let level = |((_, price_tick), qty): (&(u8, i64), &u64)| BookLevel {
+                price_tick: *price_tick,
+                qty: *qty,
+            };
+            let book = |side: Side| levels.iter().filter(move |((s, _), _)| *s == side as u8);
+            v.book.bids = book(Side::Buy).rev().map(level).collect();
+            v.book.asks = book(Side::Sell).map(level).collect();
+            v.own_orders = own.clone();
+            for action in bot.decide(&v).unwrap() {
+                match action {
+                    OrderAction::Cancel { order_id } => own.retain(|o| o.order_id != order_id),
+                    OrderAction::PlacePostOnly {
+                        side,
+                        price_tick,
+                        qty,
+                    } => own.push(Order {
+                        order_id: s * 100 + own.len() as u64,
+                        account_id: 20,
+                        side,
+                        position_side: Default::default(),
+                        price_tick,
+                        remaining_qty: qty,
+                        seq: s,
+                    }),
+                    other => panic!("unexpected {other:?}"),
+                }
+            }
+        }
+        data(bot.as_ref())["center"].as_f64().unwrap() - start
+    }
+
+    #[test]
+    fn external_reference_stops_a_lone_maker_walking_on_its_own_skew() {
+        let book = lone_maker_drift(false);
+        assert!(book < -50., "whole-book reference re-applies skew: {book}");
+        let external = lone_maker_drift(true);
+        assert!(external.abs() <= 5., "external reference drifted {external}");
     }
 
     #[test]
