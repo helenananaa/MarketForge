@@ -35,27 +35,25 @@ mod tests {
     #[test]
     fn events_after_matches_a_full_scan() {
         let mut log = EventLog::new();
-        for id in 0..5 {
+        // Enough events to span several sealed history chunks.
+        for id in 0..150 {
             log.record(
                 Command::CancelOrder(CancelOrder { order_id: id }),
                 vec![Event::OrderAccepted { order_id: id }; id as usize % 3],
             );
         }
-        for seq in [0, 1, 2, 3, 4, 5, 100] {
+        for seq in [0, 1, 2, 3, 4, 5, 31, 32, 33, 64, 148, 149, 150, 1000] {
             let scan: Vec<_> = log.events().iter().filter(|e| e.seq > seq).collect();
-            assert_eq!(
-                events_after(log.events(), seq).iter().collect::<Vec<_>>(),
-                scan
-            );
+            assert_eq!(log.events_after(seq).collect::<Vec<_>>(), scan);
         }
-        assert!(events_after(&[], 0).is_empty());
+        assert_eq!(log.events_iter().next_back(), log.events().last());
+        assert_eq!(
+            log.events_iter().rev().collect::<Vec<_>>(),
+            log.events().iter().rev().collect::<Vec<_>>()
+        );
+        assert!(EventLog::new().events_after(0).next().is_none());
+        assert!(EventLog::new().events_iter().next_back().is_none());
     }
-}
-
-/// Records strictly after `seq`. Event sequence numbers are assigned in
-/// append order, so this is a binary search rather than a full-log scan.
-pub(crate) fn events_after(events: &[EventRecord], seq: LogSeq) -> &[EventRecord] {
-    &events[events.partition_point(|e| e.seq <= seq)..]
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -138,6 +136,22 @@ impl EventLog {
 
     pub fn events(&self) -> &[EventRecord] {
         &self.events
+    }
+
+    /// Chunk-wise iteration. Unlike `events`, this never copies the whole log
+    /// into a contiguous slice, which every append would invalidate again.
+    pub(crate) fn events_iter(&self) -> impl DoubleEndedIterator<Item = &EventRecord> {
+        self.events.iter()
+    }
+
+    /// Records strictly after `seq`. Event sequence numbers are assigned in
+    /// append order, so this is a binary search rather than a full-log scan.
+    pub(crate) fn events_after(
+        &self,
+        seq: LogSeq,
+    ) -> impl DoubleEndedIterator<Item = &EventRecord> {
+        self.events
+            .iter_from(self.events.partition_point(|e| e.seq <= seq))
     }
 
     pub fn into_parts(self) -> (Vec<CommandRecord>, Vec<EventRecord>) {

@@ -60,7 +60,11 @@ impl ExchangeActor {
 
     fn protection_event_seq(&self, instrument: &str) -> u64 {
         match self.markets.get(instrument).map(|m| &m.engine) {
-            Some(MarketEngine::Perp(e)) => e.event_log().last().map_or(0, |e| e.seq),
+            Some(MarketEngine::Perp(e)) => e
+                .event_history()
+                .events_iter()
+                .next_back()
+                .map_or(0, |e| e.seq),
             _ => 0,
         }
     }
@@ -89,8 +93,8 @@ impl ExchangeActor {
             crate::ProtectionTrigger::Mark => Some(engine.mark_price_tick()),
             crate::ProtectionTrigger::Last => {
                 engine
-                    .event_log()
-                    .iter()
+                    .event_history()
+                    .events_iter()
                     .rev()
                     .find_map(|e| match &e.event {
                         crate::Event::TradePrinted(t) => Some(t.price_tick),
@@ -474,8 +478,9 @@ impl ExchangeActor {
                 let MarketEngine::Perp(engine) = &self.markets[&p.instrument_id].engine else {
                     continue;
                 };
-                crate::log::events_after(engine.event_log(), p.last_checked_event_seq)
-                    .iter()
+                engine
+                    .event_history()
+                    .events_after(p.last_checked_event_seq)
                     .find_map(|e| match &e.event {
                         crate::Event::TradePrinted(t) => crossed(t.price_tick)
                             .filter(|r| {

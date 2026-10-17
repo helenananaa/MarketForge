@@ -151,6 +151,20 @@ impl<T> History<T> {
             self.tail.get(index - sealed)
         }
     }
+    /// Slice-compatible partition point using indexed reads, so a search never
+    /// flattens the history. The predicate must hold for a prefix only.
+    pub(crate) fn partition_point(&self, mut pred: impl FnMut(&T) -> bool) -> usize {
+        let (mut low, mut high) = (0, self.len);
+        while low < high {
+            let mid = low + (high - low) / 2;
+            if self.at(mid).is_some_and(&mut pred) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        low
+    }
     pub(crate) fn is_empty(&self) -> bool {
         self.len == 0
     }
@@ -369,6 +383,13 @@ mod tests {
                 history.iter_from(start).rev().copied().collect::<Vec<_>>(),
                 (start.min(900)..900).rev().collect::<Vec<_>>()
             );
+        }
+        assert!(history.contiguous.get().is_none());
+        for bound in [0, 1, 31, 32, 33, 450, 899, 900, 901] {
+            let expected = (0..900usize)
+                .collect::<Vec<_>>()
+                .partition_point(|v| *v < bound);
+            assert_eq!(history.partition_point(|v| *v < bound), expected);
         }
         assert!(history.contiguous.get().is_none());
         let mut fork = history.clone();

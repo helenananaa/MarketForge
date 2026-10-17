@@ -909,6 +909,12 @@ impl PerpTradingEngine {
         self.log.events()
     }
 
+    /// For per-execution readers: `event_log` copies the full log after
+    /// every append, while this reads the shared chunks in place.
+    pub(crate) fn event_history(&self) -> &EventLog {
+        &self.log
+    }
+
     pub fn clearing_log(&self) -> &[PerpClearingEvent] {
         &self.clearing_events
     }

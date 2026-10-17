@@ -176,7 +176,7 @@ impl ExchangeActor {
             };
             let crossed = if p.spec.trigger == crate::ProtectionTrigger::Last {
                 match &self.markets[&p.instrument_id].engine {
-                    MarketEngine::Perp(e)=>crate::log::events_after(e.event_log(),p.last_checked_event_seq).iter().any(|r|matches!(&r.event,crate::Event::TradePrinted(t) if crosses(t.price_tick))),
+                    MarketEngine::Perp(e)=>e.event_history().events_after(p.last_checked_event_seq).any(|r|matches!(&r.event,crate::Event::TradePrinted(t) if crosses(t.price_tick))),
                     _=>false
                 }
             } else {
