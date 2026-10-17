@@ -203,6 +203,79 @@ fn settled_account(account: &Option<AccountSnapshot>) -> serde_json::Value {
     value
 }
 
+/// Checks one bot's actions, then records its requested wake and action count.
+#[allow(clippy::too_many_arguments)]
+fn accept_actions(
+    bot: &dyn ScheduledBot,
+    t: &AgentTemplate,
+    instrument: &str,
+    related: &[String],
+    actions: &[OrderAction],
+    polled: bool,
+    screen: &mut (Vec<u8>, Option<u64>),
+    actions_per_bot: &mut BTreeMap<String, u64>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if actions.len() > 64 {
+        return Err("strategy exceeded action limit".into());
+    }
+    let snapshot = bot.snapshot();
+    bots::validate_bot_orders(instrument, related, actions, &snapshot)?;
+    if polled {
+        screen.1 = match &snapshot {
+            PersistedAgentKindState::Plugin { data, .. } => {
+                data.get("_next_wake_ms").and_then(serde_json::Value::as_u64)
+            }
+            _ => None,
+        };
+    }
+    *actions_per_bot
+        .entry(t.participant_id().into())
+        .or_default() += actions.len() as u64;
+    Ok(())
+}
+
+/// Worker calls of the due event-driven plugins. Each bot decides only from
+/// its own observation and state, so the call order cannot change a result;
+/// results come back in bot order.
+fn decide_concurrently(
+    bots: &mut [Box<dyn ScheduledBot>],
+    due: Vec<(usize, ParticipantObservation)>,
+    threads: usize,
+) -> Vec<(usize, Result<Vec<OrderAction>, BotError>)> {
+    let mut observations = due.into_iter().peekable();
+    let mut work = vec![];
+    for (i, bot) in bots.iter_mut().enumerate() {
+        if observations.peek().is_some_and(|(j, _)| *j == i) {
+            let (_, observation) = observations.next().unwrap();
+            work.push((i, bot, observation));
+        }
+    }
+    let workers = threads.min(work.len());
+    let queue = std::sync::Mutex::new(work.into_iter());
+    let mut results = std::thread::scope(|scope| {
+        let handles = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = vec![];
+                    loop {
+                        let next = queue.lock().unwrap().next();
+                        let Some((i, bot, observation)) = next else {
+                            break done;
+                        };
+                        done.push((i, bot.decide(&observation)));
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("plugin decision thread panicked"))
+            .collect::<Vec<_>>()
+    });
+    results.sort_by_key(|(i, _)| *i);
+    results
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_waves(
     registry: &BotRegistry,
@@ -273,11 +346,24 @@ fn run_waves(
     // indexes by the new execution suffix instead of replaying the whole log.
     // History that cannot be proven append-only is rebuilt cold, as before.
     let mut previous_wave: Option<exchange_core::room::NativeObservationWave> = None;
+    // Worker calls of due event-driven plugins (process workers) run on
+    // several threads; everything else stays on this thread in bot order.
+    // RESEARCH_PLUGIN_THREADS=1 makes the calls one at a time.
+    let plugin_threads = std::env::var("RESEARCH_PLUGIN_THREADS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(8)
+        .max(1);
+    let concurrent = templates
+        .iter()
+        .map(|t| registry.event_filter(t).is_some())
+        .collect::<Vec<_>>();
     for step in 0..steps {
         rooms
             .advance_clock(room, seconds)
             .map_err(|e| format!("{e:?}"))?;
         let mut decisions = vec![];
+        let mut due = vec![];
         {
             let snapshot = rooms.clone();
             let wave = match &previous_wave {
@@ -327,6 +413,11 @@ fn run_waves(
                             cfg.account_id,
                         )
                         .map_err(|e| format!("{e:?}"))?;
+                    if concurrent[i] {
+                        due.push((i, owned));
+                        decisions.push(vec![]);
+                        continue;
+                    }
                     bot.decide(&owned).map_err(|e| {
                         format!(
                             "participant={} step={} error={e}",
@@ -343,26 +434,42 @@ fn run_waves(
                         )
                     })?
                 };
-                if actions.len() > 64 {
-                    return Err("strategy exceeded action limit".into());
-                }
-                let snapshot = bot.snapshot();
-                bots::validate_bot_orders(instrument, &related[i], &actions, &snapshot)?;
-                if polled[i] {
-                    screens[i].1 = match &snapshot {
-                        PersistedAgentKindState::Plugin { data, .. } => {
-                            data.get("_next_wake_ms").and_then(serde_json::Value::as_u64)
-                        }
-                        _ => None,
-                    };
-                }
-                *actions_per_bot
-                    .entry(t.participant_id().into())
-                    .or_default() += actions.len() as u64;
+                accept_actions(
+                    bot.as_ref(),
+                    t,
+                    instrument,
+                    &related[i],
+                    &actions,
+                    polled[i],
+                    &mut screens[i],
+                    &mut actions_per_bot,
+                )?;
                 decisions.push(actions);
             }
             drop(batch);
             previous_wave = Some(wave);
+        }
+        for (i, result) in decide_concurrently(bots, due, plugin_threads) {
+            let t = &templates[i];
+            let actions = result.map_err(|e| {
+                format!(
+                    "participant={} step={} error={e}",
+                    t.participant_id(),
+                    step + 1
+                )
+            })?;
+            let instrument = t.config().instrument_id.as_ref().unwrap();
+            accept_actions(
+                bots[i].as_ref(),
+                t,
+                instrument,
+                &related[i],
+                &actions,
+                polled[i],
+                &mut screens[i],
+                &mut actions_per_bot,
+            )?;
+            decisions[i] = actions;
         }
         // All agents observe the same committed wave. Matching/risk still run
         // on the current authoritative state for each ordered submission.
