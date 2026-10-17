@@ -24,7 +24,7 @@ def varied_parameters(family,index):
     return {k:p[k]for k in keys}
 
 def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',original_manifest=None,capital_scale=10.0,periods=None,
-               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False,maker_depth_scale=None,perp_maker_depth_scale=None,maker_fee_ppm=None):
+               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False,maker_depth_scale=None,perp_maker_depth_scale=None,maker_fee_ppm=None,pine_library=0):
     if not 100<=count<=10000:raise ValueError('population must be within 100..10000')
     if runtime not in ('native','pine','mixed'):raise ValueError('unknown runtime')
     if value_model not in ('static','endogenous'):raise ValueError('unknown value model')
@@ -68,12 +68,15 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     perp['price_link']['max_age_ms']=120000
     perp['funding'].update(interval_ms=28800000,base_rate_ppm=100)
     spec.update(agents=[],agent_interval_ms=1000,autostart_agents=True)
-    makers=max(4,count//10);execution=max(4,round(count*(.15 if ecology else .1)));value=max(4,round(count*value_fraction))
-    noise=round(count*(.1 if fast_flow else noise_fraction)) if ecology else 0
-    switching=round(count*switching_fraction)
+    # Library Pine bots are added on top; the other roles keep their shares
+    # of the remaining count.
+    base=count-pine_library
+    makers=max(4,base//10);execution=max(4,round(base*(.15 if ecology else .1)));value=max(4,round(base*value_fraction))
+    noise=round(base*(.1 if fast_flow else noise_fraction)) if ecology else 0
+    switching=round(base*switching_fraction)
     # Two-sided basis pairs (two bots, one account) tie the perpetual to spot.
-    basis_pairs=max(2,count//60) if flow_mix=='rebalanced' else 0
-    technical=count-makers-execution-value-noise-switching-2*basis_pairs
+    basis_pairs=max(2,base//60) if flow_mix=='rebalanced' else 0
+    technical=count-makers-execution-value-noise-switching-2*basis_pairs-pine_library
     families=list(FORMULAS)
     if technical//2<len(families):raise ValueError('population does not cover each family on both instruments')
     rng=random.Random(seed)
@@ -113,14 +116,29 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
             pools['noise']=int(8_000_000*capital_scale);pools['value']-=int(3_000_000*capital_scale)
         pools['technical']=int(100_000_000*capital_scale)-sum(v for k,v in pools.items()if k!='technical')
         if pools['technical']<=0:raise ValueError('technical cash pool exhausted')
+    if pine_library:
+        # Library Pine originals share the technical capital by head count.
+        pools['pine']=pools['technical']*pine_library//(technical+pine_library);pools['technical']-=pools['pine']
+        role_counts['pine']=pine_library
     originals=[]
     if original_manifest:
         originals=json.loads(Path(original_manifest).read_text(encoding='utf-8')).get('qualified',[])
         if original_names is not None: originals=[x for x in originals if x['name'] in original_names]
+    library=[]
+    if pine_library:
+        # One bot per distinct original, drawn round-robin across behavior
+        # families so trend scripts do not crowd out the rest.
+        if pine_library>len(originals):raise ValueError(f'--pine-library {pine_library} exceeds {len(originals)} qualified originals')
+        lr=random.Random(child_seed(seed,'pine-library'));groups={}
+        for x in originals:groups.setdefault(x.get('family_hint','other'),[]).append(x)
+        for k in sorted(groups):lr.shuffle(groups[k])
+        while len(library)<pine_library:
+            for k in sorted(groups):
+                if groups[k] and len(library)<pine_library:library.append(groups[k].pop())
     def add(role,index,plugin,version,config,leg,cash,position=0,family=None,origin=None):
         account=100+len(spec['agents']);name=f'{role}-{leg}-{index}';instrument=f'V-BTC-{leg.upper()}'
         scenario['accounts'].append({'Spot'if position else'Basic':{'account_id':account,'cash_balance':cash,**({'position_qty':position}if position else{})}})
-        spec['agents'].append({'Plugin':{'participant':{'participant_id':name,'kind':'MarketMaker'if role=='maker'else'Strategy'if role=='technical'else'RuleAgent',
+        spec['agents'].append({'Plugin':{'participant':{'participant_id':name,'kind':'MarketMaker'if role=='maker'else'Strategy'if role in('technical','pine')else'RuleAgent',
             'room_id':room,'account_id':account,'instrument_id':instrument},'plugin_id':plugin,'plugin_version':version,'state_version':1,'config_version':1,
             'seed':max(1,child_seed(seed,name)&(2**53-1)),'config':config}})
         metadata.append({'participant_id':name,'account_id':account,'role':role,'family':family,'instrument':instrument,'cash':cash,'initial_spot_inventory':position,'config':config,'origin':origin})
@@ -268,6 +286,16 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                 add(role,i,'AdaptiveNoiseTrader','1',{'activity_ppm':100000,'market_order_ratio_ppm':500000,'side_persistence_ppm':550000,
                     'max_qty':2,'inventory_cap':100,'price_radius_ticks':12,'order_ttl_ms':45000,
                     'decision_interval_ms':rng.choice([3000,7000,15000]),'jitter_ms':9000,'fallback_price_tick':anchor},leg,cash,position)
+            elif role=='pine':
+                # Unchanged original source and default inputs. Short-capable
+                # scripts trade the perpetual; long-only ones alternate.
+                original=library[i];pr=random.Random(child_seed(seed,f'pine-{i}'))
+                leg='perp' if original.get('has_short') else leg
+                size=max(2,min(200,cash//anchor//2))
+                add(role,i,'pine.strategy','2.0.0',{'script':original['installed_script'],'execution_mode':'broker','inputs':{},
+                    'bar_interval_ms':60000*pr.choice([m for m in (1,1,1,3,5) if m in original.get('timeframes_minutes',[1])] or original['timeframes_minutes']),'history_limit':2048,'quantize_strategy_orders':True,
+                    'max_qty':pr.choice([1,2,4,8]),'inventory_cap':max(100,size),'slippage_ticks':30,'fee_buffer_ppm':1000},
+                    leg,cash,0,'Original: '+original['name'],original['source_sha256'])
             else:
                 family=families[(i//2)%len(families)];variant_index=i//(2*len(families))
                 # Short through long horizons coexist. First wave covers every
@@ -374,10 +402,11 @@ def main():
     p.add_argument('--price-scale',type=int,default=1);p.add_argument('--fast-flow',action='store_true')
     p.add_argument('--maker-depth-scale',type=float);p.add_argument('--perp-maker-depth-scale',type=float)
     p.add_argument('--maker-fee-ppm',type=int,help='resting-order fee; default 0 with --fast-flow, else 100')
+    p.add_argument('--pine-library',type=int,default=0,help='bots running distinct originals from --original-manifest (part of --count)')
     a=p.parse_args();names=json.loads(a.original_runtime_manifest.read_text(encoding='utf-8'))['qualified_names'] if a.original_runtime_manifest else None
     spec,roster=population(a.room,a.seed,a.count,a.runtime,a.original_manifest,a.capital_scale,a.periods_ms,
         ecology=a.ecology,noise_fraction=a.noise_fraction,maker_model=a.maker_model,original_names=names,
-        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction,price_scale=a.price_scale,fast_flow=a.fast_flow,maker_depth_scale=a.maker_depth_scale,perp_maker_depth_scale=a.perp_maker_depth_scale,maker_fee_ppm=a.maker_fee_ppm)
+        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction,price_scale=a.price_scale,fast_flow=a.fast_flow,maker_depth_scale=a.maker_depth_scale,perp_maker_depth_scale=a.perp_maker_depth_scale,maker_fee_ppm=a.maker_fee_ppm,pine_library=a.pine_library)
     if a.export:
         a.export.parent.mkdir(parents=True,exist_ok=True);a.export.write_text(json.dumps(spec,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         a.export.with_suffix('.roster.json').write_text(json.dumps(roster,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')

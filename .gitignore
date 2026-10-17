@@ -27,3 +27,5 @@ __pycache__/
 /.local/strategy-research-*/
 /.local/native-pine-*/
 /bot-plugins/pine-strategy/scripts/native_*.pine
+# Library originals keep third-party licenses; rebuilt by scripts/install_pine_library.py
+/bot-plugins/pine-strategy/scripts/ecosystem/library/

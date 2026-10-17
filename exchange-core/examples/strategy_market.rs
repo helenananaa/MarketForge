@@ -182,6 +182,27 @@ fn fingerprint(
     )
 }
 
+/// Account fields that change only through the account's own activity (fills,
+/// fees, funding, margin state); mark price moves leave them unchanged.
+fn settled_account(account: &Option<AccountSnapshot>) -> serde_json::Value {
+    let mut value = serde_json::to_value(account).unwrap_or_default();
+    if let Some(perp) = value.get_mut("Perp").and_then(serde_json::Value::as_object_mut) {
+        perp.retain(|k, _| {
+            matches!(
+                k.as_str(),
+                "cash_balance"
+                    | "position_qty"
+                    | "avg_entry_price_tick"
+                    | "realized_pnl"
+                    | "fees_paid"
+                    | "funding_pnl"
+                    | "margin_status"
+            )
+        });
+    }
+    value
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_waves(
     registry: &BotRegistry,
@@ -233,6 +254,21 @@ fn run_waves(
     let mut history_cursor = rooms
         .execution_history_len(room)
         .map_err(|e| format!("{e:?}"))?;
+    // Opt-in for populations with many process plugins. An event-driven
+    // plugin still wakes at once on a closed bar, a change in its own orders,
+    // protections, position or cash, or a wake it requested; changes that come
+    // only from the mark price reach it once per poll interval instead of every
+    // step. Unset keeps the live trigger, where every such change wakes it.
+    let poll_ms = std::env::var("RESEARCH_PLUGIN_POLL_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|ms| *ms > 0);
+    let polled = templates
+        .iter()
+        .map(|t| poll_ms.is_some() && registry.event_filter(t).is_some())
+        .collect::<Vec<_>>();
+    // Per polled plugin: last wake key and its own requested wake time.
+    let mut screens = vec![(Vec::<u8>::new(), None::<u64>); templates.len()];
     for step in 0..steps {
         rooms
             .advance_clock(room, seconds)
@@ -245,6 +281,27 @@ fn run_waves(
                 let t = &templates[i];
                 let cfg = t.config();
                 let instrument = cfg.instrument_id.as_ref().ok_or("instrument required")?;
+                if let (true, Some(poll)) = (polled[i], poll_ms) {
+                    let view = batch
+                        .shared_bot_observation(instrument, cfg.account_id, None, &[])
+                        .map_err(|e| format!("{e:?}"))?;
+                    let time = view.public.market_time_ms;
+                    let key = serde_json::to_vec(&(
+                        requests[i].map(|r| time / r.interval_ms),
+                        time / poll,
+                        &view.own_orders,
+                        &view.position_protections,
+                        settled_account(&view.own_account),
+                    ))?;
+                    if screens[i].0 == key && !screens[i].1.is_some_and(|w| w <= time) {
+                        actions_per_bot
+                            .entry(t.participant_id().into())
+                            .or_default();
+                        decisions.push(vec![]);
+                        continue;
+                    }
+                    screens[i].0 = key;
+                }
                 let obs = batch
                     .shared_bot_observation(instrument, cfg.account_id, requests[i], &related[i])
                     .map_err(|e| format!("{e:?}"))?;
@@ -279,7 +336,16 @@ fn run_waves(
                 if actions.len() > 64 {
                     return Err("strategy exceeded action limit".into());
                 }
-                bots::validate_bot_orders(instrument, &related[i], &actions, &bot.snapshot())?;
+                let snapshot = bot.snapshot();
+                bots::validate_bot_orders(instrument, &related[i], &actions, &snapshot)?;
+                if polled[i] {
+                    screens[i].1 = match &snapshot {
+                        PersistedAgentKindState::Plugin { data, .. } => {
+                            data.get("_next_wake_ms").and_then(serde_json::Value::as_u64)
+                        }
+                        _ => None,
+                    };
+                }
                 *actions_per_bot
                     .entry(t.participant_id().into())
                     .or_default() += actions.len() as u64;
