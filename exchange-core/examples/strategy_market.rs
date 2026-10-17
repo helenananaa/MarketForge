@@ -269,13 +269,23 @@ fn run_waves(
         .collect::<Vec<_>>();
     // Per polled plugin: last wake key and its own requested wake time.
     let mut screens = vec![(Vec::<u8>::new(), None::<u64>); templates.len()];
+    // Each wave extends the previous wave's receipts, candles and account
+    // indexes by the new execution suffix instead of replaying the whole log.
+    // History that cannot be proven append-only is rebuilt cold, as before.
+    let mut previous_wave: Option<exchange_core::room::NativeObservationWave> = None;
     for step in 0..steps {
         rooms
             .advance_clock(room, seconds)
             .map_err(|e| format!("{e:?}"))?;
         let mut decisions = vec![];
         {
-            let wave = rooms.clone().into_native_observation_wave(room.to_string());
+            let snapshot = rooms.clone();
+            let wave = match &previous_wave {
+                Some(previous) => {
+                    snapshot.into_native_observation_wave_after(room.to_string(), previous)
+                }
+                None => snapshot.into_native_observation_wave(room.to_string()),
+            };
             let mut batch = wave.batch();
             for (i, bot) in bots.iter_mut().enumerate() {
                 let t = &templates[i];
@@ -351,6 +361,8 @@ fn run_waves(
                     .or_default() += actions.len() as u64;
                 decisions.push(actions);
             }
+            drop(batch);
+            previous_wave = Some(wave);
         }
         // All agents observe the same committed wave. Matching/risk still run
         // on the current authoritative state for each ordered submission.
