@@ -24,7 +24,7 @@ def varied_parameters(family,index):
     return {k:p[k]for k in keys}
 
 def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',original_manifest=None,capital_scale=10.0,periods=None,
-               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False,maker_depth_scale=None,perp_maker_depth_scale=None):
+               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False,maker_depth_scale=None,perp_maker_depth_scale=None,maker_fee_ppm=None):
     if not 100<=count<=10000:raise ValueError('population must be within 100..10000')
     if runtime not in ('native','pine','mixed'):raise ValueError('unknown runtime')
     if value_model not in ('static','endogenous'):raise ValueError('unknown value model')
@@ -55,9 +55,13 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     if maker_depth_scale is None:maker_depth_scale=.05 if fast_flow else 1.0
     if perp_maker_depth_scale is None:perp_maker_depth_scale=.12 if fast_flow else maker_depth_scale
     if not(0<maker_depth_scale<=1 and 0<perp_maker_depth_scale<=1):raise ValueError('maker depth scales must be within (0, 1]')
+    # Fast flow quotes one-tick spreads; like liquid venues, resting liquidity
+    # pays no fee so the quoted spread is not below the makers' own costs.
+    if maker_fee_ppm is None:maker_fee_ppm=0 if fast_flow else 100
+    if not 0<=maker_fee_ppm<=300:raise ValueError('maker fee must be within [0, taker fee]')
     anchor=10000*price_scale
     for market in (spot,perp):
-        market['clearing'].update(maker_fee_ppm=100,taker_fee_ppm=300)
+        market['clearing'].update(maker_fee_ppm=maker_fee_ppm,taker_fee_ppm=300)
         market['risk']={'allow_short':False}if market is spot else{}
     perp.update(initial_mark_price_tick=anchor)
     perp['clearing']['leverage']=5
@@ -312,7 +316,9 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
             inventory=cash//anchor//4
             scenario['accounts'].append({'Spot':{'account_id':account,'cash_balance':cash,'position_qty':inventory}})
             common={'neutral_spot':inventory,'max_hedge':inventory,'step_qty':max(2,inventory//5),
-                'entry_ppm':br.choice([1500,2000,3000]),'exit_ppm':br.choice([300,500]),'max_slippage_ppm':2000,
+                # Both legs cross the spread at the taker fee on entry and exit
+                # (12 bp a round trip); fast flow only enters wider than that.
+                'entry_ppm':br.choice([2000,2500,3000] if fast_flow else [1500,2000,3000]),'exit_ppm':br.choice([300,500]),'max_slippage_ppm':2000,
                 'decision_interval_ms':br.choice([1000,1000,2000]),'jitter_ms':500,'target_leverage':2,'fee_buffer_ppm':1000}
             for leg,instrument,peer in (('Perp','V-BTC-PERP','V-BTC-SPOT'),('Spot','V-BTC-SPOT','V-BTC-PERP')):
                 name=f'basis-{leg.lower()}-{j}'
@@ -328,7 +334,7 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     for account in (20,30):
         scenario['accounts'].append({'Spot':{'account_id':account,'cash_balance':(50000000 if ecology and account==20 else 1000000)*price_scale,'position_qty':2000 if ecology and account==20 else 100}})
     scenario['seed_orders']=[{'NewOrder':{'order_id':1+j,'account_id':10,'side':side,'kind':{'Limit':{'price_tick':anchor+offset*price_scale}},'qty':10,'reduce_only':False}}for j,(side,offset)in enumerate([('Buy',-4),('Sell',4)])]
-    roster={'scope':'finite-capital strategy ecosystem','count':count,'flow_mix':flow_mix,'price_scale':price_scale,'fast_flow':fast_flow,'maker_depth_scale':maker_depth_scale,'perp_maker_depth_scale':perp_maker_depth_scale,'runtime':runtime,'seed':seed,'role_counts':role_counts,'maker_model':maker_model if ecology else 'legacy','value_model':value_model,
+    roster={'scope':'finite-capital strategy ecosystem','count':count,'flow_mix':flow_mix,'price_scale':price_scale,'fast_flow':fast_flow,'maker_fee_ppm':maker_fee_ppm,'maker_depth_scale':maker_depth_scale,'perp_maker_depth_scale':perp_maker_depth_scale,'runtime':runtime,'seed':seed,'role_counts':role_counts,'maker_model':maker_model if ecology else 'legacy','value_model':value_model,
         'role_cash_pools':pools,'total_cash_pool':sum(pools.values()),'initial_spot_inventory':sum(m['initial_spot_inventory']for m in metadata),
         'families':families,'periods_ms':sorted(set(m['config']['bar_interval_ms']for m in metadata if m['role']=='technical')),
         'participants':metadata,'qualification':'candidate population; inspect actual warmup, activity, fills, account budgets and market outcomes'}
@@ -367,10 +373,11 @@ def main():
     p.add_argument('--flow-mix',choices=['default','rebalanced'],default='default');p.add_argument('--switching-fraction',type=float,default=0.)
     p.add_argument('--price-scale',type=int,default=1);p.add_argument('--fast-flow',action='store_true')
     p.add_argument('--maker-depth-scale',type=float);p.add_argument('--perp-maker-depth-scale',type=float)
+    p.add_argument('--maker-fee-ppm',type=int,help='resting-order fee; default 0 with --fast-flow, else 100')
     a=p.parse_args();names=json.loads(a.original_runtime_manifest.read_text(encoding='utf-8'))['qualified_names'] if a.original_runtime_manifest else None
     spec,roster=population(a.room,a.seed,a.count,a.runtime,a.original_manifest,a.capital_scale,a.periods_ms,
         ecology=a.ecology,noise_fraction=a.noise_fraction,maker_model=a.maker_model,original_names=names,
-        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction,price_scale=a.price_scale,fast_flow=a.fast_flow,maker_depth_scale=a.maker_depth_scale,perp_maker_depth_scale=a.perp_maker_depth_scale)
+        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction,price_scale=a.price_scale,fast_flow=a.fast_flow,maker_depth_scale=a.maker_depth_scale,perp_maker_depth_scale=a.perp_maker_depth_scale,maker_fee_ppm=a.maker_fee_ppm)
     if a.export:
         a.export.parent.mkdir(parents=True,exist_ok=True);a.export.write_text(json.dumps(spec,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         a.export.with_suffix('.roster.json').write_text(json.dumps(roster,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
