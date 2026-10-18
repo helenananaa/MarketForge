@@ -418,6 +418,11 @@ pub trait BotFactory: Send + Sync {
     fn account_events(&self) -> bool {
         false
     }
+    /// False when decisions never read `own_fills`/`fill_details`; a host may
+    /// then leave them empty instead of copying the account's fill history.
+    fn reads_own_fills(&self) -> bool {
+        true
+    }
     fn create(
         &self,
         template: &AgentTemplate,
@@ -439,6 +444,11 @@ impl BotRegistry {
         self.factories
             .get(template.bot_id())
             .is_some_and(|f| f.account_events())
+    }
+    pub fn reads_own_fills(&self, template: &AgentTemplate) -> bool {
+        self.factories
+            .get(template.bot_id())
+            .is_none_or(|f| f.reads_own_fills())
     }
     pub fn additional_intervals(&self, template: &AgentTemplate) -> Result<Vec<u64>, BotError> {
         let factory = self

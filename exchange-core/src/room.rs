@@ -2398,7 +2398,7 @@ impl RoomObservationBatch<'_> {
     ) -> Result<crate::ParticipantObservation, RoomManagerError> {
         let mut view = self.participant(instrument_id, account_id)?;
         view.bot_market_data =
-            self.market_data(instrument_id, account_id, request, view.market_time_ms)?;
+            self.market_data(instrument_id, account_id, request, view.market_time_ms, true)?;
         for instrument in related {
             if instrument != instrument_id {
                 view.related_markets.push(self.bot_observation(
@@ -2418,6 +2418,7 @@ impl RoomObservationBatch<'_> {
         account_id: AccountId,
         request: Option<crate::bots::BotMarketDataRequest>,
         market_time_ms: u64,
+        own_fills: bool,
     ) -> Result<Option<crate::BotMarketData>, RoomManagerError> {
         let Some(request) = request else {
             return Ok(None);
@@ -2489,9 +2490,16 @@ impl RoomObservationBatch<'_> {
                     })
             })
             .to_string();
+        // A bot that never reads its fills skips copying up to 4096 of them
+        // per decision; every other field, flag and proof is unchanged.
+        let first = if own_fills {
+            indices.len().saturating_sub(4096)
+        } else {
+            indices.len()
+        };
         let mut own_fills = Vec::new();
         let mut fill_details = Vec::new();
-        for index in indices.skip(indices.len().saturating_sub(4096)) {
+        for index in indices.skip(first) {
             let receipt = &receipts[index];
             let trade = &receipt.trade;
             let buyer = if trade.taker_side == crate::Side::Buy {
@@ -2532,6 +2540,20 @@ impl RoomObservationBatch<'_> {
         account_id: AccountId,
         request: Option<crate::bots::BotMarketDataRequest>,
         related: &[String],
+    ) -> Result<crate::observation::SharedParticipantObservation, RoomManagerError> {
+        self.shared_bot_observation_with(instrument_id, account_id, request, related, true)
+    }
+
+    /// As `shared_bot_observation`; with `own_fills` false the market data
+    /// leaves `own_fills` and `fill_details` empty, for bots that never read
+    /// them (`BotRegistry::reads_own_fills`).
+    pub fn shared_bot_observation_with(
+        &mut self,
+        instrument_id: &str,
+        account_id: AccountId,
+        request: Option<crate::bots::BotMarketDataRequest>,
+        related: &[String],
+        own_fills: bool,
     ) -> Result<crate::observation::SharedParticipantObservation, RoomManagerError> {
         // The cell is installed under a tiny directory lock; expensive public
         // construction happens outside it and once for the entire frozen wave.
@@ -2580,17 +2602,19 @@ impl RoomObservationBatch<'_> {
                 account_id,
                 request,
                 public.market_time_ms,
+                own_fills,
             )?,
             public,
             related_markets: vec![],
         };
         for instrument in related {
             if instrument != instrument_id {
-                view.related_markets.push(self.shared_bot_observation(
+                view.related_markets.push(self.shared_bot_observation_with(
                     instrument,
                     account_id,
                     request,
                     &[],
+                    own_fills,
                 )?);
             }
         }
@@ -3194,6 +3218,46 @@ mod tests {
                 .any(|record| matches!(record.event, Event::TradePrinted(_)))
         );
         assert_eq!(manager.execution_history("room-1").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn shared_observation_can_leave_out_only_own_fills() {
+        let mut scenario = spot_scenario("history");
+        scenario.seed_orders.clear();
+        let mut manager = RoomManager::new();
+        manager.create_room(scenario).unwrap();
+        for index in 0..40u64 {
+            let (seller, buyer) = if index % 2 == 0 { (10, 20) } else { (20, 10) };
+            manager
+                .apply("history", limit(index * 2 + 1, seller, Side::Sell, 100, 1))
+                .unwrap();
+            manager
+                .apply("history", limit(index * 2 + 2, buyer, Side::Buy, 100, 1))
+                .unwrap();
+            manager.advance_clock("history", 1).unwrap();
+        }
+        let request = crate::bots::BotMarketDataRequest {
+            interval_ms: 1000,
+            max_bars: 64,
+        };
+        let wave = manager.into_native_observation_wave("history".into());
+        let mut batch = wave.batch();
+        let full = batch
+            .shared_bot_observation("V-BTC-SPOT", 20, Some(request), &[])
+            .unwrap();
+        let lean = batch
+            .shared_bot_observation_with("V-BTC-SPOT", 20, Some(request), &[], false)
+            .unwrap();
+        let mut expected = full.bot_market_data.clone().unwrap();
+        assert_eq!(expected.own_fills.len(), 40);
+        expected.own_fills.clear();
+        expected.fill_details.clear();
+        assert_eq!(
+            serde_json::to_value(lean.bot_market_data.as_ref().unwrap()).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
+        assert_eq!(lean.own_account, full.own_account);
+        assert_eq!(lean.own_orders, full.own_orders);
     }
 
     #[test]

@@ -180,6 +180,10 @@ impl BotFactory for Factory {
     fn supports_instance_reuse(&self) -> bool {
         true
     }
+    /// Quotes use candles and public trades, never the own fill history.
+    fn reads_own_fills(&self) -> bool {
+        false
+    }
     fn market_data_request(
         &self,
         t: &AgentTemplate,

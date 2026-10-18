@@ -203,6 +203,9 @@ fn settled_account(account: &Option<AccountSnapshot>) -> serde_json::Value {
     value
 }
 
+/// Stands in for a state that validation does not read (no tracked orders).
+const UNREAD_STATE: PersistedAgentKindState = PersistedAgentKindState::Noise { rng_state: 0 };
+
 /// Checks one bot's actions, then records its requested wake and action count.
 #[allow(clippy::too_many_arguments)]
 fn accept_actions(
@@ -218,10 +221,20 @@ fn accept_actions(
     if actions.len() > 64 {
         return Err("strategy exceeded action limit".into());
     }
-    let snapshot = bot.snapshot();
-    bots::validate_bot_orders(instrument, related, actions, &snapshot)?;
-    if polled {
-        screen.1 = match &snapshot {
+    // Validation reads the state only for tracked bot orders; serializing
+    // every bot's state each step just to skip it dominated long runs.
+    let tracked = actions
+        .iter()
+        .any(|a| matches!(a, OrderAction::BotOrder { .. }));
+    let snapshot = (tracked || polled).then(|| bot.snapshot());
+    bots::validate_bot_orders(
+        instrument,
+        related,
+        actions,
+        snapshot.as_ref().unwrap_or(&UNREAD_STATE),
+    )?;
+    if let (true, Some(snapshot)) = (polled, &snapshot) {
+        screen.1 = match snapshot {
             PersistedAgentKindState::Plugin { data, .. } => {
                 data.get("_next_wake_ms").and_then(serde_json::Value::as_u64)
             }
@@ -358,6 +371,11 @@ fn run_waves(
         .iter()
         .map(|t| registry.event_filter(t).is_some())
         .collect::<Vec<_>>();
+    // Bots that never read their fill history get observations without it.
+    let own_fills = templates
+        .iter()
+        .map(|t| registry.reads_own_fills(t))
+        .collect::<Vec<_>>();
     for step in 0..steps {
         rooms
             .advance_clock(room, seconds)
@@ -399,7 +417,13 @@ fn run_waves(
                     screens[i].0 = key;
                 }
                 let obs = batch
-                    .shared_bot_observation(instrument, cfg.account_id, requests[i], &related[i])
+                    .shared_bot_observation_with(
+                        instrument,
+                        cfg.account_id,
+                        requests[i],
+                        &related[i],
+                        own_fills[i],
+                    )
                     .map_err(|e| format!("{e:?}"))?;
                 let actions = if registry.account_events(t) || !intervals[i].is_empty() {
                     let mut owned = obs.to_owned_observation();
