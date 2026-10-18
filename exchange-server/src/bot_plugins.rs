@@ -24,6 +24,8 @@ use serde_json::Value;
 use std::sync::Arc;
 
 pub const BOT_PLUGIN_DIR_ENV: &str = "MARKETFORGE_BOT_PLUGIN_DIR";
+/// Sizes every persistent worker pool for the host; unset keeps each manifest.
+pub const BOT_WORKERS_ENV: &str = "MARKETFORGE_BOT_WORKERS";
 pub(super) const MAX_MESSAGE_BYTES: usize = 1_048_576;
 pub(super) const MAX_REQUEST_BYTES: usize = 4 * MAX_MESSAGE_BYTES;
 pub(super) const MAX_STDERR_BYTES: usize = 65_536;
@@ -95,7 +97,7 @@ pub fn load_bot_plugins(root: &Path) -> Result<BotRegistry, BotError> {
         if bytes.len() > MAX_MESSAGE_BYTES {
             return Err(BotError("bot manifest exceeds size limit".into()));
         }
-        let manifest: ProcessBotManifest = serde_json::from_slice(&bytes).map_err(bot_io)?;
+        let mut manifest: ProcessBotManifest = serde_json::from_slice(&bytes).map_err(bot_io)?;
         if manifest.bot.runtime != "process"
             || manifest.command.is_empty()
             || manifest.command[0].is_empty()
@@ -147,6 +149,9 @@ pub fn load_bot_plugins(root: &Path) -> Result<BotRegistry, BotError> {
         manifest
             .decision_trigger
             .validate(manifest.market_data.is_some())?;
+        // Affinity still pins each instance to one worker; an instance that
+        // moves rebuilds its session from durable state, as after eviction.
+        override_workers(&mut manifest, std::env::var(BOT_WORKERS_ENV).ok().as_deref())?;
         if let Some(config) = &manifest.worker_pool {
             config.validate()?;
         }
@@ -169,6 +174,19 @@ pub fn load_bot_plugins(root: &Path) -> Result<BotRegistry, BotError> {
         })?;
     }
     Ok(registry)
+}
+
+fn override_workers(
+    manifest: &mut ProcessBotManifest,
+    workers: Option<&str>,
+) -> Result<(), BotError> {
+    let (Some(config), Some(workers)) = (&mut manifest.worker_pool, workers) else {
+        return Ok(());
+    };
+    config.workers = workers
+        .parse()
+        .map_err(|_| BotError(format!("{BOT_WORKERS_ENV} must be a worker count")))?;
+    Ok(())
 }
 
 pub fn bot_registry_from_env() -> Result<BotRegistry, BotError> {
@@ -1527,6 +1545,20 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
             assert_eq!(bot.snapshot(), saved);
             assert_eq!(host.source_read_count(), before + 1);
         }
+    }
+
+    #[test]
+    fn worker_override_resizes_pools_within_limits() {
+        let mut manifest: ProcessBotManifest =
+            serde_json::from_str(include_str!("../../bot-plugins/pine-strategy/bot.json")).unwrap();
+        let declared = manifest.worker_pool.as_ref().unwrap().workers;
+        override_workers(&mut manifest, None).unwrap();
+        assert_eq!(manifest.worker_pool.as_ref().unwrap().workers, declared);
+        override_workers(&mut manifest, Some("8")).unwrap();
+        assert_eq!(manifest.worker_pool.as_ref().unwrap().workers, 8);
+        assert!(override_workers(&mut manifest, Some("many")).is_err());
+        override_workers(&mut manifest, Some("64")).unwrap();
+        assert!(manifest.worker_pool.as_ref().unwrap().validate().is_err());
     }
 
     #[test]
