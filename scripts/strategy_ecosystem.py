@@ -287,10 +287,12 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                     'max_qty':2,'inventory_cap':100,'price_radius_ticks':12,'order_ttl_ms':45000,
                     'decision_interval_ms':rng.choice([3000,7000,15000]),'jitter_ms':9000,'fallback_price_tick':anchor},leg,cash,position)
             elif role=='pine':
-                # Unchanged original source and default inputs. Short-capable
-                # scripts trade the perpetual; long-only ones alternate.
+                # Unchanged original source and default inputs. Spot has no
+                # shorting, exchange exits or stop entries, so scripts using any
+                # of them trade the perpetual; the rest alternate.
                 original=library[i];pr=random.Random(child_seed(seed,f'pine-{i}'))
-                leg='perp' if original.get('has_short') else leg
+                source=(ROOT/'bot-plugins/pine-strategy/scripts'/original['installed_script']).read_text(encoding='utf-8')
+                if original.get('has_short') or re.search(r'\bstrategy\.exit\b|\bstop\s*=',source):leg='perp'
                 size=max(2,min(200,cash//anchor//2))
                 add(role,i,'pine.strategy','2.0.0',{'script':original['installed_script'],'execution_mode':'broker','inputs':{},
                     'bar_interval_ms':60000*pr.choice([m for m in (1,1,1,3,5) if m in original.get('timeframes_minutes',[1])] or original['timeframes_minutes']),'history_limit':2048,'quantize_strategy_orders':True,
