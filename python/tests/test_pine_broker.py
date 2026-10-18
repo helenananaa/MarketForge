@@ -93,6 +93,17 @@ class PineBrokerTests(unittest.TestCase):
         self.assertEqual(second["state"]["accounts"][-1]["netprofit"], 2)
         self.assertEqual(second["state"]["accounts"][-1]["position_avg_price"], 100)
 
+    def test_repeated_close_in_one_bar_closes_once(self):
+        source = 'if strategy.position_size == 0\n    strategy.entry("S", strategy.short, qty=2)\nelse\n    strategy.close("S")\n    strategy.close("S")'
+        first = self.run_source(source, perp(broker_request([100])))
+        req = perp(broker_request([100, 101]), position=-2, avg=100); ack(req, first)
+        req["observation"]["bot_market_data"]["own_fills"] = [{"trade_id": 0, "maker_account_id": 10, "taker_account_id": 300, "maker_order_id": 10, "taker_order_id": 50, "taker_side": "Sell", "qty": 2, "price_tick": 100}]
+        req["observation"]["bot_market_data"]["fill_details"] = [{"trade_id": 0, "market_time_ms": 1000, "fee_paid": 0}]
+        second = self.run_source(source, req)
+        self.assertEqual(len(second["actions"]), 1)
+        closing = second["actions"][0]["BotOrder"]["action"]["PlaceProtected"]
+        self.assertEqual((closing["side"], closing["qty"], closing["reduce_only"]), ("Buy", 2, True))
+
     def test_multimarket_security_routes_two_orders_and_freezes_providers(self):
         req = broker_request([100])
         peer = copy.deepcopy(perp(broker_request([110]))["observation"])

@@ -503,6 +503,10 @@ def translate(intents, pyramiding, views, primary, config, state):
                 qty += abs(position)
             actions.extend(submit_order(state, view, config, name, side, qty, intent.get("limit"), intent.get("stop"), entry=name))
         elif action in ("close", "close_all"):
+            # Pine closes an entry once per bar: a repeated close in the same
+            # bar is a no-op, as a repeated pending entry is above.
+            if any(order["name"] == name + "_close" and order.get("pending") for _, order, _ in owned_orders(state, view)):
+                continue
             actions.extend(cancel_orders(state, view, None if action == "close_all" else {name}))
             owned = state["entries"].get(entry_name(instrument, name), {}).get("qty", 0)
             close_position = position if action == "close_all" else (min(abs(position), abs(owned)) * (1 if position > 0 else -1) if position * owned > 0 else 0)
