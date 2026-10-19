@@ -24,6 +24,14 @@ use std::{
 pub mod auth;
 #[cfg(feature = "bench-execution-timing")]
 mod bench_execution_timing;
+
+/// Benchmark-only timing counters as Prometheus text, for offline runners.
+#[cfg(feature = "bench-execution-timing")]
+pub fn bench_execution_metrics() -> String {
+    let mut body = String::new();
+    bench_execution_timing::append_metrics(&mut body);
+    body
+}
 mod bot_dispatch;
 mod bot_history;
 pub mod bot_plugins;

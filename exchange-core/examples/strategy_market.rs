@@ -206,6 +206,74 @@ fn settled_account(account: &Option<AccountSnapshot>) -> serde_json::Value {
 /// Stands in for a state that validation does not read (no tracked orders).
 const UNREAD_STATE: PersistedAgentKindState = PersistedAgentKindState::Noise { rng_state: 0 };
 
+/// Opt-in (RESEARCH_PROFILE=1) wall time per phase and the reason each plugin
+/// call was due, printed every 600 steps. It never changes a decision.
+#[derive(Default)]
+struct Profile {
+    phases: BTreeMap<&'static str, std::time::Duration>,
+    // Per reason: calls, calls returning actions, actions.
+    wakes: BTreeMap<&'static str, (u64, u64, u64)>,
+    // Action kinds returned by calls that only the poll interval made due.
+    poll_actions: BTreeMap<String, u64>,
+}
+
+impl Profile {
+    fn add(&mut self, phase: &'static str, started: std::time::Instant) {
+        *self.phases.entry(phase).or_default() += started.elapsed();
+    }
+    fn wake(&mut self, reason: &'static str, actions: &[OrderAction]) {
+        let entry = self.wakes.entry(reason).or_default();
+        entry.0 += 1;
+        entry.1 += u64::from(!actions.is_empty());
+        entry.2 += actions.len() as u64;
+        if reason == "poll" {
+            for action in actions {
+                *self.poll_actions.entry(action_kind(action)).or_default() += 1;
+            }
+        }
+    }
+    fn report(&self, step: u64) {
+        let phases = self
+            .phases
+            .iter()
+            .map(|(k, v)| format!("{k}={:.1}s", v.as_secs_f64()))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let wakes = self
+            .wakes
+            .iter()
+            .map(|(k, (calls, acting, actions))| format!("{k}={calls}/{acting}/{actions}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        eprintln!(
+            "profile step={step} {phases} wakes(calls/acting/actions): {wakes} poll_actions={:?}",
+            self.poll_actions
+        );
+    }
+}
+
+/// Variant name of an action, with the inner action for tracked bot orders.
+fn action_kind(action: &OrderAction) -> String {
+    let value = serde_json::to_value(action).unwrap_or_default();
+    let name = |v: &serde_json::Value| match v {
+        serde_json::Value::Object(map) => map.keys().next().cloned().unwrap_or_default(),
+        serde_json::Value::String(s) => s.clone(),
+        _ => String::new(),
+    };
+    match value.get("BotOrder").and_then(|o| o.get("action")) {
+        Some(inner) => format!("BotOrder.{}", name(inner)),
+        None => name(&value),
+    }
+}
+
+/// Hash of one serialized wake-key component, to tell which component changed.
+fn part_hash(value: &impl serde::Serialize) -> Result<u64, serde_json::Error> {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    serde_json::to_vec(value)?.hash(&mut hasher);
+    Ok(hasher.finish())
+}
+
 /// Checks one bot's actions, then records its requested wake and action count.
 #[allow(clippy::too_many_arguments)]
 fn accept_actions(
@@ -249,12 +317,16 @@ fn accept_actions(
 
 /// Worker calls of the due event-driven plugins. Each bot decides only from
 /// its own observation and state, so the call order cannot change a result;
-/// results come back in bot order.
+/// results come back in bot order, with the summed duration of the calls.
+#[allow(clippy::type_complexity)]
 fn decide_concurrently(
     bots: &mut [Box<dyn ScheduledBot>],
     due: Vec<(usize, ParticipantObservation)>,
     threads: usize,
-) -> Vec<(usize, Result<Vec<OrderAction>, BotError>)> {
+) -> (
+    Vec<(usize, Result<Vec<OrderAction>, BotError>)>,
+    std::time::Duration,
+) {
     let mut observations = due.into_iter().peekable();
     let mut work = vec![];
     for (i, bot) in bots.iter_mut().enumerate() {
@@ -270,22 +342,29 @@ fn decide_concurrently(
             .map(|_| {
                 scope.spawn(|| {
                     let mut done = vec![];
+                    let mut busy = std::time::Duration::ZERO;
                     loop {
                         let next = queue.lock().unwrap().next();
                         let Some((i, bot, observation)) = next else {
-                            break done;
+                            break (done, busy);
                         };
+                        let started = std::time::Instant::now();
                         done.push((i, bot.decide(&observation)));
+                        busy += started.elapsed();
                     }
                 })
             })
             .collect::<Vec<_>>();
-        handles
-            .into_iter()
-            .flat_map(|h| h.join().expect("plugin decision thread panicked"))
-            .collect::<Vec<_>>()
+        let mut busy = std::time::Duration::ZERO;
+        let mut results = vec![];
+        for handle in handles {
+            let (done, time) = handle.join().expect("plugin decision thread panicked");
+            results.extend(done);
+            busy += time;
+        }
+        (results, busy)
     });
-    results.sort_by_key(|(i, _)| *i);
+    results.0.sort_by_key(|(i, _)| *i);
     results
 }
 
@@ -355,6 +434,13 @@ fn run_waves(
         .collect::<Vec<_>>();
     // Per polled plugin: last wake key and its own requested wake time.
     let mut screens = vec![(Vec::<u8>::new(), None::<u64>); templates.len()];
+    let mut profile = std::env::var("RESEARCH_PROFILE")
+        .is_ok_and(|v| v == "1")
+        .then(Profile::default);
+    // Per polled plugin: hashes of the last key's bar, poll, order and account
+    // parts, and the reason the current call is due (profiling only).
+    let mut parts = vec![None::<[u64; 4]>; templates.len()];
+    let mut reasons = vec!["unpolled"; templates.len()];
     // Each wave extends the previous wave's receipts, candles and account
     // indexes by the new execution suffix instead of replaying the whole log.
     // History that cannot be proven append-only is rebuilt cold, as before.
@@ -377,12 +463,17 @@ fn run_waves(
         .map(|t| registry.reads_own_fills(t))
         .collect::<Vec<_>>();
     for step in 0..steps {
+        let started = std::time::Instant::now();
         rooms
             .advance_clock(room, seconds)
             .map_err(|e| format!("{e:?}"))?;
+        if let Some(p) = &mut profile {
+            p.add("clock", started);
+        }
         let mut decisions = vec![];
         let mut due = vec![];
         {
+            let started = std::time::Instant::now();
             let snapshot = rooms.clone();
             let wave = match &previous_wave {
                 Some(previous) => {
@@ -391,31 +482,61 @@ fn run_waves(
                 None => snapshot.into_native_observation_wave(room.to_string()),
             };
             let mut batch = wave.batch();
+            if let Some(p) = &mut profile {
+                p.add("wave", started);
+            }
             for (i, bot) in bots.iter_mut().enumerate() {
                 let t = &templates[i];
                 let cfg = t.config();
                 let instrument = cfg.instrument_id.as_ref().ok_or("instrument required")?;
+                let started = std::time::Instant::now();
                 if let (true, Some(poll)) = (polled[i], poll_ms) {
                     let view = batch
                         .shared_bot_observation(instrument, cfg.account_id, None, &[])
                         .map_err(|e| format!("{e:?}"))?;
                     let time = view.public.market_time_ms;
+                    let bar = requests[i].map(|r| time / r.interval_ms);
+                    let settled = settled_account(&view.own_account);
                     let key = serde_json::to_vec(&(
-                        requests[i].map(|r| time / r.interval_ms),
+                        bar,
                         time / poll,
                         &view.own_orders,
                         &view.position_protections,
-                        settled_account(&view.own_account),
+                        &settled,
                     ))?;
-                    if screens[i].0 == key && !screens[i].1.is_some_and(|w| w <= time) {
+                    let woken = screens[i].1.is_some_and(|w| w <= time);
+                    if screens[i].0 == key && !woken {
                         actions_per_bot
                             .entry(t.participant_id().into())
                             .or_default();
                         decisions.push(vec![]);
+                        if let Some(p) = &mut profile {
+                            p.add("screen", started);
+                        }
                         continue;
                     }
                     screens[i].0 = key;
+                    if profile.is_some() {
+                        let now = [
+                            part_hash(&bar)?,
+                            time / poll,
+                            part_hash(&(&view.own_orders, &view.position_protections))?,
+                            part_hash(&settled)?,
+                        ];
+                        reasons[i] = match parts[i] {
+                            None => "first",
+                            Some(old) if old[0] != now[0] => "bar",
+                            Some(old) if old[2] != now[2] || old[3] != now[3] => "account",
+                            _ if woken => "wake",
+                            _ => "poll",
+                        };
+                        parts[i] = Some(now);
+                    }
                 }
+                if let Some(p) = &mut profile {
+                    p.add("screen", started);
+                }
+                let started = std::time::Instant::now();
                 let obs = batch
                     .shared_bot_observation_with(
                         instrument,
@@ -440,6 +561,9 @@ fn run_waves(
                     if concurrent[i] {
                         due.push((i, owned));
                         decisions.push(vec![]);
+                        if let Some(p) = &mut profile {
+                            p.add("observe_plugin", started);
+                        }
                         continue;
                     }
                     bot.decide(&owned).map_err(|e| {
@@ -468,12 +592,29 @@ fn run_waves(
                     &mut screens[i],
                     &mut actions_per_bot,
                 )?;
+                if let Some(p) = &mut profile {
+                    p.add("builtin", started);
+                    if polled[i] {
+                        p.wake(reasons[i], &actions);
+                    }
+                }
                 decisions.push(actions);
             }
+            let started = std::time::Instant::now();
             drop(batch);
             previous_wave = Some(wave);
+            if let Some(p) = &mut profile {
+                p.add("wave", started);
+            }
         }
-        for (i, result) in decide_concurrently(bots, due, plugin_threads) {
+        let started = std::time::Instant::now();
+        let (results, busy) = decide_concurrently(bots, due, plugin_threads);
+        if let Some(p) = &mut profile {
+            p.add("plugins_wall", started);
+            *p.phases.entry("plugins_busy").or_default() += busy;
+        }
+        let started = std::time::Instant::now();
+        for (i, result) in results {
             let t = &templates[i];
             let actions = result.map_err(|e| {
                 format!(
@@ -493,8 +634,15 @@ fn run_waves(
                 &mut screens[i],
                 &mut actions_per_bot,
             )?;
+            if let Some(p) = &mut profile {
+                p.wake(reasons[i], &actions);
+            }
             decisions[i] = actions;
         }
+        if let Some(p) = &mut profile {
+            p.add("accept", started);
+        }
+        let started = std::time::Instant::now();
         // All agents observe the same committed wave. Matching/risk still run
         // on the current authoritative state for each ordered submission.
         for (i, actions) in decisions.into_iter().enumerate() {
@@ -542,6 +690,10 @@ fn run_waves(
                 }
             }
         }
+        if let Some(p) = &mut profile {
+            p.add("submit", started);
+        }
+        let started = std::time::Instant::now();
         // The authoritative suffix also includes clock-triggered protection,
         // funding/liquidation and cascaded executions, not just direct actions.
         for execution in rooms
@@ -584,6 +736,12 @@ fn run_waves(
                 "time_ms": rooms.clock(room).map_err(|e|format!("{e:?}"))?.market_time_ms(),
                 "phase": "after_all_actions", "book": book
             }));
+        }
+        if let Some(p) = &mut profile {
+            p.add("receipts", started);
+            if (step + 1) % 600 == 0 || step + 1 == steps {
+                p.report(step + 1);
+            }
         }
         if (step + 1) % 100 == 0 {
             eprintln!(
