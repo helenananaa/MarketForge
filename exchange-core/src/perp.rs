@@ -384,6 +384,21 @@ pub(crate) struct PerpRiskTracking {
     mark_dependencies: OnceLock<im::OrdSet<AccountId>>,
     position_accounts: OnceLock<im::OrdSet<AccountId>>,
     dependency_updates: im::OrdSet<AccountId>,
+    liquidation_scan: LiquidationScan,
+}
+
+/// The last liquidation scan with the inputs it read. A later scan at the same
+/// mark and config re-checks only accounts whose account or cross-margin entry
+/// differs: diffing the persistent maps visits changed entries only. This
+/// affects speed only; the result always equals a full scan.
+#[derive(Debug, Default)]
+struct LiquidationScan(std::sync::Mutex<Option<(PerpMarginState, im::OrdSet<AccountId>)>>);
+
+impl Clone for LiquidationScan {
+    fn clone(&self) -> Self {
+        let last = self.0.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        Self(std::sync::Mutex::new(last))
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -411,6 +426,7 @@ pub struct PerpAccountStore {
     mark_price_tick: PriceTick,
 }
 
+#[derive(Clone, Debug)]
 pub(crate) struct PerpMarginState {
     accounts: SharedMap<AccountId, PerpAccount>,
     contexts: SharedMap<AccountId, PerpCrossMarginContext>,
@@ -1117,6 +1133,42 @@ impl PerpAccountStore {
                 .map(|account| account.account_id)
                 .collect();
         }
+        let mut last = self
+            .risk
+            .liquidation_scan
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let ids = match last.take() {
+            Some((base, mut ids))
+                if base.mark == self.mark_price_tick && base.config == self.config =>
+            {
+                fn key<K: Clone, V>(change: im::ordmap::DiffItem<'_, K, V>) -> K {
+                    use im::ordmap::DiffItem;
+                    match change {
+                        DiffItem::Add(id, _) | DiffItem::Remove(id, _) => id.clone(),
+                        DiffItem::Update { new: (id, _), .. } => id.clone(),
+                    }
+                }
+                let mut changed = std::collections::BTreeSet::new();
+                changed.extend(base.accounts.diff(&self.accounts).map(key));
+                changed.extend(base.contexts.diff(&self.cross_margin_contexts).map(key));
+                for id in changed {
+                    if self.is_liquidatable(id) {
+                        ids.insert(id);
+                    } else {
+                        ids.remove(&id);
+                    }
+                }
+                ids
+            }
+            _ => self.scan_liquidatable_accounts(),
+        };
+        *last = Some((self.margin_state(), ids.clone()));
+        ids.into_iter().collect()
+    }
+
+    fn scan_liquidatable_accounts(&self) -> im::OrdSet<AccountId> {
         let ids = self.risk.position_accounts.get_or_init(|| {
             self.accounts
                 .values()
