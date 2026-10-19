@@ -232,7 +232,9 @@ session 必须与宿主已提交的完整 bar/账户/pass 前缀和设置
 其他社区脚本以及 legacy 模式继续完整重放。构建脚本另外应用
 `runtime-patches/pine-compat-0.3.1-session-output.patch`：增量追加可用 `include_output=False`
 跳过逐次转换全部 plot 输出（broker 只读意图），并可用 `intents_from` 只返回此前未取的意图及
-总数，broker 以滚动摘要校验已提交的意图前缀；旧 adapter 自动回退到完整输出和完整意图。外部 session 只追加账户反馈和已经确认的
+总数，broker 以滚动摘要校验已提交的意图前缀；请求数据流可只携带相对上一 pass 的新增 bar
+（`stream_tails`，由 adapter 还原完整流后交给运行时），已执行 pass 不再保留各自的请求数据副本，
+session 内存随历史线性而非平方增长。旧 adapter 自动回退到完整输出、完整意图和完整流。外部 session 只追加账户反馈和已经确认的
 bar/pass，不模拟交易所成交；历史意图仍受 broker 前缀一致性校验。未安装 adapter 时
 完整重放回退可用，性能结论应说明实际加载的版本。对冲 residual/unwinding 保存下一次
 仿真唤醒时间，不依赖新 K 线才补偿。

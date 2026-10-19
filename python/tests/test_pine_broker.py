@@ -295,20 +295,27 @@ class IncrementalSessionTests(unittest.TestCase):
         incremental = bot.incremental_module()
         class Old:
             def append(self, bars, accounts, execution_passes=None):
-                return {"output": {"plots": []}, "intents": ["a", "b", "c"]}
+                return {"output": {"plots": []}, "intents": ["a", "b", "c"], "passes": execution_passes}
         class Mid:
             def append(self, bars, accounts, execution_passes=None, include_output=True):
-                return {"output": {"plots": []} if include_output else {}, "intents": ["a", "b", "c"]}
-        class New:
+                return {"output": {"plots": []} if include_output else {}, "intents": ["a", "b", "c"],
+                        "passes": execution_passes}
+        class Counted:
             def append(self, bars, accounts, execution_passes=None, include_output=True, intents_from=0):
                 return {"output": {"plots": []} if include_output else {}, "intents": ["a", "b", "c"][intents_from:],
-                        "intent_count": 3}
+                        "intent_count": 3, "passes": execution_passes}
+        class Tails:
+            def append(self, bars, accounts, execution_passes=None, include_output=True, intents_from=0,
+                       stream_tails=False):
+                return {"output": {"plots": []} if include_output else {}, "intents": ["a", "b", "c"][intents_from:],
+                        "intent_count": 3, "passes": execution_passes}
         saved = incremental.APPEND_LEVEL
         try:
-            for session, level, output in ((Old(), 0, {"plots": []}), (Mid(), 1, {}), (New(), 2, {})):
+            for session, level, output, passes in ((Old(), 0, {"plots": []}, "full"), (Mid(), 1, {}, "full"),
+                                                   (Counted(), 2, {}, "full"), (Tails(), 3, {}, "tails")):
                 incremental.APPEND_LEVEL = None
-                self.assertEqual(incremental.append(session, [], [], None, 1),
-                                 {"output": output, "intents": ["b", "c"], "intent_count": 3})
+                self.assertEqual(incremental.append(session, [], [], lambda tails: "tails" if tails else "full", 1),
+                                 {"output": output, "intents": ["b", "c"], "intent_count": 3, "passes": passes})
                 self.assertEqual(incremental.APPEND_LEVEL, level)
         finally:
             incremental.APPEND_LEVEL = saved
@@ -322,7 +329,7 @@ class IncrementalSessionTests(unittest.TestCase):
         responses = {}
         saved = incremental.APPEND_LEVEL
         try:
-            for level in (0, None, "replay"):
+            for level in (0, 2, None, "replay"):
                 incremental.APPEND_LEVEL = None if level == "replay" else level
                 incremental.SESSIONS.clear()
                 state, out = None, []
@@ -341,6 +348,7 @@ class IncrementalSessionTests(unittest.TestCase):
             incremental.SESSIONS.clear()
         self.assertGreater(incremental.COUNTERS["appends"], 0)
         self.assertEqual(responses[0], responses[None])
+        self.assertEqual(responses[0], responses[2])
         self.assertEqual(responses[0], responses["replay"])
         self.assertTrue(any(r["actions"] for r in responses[0]))
 

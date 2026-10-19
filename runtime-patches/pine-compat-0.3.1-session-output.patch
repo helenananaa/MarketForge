@@ -1,6 +1,122 @@
 --- a/crates/pine-python/src/external.rs
 +++ b/crates/pine-python/src/external.rs
-@@ -104,13 +104,21 @@ impl ExternalSession {
+@@ -71,6 +71,8 @@ pub(crate) struct ExternalSession {
+     initialized: bool,
+     failed: bool,
+     cursor: usize,
++    /// Each requested stream's bars as of the session's latest pass.
++    streams: std::collections::HashMap<(String, String), Vec<pine_runtime::Bar>>,
+ }
+ impl ExternalSession {
+     pub(crate) fn new(
+@@ -95,22 +97,132 @@ impl ExternalSession {
+             initialized: false,
+             failed: false,
+             cursor: 0,
++            streams: Default::default(),
+         })
+     }
+ }
++impl ExternalSession {
++    fn expand_stream_tails(
++        &mut self,
++        value: serde_json::Value,
++    ) -> PyResult<Vec<Vec<pine_runtime::ExternalPass>>> {
++        let invalid = |what: &str| PyValueError::new_err(format!("invalid execution pass: {what}"));
++        let serde_json::Value::Array(groups) = value else {
++            return Err(invalid("passes"));
++        };
++        let mut expanded = Vec::with_capacity(groups.len());
++        for group in groups {
++            let serde_json::Value::Array(group) = group else {
++                return Err(invalid("pass group"));
++            };
++            let mut passes = Vec::with_capacity(group.len());
++            for pass in group {
++                let serde_json::Value::Object(mut pass) = pass else {
++                    return Err(invalid("pass"));
++                };
++                if pass.keys().any(|key| {
++                    !matches!(key.as_str(), "account" | "bar" | "event_time_ms" | "confirmed" | "request_data")
++                }) {
++                    return Err(invalid("unknown pass field"));
++                }
++                let field = |pass: &mut serde_json::Map<String, serde_json::Value>, name: &str| {
++                    pass.remove(name).ok_or_else(|| invalid(name))
++                };
++                let account = serde_json::from_value(field(&mut pass, "account")?)
++                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
++                let bar = serde_json::from_value(field(&mut pass, "bar")?)
++                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
++                let event_time_ms = field(&mut pass, "event_time_ms")?
++                    .as_i64()
++                    .ok_or_else(|| invalid("event_time_ms"))?;
++                let confirmed = field(&mut pass, "confirmed")?
++                    .as_bool()
++                    .ok_or_else(|| invalid("confirmed"))?;
++                let request_data = match pass.remove("request_data") {
++                    None | Some(serde_json::Value::Null) => None,
++                    Some(serde_json::Value::Array(streams)) => {
++                        let mut expanded_streams = Vec::with_capacity(streams.len());
++                        for stream in streams {
++                            let serde_json::Value::Object(mut stream) = stream else {
++                                return Err(invalid("requested stream"));
++                            };
++                            if stream
++                                .keys()
++                                .any(|key| !matches!(key.as_str(), "symbol" | "timeframe" | "bars" | "bars_from"))
++                            {
++                                return Err(invalid("unknown requested stream field"));
++                            }
++                            let text = |stream: &mut serde_json::Map<String, serde_json::Value>, name: &str| {
++                                match stream.remove(name) {
++                                    Some(serde_json::Value::String(text)) => Ok(text),
++                                    _ => Err(invalid(name)),
++                                }
++                            };
++                            let symbol = text(&mut stream, "symbol")?;
++                            let timeframe = text(&mut stream, "timeframe")?;
++                            let tail: Vec<pine_runtime::Bar> =
++                                serde_json::from_value(stream.remove("bars").ok_or_else(|| invalid("bars"))?)
++                                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
++                            let key = (symbol.clone(), timeframe.clone());
++                            let bars = match stream.remove("bars_from") {
++                                None => tail,
++                                Some(from) => {
++                                    let from = from.as_u64().ok_or_else(|| invalid("bars_from"))? as usize;
++                                    let previous = self.streams.get(&key).map_or(&[][..], Vec::as_slice);
++                                    if from > previous.len() {
++                                        return Err(invalid("stream tail does not follow the session"));
++                                    }
++                                    let mut bars = previous[..from].to_vec();
++                                    bars.extend(tail);
++                                    bars
++                                }
++                            };
++                            self.streams.insert(key, bars.clone());
++                            expanded_streams.push(pine_runtime::ExternalRequestStream { symbol, timeframe, bars });
++                        }
++                        Some(expanded_streams)
++                    }
++                    Some(_) => return Err(invalid("request_data")),
++                };
++                passes.push(pine_runtime::ExternalPass {
++                    account,
++                    bar,
++                    event_time_ms,
++                    confirmed,
++                    request_data,
++                });
++            }
++            expanded.push(passes);
++        }
++        Ok(expanded)
++    }
++}
++
+ #[pymethods]
+ impl ExternalSession {
+     #[getter]
      fn cursor(&self) -> usize {
          self.cursor
      }
@@ -9,8 +125,11 @@
 +    /// that read only the intents skip converting every plot value per call.
 +    /// `intents` holds the session's intents from index `intents_from` on, and
 +    /// `intent_count` their total, so a caller holding the earlier ones need
-+    /// not convert the whole list on every append.
-+    #[pyo3(signature = (bars, accounts, execution_passes=None, include_output=true, intents_from=0))]
++    /// not convert the whole list on every append. With `stream_tails`, a
++    /// requested stream may carry `bars_from`: its bars are then the first
++    /// `bars_from` bars of that stream in the session's previous pass,
++    /// followed by `bars`. The runtime receives the full streams either way.
++    #[pyo3(signature = (bars, accounts, execution_passes=None, include_output=true, intents_from=0, stream_tails=false))]
 +    #[allow(clippy::too_many_arguments)]
      fn append(
          &mut self,
@@ -20,10 +139,30 @@
          execution_passes: Option<&Bound<'_, PyAny>>,
 +        include_output: bool,
 +        intents_from: usize,
++        stream_tails: bool,
      ) -> PyResult<Py<PyAny>> {
          if self.failed {
              return Err(PyValueError::new_err(
-@@ -170,20 +178,28 @@ impl ExternalSession {
+@@ -128,6 +240,11 @@ impl ExternalSession {
+         let passes = execution_passes
+             .map(|p| -> PyResult<Vec<Vec<pine_runtime::ExternalPass>>> {
+                 let raw: String = json.call_method1("dumps", (p,))?.extract()?;
++                if stream_tails {
++                    let value: serde_json::Value =
++                        serde_json::from_str(&raw).map_err(|e| PyValueError::new_err(e.to_string()))?;
++                    return self.expand_stream_tails(value);
++                }
+                 serde_json::from_str(&raw).map_err(|e| PyValueError::new_err(e.to_string()))
+             })
+             .transpose()?;
+@@ -165,25 +282,35 @@ impl ExternalSession {
+             self.failed = true;
+             return Err(PyValueError::new_err(e.message));
+         }
++        // Executed passes keep no copy of their requested streams.
++        self.runtime.release_executed_request_data(self.cursor);
+         self.cursor += bars.len();
+         let intents = self
              .runtime
              .external_intents()
              .map_err(|e| PyValueError::new_err(e.message))?;
@@ -56,3 +195,40 @@
          Ok(result.into_any().unbind())
      }
  }
+--- a/crates/pine-runtime/src/external.rs
++++ b/crates/pine-runtime/src/external.rs
+@@ -287,6 +287,23 @@ impl HistoricalRuntime<'_> {
+         Ok(())
+     }
+ 
++    /// Drop the requested data of the passes of bars `from..` that have run.
++    /// Only the active pass reads it, so later execution is unchanged.
++    pub fn release_executed_request_data(&mut self, from: usize) {
++        let executed = self.bars;
++        if let Some(groups) = self
++            .external_execution
++            .as_mut()
++            .and_then(|state| state.passes.as_mut())
++        {
++            for group in groups.iter_mut().take(executed).skip(from) {
++                for pass in group {
++                    pass.request_data = None;
++                }
++            }
++        }
++    }
++
+     pub fn external_intents(&self) -> Result<&[ExternalOrderIntent], RuntimeError> {
+         let state = self
+             .external_execution
+--- a/crates/pine-runtime/src/lib.rs
++++ b/crates/pine-runtime/src/lib.rs
+@@ -8,7 +8,7 @@ mod bar;
+ mod builtins;
+ mod error;
+ mod external;
+-pub use external::{ExternalAccountFrame, ExternalOrderIntent, ExternalPass};
++pub use external::{ExternalAccountFrame, ExternalOrderIntent, ExternalPass, ExternalRequestStream};
+ mod host_requirements;
+ mod input_metadata;
+ mod magnifier;

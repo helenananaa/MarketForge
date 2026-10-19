@@ -794,11 +794,23 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
         for index in range(len(previous), len(bars)):
             cutoff = data["candles"][index]["close_time_ms"]
             evaluations.append({"time": cutoff, "providers": {key: closed_bars(stream, cutoff - interval_from_timeframe(key.rsplit(":", 1)[1])) for key, stream in requests.items()}})
-        def pass_factory(start):
+        def pass_factory(start, tails=False):
+            """Passes from `start` on. With `tails`, a stream the previous
+            evaluation also saw carries only its new bars after `bars_from`,
+            for a session that holds that previous pass."""
             passes = []
             for index in range(start, len(evaluations)):
                 evaluation = evaluations[index]
-                request_data = [{"symbol": key.rsplit(":", 1)[0], "timeframe": key.rsplit(":", 1)[1], "bars": providers[key][:count]} for key, count in evaluation["providers"].items()]
+                before = evaluations[index - 1]["providers"] if tails and index > 0 else {}
+                request_data = []
+                for key, count in evaluation["providers"].items():
+                    symbol, frame = key.rsplit(":", 1)
+                    seen = before.get(key)
+                    if seen is None or seen > count:
+                        request_data.append({"symbol": symbol, "timeframe": frame, "bars": providers[key][:count]})
+                    else:
+                        request_data.append({"symbol": symbol, "timeframe": frame, "bars_from": seen,
+                                             "bars": providers[key][seen:count]})
                 passes.append([{"account": frames[index], "bar": bars[index], "event_time_ms": evaluation["time"], "confirmed": True, "request_data": request_data}])
             return passes
         lowered = lowered_source(source)

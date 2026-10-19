@@ -35,8 +35,8 @@ def main():
     extension_patch = ROOT / "runtime-patches/pine-compat-0.3.1-order-notifications.patch"
     if args.strategy_extensions:
         subprocess.run(["git", "apply", "--whitespace=error", str(extension_patch)], cwd=source, check=True)
-    # Session appends may omit plot output and earlier intents; the broker
-    # reads only intents and keeps a running digest of those it has seen.
+    # Session appends may omit plot output and earlier intents, take requested
+    # streams as tails of the previous pass, and drop executed passes' streams.
     session_patch = ROOT / "runtime-patches/pine-compat-0.3.1-session-output.patch"
     subprocess.run(["git", "apply", "--whitespace=error", str(session_patch)], cwd=source, check=True)
     env = os.environ.copy()
@@ -50,11 +50,11 @@ def main():
                "binary_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
                "source": str(source), "artifact": str(artifact),
                "scope": "private adapter build; not an upstream published release",
-               "capabilities": ["session_output_optional", "session_intents_from"]}
+               "capabilities": ["session_output_optional", "session_intents_from", "session_stream_tails"]}
     if args.strategy_extensions:
         receipt["extension_patch_sha256"] = hashlib.sha256(extension_patch.read_bytes()).hexdigest()
         receipt["capabilities"] = ["external_comment", "external_alert_message", "external_disable_alert",
-                                   "session_output_optional", "session_intents_from"]
+                                   "session_output_optional", "session_intents_from", "session_stream_tails"]
     if args.install:
         destination = ROOT / "bot-plugins/pine-strategy/.runtime"
         if args.strategy_extensions:

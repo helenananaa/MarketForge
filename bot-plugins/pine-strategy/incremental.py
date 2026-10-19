@@ -12,7 +12,9 @@ from pathlib import Path
 
 SESSIONS = OrderedDict()
 QUALIFIED = {}  # mtime_ns -> qualified source hashes
-APPEND_LEVEL = None  # ExternalSession.append options: 2 intents_from and include_output, 1 include_output, 0 none
+# ExternalSession.append options the runtime accepts: 3 stream_tails, intents_from
+# and include_output; 2 intents_from and include_output; 1 include_output; 0 none.
+APPEND_LEVEL = None
 IDENTITIES = {}  # (participant, seed, config, source hash) -> session key
 MAX_SESSIONS = 512
 COUNTERS = {"rebuilds": 0, "appends": 0, "fallbacks": 0, "evaluated_bars": 0}
@@ -38,13 +40,15 @@ def qualified(source):
 def append(session, bars, accounts, passes, intents_from=0):
     """Append without plot output, returning only the intents from index
     `intents_from` on and their total, where the runtime supports it; the
-    broker reads only intents from a session result."""
+    broker reads only intents from a session result. `passes(tails)` builds
+    the execution passes, with stream tails where the runtime takes them."""
     global APPEND_LEVEL
-    for level in (2, 1, 0) if APPEND_LEVEL is None else (APPEND_LEVEL,):
-        options = ({"include_output": False, "intents_from": intents_from} if level == 2 else
+    for level in (3, 2, 1, 0) if APPEND_LEVEL is None else (APPEND_LEVEL,):
+        options = ({"include_output": False, "intents_from": intents_from, "stream_tails": True} if level == 3 else
+                   {"include_output": False, "intents_from": intents_from} if level == 2 else
                    {"include_output": False} if level == 1 else {})
         try:
-            result = session.append(bars, accounts, execution_passes=passes, **options)
+            result = session.append(bars, accounts, execution_passes=passes(level == 3), **options)
         except TypeError:
             if APPEND_LEVEL is not None:
                 raise
@@ -135,7 +139,10 @@ def evaluate(program, source, request, bars, accounts, *, pass_factory=None, exe
         entry = {"session": program.external_session(**settings), "intent_count": 0, "digest": hashlib.sha256(b"[")}
         COUNTERS["rebuilds"] += 1
     # Do not put a failed session back in the cache. No orders execute here.
-    new_passes = pass_factory(offset) if pass_factory is not None else passes[offset:]
+    if pass_factory is not None:
+        new_passes = lambda tails: pass_factory(offset, tails=tails)
+    else:
+        new_passes = lambda tails: None if passes is None else passes[offset:]
     count = entry["intent_count"]
     result = append(entry["session"], bars[offset:], accounts[offset:], new_passes, count)
     COUNTERS["evaluated_bars"] += len(bars) - offset

@@ -113,9 +113,9 @@ class IncrementalPineTests(unittest.TestCase):
         starts = []
         original = incremental.evaluate
         def observed(program, source, request, *args, pass_factory, **kwargs):
-            def measured(start):
+            def measured(start, **options):
                 starts.append(start)
-                return pass_factory(start)
+                return pass_factory(start, **options)
             return original(program, source, request, *args, pass_factory=measured, **kwargs)
         req = broker_request(list(range(100, 133)), state=state)
         with patch.object(incremental, "evaluate", observed):
