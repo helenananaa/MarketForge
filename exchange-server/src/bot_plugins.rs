@@ -12,7 +12,8 @@ use std::{
 
 use crate::{
     bot_dispatch::{CURSOR, Trigger},
-    bot_workers::{WorkerConfig, WorkerPool},
+    bot_wire::StateHint,
+    bot_workers::{WorkerConfig, WorkerPool, WorkerReply},
 };
 use exchange_core::{
     AgentTemplate, BOT_PROTOCOL_VERSION, BotConfig, BotDecisionRequest, BotDecisionResponse,
@@ -403,6 +404,7 @@ impl BotFactory for ProcessBotFactory {
             factory: self.clone(),
             config,
             state: data.clone(),
+            resident: None,
         }))
     }
 }
@@ -411,6 +413,9 @@ struct ProcessBot {
     factory: ProcessBotFactory,
     config: BotConfig,
     state: Arc<Value>,
+    /// Set after a state delta, while every later change to `state` is a
+    /// recorded top-level key; anything else clears it.
+    resident: Option<StateHint>,
 }
 impl ScheduledBot for ProcessBot {
     fn decide(
@@ -451,8 +456,10 @@ impl ScheduledBot for ProcessBot {
         #[cfg(not(feature = "pine-in-process"))]
         let (direct_response, fallback_reason): (Option<BotDecisionResponse>, _) =
             (None, Some("feature_disabled"));
-        let response = if let Some(response) = direct_response {
-            response
+        // A process call borrows the state; it is restored on every error.
+        let hint = self.resident.take();
+        let (response, state_delta, held, request_id) = if let Some(response) = direct_response {
+            (response, None, None, 0)
         } else {
             if self.config.plugin_id == "pine.strategy"
                 && self.state.get("broker_schema").and_then(Value::as_u64) == Some(3)
@@ -471,6 +478,8 @@ impl ScheduledBot for ProcessBot {
                     .then_some(fallback_reason)
                     .flatten(),
             );
+            // Moving the state into the request avoids copying it: no snapshot
+            // shares it between decisions.
             let request = BotDecisionRequest {
                 protocol_version: BOT_PROTOCOL_VERSION.into(),
                 plugin_id: self.config.plugin_id.clone(),
@@ -479,27 +488,58 @@ impl ScheduledBot for ProcessBot {
                 participant: self.config.participant.clone(),
                 seed: self.config.seed,
                 config: self.config.config.clone(),
-                state: self.state.as_ref().clone(),
+                state: std::mem::take(Arc::make_mut(&mut self.state)),
                 observation: observation.clone(),
             };
             #[cfg(feature = "bench-execution-timing")]
             drop(request_clone_timer.take());
-            self.factory.exchange_process(&request)?
+            let exchanged = self.factory.exchange_process(&request, hint.as_ref());
+            let held = request.state;
+            match exchanged {
+                Ok(reply) => (reply.response, reply.state_delta, Some(held), reply.request_id),
+                Err(error) => {
+                    self.state = held.into();
+                    return Err(error);
+                }
+            }
         };
-        if response.protocol_version != BOT_PROTOCOL_VERSION
+        let invalid = if response.protocol_version != BOT_PROTOCOL_VERSION
             || response.plugin_id != self.config.plugin_id
             || response.plugin_version != self.config.plugin_version
             || response.state_version != self.config.state_version
         {
-            return Err(BotError(format!(
+            Some(BotError(format!(
                 "bot {} response version mismatch",
                 self.config.plugin_id
-            )));
-        }
-        if response.actions.len() > MAX_BOT_ACTIONS {
-            return Err(BotError("bot exceeded action limit".into()));
-        }
-        let mut next = response.state;
+            )))
+        } else if response.actions.len() > MAX_BOT_ACTIONS {
+            Some(BotError("bot exceeded action limit".into()))
+        } else {
+            None
+        };
+        let mut resident = None;
+        let mut next = match (invalid, state_delta, held) {
+            (Some(error), _, held) => {
+                if let Some(held) = held {
+                    self.state = held.into();
+                }
+                return Err(error);
+            }
+            (None, Some(patches), Some(mut held)) => {
+                // A rejected delta leaves the held state unchanged.
+                if let Err(error) = crate::bot_wire::apply_patches(&mut held, &patches, 0) {
+                    self.state = held.into();
+                    return Err(error);
+                }
+                // The worker's cached request now holds this state too.
+                resident = Some(StateHint {
+                    base: request_id,
+                    changed: Default::default(),
+                });
+                held
+            }
+            (None, _, _) => response.state,
+        };
         if let Some(cursor) = cursor {
             let state = next
                 .as_object_mut()
@@ -509,8 +549,14 @@ impl ScheduledBot for ProcessBot {
                 "_host_observation".into(),
                 serde_json::json!([observation.step, observation.market_time_ms]),
             );
+            if let Some(resident) = &mut resident {
+                resident
+                    .changed
+                    .extend([CURSOR.to_owned(), "_host_observation".to_owned()]);
+            }
         }
         self.state = next.into();
+        self.resident = resident;
         Ok(response.actions)
     }
     fn snapshot(&self) -> PersistedAgentKindState {
@@ -537,12 +583,14 @@ impl ScheduledBot for ProcessBot {
                 && *state_version == self.config.state_version =>
             {
                 self.state = data.clone();
+                self.resident = None;
                 Ok(())
             }
             _ => Err(BotError("cached plugin state identity mismatch".into())),
         }
     }
     fn take_snapshot(&mut self) -> PersistedAgentKindState {
+        self.resident = None;
         PersistedAgentKindState::Plugin {
             plugin_id: self.config.plugin_id.clone(),
             plugin_version: self.config.plugin_version.clone(),
@@ -555,7 +603,8 @@ impl ScheduledBot for ProcessBot {
         action: &OrderAction,
         execution: &exchange_core::GatewayExecution,
     ) {
-        let mut state = self.snapshot();
+        // Taken, not shared, so recording the receipt does not copy the state.
+        let mut state = self.take_snapshot();
         exchange_core::bots::record_bot_execution(&mut state, action, execution);
         if let PersistedAgentKindState::Plugin { data, .. } = state {
             self.state = data;
@@ -617,9 +666,10 @@ impl ProcessBotFactory {
     fn exchange_process(
         &self,
         request: &BotDecisionRequest,
-    ) -> Result<BotDecisionResponse, BotError> {
+        hint: Option<&StateHint>,
+    ) -> Result<WorkerReply, BotError> {
         if let Some(pool) = &self.pool {
-            return pool.exchange(&self.directory, &self.manifest, request);
+            return pool.exchange(&self.directory, &self.manifest, request, hint);
         }
         crate::bot_runtime_diagnostics::record_evaluation("process", "unknown", Some("one_shot"));
         let mut input = serde_json::to_vec(request).map_err(bot_io)?;
@@ -677,12 +727,18 @@ impl ProcessBotFactory {
                 )));
             }
             // Exactly one JSON response. JSON whitespace, including its trailing newline, is allowed.
-            serde_json::from_slice(&output.unwrap_or_default()).map_err(|error| {
-                BotError(format!(
-                    "bot {} invalid response: {error}",
-                    self.manifest.bot.id
-                ))
-            })
+            serde_json::from_slice(&output.unwrap_or_default())
+                .map(|response| WorkerReply {
+                    response,
+                    state_delta: None,
+                    request_id: 0,
+                })
+                .map_err(|error| {
+                    BotError(format!(
+                        "bot {} invalid response: {error}",
+                        self.manifest.bot.id
+                    ))
+                })
         })();
         drop(child);
         #[cfg(unix)]
@@ -1146,6 +1202,7 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
             },
             config,
             state: Arc::new(serde_json::json!({"broker_schema": 3, "vm": "unchanged"})),
+            resident: None,
         };
         let before = bot.snapshot();
         let error = bot.decide(&observation()).unwrap_err();
@@ -1311,6 +1368,7 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
             },
             config,
             state: Arc::new(Value::Null),
+            resident: None,
         };
         (package, bot, host, source)
     }
@@ -1509,7 +1567,7 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
         // chosen process route; its state would fail if reselected as direct.
         fs::write(&path, source).unwrap();
         let request = source_route_request(&bot, view.clone());
-        let response = bot.factory.exchange_process(&request).unwrap();
+        let response = bot.factory.exchange_process(&request, None).unwrap().response;
         assert_eq!(response.state["through"], "process");
         assert_eq!(host.source_read_count(), before + 1);
         fs::write(path, "// changed before schema3 execution").unwrap();
@@ -1694,6 +1752,69 @@ for line in sys.stdin:
         assert_eq!(restored["calls"], 1);
         assert_eq!(restored["history"].as_array().unwrap().len(), 500);
         assert_eq!(restored["pid"], first["pid"]);
+    }
+
+    #[test]
+    fn resident_state_deltas_rebuild_exact_states_and_roll_back_to_host_state() {
+        let transport_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../bot-plugins/pine-strategy/transport.py");
+        let path_literal = serde_json::to_string(&transport_path.to_string_lossy()).unwrap();
+        // A worker that sends its new state as patches and folds them, as Pine does.
+        let program = format!(
+            r#"import importlib.util,json,sys,os
+spec=importlib.util.spec_from_file_location('transport',{path_literal})
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+decoder=m.RequestDecoder()
+for line in sys.stdin:
+ e=json.loads(line);r=decoder.decode_readonly(e);s=r['state']
+ old=s or {{}}
+ new=dict(old,calls=old.get('calls',0)+1,history=old.get('history',[])+[old.get('calls',0)],delta=('request_delta' in e),pid=os.getpid())
+ patches=m.state_delta(s,new)[0] if e.get('reply_state_delta') and type(s) is dict else None
+ head=dict(protocol_version=r['protocol_version'],plugin_id=r['plugin_id'],plugin_version=r['plugin_version'],state_version=r['state_version'],actions=[],state=new if patches is None else None)
+ reply=dict(protocol='bot.worker.v1',id=e['id'],response=head)
+ if patches is not None: reply['state_delta']=patches
+ print(json.dumps(reply),flush=True)
+ if patches is not None: decoder.fold_state(e['cache_key'],patches)
+"#
+        );
+        let package = worker_package(&program, 1, 5000);
+        let path = package.0.join("test/bot.json");
+        let mut manifest: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        manifest["worker_pool"]["delta_requests"] = Value::Bool(true);
+        manifest["worker_pool"]["resident_state"] = Value::Bool(true);
+        fs::write(path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let registry = package.registry();
+        let mut state = template().initial_state();
+        let PersistedAgentKindState::Plugin { data, .. } = &mut state else {
+            unreachable!()
+        };
+        *data = serde_json::json!({"calls": 0, "history": (0..500).collect::<Vec<_>>()}).into();
+        let mut bot = registry.create(&template(), &state).unwrap();
+        let mut saved = Vec::new();
+        for calls in 1..=3u64 {
+            bot.decide(&observation()).unwrap();
+            let snapshot = bot.snapshot();
+            let PersistedAgentKindState::Plugin { data, .. } = &snapshot else {
+                unreachable!()
+            };
+            let mut history: Vec<u64> = (0..500).collect();
+            history.extend(0..calls);
+            assert_eq!(data["calls"], calls);
+            assert_eq!(data["history"], serde_json::json!(history));
+            assert_eq!(data["delta"], calls > 1);
+            saved.push(snapshot);
+        }
+        // Back to the state after the first decision: the host's request state
+        // differs from the folded cache, and the delta must say so exactly.
+        let mut bot = registry.create(&template(), &saved[0]).unwrap();
+        bot.decide(&observation()).unwrap();
+        let PersistedAgentKindState::Plugin { data: restored, .. } = bot.snapshot() else {
+            unreachable!()
+        };
+        let PersistedAgentKindState::Plugin { data: expected, .. } = &saved[1] else {
+            unreachable!()
+        };
+        assert_eq!(restored.as_ref(), expected.as_ref());
     }
 
     #[test]

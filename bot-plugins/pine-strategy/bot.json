@@ -26,7 +26,7 @@
     }
   },
   "command": ["python3", "bot.py"],
-  "worker_pool": {"workers": 4, "instance_affinity": true, "delta_requests": true, "max_calls": 500000, "command": ["python3", "bot.py", "--worker"]},
+  "worker_pool": {"workers": 4, "instance_affinity": true, "delta_requests": true, "resident_state": true, "max_calls": 500000, "command": ["python3", "bot.py", "--worker"]},
   "decision_trigger": {"kind": "events", "closed_bars": true, "account": true},
   "host_event_prefilter": true,
   "timeout_ms": 5000,

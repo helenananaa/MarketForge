@@ -291,45 +291,58 @@ class IncrementalSessionTests(unittest.TestCase):
             self.assertEqual(module.closed_bars(stream, cutoff - interval),
                              sum(bar["time"] + interval <= cutoff for bar in stream))
 
-    def test_session_append_omits_output_only_where_the_runtime_allows(self):
+    def test_session_append_uses_the_options_the_runtime_accepts(self):
         incremental = bot.incremental_module()
         class Old:
             def append(self, bars, accounts, execution_passes=None):
-                return {"output": {"plots": []}}
-        class New:
+                return {"output": {"plots": []}, "intents": ["a", "b", "c"]}
+        class Mid:
             def append(self, bars, accounts, execution_passes=None, include_output=True):
-                return {"output": {"plots": []} if include_output else {}}
-        saved = incremental.OUTPUT_OPTIONAL
+                return {"output": {"plots": []} if include_output else {}, "intents": ["a", "b", "c"]}
+        class New:
+            def append(self, bars, accounts, execution_passes=None, include_output=True, intents_from=0):
+                return {"output": {"plots": []} if include_output else {}, "intents": ["a", "b", "c"][intents_from:],
+                        "intent_count": 3}
+        saved = incremental.APPEND_LEVEL
         try:
-            incremental.OUTPUT_OPTIONAL = None
-            self.assertEqual(incremental.append(Old(), [], [], None), {"output": {"plots": []}})
-            self.assertIs(incremental.OUTPUT_OPTIONAL, False)
-            incremental.OUTPUT_OPTIONAL = None
-            self.assertEqual(incremental.append(New(), [], [], None), {"output": {}})
-            self.assertIs(incremental.OUTPUT_OPTIONAL, True)
+            for session, level, output in ((Old(), 0, {"plots": []}), (Mid(), 1, {}), (New(), 2, {})):
+                incremental.APPEND_LEVEL = None
+                self.assertEqual(incremental.append(session, [], [], None, 1),
+                                 {"output": output, "intents": ["b", "c"], "intent_count": 3})
+                self.assertEqual(incremental.APPEND_LEVEL, level)
         finally:
-            incremental.OUTPUT_OPTIONAL = saved
+            incremental.APPEND_LEVEL = saved
 
-    def test_session_decisions_do_not_depend_on_plot_output(self):
+    def test_session_decisions_match_replay_with_and_without_runtime_options(self):
+        import pine_compat
+        if not hasattr(pine_compat.Program, "external_session"):
+            self.skipTest("private external-session runtime not selected")
         incremental = bot.incremental_module()
         prices = [100 + (i * 7) % 11 for i in range(40)]
         responses = {}
-        saved = incremental.OUTPUT_OPTIONAL
+        saved = incremental.APPEND_LEVEL
         try:
-            for optional in (False, None):
-                incremental.OUTPUT_OPTIONAL = optional
+            for level in (0, None, "replay"):
+                incremental.APPEND_LEVEL = None if level == "replay" else level
                 incremental.SESSIONS.clear()
                 state, out = None, []
                 for end in range(1, len(prices) + 1):
                     req = broker_request(prices[:end]); req["state"] = state
-                    result = bot.decide(req)
+                    if level == "replay":
+                        with patch.object(incremental, "evaluate", incremental.replay):
+                            result = bot.decide(req)
+                    else:
+                        result = bot.decide(req)
                     out.append(result)
                     state = json.loads(json.dumps(result["state"]))
-                responses[optional] = out
+                responses[level] = out
         finally:
-            incremental.OUTPUT_OPTIONAL = saved
+            incremental.APPEND_LEVEL = saved
             incremental.SESSIONS.clear()
-        self.assertEqual(responses[False], responses[None])
+        self.assertGreater(incremental.COUNTERS["appends"], 0)
+        self.assertEqual(responses[0], responses[None])
+        self.assertEqual(responses[0], responses["replay"])
+        self.assertTrue(any(r["actions"] for r in responses[0]))
 
 
 if __name__ == "__main__": unittest.main()

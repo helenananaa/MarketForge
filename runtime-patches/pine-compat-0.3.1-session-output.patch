@@ -1,13 +1,17 @@
 --- a/crates/pine-python/src/external.rs
 +++ b/crates/pine-python/src/external.rs
-@@ -104,13 +104,16 @@
+@@ -104,13 +104,21 @@ impl ExternalSession {
      fn cursor(&self) -> usize {
          self.cursor
      }
 -    #[pyo3(signature = (bars, accounts, execution_passes=None))]
 +    /// With `include_output=False` the result's `output` is empty: callers
 +    /// that read only the intents skip converting every plot value per call.
-+    #[pyo3(signature = (bars, accounts, execution_passes=None, include_output=true))]
++    /// `intents` holds the session's intents from index `intents_from` on, and
++    /// `intent_count` their total, so a caller holding the earlier ones need
++    /// not convert the whole list on every append.
++    #[pyo3(signature = (bars, accounts, execution_passes=None, include_output=true, intents_from=0))]
++    #[allow(clippy::too_many_arguments)]
      fn append(
          &mut self,
          py: Python<'_>,
@@ -15,10 +19,27 @@
          accounts: &Bound<'_, PyAny>,
          execution_passes: Option<&Bound<'_, PyAny>>,
 +        include_output: bool,
++        intents_from: usize,
      ) -> PyResult<Py<PyAny>> {
          if self.failed {
              return Err(PyValueError::new_err(
-@@ -181,9 +184,13 @@
+@@ -170,20 +178,28 @@ impl ExternalSession {
+             .runtime
+             .external_intents()
+             .map_err(|e| PyValueError::new_err(e.message))?;
++        if intents_from > intents.len() {
++            return Err(PyValueError::new_err("intents_from exceeds the intent count"));
++        }
+         let result = PyDict::new(py);
+         result.set_item("protocol", "external-broker/1")?;
+         result.set_item("pyramiding", self.pyramiding)?;
++        result.set_item("intent_count", intents.len())?;
+         result.set_item(
+             "intents",
+             json.call_method1(
+                 "loads",
+-                (serde_json::to_string(intents)
++                (serde_json::to_string(&intents[intents_from..])
                      .map_err(|e| PyValueError::new_err(e.to_string()))?,),
              )?,
          )?;

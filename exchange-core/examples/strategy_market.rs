@@ -775,7 +775,8 @@ fn run_waves(
                 *order_id = gateway.next_order_id();
                 bots[i].execution_feedback(&action, &execution);
                 if matches!(action, OrderAction::BotOrder { .. }) {
-                    let mut state = bots[i].snapshot();
+                    // Taken, not shared, so recording does not copy the state.
+                    let mut state = bots[i].take_snapshot();
                     bots::record_bot_execution(&mut state, &action, &execution);
                     bots[i].prepare_reused_call(&state)?;
                     screens[i].receipt = true;

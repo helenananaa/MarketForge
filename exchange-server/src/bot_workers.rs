@@ -3,7 +3,7 @@ use super::bot_plugins::{
     MAX_MESSAGE_BYTES, MAX_REQUEST_BYTES, MAX_STDERR_BYTES, ManagedChild, ProcessBotManifest,
     bot_io, process_command,
 };
-use super::bot_wire::RequestCache;
+use super::bot_wire::{Patch, RequestCache, StateHint};
 use exchange_core::{BotDecisionRequest, BotDecisionResponse, BotError};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -30,6 +30,10 @@ pub(super) struct WorkerConfig {
     pub max_calls: usize,
     #[serde(default)]
     pub delta_requests: bool,
+    /// The worker may reply with its new state as a delta from the request's
+    /// state; both sides fold it into their cached request. Needs delta_requests.
+    #[serde(default)]
+    pub resident_state: bool,
 }
 fn default_max_calls() -> usize {
     10_000
@@ -40,6 +44,7 @@ impl WorkerConfig {
             || self.command.is_empty()
             || self.command[0].is_empty()
             || !(1..=1_000_000).contains(&self.max_calls)
+            || (self.resident_state && !self.delta_requests)
         {
             return Err(BotError("invalid persistent worker configuration".into()));
         }
@@ -51,12 +56,21 @@ enum Message {
     Response(Vec<u8>),
     Error(String),
 }
+/// A worker decision. With `state_delta`, `response.state` is null and the
+/// new state is the request's state with the delta applied.
+pub(super) struct WorkerReply {
+    pub response: BotDecisionResponse,
+    pub state_delta: Option<Vec<Patch>>,
+    /// The worker request; a `StateHint` names it as its base.
+    pub request_id: u64,
+}
 struct Worker {
     child: ManagedChild,
     input: mpsc::SyncSender<Vec<u8>>,
     output: mpsc::Receiver<Message>,
     calls: usize,
     requests: Option<RequestCache>,
+    resident_state: bool,
 }
 impl Worker {
     fn start(directory: &Path, config: &WorkerConfig) -> Result<Self, BotError> {
@@ -145,13 +159,15 @@ impl Worker {
             output,
             calls: 0,
             requests: config.delta_requests.then(RequestCache::default),
+            resident_state: config.resident_state,
         })
     }
     fn exchange(
         &mut self,
         request: &BotDecisionRequest,
         deadline: Instant,
-    ) -> Result<BotDecisionResponse, BotError> {
+        hint: Option<&StateHint>,
+    ) -> Result<WorkerReply, BotError> {
         static SEQUENCE: AtomicU64 = AtomicU64::new(1);
         let id = SEQUENCE.fetch_add(1, Ordering::Relaxed);
         #[cfg(feature = "bench-execution-timing")]
@@ -161,7 +177,7 @@ impl Worker {
         let mut packet = self
             .requests
             .as_ref()
-            .map(|cache| cache.encode(request, id, MAX_REQUEST_BYTES))
+            .map(|cache| cache.encode(request, id, MAX_REQUEST_BYTES, self.resident_state, hint))
             .transpose()?;
         let bytes = if let Some(packet) = &mut packet {
             std::mem::take(&mut packet.bytes)
@@ -217,6 +233,7 @@ impl Worker {
             response: Option<BotDecisionResponse>,
             error: Option<String>,
             runtime_profile: Option<serde_json::Value>,
+            state_delta: Option<Vec<Patch>>,
         }
         let reply: Reply = serde_json::from_slice(&bytes).map_err(bot_io)?;
         if reply.protocol != "bot.worker.v1" || reply.id != id {
@@ -234,9 +251,21 @@ impl Worker {
                         "worker decision identity/action bounds mismatch".into(),
                     ));
                 }
+                if reply.state_delta.is_some() && (!self.resident_state || !response.state.is_null()) {
+                    return Err(BotError("unrequested or ambiguous worker state delta".into()));
+                }
                 self.calls += 1;
                 if let Some(packet) = packet {
-                    self.requests.as_mut().unwrap().accept(packet);
+                    #[cfg(feature = "bench-execution-timing")]
+                    let _accept_timer = super::bench_execution_timing::Timer::start(
+                        &super::bench_execution_timing::BOT_WIRE_ACCEPT,
+                    );
+                    let key = packet.key().to_owned();
+                    let cache = self.requests.as_mut().unwrap();
+                    cache.accept(packet);
+                    if let Some(patches) = &reply.state_delta {
+                        cache.fold(&key, patches)?;
+                    }
                 }
                 if let Some(profile) = reply.runtime_profile {
                     crate::bot_runtime_diagnostics::record_evaluation(
@@ -254,7 +283,11 @@ impl Worker {
                         Some("worker_unreported"),
                     );
                 }
-                Ok(response)
+                Ok(WorkerReply {
+                    response,
+                    state_delta: reply.state_delta,
+                    request_id: id,
+                })
             }
             (None, Some(error)) => Err(BotError(format!("worker decision failed: {error}"))),
             _ => Err(BotError("invalid worker response envelope".into())),
@@ -309,7 +342,8 @@ impl WorkerPool {
         directory: &Path,
         manifest: &ProcessBotManifest,
         request: &BotDecisionRequest,
-    ) -> Result<BotDecisionResponse, BotError> {
+        hint: Option<&StateHint>,
+    ) -> Result<WorkerReply, BotError> {
         let deadline = Instant::now() + Duration::from_millis(manifest.timeout_ms);
         #[cfg(feature = "bench-execution-timing")]
         let acquire_timer = super::bench_execution_timing::Timer::start(
@@ -393,7 +427,7 @@ impl WorkerPool {
             );
             drop(acquire_timer);
         }
-        let result = worker.exchange(request, deadline);
+        let result = worker.exchange(request, deadline, hint);
         // A failed or aging process is never retried speculatively. Host state is
         // unchanged on errors; a subsequent caller starts a clean worker.
         let reusable = result.is_ok()
@@ -476,6 +510,7 @@ for line in sys.stdin:
             instance_affinity: false,
             max_calls: default_max_calls(),
             delta_requests: false,
+            resident_state: false,
         };
         let mut request = BotDecisionRequest {
             protocol_version: "bot.v1".into(),
@@ -500,7 +535,7 @@ for line in sys.stdin:
         let mut saved = None;
         for index in 0..MAX_SERVICE_WORKERS + 3 {
             let pool = WorkerPool::with_hub(config.clone(), hub.clone());
-            let response = pool.exchange(&directory, &manifest, &request).unwrap();
+            let response = pool.exchange(&directory, &manifest, &request, None).unwrap().response;
             if index == 0 {
                 saved = Some(response.state);
             }
@@ -511,7 +546,7 @@ for line in sys.stdin:
         }
         assert!(!hub.slots.lock().unwrap().counts.contains_key(&pools[0].id));
         request.state = saved.unwrap();
-        let restored = pools[0].exchange(&directory, &manifest, &request).unwrap();
+        let restored = pools[0].exchange(&directory, &manifest, &request, None).unwrap().response;
         assert_eq!(restored.state["calls"], 2);
         assert_ne!(restored.state["pid"], request.state["pid"]);
         assert_eq!(hub.slots.lock().unwrap().total, MAX_SERVICE_WORKERS);

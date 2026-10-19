@@ -6,17 +6,37 @@ Frozen bar/account/provider frames ensure that recovery never resends old intent
 from __future__ import annotations
 
 import bisect
+from collections import OrderedDict
 import copy
 from fractions import Fraction
 from functools import lru_cache
 import hashlib
 import json
 import math
+from operator import is_
 import time
 import re
 
 MAX_EXACT = 2**53 - 1
 ORDER_PREFIX = "__marketforge_order__"
+# Parses of host history per (instance, stream). With immutable input (the
+# worker's copy-on-write decoder) a list whose leading items are the very
+# objects parsed before holds the same history there; only the new tail is
+# parsed and checked.
+PARSED = OrderedDict()
+MAX_PARSED = 4096
+
+
+def remember(key, value):
+    PARSED.pop(key, None)
+    PARSED[key] = value
+    while len(PARSED) > MAX_PARSED:
+        PARSED.popitem(last=False)
+
+
+def same_prefix(old, new):
+    """Whether `new` starts with exactly the objects of `old`."""
+    return len(new) >= len(old) and all(map(is_, old, new))
 
 
 def number(value, name, minimum=-MAX_EXACT):
@@ -64,20 +84,37 @@ def timeframe(interval):
     raise ValueError("Pine timeframes require integral seconds")
 
 
-def bars_of(data, now):
+def bars_of(data, now, owner=None):
     if data["truncated"]:
         raise ValueError("Pine history was truncated; reconstruction refused")
-    bars = []
-    for candle in data["candles"]:
+    candles = data["candles"]
+    if owner is None:
+        return parse_candles(candles, now, [])
+    key = ("bars", owner, data["interval_ms"])
+    cached = PARSED.get(key)
+    if cached is not None and now >= cached[2] and same_prefix(cached[0], candles):
+        # The cached candles passed every check below at an earlier or equal time.
+        bars = cached[1] + parse_candles(candles[len(cached[0]):], now, cached[1][-1:])
+    else:
+        bars = parse_candles(candles, now, [])
+    remember(key, (candles, bars, now))
+    return bars
+
+
+def parse_candles(candles, now, before):
+    """Parsed bars of `candles`, which follow the parsed bars `before`."""
+    bars, last = [], before[-1] if before else None
+    for candle in candles:
         if not candle["is_final"] or candle["close_time_ms"] > now:
             raise ValueError("forming or future candle is not decision-visible")
-        if bars and candle["open_time_ms"] <= bars[-1]["time"]:
+        if last is not None and candle["open_time_ms"] <= last["time"]:
             raise ValueError("candle history is not strictly ordered")
         bar = {"time": number(candle["open_time_ms"], "bar time", 0),
                "volume": number(candle["volume"], "volume", 0)}
         for target, origin in (("open", "open_tick"), ("high", "high_tick"), ("low", "low_tick"), ("close", "close_tick")):
             bar[target] = number(candle[origin], origin, 1)
         bars.append(bar)
+        last = bar
     return bars
 
 
@@ -223,7 +260,40 @@ def tracked(instrument, key, action):
     return {"BotOrder": {"instrument_id": instrument, "key": key, "action": action}}
 
 
-def sync_feedback(state, views, config):
+def normalized_fills(fills, details, view, account, config, owner):
+    """Own fills of one market as ledger receipts, strictly ordered."""
+    account_id, now = account["account_id"], view["market_time_ms"]
+    hedged = bool(account.get("hedge_positions"))
+    key = ("fills", owner, view["instrument_id"], account_id, hedged, config.get("position_side"))
+    cached = PARSED.get(key) if owner is not None else None
+    if cached is not None and now >= cached[2] and same_prefix(cached[0], fills) and same_prefix(cached[1], details):
+        # Earlier receipts passed every check below at an earlier or equal time.
+        start, normalized = len(cached[0]), cached[3]
+    else:
+        start, normalized = 0, []
+    fresh = []
+    for fill, detail in zip(fills[start:], details[start:]):
+        if fill["trade_id"] != detail["trade_id"] or detail["market_time_ms"] > now:
+            raise ValueError("invalid fill ID or future fill receipt")
+        maker, taker = fill["maker_account_id"] == account_id, fill["taker_account_id"] == account_id
+        if maker == taker: raise ValueError("invalid own fill or self trade")
+        if hedged and fill.get("taker_position_side" if taker else "maker_position_side", "Both") != config["position_side"]:
+            continue
+        buy = (fill["taker_side"] == "Buy") if taker else (fill["taker_side"] == "Sell")
+        fresh.append({"id": number(fill["trade_id"], "trade ID", 0), "time": detail["market_time_ms"],
+            "order_id": fill["taker_order_id"] if taker else fill["maker_order_id"],
+            "qty": number(fill["qty"], "fill quantity", 1), "price": number(fill["price_tick"], "fill price", 1),
+            "fee": number(detail["fee_paid"], "fill fee", 0), "buy": buy})
+    checked = normalized[-1:] + fresh
+    if any(b["id"] <= a["id"] for a, b in zip(checked, checked[1:])):
+        raise ValueError("own-fill history is not strictly ordered")
+    normalized = normalized + fresh
+    if owner is not None:
+        remember(key, (fills, details, now, normalized))
+    return normalized
+
+
+def sync_feedback(state, views, config, owner=None):
     orders = state.setdefault("orders", {})
     for receipt in state.pop("_host_receipts", []):
         order = orders.get(receipt["key"])
@@ -249,22 +319,7 @@ def sync_feedback(state, views, config):
             raise ValueError("complete own-fill history is required for every declared market")
         fills, details = data["own_fills"], data["fill_details"]
         if len(fills) != len(details): raise ValueError("authoritative fill accounting receipts are required")
-        account_id = account["account_id"]
-        normalized = []
-        for fill, detail in zip(fills, details):
-            if fill["trade_id"] != detail["trade_id"] or detail["market_time_ms"] > view["market_time_ms"]:
-                raise ValueError("invalid fill ID or future fill receipt")
-            maker, taker = fill["maker_account_id"] == account_id, fill["taker_account_id"] == account_id
-            if maker == taker: raise ValueError("invalid own fill or self trade")
-            if account.get("hedge_positions") and fill.get("taker_position_side" if taker else "maker_position_side", "Both") != config["position_side"]:
-                continue
-            buy = (fill["taker_side"] == "Buy") if taker else (fill["taker_side"] == "Sell")
-            normalized.append({"id": number(fill["trade_id"], "trade ID", 0), "time": detail["market_time_ms"],
-                "order_id": fill["taker_order_id"] if taker else fill["maker_order_id"],
-                "qty": number(fill["qty"], "fill quantity", 1), "price": number(fill["price_tick"], "fill price", 1),
-                "fee": number(detail["fee_paid"], "fill fee", 0), "buy": buy})
-        if any(b["id"] <= a["id"] for a, b in zip(normalized, normalized[1:])):
-            raise ValueError("own-fill history is not strictly ordered")
+        normalized = normalized_fills(fills, details, view, account, config, owner)
         ledger = ledgers.get(instrument)
         if ledger is None:
             opening = position - sum(r["qty"] * (1 if r["buy"] else -1) for r in normalized)
@@ -666,14 +721,25 @@ def decision_state(value, borrow_history):
     # it serializes this response. These fields are read-only or append-only:
     # copy their containers, and keep all mutable broker/feedback state owned.
     histories = {"bars", "accounts", "providers", "evaluations"}
-    state = copy.deepcopy({key: item for key, item in value.items() if key not in histories})
+    ledgers = value.get("ledgers")
+    # Own-fill receipts are replaced, never changed, so they are borrowed too.
+    borrowed_fills = type(ledgers) is dict and all(type(ledger) is dict for ledger in ledgers.values())
+    state = copy.deepcopy({key: item for key, item in value.items()
+                           if key not in histories and not (borrowed_fills and key == "ledgers")})
     for key in histories & value.keys():
         state[key] = value[key].copy()
+    if borrowed_fills:
+        state["ledgers"] = {instrument: {key: item if key == "fills" else copy.deepcopy(item) for key, item in ledger.items()}
+                            for instrument, ledger in ledgers.items()}
     return state
 
 
 def decide(request, load_source, compile_program, digest, evaluate_external=None, profile=None,
-           borrow_history=False, encoded_response=None):
+           borrow_history=False, encoded_response=None, defer_state=False, immutable_input=False):
+    """With `defer_state`, the caller encodes the response and checks its size.
+    `immutable_input` promises that no input object is ever changed in place,
+    also between calls (the worker's copy-on-write decoder): parses and
+    session history are then reused for objects seen before."""
     if request["protocol_version"] != "bot.v1" or request["plugin_id"] != "pine.strategy" or request["plugin_version"] not in ("1.0.0", "2.0.0") or request["state_version"] != 1:
         raise ValueError("unsupported Pine bot identity")
     config, observation = copy.deepcopy(request["config"]), request["observation"]
@@ -681,6 +747,7 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
     primary = observation["instrument_id"]
     source = load_source(config["script"])
     identity = instance_identity(digest, source, config, request["participant"])
+    owner = (lambda *stream: (identity, *stream)) if immutable_input else (lambda *stream: None)
     copy_started = time.perf_counter() if profile is not None else 0
     state = decision_state(request["state"] or {}, borrow_history)
     if profile is not None: profile["state_copy_ms"] = (time.perf_counter() - copy_started) * 1000
@@ -695,7 +762,7 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
             raise ValueError("cross-market observations must use the same account and time")
     data = observation.get("bot_market_data")
     if not data or data["interval_ms"] != config["bar_interval_ms"]: raise ValueError("host must supply configured history")
-    bars = bars_of(data, observation["market_time_ms"])
+    bars = bars_of(data, observation["market_time_ms"], owner("view", primary))
     if len(bars) > config["history_limit"]: raise ValueError("Pine history_limit reached; reconstruction refused")
     previous = state.get("bars", [])
     if len(bars) < len(previous) or bars[:len(previous)] != previous: raise ValueError("committed Pine candle history changed or disappeared")
@@ -703,7 +770,7 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
         kind, account, position, _ = account_of(observation, config)
         equity = number(account["equity"], "equity") if kind == "Perp" else number(account["cash_balance"], "cash") + position * (bars[-1]["close"] if bars else config["initial_avg_price_tick"])
         state.update(identity=identity, broker_schema=2, initial_capital=equity)
-    sync_feedback(state, views, config)
+    sync_feedback(state, views, config, owner())
     actions, block_primary = hedge(state, views, primary, config)
     if len(bars) > len(previous):
         frames = state.setdefault("accounts", [])
@@ -713,9 +780,9 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
         for view in views.values():
             stream = view["bot_market_data"]
             # The primary stream was parsed above; parsing is deterministic.
-            requests[f'{view["instrument_id"]}:{timeframe(stream["interval_ms"])}'] = list(bars) if stream is data else bars_of(stream, observation["market_time_ms"])
+            requests[f'{view["instrument_id"]}:{timeframe(stream["interval_ms"])}'] = list(bars) if stream is data else bars_of(stream, observation["market_time_ms"], owner("view", view["instrument_id"]))
         for stream in data.get("streams", []):
-            requests[f'{stream["instrument_id"]}:{timeframe(stream["interval_ms"])}'] = bars_of(stream, observation["market_time_ms"])
+            requests[f'{stream["instrument_id"]}:{timeframe(stream["interval_ms"])}'] = bars_of(stream, observation["market_time_ms"], owner("stream", stream["instrument_id"]))
         # Persist streams once and record visible prefix lengths per evaluation.
         # A late cross-market bar cannot appear in an already committed pass.
         providers = state.setdefault("providers", {})
@@ -740,7 +807,7 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
             evaluate = program.run_external
             pass_options = {"execution_passes": pass_factory(0)}
         else:
-            evaluate = lambda *args, **kw: evaluate_external(program, source, request, *args, **kw)
+            evaluate = lambda *args, **kw: evaluate_external(program, source, request, *args, share_history=immutable_input, **kw)
             pass_options = {"pass_factory": pass_factory,
                             "execution_transcript": {"providers": providers, "evaluations": evaluations}}
         evaluate_started = time.perf_counter() if profile is not None else 0
@@ -750,15 +817,21 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
         if profile is not None: profile["evaluate_ms"] = (time.perf_counter() - evaluate_started) * 1000
         if result["protocol"] != "external-broker/1" or result["output"].get("strategy"):
             raise ValueError("external Pine execution produced a native broker ledger")
-        prefix = [i for i in result["intents"] if i["bar_index"] < len(previous)]
-        if previous and digest(prefix) != state["intents_digest"]: raise ValueError("previous Pine intents changed during reconstruction")
+        if "intents_digest" in result:
+            # An incremental session returns only intents after its earlier
+            # ones, with the digests of the committed prefix and of all.
+            prefix_digest, intents_digest = result["prefix_digest"], result["intents_digest"]
+        else:
+            prefix_digest = previous and digest([i for i in result["intents"] if i["bar_index"] < len(previous)])
+            intents_digest = digest(result["intents"])
+        if previous and prefix_digest != state["intents_digest"]: raise ValueError("previous Pine intents changed during reconstruction")
         latest = [i for i in result["intents"] if i["bar_index"] == len(bars)-1]
         if not block_primary:
             if config["hedge_instrument_id"] and any(split_id(i["id"] or "_all", primary, views)[0] != primary for i in latest):
                 raise ValueError("automatic hedge owns peer execution; Pine must signal only the primary leg")
             actions += translate(latest, result["pyramiding"], views, primary, config, state)
         state.update(bars=bars, evaluated_bars=len(bars), last_bar_time=bars[-1]["time"], last_intents=latest,
-            intents_digest=digest(result["intents"]), last_actions=actions)
+            intents_digest=intents_digest, last_actions=actions)
         state["skipped_bar_decisions"] = state.get("skipped_bar_decisions", 0) + (max(0, len(bars)-len(previous)-1) if previous else 0)
     # A new bar's cancellation or updated intent takes precedence over a queued
     # replacement; never place an obsolete order before reading strategy.cancel.
@@ -790,6 +863,8 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
     encode_started = time.perf_counter() if profile is not None else 0
     if len(actions) > 64:
         raise ValueError("Pine decision exceeds bot action/state limits")
+    if defer_state:
+        return response
     encoded = json.dumps(response, allow_nan=False)
     # json.dumps uses ensure_ascii=True, so characters equal UTF-8 bytes.
     if len(encoded) > 1048576:

@@ -333,7 +333,11 @@ def legacy_decide(request):
     return response
 
 
-def decide(request, profile=None, *, borrow_history=False, encoded_response=None):
+def decide(request, profile=None, *, borrow_history=False, encoded_response=None, defer_state=False,
+           immutable_input=False):
+    """With `defer_state`, a broker decision leaves the response encoding and
+    its size check to the caller, and fills no `encoded_response`. See the
+    broker for `immutable_input`."""
     # Keep previously journaled v1 instances readable, including their original
     # source/config digest. New instances use the full broker adapter by default.
     state = request.get("state") or {}
@@ -344,7 +348,7 @@ def decide(request, profile=None, *, borrow_history=False, encoded_response=None
         return legacy_decide(request)
     broker = broker_module()
     return broker.decide(request, load_source, compile_program, digest, incremental_module().evaluate,
-                         profile, borrow_history, encoded_response)
+                         profile, borrow_history, encoded_response, defer_state, immutable_input)
 
 
 @lru_cache(maxsize=1)
@@ -366,12 +370,18 @@ def broker_module():
 
 
 def serve_worker():
-    """Durable state travels with each call; speculative caches require exact committed prefixes."""
+    """Durable state travels with each call; speculative caches require exact committed prefixes.
+
+    A host that asks for `reply_state_delta` gets the new state as patches from
+    the request's state. Both sides then fold those patches into their cached
+    request, so the state itself crosses the pipe only when a delta cannot
+    describe it exactly."""
     import importlib.util
     spec = importlib.util.spec_from_file_location("marketforge_pine_transport", PACKAGE / "transport.py")
     transport = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(transport)
     decoder = transport.RequestDecoder()
+    lengths = transport.StateLengths()
     trace_dir = os.environ.get("PINE_BENCH_PY_TRACE_DIR")
     trace = (Path(trace_dir) / f"worker-{os.getpid()}.jsonl").open("w", encoding="utf-8") if trace_dir else None
     diagnostics = os.environ.get("MARKETFORGE_BOT_WORKER_DIAGNOSTICS") == "1"
@@ -383,30 +393,83 @@ def serve_worker():
         response = {"protocol": "bot.worker.v1", "id": envelope["id"]}
         profile = {} if trace else None
         encoded_response = []
+        key = envelope.get("cache_key")
+        fold = None
         try:
             request = decoder.decode_readonly(envelope)
             decoded = time.perf_counter()
             if diagnostics:
                 incremental_module().LAST_EVALUATION = None
-            response["response"] = decide(request, profile, borrow_history=True,
-                                           encoded_response=encoded_response)
+            delta_reply = envelope.get("reply_state_delta") is True and key is not None
+            # Decoded requests are copy-on-write: no object changes in place.
+            response["response"] = decide(request, profile, borrow_history=True, encoded_response=encoded_response,
+                                           defer_state=delta_reply, immutable_input=True)
             if diagnostics:
                 response["runtime_profile"] = incremental_module().LAST_EVALUATION or {
                     "mode": "replay" if request["config"].get("execution_mode") == "legacy" else "no_evaluation",
                     "reason": "legacy" if request["config"].get("execution_mode") == "legacy" else None,
                 }
             decided = time.perf_counter()
+            if delta_reply and not encoded_response:
+                fold = state_reply(transport, lengths, key, request["state"], response, encoded_response)
         except Exception as exc:
+            response.pop("response", None)
+            response.pop("runtime_profile", None)
             response["error"] = str(exc)
-        encoded = encode_worker_response(response, encoded_response)
+        if fold is not None:
+            encoded = fold[0]
+        else:
+            encoded = encode_worker_response(response, encoded_response)
         finished = time.perf_counter()
         print(encoded, flush=True)
+        if fold is not None:
+            # The host folds the same patches once it accepts this reply.
+            decoder.fold_state(key, fold[1])
+            lengths.remember(key, decoder.requests[key][1]["state"], fold[2])
         if trace and "response" in response:
+            data = request["observation"].get("bot_market_data") or {}
             trace.write(json.dumps({"id":request["participant"]["participant_id"], "sequence":envelope["id"],
                 "market_time_ms":request["observation"]["market_time_ms"],
                 "decode_ms":(decoded-begun)*1000, "decide_ms":(decided-decoded)*1000,
-                "encode_ms":(finished-decided)*1000, **profile}) + "\n")
+                "encode_ms":(finished-decided)*1000, "input_bytes":len(line), "reply_bytes":len(encoded),
+                "history":{name: len(data.get(name) or ()) for name in ("candles", "own_fills", "account_events")},
+                **profile}) + "\n")
             trace.flush()
+
+
+def state_reply(transport, lengths, key, old, response, encoded_response):
+    """The worker reply carrying the new state as patches from `old`, with those
+    patches and the state's json.dumps length. Without an exact delta, returns
+    None and leaves the full encoding in `encoded_response`, as the broker
+    does. Either way it raises as the broker does for an oversized response."""
+    decision = response["response"]
+    try:
+        if type(old) is not dict or type(decision["state"]) is not dict:
+            raise transport.NotDelta()
+        patches, change = transport.state_delta(old, decision["state"])
+    except transport.NotDelta:
+        patches = None
+    head = dict(decision, state=None)
+    if patches is None:
+        encoded = json.dumps(decision, allow_nan=False)
+        size = len(encoded)
+    else:
+        length = lengths.length(key, old) + change
+        size = len(json.dumps(head, allow_nan=False)) - len("null") + length
+    # The broker's check of the full response: json.dumps defaults, ASCII.
+    if size > 1048576:
+        raise ValueError("Pine decision exceeds bot action/state limits")
+    if patches is None:
+        encoded_response.append(encoded)
+        return None
+    reply = {key: response[key] for key in ("protocol", "id", "runtime_profile") if key in response}
+    reply.update(response=head, state_delta=patches)
+    encoded = json.dumps(reply, separators=(",", ":"), allow_nan=False)
+    if len(encoded) + 1 > 1_048_576:
+        # The full reply fits; the state passed the size check above.
+        encoded_response.append(json.dumps(decision, allow_nan=False))
+        return None
+    return encoded, patches, length
 
 
 def encode_worker_response(response, encoded_response):

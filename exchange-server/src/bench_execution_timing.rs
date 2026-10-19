@@ -113,6 +113,10 @@ pub(crate) static BOT_WORKER_ACQUIRE: Counter = Counter::new();
 pub(crate) static BOT_WIRE_ENCODE: Counter = Counter::new();
 pub(crate) static BOT_WORKER_ROUNDTRIP: Counter = Counter::new();
 pub(crate) static BOT_WIRE_DECODE: Counter = Counter::new();
+// Parts of BOT_WIRE_ENCODE and BOT_WIRE_DECODE.
+pub(crate) static BOT_WIRE_HEAD: Counter = Counter::new();
+pub(crate) static BOT_WIRE_STATE_DIFF: Counter = Counter::new();
+pub(crate) static BOT_WIRE_ACCEPT: Counter = Counter::new();
 
 pub(crate) static SCHEDULER_ADMISSION: Counter = Counter::new();
 pub(crate) static SCHEDULER_APPLY: Counter = Counter::new();
@@ -219,6 +223,9 @@ pub(crate) fn append_metrics(body: &mut String) {
         ("bot_wire_encode", &BOT_WIRE_ENCODE),
         ("bot_worker_roundtrip", &BOT_WORKER_ROUNDTRIP),
         ("bot_wire_decode", &BOT_WIRE_DECODE),
+        ("bot_wire_head", &BOT_WIRE_HEAD),
+        ("bot_wire_state_diff", &BOT_WIRE_STATE_DIFF),
+        ("bot_wire_accept", &BOT_WIRE_ACCEPT),
         ("scheduler_admission", &SCHEDULER_ADMISSION),
         ("scheduler_apply", &SCHEDULER_APPLY),
         ("scheduler_mutation_build", &SCHEDULER_MUTATION_BUILD),

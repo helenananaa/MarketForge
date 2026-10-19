@@ -25,7 +25,9 @@ class IncrementalPineTests(unittest.TestCase):
 
     def test_all_qualified_sources_match_frozen_replay_across_prefixes_and_recovery(self):
         incremental = bot.incremental_module()
-        cases = json.loads((ROOT / "bot-plugins/pine-strategy/incremental-qualified.json").read_text())["source_sha256"]
+        # Library entries are qualified by scripts/qualify_library_incremental.py.
+        cases = [script for script in json.loads((ROOT / "bot-plugins/pine-strategy/incremental-qualified.json").read_text())["source_sha256"]
+                 if not script.startswith("library/")]
         total = 0
         for script in cases:
             for seed in range(3):
@@ -248,12 +250,117 @@ class WorkerTransportTests(unittest.TestCase):
             result = bot.decide(req)
             self.assertEqual(req, before)
             entry = next(iter(incremental.SESSIONS.values()))
-            cached = copy.deepcopy({k:v for k,v in entry.items() if k != "session"})
+            history = lambda: {k:v for k,v in entry.items() if k not in ("session", "digest")}
+            cached = copy.deepcopy(history())
             req["observation"]["bot_market_data"]["candles"][0]["close_tick"] = 999
             if req["state"]:
                 req["state"]["accounts"][0]["position_size"] = 999
-            self.assertEqual({k:v for k,v in entry.items() if k != "session"}, cached)
+            self.assertEqual(history(), cached)
             state = result["state"]
+
+    def test_patches_copy_on_write_so_seen_objects_never_change(self):
+        decoder = self.module.RequestDecoder();key = "c" * 64
+        first = decoder.decode_readonly({"id":1, "cache_key":key, "request":{"candles":[{"t":1}], "state":{"bars":[1]}}})
+        candles, bar = first["candles"], first["candles"][0]
+        second = decoder.decode_readonly({"id":2, "cache_key":key, "base":1, "request_delta":[
+            {"op":"append","path":["candles"],"from":1,"values":[{"t":2}]},
+            {"op":"set","path":["candles",0,"t"],"value":9}]})
+        self.assertEqual(first, {"candles":[{"t":1}], "state":{"bars":[1]}})
+        self.assertIs(first["candles"], candles);self.assertIs(candles[0], bar)
+        self.assertEqual(second["candles"], [{"t":9}, {"t":2}])
+        self.assertIsNot(second["candles"][0], bar);self.assertIs(second["state"], first["state"])
+        decoder.fold_state(key, [{"op":"append","path":["bars"],"from":1,"values":[2]}])
+        self.assertEqual(second["state"], {"bars":[1]})
+        third = decoder.decode_readonly({"id":3, "cache_key":key, "base":2, "request_delta":[]})
+        self.assertEqual(third["state"], {"bars":[1, 2]})
+
+    def test_state_delta_is_exact_type_strict_and_measures_the_full_encoding(self):
+        rng = random.Random(3)
+        leaves = [0, 1, 1.0, -0.0, 0.0, True, None, "x", "汉\"\n", 2**40]
+        def value(depth=0):
+            if depth > 2 or rng.random() < 0.4: return rng.choice(leaves)
+            if rng.random() < 0.5: return [value(depth + 1) for _ in range(rng.randrange(4))]
+            return {rng.choice("abc"): value(depth + 1) for _ in range(rng.randrange(4))}
+        for _ in range(500):
+            old = {k: value() for k in rng.sample("abcdef", rng.randrange(6))}
+            old["history"] = [value() for _ in range(rng.randrange(4))]
+            new = copy.deepcopy(old)
+            new.update({k: value() for k in rng.sample("abcdef", rng.randrange(3))})
+            for k in rng.sample(sorted(new), min(len(new), rng.randrange(2))): del new[k]
+            if "history" in new: new["history"] = old["history"] + [value() for _ in range(rng.randrange(3))]
+            patches, change = self.module.state_delta(old, new)
+            self.assertEqual(len(json.dumps(old)) + change, len(json.dumps(new)))
+            applied = self.module.apply_patches({"state": json.loads(json.dumps(old))},
+                                                json.loads(json.dumps(patches)), ("state",))["state"]
+            self.assertTrue(self.module.same(applied, json.loads(json.dumps(new))), (old, new, patches))
+        self.assertEqual(self.module.state_delta({"x":1, "z":0.0}, {"x":1.0, "z":-0.0})[0],
+                         [{"op":"set","path":["x"],"value":1.0}, {"op":"set","path":["z"],"value":-0.0}])
+        for bad in ({1: 2}, {"x": (1, 2)}, {"x": float("inf")}):
+            with self.assertRaises(self.module.NotDelta):
+                self.module.state_delta({}, bad)
+
+    def test_state_delta_replies_rebuild_the_full_state_and_reuse_parses_exactly(self):
+        decoder = self.module.RequestDecoder();lengths = self.module.StateLengths();key = "d" * 64
+        host = None  # the host's cached request, folded as the worker folds
+        state = None
+        prices = [100, 101, 99, 103, 104, 102, 106, 107, 108, 105, 109, 111]
+        for end in range(9, len(prices) + 1):
+            req = broker_request(prices[:end]);req["state"] = copy.deepcopy(state)
+            changed = end == 11
+            if changed:
+                # A changed committed candle is parsed again, so the change is refused.
+                req["observation"]["bot_market_data"]["candles"][3]["volume"] += 1
+            wire = json.loads(json.dumps(req))
+            if host is None:
+                envelope = {"id":end, "cache_key":key, "request":wire}
+            else:
+                patches = []
+                self._host_diff(host[1], wire, [], patches)
+                envelope = {"id":end, "cache_key":key, "base":host[0], "request_delta":json.loads(json.dumps(patches))}
+            decoded = decoder.decode_readonly(envelope)
+            if changed:
+                for attempt in (lambda: bot.decide(decoded, borrow_history=True, defer_state=True, immutable_input=True),
+                                lambda: bot.decide(json.loads(json.dumps(req)))):
+                    with self.assertRaisesRegex(ValueError, "history changed"):
+                        attempt()
+                # A failed worker is replaced; its successor starts from full requests.
+                decoder, lengths, host = self.module.RequestDecoder(), self.module.StateLengths(), None
+                continue
+            reply = {"protocol":"bot.worker.v1", "id":end}
+            encoded = []
+            reply["response"] = bot.decide(decoded, borrow_history=True, encoded_response=encoded,
+                                           defer_state=True, immutable_input=True)
+            self.assertEqual(encoded, [])
+            fold = bot.state_reply(self.module, lengths, key, decoded["state"], reply, encoded)
+            bot.incremental_module().SESSIONS.clear()
+            expected = bot.decide(json.loads(json.dumps(req)))
+            if fold is None:
+                self.assertIn(end, (9,));self.assertEqual(json.loads(encoded[0]), expected)
+                state, host = json.loads(encoded[0])["state"], (end, wire)
+                continue
+            sent = json.loads(fold[0])
+            self.assertIsNone(sent["response"]["state"])
+            self.assertEqual(sent["response"]["actions"], expected["actions"])
+            self.assertEqual(fold[2], len(json.dumps(expected["state"])))
+            prefixed = [dict(p, path=["state", *p["path"]]) for p in sent["state_delta"]]
+            state = self.module.apply_patches({"state": wire["state"]}, prefixed)["state"]
+            self.assertTrue(self.module.same(state, json.loads(json.dumps(expected["state"]))), end)
+            decoder.fold_state(key, fold[1]);lengths.remember(key, decoder.requests[key][1]["state"], fold[2])
+            host = (end, self.module.apply_patches(wire, prefixed))
+            state = json.loads(json.dumps(state))
+
+    def _host_diff(self, old, new, path, out):
+        same = self.module.same
+        if same(old, new): return
+        if type(old) is dict and type(new) is dict:
+            out += [{"op":"remove","path":path + [k]} for k in old if k not in new]
+            for k, v in new.items():
+                if k in old: self._host_diff(old[k], v, path + [k], out)
+                else: out.append({"op":"set","path":path + [k],"value":v})
+        elif type(old) is list and type(new) is list and len(new) >= len(old) and all(map(same, old, new)):
+            out.append({"op":"append","path":path,"from":len(old),"values":new[len(old):]})
+        else:
+            out.append({"op":"set","path":path,"value":new})
 
     def test_exact_input_append_edit_remove_and_speculative_output_isolation(self):
         decoder = self.module.RequestDecoder();key = "a" * 64
