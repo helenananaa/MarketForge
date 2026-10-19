@@ -228,7 +228,9 @@ impl PerpMarketConfig {
     pub fn validate(&self) -> Result<(), MarketConfigError> {
         self.instrument.validate()?;
         if let Some(link) = &self.price_link
-            && (link.spot_instrument_id.trim().is_empty() || link.max_age_ms == 0)
+            && (link.spot_instrument_id.trim().is_empty()
+                || link.max_age_ms == 0
+                || link.mark_interval_ms == Some(0))
         {
             return Err(MarketConfigError::InvalidPriceLink);
         }

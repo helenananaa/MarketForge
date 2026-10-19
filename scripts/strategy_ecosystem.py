@@ -24,7 +24,7 @@ def varied_parameters(family,index):
     return {k:p[k]for k in keys}
 
 def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',original_manifest=None,capital_scale=10.0,periods=None,
-               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False,maker_depth_scale=None,perp_maker_depth_scale=None,maker_fee_ppm=None,pine_library=0):
+               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False,maker_depth_scale=None,perp_maker_depth_scale=None,maker_fee_ppm=None,pine_library=0,mark_interval_ms=None):
     if not 100<=count<=10000:raise ValueError('population must be within 100..10000')
     if runtime not in ('native','pine','mixed'):raise ValueError('unknown runtime')
     if value_model not in ('static','endogenous'):raise ValueError('unknown value model')
@@ -66,6 +66,10 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     perp.update(initial_mark_price_tick=anchor)
     perp['clearing']['leverage']=5
     perp['price_link']['max_age_ms']=120000
+    if mark_interval_ms is not None:
+        if mark_interval_ms<=0:raise ValueError('mark interval must be positive')
+        # Sample the mark from the spot book on the clock, as venues publish it.
+        perp['price_link']['mark_interval_ms']=mark_interval_ms
     perp['funding'].update(interval_ms=28800000,base_rate_ppm=100)
     spec.update(agents=[],agent_interval_ms=1000,autostart_agents=True)
     # Library Pine bots are added on top; the other roles keep their shares
@@ -364,7 +368,7 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     for account in (20,30):
         scenario['accounts'].append({'Spot':{'account_id':account,'cash_balance':(50000000 if ecology and account==20 else 1000000)*price_scale,'position_qty':2000 if ecology and account==20 else 100}})
     scenario['seed_orders']=[{'NewOrder':{'order_id':1+j,'account_id':10,'side':side,'kind':{'Limit':{'price_tick':anchor+offset*price_scale}},'qty':10,'reduce_only':False}}for j,(side,offset)in enumerate([('Buy',-4),('Sell',4)])]
-    roster={'scope':'finite-capital strategy ecosystem','count':count,'flow_mix':flow_mix,'price_scale':price_scale,'fast_flow':fast_flow,'maker_fee_ppm':maker_fee_ppm,'maker_depth_scale':maker_depth_scale,'perp_maker_depth_scale':perp_maker_depth_scale,'runtime':runtime,'seed':seed,'role_counts':role_counts,'maker_model':maker_model if ecology else 'legacy','value_model':value_model,
+    roster={'scope':'finite-capital strategy ecosystem','count':count,'flow_mix':flow_mix,'price_scale':price_scale,'fast_flow':fast_flow,'maker_fee_ppm':maker_fee_ppm,'mark_interval_ms':mark_interval_ms,'maker_depth_scale':maker_depth_scale,'perp_maker_depth_scale':perp_maker_depth_scale,'runtime':runtime,'seed':seed,'role_counts':role_counts,'maker_model':maker_model if ecology else 'legacy','value_model':value_model,
         'role_cash_pools':pools,'total_cash_pool':sum(pools.values()),'initial_spot_inventory':sum(m['initial_spot_inventory']for m in metadata),
         'families':families,'periods_ms':sorted(set(m['config']['bar_interval_ms']for m in metadata if m['role']=='technical')),
         'participants':metadata,'qualification':'candidate population; inspect actual warmup, activity, fills, account budgets and market outcomes'}
@@ -404,11 +408,12 @@ def main():
     p.add_argument('--price-scale',type=int,default=1);p.add_argument('--fast-flow',action='store_true')
     p.add_argument('--maker-depth-scale',type=float);p.add_argument('--perp-maker-depth-scale',type=float)
     p.add_argument('--maker-fee-ppm',type=int,help='resting-order fee; default 0 with --fast-flow, else 100')
+    p.add_argument('--mark-interval-ms',type=int,help='sample the perp mark once per this much market time at the clock; default: after every spot order that moves it')
     p.add_argument('--pine-library',type=int,default=0,help='bots running distinct originals from --original-manifest (part of --count)')
     a=p.parse_args();names=json.loads(a.original_runtime_manifest.read_text(encoding='utf-8'))['qualified_names'] if a.original_runtime_manifest else None
     spec,roster=population(a.room,a.seed,a.count,a.runtime,a.original_manifest,a.capital_scale,a.periods_ms,
         ecology=a.ecology,noise_fraction=a.noise_fraction,maker_model=a.maker_model,original_names=names,
-        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction,price_scale=a.price_scale,fast_flow=a.fast_flow,maker_depth_scale=a.maker_depth_scale,perp_maker_depth_scale=a.perp_maker_depth_scale,maker_fee_ppm=a.maker_fee_ppm,pine_library=a.pine_library)
+        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction,price_scale=a.price_scale,fast_flow=a.fast_flow,maker_depth_scale=a.maker_depth_scale,perp_maker_depth_scale=a.perp_maker_depth_scale,maker_fee_ppm=a.maker_fee_ppm,pine_library=a.pine_library,mark_interval_ms=a.mark_interval_ms)
     if a.export:
         a.export.parent.mkdir(parents=True,exist_ok=True);a.export.write_text(json.dumps(spec,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         a.export.with_suffix('.roster.json').write_text(json.dumps(roster,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')

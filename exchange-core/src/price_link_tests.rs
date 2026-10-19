@@ -75,6 +75,55 @@ fn price_link_validates_kind_identity_venue_and_config() {
 }
 
 #[test]
+fn interval_price_link_samples_only_on_the_clock() {
+    let mut zero = scenario();
+    let MarketConfig::Perp(perp) = &mut zero.extra_markets[0] else {
+        unreachable!()
+    };
+    perp.price_link.as_mut().unwrap().mark_interval_ms = Some(0);
+    assert!(SimulationRoom::from_scenario(zero).is_err());
+
+    let mut s = scenario();
+    let MarketConfig::Perp(perp) = &mut s.extra_markets[0] else {
+        unreachable!()
+    };
+    perp.price_link.as_mut().unwrap().mark_interval_ms = Some(1000);
+    let mut exchange = s.bootstrap().unwrap().exchange;
+    seed(&mut exchange);
+    // Source orders leave the link waiting for the clock.
+    assert_eq!(price(&exchange).status, PriceLinkStatus::AwaitingPrice);
+    exchange.advance_clock(1).unwrap();
+    let sampled = exchange.take_clock_executions();
+    assert_eq!(sampled.len(), 1);
+    assert_eq!(sampled[0].instrument_id, "V-USD-PERP");
+    assert_eq!(sampled[0].price_updates[0].index_price_tick, Some(100));
+    assert!(matches!(
+        &sampled[0].result,
+        ActorExecutionResult::Accepted(MarketExecution::Perp(r))
+            if matches!(r.command.command, Command::SetMarkPrice(SetMarkPrice { price_tick: 100 }))
+    ));
+    assert_eq!(price(&exchange).status, PriceLinkStatus::Live);
+
+    // A new best ask moves the mid, but the mark waits for the next sample.
+    let moved = exchange.apply(limit(3, 10, Side::Sell, 100, 1));
+    accepted(&moved);
+    assert!(moved.price_updates.is_empty());
+    assert_eq!(price(&exchange).mark_price_tick, 100);
+    exchange.advance_clock(1).unwrap();
+    let sampled = exchange.take_clock_executions();
+    assert_eq!(sampled.len(), 1);
+    assert_eq!(sampled[0].price_updates[0].index_price_tick, Some(99));
+    assert_eq!(price(&exchange).mark_price_tick, 99);
+
+    // An unchanged book renews the sample time without an execution, so the
+    // link stays live past its 2 s age limit.
+    exchange.advance_clock(3).unwrap();
+    assert!(exchange.take_clock_executions().is_empty());
+    assert_eq!(price(&exchange).status, PriceLinkStatus::Live);
+    assert_eq!(price(&exchange).mark_price_tick, 99);
+}
+
+#[test]
 fn price_link_requires_a_price_and_preserves_independent_perp_book() {
     let mut exchange = scenario().bootstrap().unwrap().exchange;
     assert_eq!(price(&exchange).status, PriceLinkStatus::AwaitingPrice);

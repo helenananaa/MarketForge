@@ -9,6 +9,11 @@ pub struct PerpPriceLinkConfig {
     pub spot_instrument_id: String,
     #[serde(default = "default_max_age_ms")]
     pub max_age_ms: u64,
+    /// Market time between index and mark samples, taken by the clock at each
+    /// interval boundary. Unset, every source order that trades or moves the
+    /// best bid or ask samples at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mark_interval_ms: Option<u64>,
 }
 
 fn default_max_age_ms() -> u64 {

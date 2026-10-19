@@ -6,6 +6,7 @@ fn linked_scenario(room_id: &str) -> ScenarioConfig {
     perp.price_link = Some(exchange_core::PerpPriceLinkConfig {
         spot_instrument_id: "V-BTC-SPOT".into(),
         max_age_ms: 2000,
+        mark_interval_ms: None,
     });
     scenario.routed_seed_orders.clear();
     for account in &mut scenario.accounts {

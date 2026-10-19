@@ -460,6 +460,7 @@ impl ExchangeActor {
         for _ in 0..steps {
             staged.clock.advance_step();
             staged.expire_orders()?;
+            staged.sample_interval_price_links()?;
             let due = staged
                 .transfers
                 .process_due(&mut staged.venue_accounts, staged.clock.step());
@@ -1299,7 +1300,7 @@ impl ExchangeActor {
             }
         }
         let before_book = self.config.markets.iter().any(|market| {
-            matches!(market, MarketConfig::Perp(perp) if perp.price_link.as_ref().is_some_and(|link| link.spot_instrument_id == instrument_id))
+            matches!(market, MarketConfig::Perp(perp) if perp.price_link.as_ref().is_some_and(|link| link.spot_instrument_id == instrument_id && link.mark_interval_ms.is_none()))
         }).then(|| self.markets[instrument_id].book_snapshot());
         let affected_perp_quote_assets = self
             .perp_quote_assets_affected_by_instrument(instrument_id)
@@ -1460,7 +1461,7 @@ impl ExchangeActor {
         before_book: Option<&BookSnapshot>,
         execution: &mut ActorExecution,
     ) -> Result<(), ClearingError> {
-        let linked: Vec<_> = self
+        let mut linked: Vec<_> = self
             .config
             .markets
             .iter()
@@ -1481,7 +1482,6 @@ impl ExchangeActor {
         if linked.is_empty() {
             return Ok(());
         }
-        let before_book = before_book.expect("linked source captured before command");
         let now = self.clock.market_time_ms();
         let trade = match &execution.result {
             ActorExecutionResult::Accepted(MarketExecution::Spot(spot)) => {
@@ -1504,6 +1504,12 @@ impl ExchangeActor {
                 },
             );
         }
+        // Interval links keep the source trade above and sample on the clock.
+        linked.retain(|(_, _, link)| link.mark_interval_ms.is_none());
+        if linked.is_empty() {
+            return Ok(());
+        }
+        let before_book = before_book.expect("linked source captured before command");
         let book = self
             .markets
             .get(source_id)
@@ -1516,48 +1522,151 @@ impl ExchangeActor {
             return Ok(());
         }
         for (perp_id, tick_size, link) in linked {
-            let mut price = self
-                .perp_price_snapshot(&perp_id)
-                .expect("validated perpetual")
-                .expect("configured price link");
-            let sample = match (book.bids.first(), book.asks.first()) {
-                (Some(bid), Some(ask))
-                    if bid.price_tick > 0 && ask.price_tick >= bid.price_tick =>
-                {
-                    Some((
-                        bid.price_tick + (ask.price_tick - bid.price_tick) / 2,
-                        now,
-                        crate::IndexPriceSource::SpotMid,
-                    ))
-                }
-                _ => self
-                    .spot_trade_prices
-                    .get(source_id)
-                    .filter(|trade| now.saturating_sub(trade.market_time_ms) <= link.max_age_ms)
-                    .map(|trade| {
-                        (
-                            trade.price_tick,
-                            trade.market_time_ms,
-                            crate::IndexPriceSource::SpotTrade,
-                        )
-                    }),
-            };
-            if let Some((index, time, source)) = sample {
-                price.index_price_tick = Some(index);
-                price.mark_price_tick = crate::price_link::mark_on_grid(index, tick_size);
-                price.source = Some(source);
-                price.source_time_ms = Some(time);
-                price.status = crate::PriceLinkStatus::Live;
+            let price = self.sampled_price(&perp_id, tick_size, &link, &book);
+            if price.status == crate::PriceLinkStatus::Live {
                 let market = self.markets.get_mut(&perp_id).expect("validated perpetual");
                 let MarketEngine::Perp(engine) = &mut market.engine else {
                     unreachable!();
                 };
                 engine.set_mark_price_tick(price.mark_price_tick)?;
-            } else {
-                price.status = crate::PriceLinkStatus::Unavailable;
             }
             self.price_links.insert(perp_id, price.clone());
             execution.price_updates.push(price);
+        }
+        Ok(())
+    }
+
+    /// A linked perpetual's next index and mark: the source book's mid, or a
+    /// recent source trade when one side is empty; Unavailable otherwise, with
+    /// the previous mark kept. Nothing is applied.
+    fn sampled_price(
+        &self,
+        perp_id: &str,
+        tick_size: crate::model::PriceTick,
+        link: &crate::price_link::PerpPriceLinkConfig,
+        book: &BookSnapshot,
+    ) -> crate::PerpPriceSnapshot {
+        let now = self.clock.market_time_ms();
+        let mut price = self
+            .perp_price_snapshot(perp_id)
+            .expect("validated perpetual")
+            .expect("configured price link");
+        let sample = match (book.bids.first(), book.asks.first()) {
+            (Some(bid), Some(ask)) if bid.price_tick > 0 && ask.price_tick >= bid.price_tick => {
+                Some((
+                    bid.price_tick + (ask.price_tick - bid.price_tick) / 2,
+                    now,
+                    crate::IndexPriceSource::SpotMid,
+                ))
+            }
+            _ => self
+                .spot_trade_prices
+                .get(&link.spot_instrument_id)
+                .filter(|trade| now.saturating_sub(trade.market_time_ms) <= link.max_age_ms)
+                .map(|trade| {
+                    (
+                        trade.price_tick,
+                        trade.market_time_ms,
+                        crate::IndexPriceSource::SpotTrade,
+                    )
+                }),
+        };
+        if let Some((index, time, source)) = sample {
+            price.index_price_tick = Some(index);
+            price.mark_price_tick = crate::price_link::mark_on_grid(index, tick_size);
+            price.source = Some(source);
+            price.source_time_ms = Some(time);
+            price.status = crate::PriceLinkStatus::Live;
+        } else {
+            price.status = crate::PriceLinkStatus::Unavailable;
+        }
+        price
+    }
+
+    /// Samples links with a `mark_interval_ms` once per interval of market
+    /// time. A changed price becomes a clock execution: the mark is applied
+    /// as a perpetual SetMarkPrice command, then reservations and the
+    /// cross-margin group are synchronized as after a per-order sample, and
+    /// the room scans liquidations and protections. An unchanged price only
+    /// renews its sample time, so the link does not turn stale.
+    fn sample_interval_price_links(&mut self) -> Result<(), ClearingError> {
+        let now = self.clock.market_time_ms();
+        let previous_ms = now.saturating_sub(self.clock.step_duration_ms());
+        let due: Vec<_> = self
+            .config
+            .markets
+            .iter()
+            .filter_map(|market| {
+                let MarketConfig::Perp(perp) = market else {
+                    return None;
+                };
+                let link = perp.price_link.as_ref()?;
+                let interval = link.mark_interval_ms?;
+                (now / interval != previous_ms / interval).then(|| {
+                    (
+                        perp.instrument.instrument_id.clone(),
+                        perp.instrument.tick_size,
+                        perp.instrument.quote_asset.clone(),
+                        link.clone(),
+                    )
+                })
+            })
+            .collect();
+        for (perp_id, tick_size, quote_asset, link) in due {
+            let book = self
+                .markets
+                .get(&link.spot_instrument_id)
+                .expect("validated index source")
+                .book_snapshot();
+            let price = self.sampled_price(&perp_id, tick_size, &link, &book);
+            let unchanged = self.price_links.get(&perp_id).is_some_and(|old| {
+                crate::PerpPriceSnapshot {
+                    source_time_ms: price.source_time_ms,
+                    funding: price.funding.clone(),
+                    ..old.clone()
+                } == price
+            });
+            if unchanged {
+                self.price_links.insert(perp_id, price);
+                continue;
+            }
+            let wallet_before = self.venue_accounts.wallet_state();
+            let margin_before = self.margin_state();
+            let command_seq = self.take_command_seq();
+            let MarketEngine::Perp(engine) = &mut self
+                .markets
+                .get_mut(&perp_id)
+                .expect("validated perpetual")
+                .engine
+            else {
+                unreachable!();
+            };
+            let book_before = engine.book().depth_state();
+            let result = engine.apply(Command::SetMarkPrice(crate::model::SetMarkPrice {
+                price_tick: price.mark_price_tick,
+            }))?;
+            let book_delta = engine.book().delta_since(&book_before);
+            self.price_links.insert(perp_id.clone(), price.clone());
+            self.reconcile_market_reservations()?;
+            self.sync_perp_cross_margin_group_for(&quote_asset, None)?;
+            let mut execution = ActorExecution {
+                rejected_command: None,
+                room_id: self.room_id.clone(),
+                instrument_id: perp_id,
+                command_seq,
+                market_time_ms: now,
+                status: self.status(),
+                price_updates: vec![price],
+                funding_settlement: None,
+                book_delta: Some(book_delta),
+                is_liquidation: false,
+                wallet_updates: Vec::new(),
+                margin_updates: Vec::new(),
+                result: ActorExecutionResult::Accepted(MarketExecution::Perp(result)),
+            };
+            self.attach_wallet_updates(&mut execution, &wallet_before);
+            self.attach_margin_updates(&mut execution, &margin_before);
+            self.pending_clock_executions.push(execution);
         }
         Ok(())
     }

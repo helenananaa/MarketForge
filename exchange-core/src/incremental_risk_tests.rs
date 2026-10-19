@@ -23,6 +23,7 @@ fn adaptive_risk_fixture(count: u64, active: u64, hedge: bool, linked: bool) -> 
                 perp.price_link = Some(crate::PerpPriceLinkConfig {
                     spot_instrument_id: "spot".into(),
                     max_age_ms: 2000,
+                    mark_interval_ms: None,
                 });
                 perp.funding = Some(crate::FundingConfig {
                     interval_ms: 2000,
