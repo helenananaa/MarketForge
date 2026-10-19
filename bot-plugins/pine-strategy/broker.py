@@ -5,8 +5,10 @@ Frozen bar/account/provider frames ensure that recovery never resends old intent
 """
 from __future__ import annotations
 
+import bisect
 import copy
 from fractions import Fraction
+from functools import lru_cache
 import hashlib
 import json
 import math
@@ -18,6 +20,9 @@ ORDER_PREFIX = "__marketforge_order__"
 
 
 def number(value, name, minimum=-MAX_EXACT):
+    # Plain in-range integers are the common case; bool is not type int.
+    if type(value) is int and minimum <= value <= MAX_EXACT:
+        return value
     if isinstance(value, bool):
         raise ValueError(f"{name}: boolean is not an integer")
     # Rust serializes large account integers as decimal strings.
@@ -143,6 +148,26 @@ def account_of(view, config):
     elif leg != "Both":
         raise ValueError("one-way and spot accounts require Both position_side")
     return kind, account, position, avg
+
+
+@lru_cache(maxsize=256)
+def lowered_source(source):
+    """external_pass_source(lower_order_calls(source)); both are pure."""
+    return external_pass_source(lower_order_calls(source))
+
+
+IDENTITIES = {}
+
+
+def instance_identity(digest, source, config, participant):
+    """digest({source, config, participant}), reused while all three are equal."""
+    key = (source, json.dumps(config, sort_keys=True), json.dumps(participant, sort_keys=True))
+    identity = IDENTITIES.get(key)
+    if identity is None:
+        if len(IDENTITIES) >= 4096:
+            IDENTITIES.clear()
+        identity = IDENTITIES[key] = digest({"source": source, "config": config, "participant": participant})
+    return identity
 
 
 def external_pass_source(source):
@@ -655,7 +680,7 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
     if not config.get("quantize_strategy_orders", False):config.pop("quantize_strategy_orders", None)
     primary = observation["instrument_id"]
     source = load_source(config["script"])
-    identity = digest({"source": source, "config": config, "participant": request["participant"]})
+    identity = instance_identity(digest, source, config, request["participant"])
     copy_started = time.perf_counter() if profile is not None else 0
     state = decision_state(request["state"] or {}, borrow_history)
     if profile is not None: profile["state_copy_ms"] = (time.perf_counter() - copy_started) * 1000
@@ -687,7 +712,8 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
         requests = {}
         for view in views.values():
             stream = view["bot_market_data"]
-            requests[f'{view["instrument_id"]}:{timeframe(stream["interval_ms"])}'] = bars_of(stream, observation["market_time_ms"])
+            # The primary stream was parsed above; parsing is deterministic.
+            requests[f'{view["instrument_id"]}:{timeframe(stream["interval_ms"])}'] = list(bars) if stream is data else bars_of(stream, observation["market_time_ms"])
         for stream in data.get("streams", []):
             requests[f'{stream["instrument_id"]}:{timeframe(stream["interval_ms"])}'] = bars_of(stream, observation["market_time_ms"])
         # Persist streams once and record visible prefix lengths per evaluation.
@@ -700,7 +726,7 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
         evaluations = state.setdefault("evaluations", [])
         for index in range(len(previous), len(bars)):
             cutoff = data["candles"][index]["close_time_ms"]
-            evaluations.append({"time": cutoff, "providers": {key: sum(bar["time"] + interval_from_timeframe(key.rsplit(":", 1)[1]) <= cutoff for bar in stream) for key, stream in requests.items()}})
+            evaluations.append({"time": cutoff, "providers": {key: closed_bars(stream, cutoff - interval_from_timeframe(key.rsplit(":", 1)[1])) for key, stream in requests.items()}})
         def pass_factory(start):
             passes = []
             for index in range(start, len(evaluations)):
@@ -708,7 +734,7 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
                 request_data = [{"symbol": key.rsplit(":", 1)[0], "timeframe": key.rsplit(":", 1)[1], "bars": providers[key][:count]} for key, count in evaluation["providers"].items()]
                 passes.append([{"account": frames[index], "bar": bars[index], "event_time_ms": evaluation["time"], "confirmed": True, "request_data": request_data}])
             return passes
-        lowered = external_pass_source(lower_order_calls(source))
+        lowered = lowered_source(source)
         program, overrides = compile_program(lowered, config["inputs"])
         if evaluate_external is None:
             evaluate = program.run_external
@@ -772,6 +798,12 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
         encoded_response.append(encoded)
     if profile is not None: profile["validate_response_ms"] = (time.perf_counter() - encode_started) * 1000
     return response
+
+
+def closed_bars(stream, latest_open):
+    """Count of bars whose interval closed by a cutoff, i.e. with an open time
+    at most cutoff - interval; bars_of keeps streams strictly time-ordered."""
+    return bisect.bisect_right(stream, latest_open, key=lambda bar: bar["time"])
 
 
 def interval_from_timeframe(value):

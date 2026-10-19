@@ -217,8 +217,13 @@ session 必须与宿主已提交的完整 bar/账户/pass 前缀和设置
 当前产物绑定构建所用的 Python。`.runtime/provenance.json` 记录源码、补丁和产物摘要。
 它是本地 adapter，没有发布成上游版本。
 
-增量执行只对 `incremental-qualified.json` 列出的 6 个精确源码 SHA256 启用；修改源码、
-其他社区脚本以及 legacy 模式继续完整重放。外部 session 只追加账户反馈和已经确认的
+增量执行只对 `incremental-qualified.json` 列出的精确源码 SHA256 启用：6 个内置脚本，以及
+`scripts/qualify_library_incremental.py` 验证过的策略库脚本（`library/...`）。该工具让每个已安装
+脚本分别以完整重放和增量 session 走同一组合成生命周期（永续账户、逐根收盘 bar、订单立即成交），
+全部响应和持久状态逐次相同才算合格；这只证明两条执行路径等价，不是交易或市场资格。修改源码、
+其他社区脚本以及 legacy 模式继续完整重放。构建脚本另外应用
+`runtime-patches/pine-compat-0.3.1-session-output.patch`：增量追加可用 `include_output=False`
+跳过逐次转换全部 plot 输出（broker 只读意图）；旧 adapter 自动回退到完整输出。外部 session 只追加账户反馈和已经确认的
 bar/pass，不模拟交易所成交；历史意图仍受 broker 前缀一致性校验。未安装 adapter 时
 完整重放回退可用，性能结论应说明实际加载的版本。对冲 residual/unwinding 保存下一次
 仿真唤醒时间，不依赖新 K 线才补偿。

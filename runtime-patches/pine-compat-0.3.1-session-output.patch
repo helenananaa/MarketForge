@@ -1,0 +1,37 @@
+--- a/crates/pine-python/src/external.rs
++++ b/crates/pine-python/src/external.rs
+@@ -104,13 +104,16 @@
+     fn cursor(&self) -> usize {
+         self.cursor
+     }
+-    #[pyo3(signature = (bars, accounts, execution_passes=None))]
++    /// With `include_output=False` the result's `output` is empty: callers
++    /// that read only the intents skip converting every plot value per call.
++    #[pyo3(signature = (bars, accounts, execution_passes=None, include_output=true))]
+     fn append(
+         &mut self,
+         py: Python<'_>,
+         bars: &Bound<'_, PyAny>,
+         accounts: &Bound<'_, PyAny>,
+         execution_passes: Option<&Bound<'_, PyAny>>,
++        include_output: bool,
+     ) -> PyResult<Py<PyAny>> {
+         if self.failed {
+             return Err(PyValueError::new_err(
+@@ -181,9 +184,13 @@
+                     .map_err(|e| PyValueError::new_err(e.to_string()))?,),
+             )?,
+         )?;
+-        let mut output = self.runtime.result_view();
+-        output.strategy = None;
+-        result.set_item("output", runtime_result_view_to_py(py, &output)?)?;
++        if include_output {
++            let mut output = self.runtime.result_view();
++            output.strategy = None;
++            result.set_item("output", runtime_result_view_to_py(py, &output)?)?;
++        } else {
++            result.set_item("output", PyDict::new(py))?;
++        }
+         Ok(result.into_any().unbind())
+     }
+ }

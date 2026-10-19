@@ -1,6 +1,7 @@
 """Real Pine compilation and broker translation with authoritative fixture feedback."""
 import copy
 import json
+import random
 import unittest
 from unittest.mock import patch
 
@@ -276,6 +277,59 @@ class PineBrokerTests(unittest.TestCase):
         req["observation"]["public_trades"] = [{"price_tick": 101}]
         req["observation"]["position_protections"] = [{"position_side": "Both", "status": "armed", "spec": {"take_profit_tick": 120}}]
         self.assertEqual(self.run_source(source, req)["actions"], [])
+
+
+class IncrementalSessionTests(unittest.TestCase):
+    def test_closed_bar_count_matches_a_scan(self):
+        module = bot.broker_module()
+        rng = random.Random(3)
+        for _ in range(300):
+            interval = rng.choice([1000, 60000, 300000])
+            times = sorted(rng.sample(range(0, 50 * interval, 1000), rng.randint(0, 40)))
+            stream = [{"time": t} for t in times]
+            cutoff = rng.randrange(0, 60 * interval)
+            self.assertEqual(module.closed_bars(stream, cutoff - interval),
+                             sum(bar["time"] + interval <= cutoff for bar in stream))
+
+    def test_session_append_omits_output_only_where_the_runtime_allows(self):
+        incremental = bot.incremental_module()
+        class Old:
+            def append(self, bars, accounts, execution_passes=None):
+                return {"output": {"plots": []}}
+        class New:
+            def append(self, bars, accounts, execution_passes=None, include_output=True):
+                return {"output": {"plots": []} if include_output else {}}
+        saved = incremental.OUTPUT_OPTIONAL
+        try:
+            incremental.OUTPUT_OPTIONAL = None
+            self.assertEqual(incremental.append(Old(), [], [], None), {"output": {"plots": []}})
+            self.assertIs(incremental.OUTPUT_OPTIONAL, False)
+            incremental.OUTPUT_OPTIONAL = None
+            self.assertEqual(incremental.append(New(), [], [], None), {"output": {}})
+            self.assertIs(incremental.OUTPUT_OPTIONAL, True)
+        finally:
+            incremental.OUTPUT_OPTIONAL = saved
+
+    def test_session_decisions_do_not_depend_on_plot_output(self):
+        incremental = bot.incremental_module()
+        prices = [100 + (i * 7) % 11 for i in range(40)]
+        responses = {}
+        saved = incremental.OUTPUT_OPTIONAL
+        try:
+            for optional in (False, None):
+                incremental.OUTPUT_OPTIONAL = optional
+                incremental.SESSIONS.clear()
+                state, out = None, []
+                for end in range(1, len(prices) + 1):
+                    req = broker_request(prices[:end]); req["state"] = state
+                    result = bot.decide(req)
+                    out.append(result)
+                    state = json.loads(json.dumps(result["state"]))
+                responses[optional] = out
+        finally:
+            incremental.OUTPUT_OPTIONAL = saved
+            incremental.SESSIONS.clear()
+        self.assertEqual(responses[False], responses[None])
 
 
 if __name__ == "__main__": unittest.main()

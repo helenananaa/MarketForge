@@ -34,14 +34,27 @@ def integer(value, name, minimum=0, maximum=MAX_EXACT):
     return int(value)
 
 
-def load_source(name):
+@lru_cache(maxsize=1024)
+def script_path(name):
     directory = (PACKAGE / "scripts").resolve()
     path = (directory / name).resolve()
     if not path.is_relative_to(directory) or path.suffix != ".pine":
         raise ValueError("script must be an installed .pine file inside scripts/")
-    if path.stat().st_size > 65536:
+    return path
+
+
+SOURCES = {}  # path -> (mtime_ns, size, text); a changed file is read again.
+
+
+def load_source(name):
+    path = script_path(name)
+    stat = path.stat()
+    if stat.st_size > 65536:
         raise ValueError("Pine source exceeds 64 KiB")
-    return path.read_text(encoding="utf-8-sig")
+    cached = SOURCES.get(path)
+    if cached is None or cached[:2] != (stat.st_mtime_ns, stat.st_size):
+        cached = SOURCES[path] = (stat.st_mtime_ns, stat.st_size, path.read_text(encoding="utf-8-sig"))
+    return cached[2]
 
 
 def account_feedback(state, observation, data):

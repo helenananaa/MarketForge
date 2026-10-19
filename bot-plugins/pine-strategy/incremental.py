@@ -5,22 +5,49 @@ or uncommitted speculative result rebuilds from that transcript.
 """
 from collections import OrderedDict
 import copy
+from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
 
 SESSIONS = OrderedDict()
+QUALIFIED = {}  # mtime_ns -> qualified source hashes
+OUTPUT_OPTIONAL = None  # whether ExternalSession.append accepts include_output
 MAX_SESSIONS = 512
 COUNTERS = {"rebuilds": 0, "appends": 0, "fallbacks": 0, "evaluated_bars": 0}
 LAST_EVALUATION = None  # Optional worker-envelope telemetry, never durable state.
+
+
+@lru_cache(maxsize=1024)
+def source_sha256(source):
+    return hashlib.sha256(source.encode()).hexdigest()
 
 
 def qualified(source):
     path = Path(__file__).with_name("incremental-qualified.json")
     if not path.is_file():
         return False
-    digest = hashlib.sha256(source.encode()).hexdigest()
-    return digest in json.loads(path.read_text(encoding="utf-8"))["source_sha256"].values()
+    stamp = path.stat().st_mtime_ns
+    if stamp not in QUALIFIED:
+        QUALIFIED.clear()
+        QUALIFIED[stamp] = set(json.loads(path.read_text(encoding="utf-8"))["source_sha256"].values())
+    return source_sha256(source) in QUALIFIED[stamp]
+
+
+def append(session, bars, accounts, passes):
+    """Append without plot output when the runtime supports it; the broker
+    reads only intents from a session result."""
+    global OUTPUT_OPTIONAL
+    if OUTPUT_OPTIONAL is not False:
+        try:
+            result = session.append(bars, accounts, execution_passes=passes, include_output=False)
+            OUTPUT_OPTIONAL = True
+            return result
+        except TypeError:
+            if OUTPUT_OPTIONAL:
+                raise
+            OUTPUT_OPTIONAL = False
+    return session.append(bars, accounts, execution_passes=passes)
 
 
 def replay(program, source, request, bars, accounts, *, pass_factory=None, execution_transcript=None, **kwargs):
@@ -70,7 +97,7 @@ def evaluate(program, source, request, bars, accounts, *, pass_factory=None, exe
         COUNTERS["rebuilds"] += 1
     # Do not put a failed session back in the cache. No orders execute here.
     new_passes = pass_factory(offset) if pass_factory is not None else passes[offset:]
-    result = entry["session"].append(bars[offset:], accounts[offset:], execution_passes=new_passes)
+    result = append(entry["session"], bars[offset:], accounts[offset:], new_passes)
     COUNTERS["evaluated_bars"] += len(bars) - offset
     if matching:
         # Prefix equality was checked above. Retain independently copied history

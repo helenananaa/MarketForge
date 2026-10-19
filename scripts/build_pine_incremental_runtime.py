@@ -35,6 +35,9 @@ def main():
     extension_patch = ROOT / "runtime-patches/pine-compat-0.3.1-order-notifications.patch"
     if args.strategy_extensions:
         subprocess.run(["git", "apply", "--whitespace=error", str(extension_patch)], cwd=source, check=True)
+    # Session appends may omit plot output; the broker reads only intents.
+    session_patch = ROOT / "runtime-patches/pine-compat-0.3.1-session-output.patch"
+    subprocess.run(["git", "apply", "--whitespace=error", str(session_patch)], cwd=source, check=True)
     env = os.environ.copy()
     env.update(CARGO_TARGET_DIR=str(workspace / "target"), PYO3_PYTHON=sys.executable)
     subprocess.run(["cargo", "build", "--locked", "--release", "-p", "pine-python"], cwd=source, env=env, check=True)
@@ -42,12 +45,15 @@ def main():
     if sys.platform == "darwin": artifact = artifact.with_name("libpine_compat.dylib")
     receipt = {"version": "0.3.1+mf1", "source_commit": COMMIT,
                "patch_sha256": hashlib.sha256(PATCH.read_bytes()).hexdigest(),
+               "session_patch_sha256": hashlib.sha256(session_patch.read_bytes()).hexdigest(),
                "binary_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
                "source": str(source), "artifact": str(artifact),
-               "scope": "private adapter build; not an upstream published release"}
+               "scope": "private adapter build; not an upstream published release",
+               "capabilities": ["session_output_optional"]}
     if args.strategy_extensions:
         receipt["extension_patch_sha256"] = hashlib.sha256(extension_patch.read_bytes()).hexdigest()
-        receipt["capabilities"] = ["external_comment", "external_alert_message", "external_disable_alert"]
+        receipt["capabilities"] = ["external_comment", "external_alert_message", "external_disable_alert",
+                                   "session_output_optional"]
     if args.install:
         destination = ROOT / "bot-plugins/pine-strategy/.runtime"
         if args.strategy_extensions:

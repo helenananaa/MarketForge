@@ -1,0 +1,1942 @@
+{
+ "scope": "Each script runs the same synthetic lifecycle twice, once with full replay and once with the incremental external session: one perpetual account, a closed one-minute bar per call, every order filled at once at its price (or the close) and acknowledged on the next call. A script qualifies only when every response and every durable state is identical in both modes, over each price path, without errors. This qualifies the incremental path against replay for these inputs; it is not a trading or market qualification.",
+ "bars_per_path": 300,
+ "paths": [
+  "random walk",
+  "trend +8 ticks per bar"
+ ],
+ "scripts": 241,
+ "qualified": 239,
+ "verdicts": [
+  {
+   "name": "rsisma imkind daily",
+   "script": "ecosystem/library/0068dd1dd9576132.pine",
+   "source_sha256": "0068dd1dd9576132a1c7d3538b18e0fe41da913fbe72ef408e0bed3948b4d7e3",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "DC Breakout Strategy - This is simplicity at its finest.",
+   "script": "ecosystem/library/00b1a76f9ae2df25.pine",
+   "source_sha256": "00b1a76f9ae2df25ba164aa9670e22f224a6b9ca2519eb5ab9209bfdad029fab",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Vix FIX - StochRSI Strategy",
+   "script": "ecosystem/library/019d603b66bac70c.pine",
+   "source_sha256": "019d603b66bac70c8acc68a7b2ac853e29603dc31026ef940b380ee153730374",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "EMA Strat",
+   "script": "ecosystem/library/021868797701fd2a.pine",
+   "source_sha256": "021868797701fd2a7897b015730db7988e437a5bea7ab78d2dad9c3811ef05c9",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "The Lazy Trader - Index (ETF) Trend Following Robot",
+   "script": "ecosystem/library/023b5a9ba7a7655a.pine",
+   "source_sha256": "023b5a9ba7a7655ab6c9ee2d708d9ec0579f233e42d2343fc075c7f5c1d734f7",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & N Bars Down",
+   "script": "ecosystem/library/03828f7a29e2a741.pine",
+   "source_sha256": "03828f7a29e2a741e455142526d88dbbb730423b12dabec4bf04299866c413b4",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo 2-20 EMA & Bandpass Filter",
+   "script": "ecosystem/library/03b8c894f4361d3d.pine",
+   "source_sha256": "03b8c894f4361d3d618a259c96b50b229e14bccd887511b8fdb47312653f3f20",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "[KL] RSI 14 + 10 Strategy",
+   "script": "ecosystem/library/0550de5f280a532f.pine",
+   "source_sha256": "0550de5f280a532f25171b8c62c732b7770f0db07c1b93b37246733e80fc9147",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Contrarian Scalping Counter Trend Bb Envelope Adx and Stochastic",
+   "script": "ecosystem/library/05ee8083d2e39752.pine",
+   "source_sha256": "05ee8083d2e397523e575cdcf185a2d27eca85e7a45fc2addbf2b45d40a9a4b2",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Relative Volume & RSI Pop",
+   "script": "ecosystem/library/079c96e33fc7c8e8.pine",
+   "source_sha256": "079c96e33fc7c8e80ed7666bb0392cc5b4bd1d1be0a54f609daddd50063c2ce5",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Mean reversion",
+   "script": "ecosystem/library/09b0753057277966.pine",
+   "source_sha256": "09b075305727796649f970cc6f450045c4010ab649bc924851394712773b16ee",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "RSI Average Swing Bot",
+   "script": "ecosystem/library/0b5accaa3a7f3022.pine",
+   "source_sha256": "0b5accaa3a7f30225af37996b454bfbb8fbb80034af27e16ade790b17f345d3a",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "volume rsi strategy by pro trader123",
+   "script": "ecosystem/library/0ba432e3093815af.pine",
+   "source_sha256": "0ba432e3093815afbd9f53d5b3f4a0f9b7c2820ea1bc9d1ff333ac3c5f42b5ea",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Schaff Trend Cycle + Double MA",
+   "script": "ecosystem/library/0bbcfc33ace17047.pine",
+   "source_sha256": "0bbcfc33ace170475817a83239e43ba73faf06874339a189d1be53dbb5b9640b",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "PMax on Rsi w-T3 -Strategy-",
+   "script": "ecosystem/library/0c9f89d8f7a3c0b2.pine",
+   "source_sha256": "0c9f89d8f7a3c0b2d8741e77c366a73ff05047d2c68be5e96a187e755a22dee1",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Suchit RSI CCI",
+   "script": "ecosystem/library/0cafc560f96a08d3.pine",
+   "source_sha256": "0cafc560f96a08d3a7fb2b963a1a6cd48967c1f163d97b273187a9954809d2af",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Percentage Change strategy w-BG color",
+   "script": "ecosystem/library/0d3c679fd3dea828.pine",
+   "source_sha256": "0d3c679fd3dea82826d52174a3d56781c2d10138472f733e40496b38828ecc48",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "HEFF4MAYOR TRADING BOT",
+   "script": "ecosystem/library/0e07b7e189253835.pine",
+   "source_sha256": "0e07b7e189253835583c3dbd3e69100ebadb84d44a32f41f9e0012db7709959f",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Awesome Oscillator (AC)",
+   "script": "ecosystem/library/0ee551cc42560880.pine",
+   "source_sha256": "0ee551cc42560880a09c5e4da85f30d5701c0efb39b8b24e383fe238d4c3d4af",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Hobbiecode - Five Day Low RSI Strategy",
+   "script": "ecosystem/library/108cf9cdeaa76c40.pine",
+   "source_sha256": "108cf9cdeaa76c4003b87309ff8187e8d8f6fa58ebfec82f3e6ec84727ef80d9",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Simple Moving Average Crossover",
+   "script": "ecosystem/library/10dc9ff5db6f6463.pine",
+   "source_sha256": "10dc9ff5db6f6463aaa5e5772b61d2cb25e07298784702788c502b3978330d70",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "D-BoT Alpha 'Short' SMA and RSI Strategy",
+   "script": "ecosystem/library/11617444fd87dbee.pine",
+   "source_sha256": "11617444fd87dbee08ca551d2f8371272bc0bad914428d791404bfaf78198ebd",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Bollinger DCA v1",
+   "script": "ecosystem/library/14ed0395f59dc56a.pine",
+   "source_sha256": "14ed0395f59dc56a2f44a8abd453a96f0f7183db5f81bc879c0b3f21c6b849c0",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Bollinger Bands, RSI, and MA Strategy",
+   "script": "ecosystem/library/1597292e1046561b.pine",
+   "source_sha256": "1597292e1046561b60ecc61b84942f9aa24916f454ae9ed935336b45045f3089",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & STARC Bands",
+   "script": "ecosystem/library/15e5fbc63c2c6206.pine",
+   "source_sha256": "15e5fbc63c2c6206feae065fcb12debc74f2d1190f02b828bd3fb1e030f47988",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Gann High Low Strategy omar achbehe",
+   "script": "ecosystem/library/16b4d1ed5e2cb8b4.pine",
+   "source_sha256": "16b4d1ed5e2cb8b41396b910708ae29865a4505eff9d53567cd003c42341e10b",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Optimized Keltner Channels SL-TP Strategy for BTC",
+   "script": "ecosystem/library/179a641fbb9d2f08.pine",
+   "source_sha256": "179a641fbb9d2f084d2955f19b4f208665f8e87f9929f50b45e5bd265b80ea51",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "3-Signal Directional Trend Strategy for E-Minis",
+   "script": "ecosystem/library/1823d74b7c45750a.pine",
+   "source_sha256": "1823d74b7c45750a11bf2c958d7268cae31f36140279861b942df226fead6ea5",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Moving Average Displaced Envelope & ATRTS",
+   "script": "ecosystem/library/1904d58fa0a1a397.pine",
+   "source_sha256": "1904d58fa0a1a3973bcc84850bfb299479a9c8d10ce7a994e6012cffa35761c6",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Volume SMA",
+   "script": "ecosystem/library/1a9c81b80fbc7df9.pine",
+   "source_sha256": "1a9c81b80fbc7df93e84f2b9578b8a3f3665032f420a6a4f3179572cda300aa4",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Stochastic RSI Strategy (with SMA and VWAP Filters)",
+   "script": "ecosystem/library/1c3e7a6d00f4a1c9.pine",
+   "source_sha256": "1c3e7a6d00f4a1c978d3e77081a27f9ef22f79c420d29242489125e69cfb5196",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & PFE (Polarized Fractal Efficiency)",
+   "script": "ecosystem/library/1cc0df9f8540bcc0.pine",
+   "source_sha256": "1cc0df9f8540bcc06f24fb348673da27088bd3e17a4968fd3626e307f74a89db",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "P-Signal Strategy & Alert",
+   "script": "ecosystem/library/1d27249bb190d374.pine",
+   "source_sha256": "1d27249bb190d374fd4d42d953fde3685f21099cd94f0fd07b5ec22420e4b9b8",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Linear On MACD",
+   "script": "ecosystem/library/1d477858c9f89261.pine",
+   "source_sha256": "1d477858c9f89261ed2a98c845a1b55d1b4619a9e86c3dad3169f78177b52cac",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Psychological line",
+   "script": "ecosystem/library/1d4fa0a2fac7cc74.pine",
+   "source_sha256": "1d4fa0a2fac7cc74c3e042e2a26d02163a95c5c6f0a18cb8e6be7229f6d50eac",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "SRJ RSI Outperformer Strategy",
+   "script": "ecosystem/library/1d966b917a19887f.pine",
+   "source_sha256": "1d966b917a19887f80881413ae8be040d5ecb9d6cc92150d00c9b3f54df048ab",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Maguila Strategy by Rodrigo Cohen",
+   "script": "ecosystem/library/1f24f7011211a72e.pine",
+   "source_sha256": "1f24f7011211a72e6f4cec4315c36aa2a94dbeb9f67f9ba56149eced0d97fed9",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Relative Volatility Index",
+   "script": "ecosystem/library/216e5b6c95a135fa.pine",
+   "source_sha256": "216e5b6c95a135fa701264723e9b25b6d8b2b80ba11303448bcbf9ef034afcb7",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Gotobi Teriyaki",
+   "script": "ecosystem/library/21b8ea6253537516.pine",
+   "source_sha256": "21b8ea62535375165fc6bc1def5b2dfc9c3aa479bdcf870a78079505b0da430e",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Backtest Signal To Noise",
+   "script": "ecosystem/library/220978a613c738ad.pine",
+   "source_sha256": "220978a613c738ad6890d271d5faa9d81cadf6b9437bae352e9f0b83b85e5223",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Moving Average Color Strategy",
+   "script": "ecosystem/library/2210c70f2ce1c519.pine",
+   "source_sha256": "2210c70f2ce1c519ef1600c643ec6511a0253fba2cca03a11bf546c7545aa5e4",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Volume Weighted Bollinger Bands Strategy",
+   "script": "ecosystem/library/22b2bbac9871222c.pine",
+   "source_sha256": "22b2bbac9871222c809597c880e4726063422e60934be388fd71b95fb5065eee",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "8 Day Extended Runs",
+   "script": "ecosystem/library/26db3187b95dceef.pine",
+   "source_sha256": "26db3187b95dceeffa1ab2a0c1ffd0a5fc51bc313e5649dda69c85c657fdcb86",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Simple EMA20 Strategy + Stochastic",
+   "script": "ecosystem/library/2712891380a4920f.pine",
+   "source_sha256": "2712891380a4920f19d8d0a5d6fb4316fdee193744c718054153ba62b5bce5ee",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & SMI Ergodic Oscillator",
+   "script": "ecosystem/library/283c5a751ad3ccc9.pine",
+   "source_sha256": "283c5a751ad3ccc90885eba5fb7a7c61ddffb5febe80f7a5b5ed77fdb5b9cffe",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Strategy Timeframe",
+   "script": "ecosystem/library/28d6f5f603b01d81.pine",
+   "source_sha256": "28d6f5f603b01d810a7f7160634ff0be96f76d8b9ea5048be6b6caca8efc5586",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Laguerre-based RSI",
+   "script": "ecosystem/library/2bd9ca677621cca2.pine",
+   "source_sha256": "2bd9ca677621cca276c74aafcf11bdb8cae1af70a8fd7d747765969b495e1357",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "JBravo Swing with GoGo Juice",
+   "script": "ecosystem/library/2c01ce4adfae1814.pine",
+   "source_sha256": "2c01ce4adfae18142c83075e5a9085414a6b2c330b78ce39df59017bf1f1815f",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "LarryWillians - Simple Strategy",
+   "script": "ecosystem/library/2c38ab991ed6a97f.pine",
+   "source_sha256": "2c38ab991ed6a97fc86b63d58538bb0b3c18678424793d60ccdab3df8b98bab1",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & RSI HistoAlert",
+   "script": "ecosystem/library/2d712996e46f1219.pine",
+   "source_sha256": "2d712996e46f121951b2907712bd51ad73fe701a26c6a54e52ef1fd37efac21d",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & TEMA1",
+   "script": "ecosystem/library/2e9b3a2968b33967.pine",
+   "source_sha256": "2e9b3a2968b33967f0e01362b63470b898bdeae6d009c59106d303bda85bdba0",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "All Candlestick Patterns Strategy",
+   "script": "ecosystem/library/30de8eeaefc4e1a5.pine",
+   "source_sha256": "30de8eeaefc4e1a5a53978082e1e763b929da13fcd93bf03a939fdce3dd2efc6",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & N Bars Up",
+   "script": "ecosystem/library/322d809b19a4ae3a.pine",
+   "source_sha256": "322d809b19a4ae3aab415e8abffa048b45dacaed4d37313c50e8f38c8c24b9fa",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "My Strategy",
+   "script": "ecosystem/library/37c9fe91c8bb0c11.pine",
+   "source_sha256": "37c9fe91c8bb0c11fc3d11497384f9c1b0db7b2d651944b5491ec6d4f020f15f",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "SSL Strategy + EMA 200 AND Stop Loss",
+   "script": "ecosystem/library/3964e98f6646fd00.pine",
+   "source_sha256": "3964e98f6646fd008742b643b89d41665bb8c1e88632f0349d592d5449c09cb4",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Moving Average Envelopes",
+   "script": "ecosystem/library/3a84a957fa803e51.pine",
+   "source_sha256": "3a84a957fa803e512fd7b8e567f5cf0aba7c85d13cf55e23c45cf2371a581d58",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Vortex Cross w-MA Confirmation",
+   "script": "ecosystem/library/3be3e35f1f480b14.pine",
+   "source_sha256": "3be3e35f1f480b144c58ffd46bf81d1b8eaeaa3cb1f5280dfc9dfbde50e2b0c3",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo 2-20 EMA & Bull And Bear Balance",
+   "script": "ecosystem/library/3c9c28797ab33210.pine",
+   "source_sha256": "3c9c28797ab332106ea8b465273c8b6d8cc33928da2a7e983ff53ea981b8c5b7",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Finite Volume Elements (FVE)",
+   "script": "ecosystem/library/3cdd27959534d9ab.pine",
+   "source_sha256": "3cdd27959534d9ab9862670238ec64b264ae3d3a30238af812a887e0a4977872",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "KVFX Pivot Reversal Strategy",
+   "script": "ecosystem/library/3ef2b786857cca04.pine",
+   "source_sha256": "3ef2b786857cca044bcef7d39edd81d6fa76dac6043c988950e517adca45cde1",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "CROSS_ALGO SYSTEM",
+   "script": "ecosystem/library/3f6d3de675dc14ca.pine",
+   "source_sha256": "3f6d3de675dc14ca06fa93e63a649be9d448c4f703b5629a2224fd4edc403ef9",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Difference between price and MA",
+   "script": "ecosystem/library/4008a46b6033486c.pine",
+   "source_sha256": "4008a46b6033486c80202cf8031df0de6ccbf0bf9f29cc25bf65709f7c062e4a",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "TPS - FX Trade",
+   "script": "ecosystem/library/40cbb0653ef8cdc3.pine",
+   "source_sha256": "40cbb0653ef8cdc3d9529947bb41d1070756254fa74dcd382eb98d0c5b4a27be",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Moving Average Displaced Envelope Backtest",
+   "script": "ecosystem/library/41fee97b544d0941.pine",
+   "source_sha256": "41fee97b544d0941e9d50c1b3b8d2d6918421d9546265de9f4221a33d7919bef",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "simple but effective",
+   "script": "ecosystem/library/428884702e51321f.pine",
+   "source_sha256": "428884702e51321fae2534c6645ebf091555441e04f0ff225c47fb82abf12a68",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Trenbolone Strategy",
+   "script": "ecosystem/library/4394ebd228f8925a.pine",
+   "source_sha256": "4394ebd228f8925a3b68e9ad276a29656d6ec9d398cbd36e1df0cefdfcb0bcb0",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "MA cross strategy",
+   "script": "ecosystem/library/445aab19da9dec03.pine",
+   "source_sha256": "445aab19da9dec035c23f833578d6c81ed7414f06f4b589d1d87c570e3f390bb",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "MACD ReLoaded STRATEGY",
+   "script": "ecosystem/library/4612abe570df8e86.pine",
+   "source_sha256": "4612abe570df8e867b561f3d29c1c89d218b99023ca205daa4a4764fba3ea33d",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Striker Play",
+   "script": "ecosystem/library/466a346fd76cf677.pine",
+   "source_sha256": "466a346fd76cf677f21982d42302bd00b047db21e3bf98bd51f9df738146434a",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Simple MACD strategy",
+   "script": "ecosystem/library/46eab0499c9a4bc9.pine",
+   "source_sha256": "46eab0499c9a4bc90368377d4864889e050793d01a6bcea3c6ffdc421b46d945",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "P-Signal Strategy",
+   "script": "ecosystem/library/476c546b2bc04db3.pine",
+   "source_sha256": "476c546b2bc04db30d8af56a4e221aee64b1653f3d07f9a65a141971f4c19bbb",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Statistical Volatility",
+   "script": "ecosystem/library/48c9a13c0d4cf69c.pine",
+   "source_sha256": "48c9a13c0d4cf69ce23c6accb247acefd5dd73d12f297a87b12f14216167eafb",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Moving Average Crossover",
+   "script": "ecosystem/library/4956a4fb2acecce5.pine",
+   "source_sha256": "4956a4fb2acecce58bdb621b612d05e16e7cdeec2b715fb5be7d86cf9737a852",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Cheat Code- Example 1; Short-Term; Follow the Trend",
+   "script": "ecosystem/library/4971d11df15625ca.pine",
+   "source_sha256": "4971d11df15625ca214ea27c11211bf208301120764aa72dd90dd677bc82429f",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Price Action Trading Strategy",
+   "script": "ecosystem/library/4a17ce8af2e2531a.pine",
+   "source_sha256": "4a17ce8af2e2531aacf24591e499deece76f085b9e548599ff38a9fb6902fd2e",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "EMA SCALPEUR SHORT",
+   "script": "ecosystem/library/4b2f7b1d2b3e0550.pine",
+   "source_sha256": "4b2f7b1d2b3e05504d167a6b794a316e1a47cf3c12de21e1bbbd0a692d2f3572",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Trend Bounce [racer8]",
+   "script": "ecosystem/library/4bf311a1c1d045a5.pine",
+   "source_sha256": "4bf311a1c1d045a5be7303c27c3b2a4b4d8ec0a7ae63007e1df5a7dc92c554cb",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Overbought-Oversold",
+   "script": "ecosystem/library/4c71214337c5cf58.pine",
+   "source_sha256": "4c71214337c5cf58f6b1e87788714f26804727a3c7326f2674a3bd4fbe0213ac",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "AVG Stochastic Strategy [M30 Backtesting]",
+   "script": "ecosystem/library/4dadeac115eb5bd4.pine",
+   "source_sha256": "4dadeac115eb5bd4ff56fec5102055f151eabd9e6343705f42862b8d74b6b2ac",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Volatility Breakout Strategy [Angel Algo]",
+   "script": "ecosystem/library/4e477ad1d5114462.pine",
+   "source_sha256": "4e477ad1d5114462506dc9d4508b7fbce1547d4b4163968c6010fbad31956614",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Fibonacci Moving Averages Input",
+   "script": "ecosystem/library/4f353de36d3c6109.pine",
+   "source_sha256": "4f353de36d3c6109571e3643a71fd07f494376e3dfd89c809d9dd05926fdf9b1",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "DaveStrat",
+   "script": "ecosystem/library/4fe35954c4d1d914.pine",
+   "source_sha256": "4fe35954c4d1d9144372ad1b2995cfad28bca02168c20e5650db3281e09511ea",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo 2-20 EMA & Bear Power",
+   "script": "ecosystem/library/51f6d6d290ff1e44.pine",
+   "source_sha256": "51f6d6d290ff1e445bce5e64eb724c1fb7d91fe02b2f2f0a5c8bd2e1c3e06848",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Momentum Explosion 2CCI RSI",
+   "script": "ecosystem/library/53367a3c66b5f79b.pine",
+   "source_sha256": "53367a3c66b5f79bf794dd17ae6c4b5b94e684951aebd61dae5e7f1e768b36d5",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Trend Confirmation Strategy",
+   "script": "ecosystem/library/548adcba636d6d0c.pine",
+   "source_sha256": "548adcba636d6d0c07e8109ddc52228c38ad2c9638deea36748320bcfb7f85cb",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Buy-Sell Strat",
+   "script": "ecosystem/library/5625c6638c64c34c.pine",
+   "source_sha256": "5625c6638c64c34cd347747fe4fb6c3b54a4950adfca42226545118709caaf09",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Basic SMA 200 Strategy",
+   "script": "ecosystem/library/567d5737d49771a5.pine",
+   "source_sha256": "567d5737d49771a555e2e3a19218be289c33cca00615746941d2f06932023a75",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "UP TREND AND DOWN TREND",
+   "script": "ecosystem/library/57c84554fcce8d4a.pine",
+   "source_sha256": "57c84554fcce8d4a59f80ec3c8c134edb6ca113927a04697bb23da8c3354df43",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Ichimoku2c",
+   "script": "ecosystem/library/5b80f2e7d273221c.pine",
+   "source_sha256": "5b80f2e7d273221cb26728970ea97c0c820e1e2413a8568583f6ae8b53cd9e09",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Empirical Mode Decomposition",
+   "script": "ecosystem/library/5bad8a1cb8d49f3e.pine",
+   "source_sha256": "5bad8a1cb8d49f3ea6a4c32cc9f19a19edb0cf3c753320b0ae4efe202c3c5cdc",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Extracting The Trend",
+   "script": "ecosystem/library/5cd56afcaac102db.pine",
+   "source_sha256": "5cd56afcaac102db46f649b7ca11a5964b351cae0fdd48f6df87ef9d267d04f1",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Ergodic CSI",
+   "script": "ecosystem/library/5e487f4d5176b24d.pine",
+   "source_sha256": "5e487f4d5176b24d6775387b36b65122a642a487c8bb9f9e38cbece5714130e2",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "[KL] BOLL + MACD Strategy v2 (published)",
+   "script": "ecosystem/library/5f15a29c2c56ea70.pine",
+   "source_sha256": "5f15a29c2c56ea7099a0f26f898e230d349b3bbdf7853db44ed2bb754eaff430",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "ABUs Euroramp",
+   "script": "ecosystem/library/5f281234241c558c.pine",
+   "source_sha256": "5f281234241c558c8017c47acc93b1860f28ed2ed9827ec0ff6f5b400094d8de",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Supertrend TEST 2 Strategy",
+   "script": "ecosystem/library/5f95f6788902aeb8.pine",
+   "source_sha256": "5f95f6788902aeb80f2469af454768900862cffe0d1ffa245716e4258c601acd",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Astor SMA20-60 TW",
+   "script": "ecosystem/library/63556a32e18b69b8.pine",
+   "source_sha256": "63556a32e18b69b86d614a29d620c0532ad4bd8c169ea8842ad2168301c74325",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Trend Ravi Trial",
+   "script": "ecosystem/library/64778aa25343d7a1.pine",
+   "source_sha256": "64778aa25343d7a1da196a7a1a1ea8f1d930d3808e9c0fdf74939da68741d479",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Awesome Oscillator (AO)",
+   "script": "ecosystem/library/6484821aa43ca22d.pine",
+   "source_sha256": "6484821aa43ca22d5079a0bfceb32827d85939297a86b2e7a45ef4d443143039",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Chirag Strategy SMA with StopLoss",
+   "script": "ecosystem/library/660e65aadf0a9b74.pine",
+   "source_sha256": "660e65aadf0a9b74bb5c99dae38a28acb829c26516f97ff7d61047359fbb6144",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Smoothed RSI",
+   "script": "ecosystem/library/67c06d531684d5c1.pine",
+   "source_sha256": "67c06d531684d5c1ff770ef5fafba5ebc62649e663c9a8e4db3c1912d87f930c",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Pivot Reversal Strategy + alerts via TradingConnector to indices",
+   "script": "ecosystem/library/67de90e78f872630.pine",
+   "source_sha256": "67de90e78f87263007626f4c72749fa3863839fea7bb4e883a13003236802690",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "ATR + STC + MA",
+   "script": "ecosystem/library/688caf1916812892.pine",
+   "source_sha256": "688caf19168128927921ff328540a46f810d54ea6e74b2eea5e6a5a23cc28b7c",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "RSI cross Strategy by alireza v1.1.1",
+   "script": "ecosystem/library/69d77b08d3ec70f5.pine",
+   "source_sha256": "69d77b08d3ec70f579337bfce7bc1c1a86c1b085d68fd258fc6002d37050bd6c",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "RSI Strategy with alerts via TradingConnector to Forex",
+   "script": "ecosystem/library/6a7e649be8776a37.pine",
+   "source_sha256": "6a7e649be8776a3716efd6f60e75cb307759cb4dc9c65044724eb6cc8b5cb4df",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Ichimoku Long and Short Strategy",
+   "script": "ecosystem/library/6e0d7c7ac6e1a2c6.pine",
+   "source_sha256": "6e0d7c7ac6e1a2c62d2d25ed6d95429eea487ec03b55800bf6299675f9812972",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Forex Fractal EMA Scalper",
+   "script": "ecosystem/library/6e439c64f5726aa5.pine",
+   "source_sha256": "6e439c64f5726aa559e778e608ba96d53e1b6d4c988d23739a93b6a69f04c596",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo 2-20 EMA & Bill  Awesome Oscillator (AC)",
+   "script": "ecosystem/library/7339aa0a37739c22.pine",
+   "source_sha256": "7339aa0a37739c222c5e72f0f633b0293882f9ea45809186a1a2ce54b77c3b4b",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & T3 Averages",
+   "script": "ecosystem/library/741ea2cdbec50fd7.pine",
+   "source_sha256": "741ea2cdbec50fd72fb900ae4a0a1ca4e6cd0a87eca34af7074a35ed9fa99005",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Hobbiecode - RSI + Close previous day",
+   "script": "ecosystem/library/74e4c72c632e3b48.pine",
+   "source_sha256": "74e4c72c632e3b48811d2d959ac2dcaf21d0da1d0e0fc0acef53d91a59fd4320",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Binomial Moving Average Strategy",
+   "script": "ecosystem/library/75b7e27c93b76c80.pine",
+   "source_sha256": "75b7e27c93b76c80b92643904df017e22ccf3b827eda52e62e6e0790b8501200",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Percent change bar",
+   "script": "ecosystem/library/76e6c67d03ba5802.pine",
+   "source_sha256": "76e6c67d03ba5802fc8db96a3ab2adc2f0bb6024ff56b9b5dbf41294291e4e73",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Gann Swing Oscillator",
+   "script": "ecosystem/library/780b31aea52b1ad6.pine",
+   "source_sha256": "780b31aea52b1ad68f8fc27d9910b7493e49bbe4a292efa0eb3e7639140ad7b8",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Plot Break-even Price",
+   "script": "ecosystem/library/7a26b282a71cd07f.pine",
+   "source_sha256": "7a26b282a71cd07fca8f48de631e7f94bc888e0db252ab58e13607bda60f3b76",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo 2-20 EMA & Adaptive Price Zone",
+   "script": "ecosystem/library/7b3117ead338012c.pine",
+   "source_sha256": "7b3117ead338012c95c92a3e5b76e78121208523057f94892101497bc3fbbdac",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "sachin5986",
+   "script": "ecosystem/library/7b9727c8f69ec3be.pine",
+   "source_sha256": "7b9727c8f69ec3beba675ad6c89427da7f29faa96b9f1ea2d4452c2e15401ea3",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "ROoT",
+   "script": "ecosystem/library/7ce607ca6a198dff.pine",
+   "source_sha256": "7ce607ca6a198dffef10f10ec06937fd97e2c32444a35a597a085763adbab91c",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Trend Continuation",
+   "script": "ecosystem/library/7e6f8d9809699bb1.pine",
+   "source_sha256": "7e6f8d9809699bb16026faf3f42e07a95c8480b0bffcc848ceb6549d54bbb407",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Williams -R Cross Strategy with 200 MA Filter",
+   "script": "ecosystem/library/7f8d9b105ea8c631.pine",
+   "source_sha256": "7f8d9b105ea8c631a7b4ec3c543af9f4cbfb74d32e36b484a1326341c28b9522",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Triple EMA Cross JS",
+   "script": "ecosystem/library/801b081348e3e2bb.pine",
+   "source_sha256": "801b081348e3e2bbee144255af72fe4a2c6f0c1f04c15a8589dad75f78ee1d7e",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "HHLL Strategy",
+   "script": "ecosystem/library/80f8ebadd4882916.pine",
+   "source_sha256": "80f8ebadd4882916721d475166a38f76bbb3073afdbc254c1e6f6d5745e72f9b",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & MACD Crossover",
+   "script": "ecosystem/library/81ac0bda2b3c5723.pine",
+   "source_sha256": "81ac0bda2b3c5723961a8bfd5e2aec15d76393fb0bd5745d590ff09819a16eb5",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Perfomance index",
+   "script": "ecosystem/library/82723f77c8ab9032.pine",
+   "source_sha256": "82723f77c8ab9032cbeb06874ec2740bdd6f67adcadd9f9a422c859abc848efe",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Parabolic SAR Strategy With take profit and stop loss",
+   "script": "ecosystem/library/82f7c1ce216279ad.pine",
+   "source_sha256": "82f7c1ce216279ad71d8e149a52a6fb8eb151a8de2ae31996c85029f3cbebc76",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Market Facilitation Index",
+   "script": "ecosystem/library/871b4aacf53f4506.pine",
+   "source_sha256": "871b4aacf53f450634144e8e2051303b5c0aa14aacd44964c9bf1051520648ec",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Ergodic MDI",
+   "script": "ecosystem/library/87cd7f2bae3e39bd.pine",
+   "source_sha256": "87cd7f2bae3e39bda8320227fc17ba74034a6fb48e83fcc554826956fb9b5130",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Triple RSI strategy",
+   "script": "ecosystem/library/892c55e22d4dbf9f.pine",
+   "source_sha256": "892c55e22d4dbf9f1039e51f1266a62de31f710db1c7c9da49d37697750e3c39",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo 2-20 EMA & ADXR",
+   "script": "ecosystem/library/895824231aad1c9f.pine",
+   "source_sha256": "895824231aad1c9f034a736bd1da2cb53062a0ad2dbc1e860366f7dab0bd0a6d",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Consecutive Up-Down Strat + alerts via TradingConnector to Forex",
+   "script": "ecosystem/library/899c3260dba08cdf.pine",
+   "source_sha256": "899c3260dba08cdf0a98c0cab53ac341b51c75f023cd687dc36caf8ccdf685e7",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Kase Dev Stops",
+   "script": "ecosystem/library/8a09b0fc6388080a.pine",
+   "source_sha256": "8a09b0fc6388080af6d3ea45d74b79602b7f45f2f17dffa0ee30d6552ac665cd",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Inertia Strategy",
+   "script": "ecosystem/library/8a84dc0f2f7f93d0.pine",
+   "source_sha256": "8a84dc0f2f7f93d07305c371ed10203bb56518f9bee644426fddc2e9189b0c10",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Kwan NRP Backtest",
+   "script": "ecosystem/library/8ae04d9ae911dc02.pine",
+   "source_sha256": "8ae04d9ae911dc02301f08fefee62e8ad9def07f3e66e74476ea5360504008ca",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "sma RSI & sudden buy and sell Strategy v1",
+   "script": "ecosystem/library/8b3757356c1abce7.pine",
+   "source_sha256": "8b3757356c1abce72a866ff6207d1da556e9bf730345f2fe267787b8ac401214",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "[KL] Bollinger bands + RSI Strategy",
+   "script": "ecosystem/library/8b615b4c39dcc3e8.pine",
+   "source_sha256": "8b615b4c39dcc3e8f060c6ed0e1d5cd6fb5110ff7eb0803132e1360be345e549",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & High - EMA Strategy",
+   "script": "ecosystem/library/8e020de28b57c773.pine",
+   "source_sha256": "8e020de28b57c7731a023b2dfe97cac67f387b31a2177d6533e551479210b473",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "AryaN",
+   "script": "ecosystem/library/9386d3d9c33b413f.pine",
+   "source_sha256": "9386d3d9c33b413f90f1cf5c18914a3869716c982da0042d05a1f00b0ab4db11",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Turtle Trend Trading System [racer8]",
+   "script": "ecosystem/library/94aea29df75a828b.pine",
+   "source_sha256": "94aea29df75a828b5a75207e9d6eaec5e8a1d365cab6730a03157828e756e3b4",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Two level TP + TrailStp exits example",
+   "script": "ecosystem/library/94e787eabb083132.pine",
+   "source_sha256": "94e787eabb083132db0d755246a9b0c5d7bba3ba2486228bc054a5b4c52a8926",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Stoch cross",
+   "script": "ecosystem/library/95103654ef6b20c7.pine",
+   "source_sha256": "95103654ef6b20c7a556c48272b72da377438c8b2c3c8a226e6503e4169c89fc",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Divergence for Many Indicators v4 ST",
+   "script": "ecosystem/library/952d678dd81772a2.pine",
+   "source_sha256": "952d678dd81772a231a11aa60654bfb3f0157f7b74f0fb568fce52f916479217",
+   "bars": 300,
+   "qualified": false,
+   "error": "bar 48: E_EXTERNAL_UNSUPPORTED: invalid price or quantity",
+   "path": 0
+  },
+  {
+   "name": "Arnaud Legoux Moving Average Cross (ALMA)",
+   "script": "ecosystem/library/95cf9f1e6231d665.pine",
+   "source_sha256": "95cf9f1e6231d665bdc35294696b82d397a7667edaf11946fb6f6bd3e8c251fc",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Stochastic Optimized Trend Tracker -Strategy-",
+   "script": "ecosystem/library/95d5265ed0648865.pine",
+   "source_sha256": "95d5265ed0648865833ccaf6954fad31d5bba77f7aeab530f1d0397a76a38b0d",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Modified Price-Volume Trend",
+   "script": "ecosystem/library/975f1aed4964b995.pine",
+   "source_sha256": "975f1aed4964b995906cd36dbc6aa276510857bfe13f3bcb8f6455f996772e45",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & MASS Index",
+   "script": "ecosystem/library/97a95cf5065ff655.pine",
+   "source_sha256": "97a95cf5065ff655b8c747cbdeb4e2a9b94919d2da0f75f725649eef76b2dd26",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo 2-20 EMA & Absolute Price Oscillator (APO)",
+   "script": "ecosystem/library/97dc4545a708c311.pine",
+   "source_sha256": "97dc4545a708c311aea79ad2475d3d6a928f0c7d8be2c60dc757a044f85fa7df",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Volatility Range Breakout Strategy [wbburgin]",
+   "script": "ecosystem/library/9844d75541d189d8.pine",
+   "source_sha256": "9844d75541d189d841ea803397c0a8d13fc2f7b444768d568a776899c3be907e",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "scalping against trapped countertrend",
+   "script": "ecosystem/library/98d8f66ff4d1de80.pine",
+   "source_sha256": "98d8f66ff4d1de806015620b83c08fefa9f88d6e5807141eb47ee31721d4a092",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Chandelier + BB + EMAS",
+   "script": "ecosystem/library/9a14a0e2008b2e17.pine",
+   "source_sha256": "9a14a0e2008b2e17394e1e37fba06d84cbf0b4eb3bbd221658de60e8bb5b7b53",
+   "bars": 300,
+   "qualified": false,
+   "error": "bar 88: previous Pine intents changed during reconstruction",
+   "path": 0
+  },
+  {
+   "name": "Chande Kroll Stop + ADX filter strategy",
+   "script": "ecosystem/library/9b7c0e8ab7749d52.pine",
+   "source_sha256": "9b7c0e8ab7749d52fa32e1948a10fc660558ef3004ed3a3d2f79761720921b34",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "ETH APO Strategy [60MIN]",
+   "script": "ecosystem/library/9b84636c557d7695.pine",
+   "source_sha256": "9b84636c557d7695ad4947149db1c7188c31efb1cfeb1268798e8e7d37c6d062",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & EMA & MA Crossover",
+   "script": "ecosystem/library/9c933182f993d4b6.pine",
+   "source_sha256": "9c933182f993d4b61bf20c2f8e5e4902e70aaebdfce2517adc312fb7f6b9a440",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "MA Cross + Strategy by Realmix",
+   "script": "ecosystem/library/9cc1f5cfbc108ac8.pine",
+   "source_sha256": "9cc1f5cfbc108ac84f0efeb673ff25a84ce216f68c03f880a746077cdb1d829a",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "GHG RETRACEMENT MODE 1",
+   "script": "ecosystem/library/9da2d7ba4dea4c29.pine",
+   "source_sha256": "9da2d7ba4dea4c29048c48f8e07ac7b5cc9169e553ff08afb7f506dd6a05b887",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Forex Midpoint Stratejisi For Nasdaq",
+   "script": "ecosystem/library/9eaa1eb5a134489b.pine",
+   "source_sha256": "9eaa1eb5a134489bda770f59ae74ce1c3dcf0b2772b1eaeb80bd0183fd6a5b40",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Trend Finder V2",
+   "script": "ecosystem/library/a0d83135e14adadf.pine",
+   "source_sha256": "a0d83135e14adadfb5280ebdc1b93b0464ab22d99b8fec8b9b7271bda7657fe8",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Binary Options Strategy Template",
+   "script": "ecosystem/library/a13c7e982dc02302.pine",
+   "source_sha256": "a13c7e982dc023023ea3d3d4b6c43aa87e3f346d5c3af46816616cf10530e7d8",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Hull MA of RSI Strategy",
+   "script": "ecosystem/library/a19376bcdf5a24e3.pine",
+   "source_sha256": "a19376bcdf5a24e34f5b0a8ba0bb716fe8e0dc4988a6168b04b5a34409c8669a",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "ma 20 high-low",
+   "script": "ecosystem/library/a2209f18e573c8b5.pine",
+   "source_sha256": "a2209f18e573c8b58e443adc3b8b5af5a4fe36554990470e9c1e7d7bb696a448",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "pomila",
+   "script": "ecosystem/library/a27700e49af7b637.pine",
+   "source_sha256": "a27700e49af7b6370038940e2cb54065bf4a8f670e63dd44333fab943343942e",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Elder Ray (Bull Power)",
+   "script": "ecosystem/library/a34d184d75c23d93.pine",
+   "source_sha256": "a34d184d75c23d934364af047d5b08db7827c05be1f673793c272b327aa4c035",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Power Zonessssss",
+   "script": "ecosystem/library/a398c65bfd81497b.pine",
+   "source_sha256": "a398c65bfd81497ba0afa7c14aedbb266424fc814e6e29a40290f11c971667ec",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Volatility Finite Volume Elements",
+   "script": "ecosystem/library/a401084edda69d61.pine",
+   "source_sha256": "a401084edda69d61f35f51a4219219ee373be0b7cef73f6911ac27f02621854e",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Moving Average Cross Strategy early Closing",
+   "script": "ecosystem/library/a4a3b38e76a723c5.pine",
+   "source_sha256": "a4a3b38e76a723c5fc8105060648c30f203bd3240368ea593e9a8be4e6f357ab",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & RSI",
+   "script": "ecosystem/library/a61a806a677cea4e.pine",
+   "source_sha256": "a61a806a677cea4ed8951d8009a0675e5ddb145296c5ea6ff2d90abbf4b4ad75",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Ergodic MACD",
+   "script": "ecosystem/library/a6907161b007cb7d.pine",
+   "source_sha256": "a6907161b007cb7d6a133de4150b6b9d28285104acfef63e97ec958bf9b652ea",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & FX Sniper- T3-CCI",
+   "script": "ecosystem/library/a77e51618594ffea.pine",
+   "source_sha256": "a77e51618594ffeaea09ee14d3359be4940483fb10efc914c7e1c89af71364e8",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Smoothed Williams AD",
+   "script": "ecosystem/library/a8979f3009d5986e.pine",
+   "source_sha256": "a8979f3009d5986e222af0cee82cdccfd376a623e3d92722b546bb4ce8e3f080",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "RSI -b Signal [H1 Backtesting]",
+   "script": "ecosystem/library/a8f5c4688242ece5.pine",
+   "source_sha256": "a8f5c4688242ece55d698f001aad591f5b6e7b4e8ad9a917587b322b5e80d2c7",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & MA Displaced Envelope",
+   "script": "ecosystem/library/ab4edebae7d8d64c.pine",
+   "source_sha256": "ab4edebae7d8d64ce8602a02c92b98fb34854b032d0254ef2f73f3fb3440493f",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Recursive Moving Trend Average",
+   "script": "ecosystem/library/ab8656bcf68e20a7.pine",
+   "source_sha256": "ab8656bcf68e20a7793b0211ba627fcd28261693c2c808db80c1072fc6b40663",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & RAVI",
+   "script": "ecosystem/library/ac7f633202931cb3.pine",
+   "source_sha256": "ac7f633202931cb30d24247cc680771fbbf6ee7ae487605b01e22bfd08b509ff",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "GENESIS",
+   "script": "ecosystem/library/acadb920444d17a1.pine",
+   "source_sha256": "acadb920444d17a13857cc7a7e81884b7f4db56e823bdcbac1acb83b2d65365b",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Twin Optimized Trend Tracker Strategy TOTT",
+   "script": "ecosystem/library/ae5f55aa8444cfb7.pine",
+   "source_sha256": "ae5f55aa8444cfb70806836c544ec87023f1a654b5ff78c22d63eae5cdf98a69",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combined EMA & MA crossovers [CDI]",
+   "script": "ecosystem/library/b0dd0b0a7fda8c3e.pine",
+   "source_sha256": "b0dd0b0a7fda8c3e4f76fe181b05d9ed2bafbf0a29288fdd5f6b1d1a64fd09c0",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "[KL] Relative Volume Strategy",
+   "script": "ecosystem/library/b1e2d0af48b23284.pine",
+   "source_sha256": "b1e2d0af48b232849165147c33fc69502a1614177dd9317089a2e7755b189336",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Jaws Mean Reversion [Strategy]",
+   "script": "ecosystem/library/b35bb2abd328162e.pine",
+   "source_sha256": "b35bb2abd328162e7f8588bb6c13e52c126f34ffa4adac8369bd735178d1ccdf",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "EMA SCALPEUR LONG V2",
+   "script": "ecosystem/library/b65f6499fed65602.pine",
+   "source_sha256": "b65f6499fed65602966a0c7fbc99765c8fd46bc1b33e3423f5219c97534e1662",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Highest High and Lowest Low Channel Strategy",
+   "script": "ecosystem/library/b6a363e9a07ff857.pine",
+   "source_sha256": "b6a363e9a07ff857dde70a85ff66bd5c7be4bad45a30c083b7ae4398d50fcbfd",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Reverse Engineering RSI",
+   "script": "ecosystem/library/b72ff2653e573105.pine",
+   "source_sha256": "b72ff2653e573105d5408a3456fbbbd84bd91d0a95d4f1636220de6b38a89a42",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "BTC-USD - RSI",
+   "script": "ecosystem/library/b98f5d3bb3557a74.pine",
+   "source_sha256": "b98f5d3bb3557a744d2ab2a8bfe057ec4fc3d3386b2356c430569d4ca254dbf7",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "[DS]Entry_Exit_TRADE.V01-Strategy",
+   "script": "ecosystem/library/b9f6b6777ef28e48.pine",
+   "source_sha256": "b9f6b6777ef28e485275cea301623f3e27aa09b63d2bec2475313a5bf3e5ec2a",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Stochastic",
+   "script": "ecosystem/library/ba6c790149b64a12.pine",
+   "source_sha256": "ba6c790149b64a1213a96c7ff396ec37ecda358e4561e07d04e8802b960bd970",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Klinger Volume Oscillator",
+   "script": "ecosystem/library/bb53b60a0808d14d.pine",
+   "source_sha256": "bb53b60a0808d14db1270ff07a089e353d9a3d75f7606c1ac0da40ada477662b",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "ddosok10 1min start",
+   "script": "ecosystem/library/bce3c3928b4e0b9e.pine",
+   "source_sha256": "bce3c3928b4e0b9e3d75185e0465eef0207fbc39cee94f185c06bfc271a07689",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "DMI Strategy",
+   "script": "ecosystem/library/bd6d662342667678.pine",
+   "source_sha256": "bd6d662342667678304eb77c980e48364c8b94a6d0eeb6d8f0cc50275c10f0ad",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Simple and efficient PSAR swing strategy",
+   "script": "ecosystem/library/bd78981d18cd3053.pine",
+   "source_sha256": "bd78981d18cd305301f64098a4c568586c5acb21ae8e8309f490eba4c18d00de",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "oussamacrypto",
+   "script": "ecosystem/library/be84a0d857a80fa4.pine",
+   "source_sha256": "be84a0d857a80fa4ebcbc1a979ba4a4d0e41b9528bcc33c3d85f65a819eaeab5",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Rate Of Change Trend Strategy (ROC)",
+   "script": "ecosystem/library/bea96e177a2c6a39.pine",
+   "source_sha256": "bea96e177a2c6a39239169308f57ec3c035bbe5ddd80a917f399ccc6dcd5e6a7",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "EMA & Supertrend",
+   "script": "ecosystem/library/bf3cdb546a20ab4a.pine",
+   "source_sha256": "bf3cdb546a20ab4af2f2f8ec4920175f0f7dfddd48187831200dc668a7af3b61",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Pivot Detector Oscillator",
+   "script": "ecosystem/library/c12e52e222ff7a28.pine",
+   "source_sha256": "c12e52e222ff7a28425307a2a5e1eda07e64439e8f79c86500650c0063c4c11f",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Ergodic TSI",
+   "script": "ecosystem/library/c1e94a19b329fe47.pine",
+   "source_sha256": "c1e94a19b329fe47540fba39dc24a8fc7141a19176a8d8f540a9eb0b1e6e68b0",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Rainbow Oscillator",
+   "script": "ecosystem/library/c22c86e31151a82d.pine",
+   "source_sha256": "c22c86e31151a82dbd835954236677411a43a56e68a28a5fcedf7b9a1830d0b8",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "[blackcat] L2 Reversal Labels Strategy",
+   "script": "ecosystem/library/c3256177b9f2c4a4.pine",
+   "source_sha256": "c3256177b9f2c4a4232042252ce54babab4e15c7ad7fbf2cb5885b328258f36f",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo 2-20 EMA & Average True Range Reversed",
+   "script": "ecosystem/library/c3aacaf796337f35.pine",
+   "source_sha256": "c3aacaf796337f3524a88881bf94389b12014cedfc84c8238dea6b82eab6e44b",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Ichimoku with MACD- CMF- TSI",
+   "script": "ecosystem/library/c452d07eb6019ad1.pine",
+   "source_sha256": "c452d07eb6019ad15c927fcb7f99d35212b57e26df9ed9a32e43a628b2aafd3b",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "[KL] Bollinger Bands Consolidation Strategy",
+   "script": "ecosystem/library/c4b9ca12fdf3134c.pine",
+   "source_sha256": "c4b9ca12fdf3134c2db5c9ed170615044d18d0ba0ae8be4f0d8e662b2c25ce8b",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo 2-20 EMA & (H-L)-C Histogram",
+   "script": "ecosystem/library/c654d815a31d4aae.pine",
+   "source_sha256": "c654d815a31d4aae2c715a5cfac9263db6a44e391d482dd903c91bb928327662",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Percentage Volume Oscillator (PVO)",
+   "script": "ecosystem/library/ca92a5d4a75c40a0.pine",
+   "source_sha256": "ca92a5d4a75c40a0d8aa4f61405d7cd6649b590f6d83ed4ec7c4d79727ed4efd",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "AlphaTrend Strategy",
+   "script": "ecosystem/library/cd90c3b700469ebe.pine",
+   "source_sha256": "cd90c3b700469ebed14e319eff3939c85297dc866242fadfb2a75d3b8aa50119",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & High Low Bands",
+   "script": "ecosystem/library/cdcbd298ef75a2fa.pine",
+   "source_sha256": "cdcbd298ef75a2fa39bf7220b4862bee26288e860b0f7c049692d80471ad8a86",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Williams -R Strategy",
+   "script": "ecosystem/library/ce91ee9d2bc655eb.pine",
+   "source_sha256": "ce91ee9d2bc655ebb18f6a2b4040205ca4f86f516ead64ad22a6911bd95e9038",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Daily_Mid Term_Consulting BOLT",
+   "script": "ecosystem/library/ce9d0d2006dadd72.pine",
+   "source_sha256": "ce9d0d2006dadd7288731ac31bde71d17ef1840d3d3c555f467bbad4fb974459",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "RSI Mean Reversion Strategy",
+   "script": "ecosystem/library/cea499e5f5cb9d0b.pine",
+   "source_sha256": "cea499e5f5cb9d0b8cf34cbf498779da62ff38e65777db76647ebcc5202340a3",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "kaya indicator",
+   "script": "ecosystem/library/d0c26a71e6da2d4d.pine",
+   "source_sha256": "d0c26a71e6da2d4dfe5f5581d2b9ce604d30071639bcf994736a39984c979611",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Qstick Indicator",
+   "script": "ecosystem/library/d16d1be1b28cc0d1.pine",
+   "source_sha256": "d16d1be1b28cc0d11ed191ff36c702ca0251f5465be79a5a02a352493541b170",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo 2-20 EMA & Accelerator Oscillator (AC)",
+   "script": "ecosystem/library/d1c3e8e35c01b62c.pine",
+   "source_sha256": "d1c3e8e35c01b62cae0d647f32657fb5b89b622cf88fedc35cf9a043cf21fcb1",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Signal To Noise",
+   "script": "ecosystem/library/d27dacb7c2bd791d.pine",
+   "source_sha256": "d27dacb7c2bd791d1c2059ec77005f23f495377429091d7c4aaa60b71b24be5c",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "EMA12-26 buy spot only",
+   "script": "ecosystem/library/d3b3933915feb600.pine",
+   "source_sha256": "d3b3933915feb60088acc271c829f1264936a1518cf611d75d8a75569f026f03",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Money Flow Indicator",
+   "script": "ecosystem/library/d4571a0cf7ada000.pine",
+   "source_sha256": "d4571a0cf7ada000e79385fba6ce7b8ce65173913c9e1f5462c9582edc3b120a",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Buying Dip Strategy With Take Profit And Stop Loss [racer8]",
+   "script": "ecosystem/library/d4e09690084cd781.pine",
+   "source_sha256": "d4e09690084cd78173ca8534b5e08e2b8f5cb46281bcda027814ee6fbb7d1718",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "RSI Divergence X Ichimoku Cloud X 200EMA",
+   "script": "ecosystem/library/d653c72c8f6d613e.pine",
+   "source_sha256": "d653c72c8f6d613e021763e7261836b487bfe1918a2a3bc90ecbf130cee7cdbf",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Relative Momentum Index",
+   "script": "ecosystem/library/d6670ee41476dc6a.pine",
+   "source_sha256": "d6670ee41476dc6ad3bd1616cf3b3997e4c1a8fee8d2b3b65259ac811e2fd03b",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Scalping Trading System bot Crypto and Stocks",
+   "script": "ecosystem/library/d85db7f610a5629f.pine",
+   "source_sha256": "d85db7f610a5629fdf2d681e28e4930a06a5ceb90614c908b6c7cd66211311c4",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "RSITrendStrategy",
+   "script": "ecosystem/library/d881d3225da0254f.pine",
+   "source_sha256": "d881d3225da0254f4639f95a8c61620af0607fd6cca4732aca9b019237a87bc3",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "T3 crossover strategy",
+   "script": "ecosystem/library/d974012d061bec0d.pine",
+   "source_sha256": "d974012d061bec0db8693dc37382f02090c0cc003dba6c2c8ccebc5d65067792",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo 2-20 EMA & Bull Power",
+   "script": "ecosystem/library/db32ec84a8ea0505.pine",
+   "source_sha256": "db32ec84a8ea05052248797afe284c2713e49102a3f736416450b053e4aef947",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "MM tester",
+   "script": "ecosystem/library/dd67b390927ee018.pine",
+   "source_sha256": "dd67b390927ee0186d36f55703d95bd57b8b557b15095ec080dd4e7600862692",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "EMA SCALPEUR + RSi - SHORT",
+   "script": "ecosystem/library/e1fa78a512744c0d.pine",
+   "source_sha256": "e1fa78a512744c0d5d7a86b6b8c200384ab050ecd7778f86576553e4bc19c515",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & 2-20 Exponential MA",
+   "script": "ecosystem/library/e2a461cc2a3ff2b2.pine",
+   "source_sha256": "e2a461cc2a3ff2b218c5054b4b5e161974f8831dfad5e3d1c0f649ff9ff54a9f",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "RSI Cross [xaurr]",
+   "script": "ecosystem/library/e396d115571ef240.pine",
+   "source_sha256": "e396d115571ef240e5d0f23e9b5fb2d89813849321c5d9ae06db8d35118569c7",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & FSK (Fast and Slow Kurtosis)",
+   "script": "ecosystem/library/e4d666d9db526d0a.pine",
+   "source_sha256": "e4d666d9db526d0af072dd369da9f764505491f9f9cf97b359c94527863b058c",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Line Regression Intercept",
+   "script": "ecosystem/library/e5d38511d69a1a80.pine",
+   "source_sha256": "e5d38511d69a1a80b45b2a9bae4d50419e2bbf859ecf026ad0f22cb51bd91dad",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Fisher Transform Indicator",
+   "script": "ecosystem/library/e6bc575deff5802b.pine",
+   "source_sha256": "e6bc575deff5802b5617a51baeb0a2c4ed8279a5a33c4040e01ac066421b8582",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Stochastic Crossover",
+   "script": "ecosystem/library/e6c523d6bb0da02c.pine",
+   "source_sha256": "e6c523d6bb0da02c5a28e753bbe3bdda8e4d0ec726ce5ea7dc8f7b871f50dfee",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Elder Ray (Bear Power)",
+   "script": "ecosystem/library/e9a07449adc7b0ba.pine",
+   "source_sha256": "e9a07449adc7b0bacb5820d1ebb3eb780cd49c2be845098845ad0c424cf42dc5",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Excitement - Crypto Surfer v1",
+   "script": "ecosystem/library/e9c58856e3be5199.pine",
+   "source_sha256": "e9c58856e3be519954af9b4cf73114dd077da3473fe8aef1adc83ef56ae3ec91",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Bitcoin trend RVI and Ema",
+   "script": "ecosystem/library/eb1b9b940743b30e.pine",
+   "source_sha256": "eb1b9b940743b30e03db1d5a757496a93d5151827caa4cd852ec56d41a8b95f1",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "SPX Scalping Strategy",
+   "script": "ecosystem/library/eb82395bbe8964c9.pine",
+   "source_sha256": "eb82395bbe8964c94d35952f2c2022d47068675f055fa8c15d4d5ab95b1485a3",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Astor SMA20-60",
+   "script": "ecosystem/library/ecad268d912c4356.pine",
+   "source_sha256": "ecad268d912c43565e13926d6523ea18b10ae92083c5ee27ceda04acecb8634f",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Future Lines of Demarcation",
+   "script": "ecosystem/library/ee2b49852875660c.pine",
+   "source_sha256": "ee2b49852875660c6410986a837784e7d67becf0b7ab968f7aa975a97245d02e",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Strategia RSI semplice",
+   "script": "ecosystem/library/f0dbd1d329dd2869.pine",
+   "source_sha256": "f0dbd1d329dd2869fb2b4c42cd8b842d969c863b34a1d443e9fc55f1b3fcfb88",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Donchian Channels System [racer8]",
+   "script": "ecosystem/library/f21eaf4a32e55ed3.pine",
+   "source_sha256": "f21eaf4a32e55ed320c9a6ed722eced9833ce7871579c82c4b217995101a8358",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Rainbow Strategy Backtesting",
+   "script": "ecosystem/library/f298b706ff958a09.pine",
+   "source_sha256": "f298b706ff958a09bf223941b7c6a273c8963f70632875bb93e514e726d30b3b",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Simple Moving Averge Strategy",
+   "script": "ecosystem/library/f3bebacdb55cd0cb.pine",
+   "source_sha256": "f3bebacdb55cd0cb7472b763d6e6123f89bb8434d78a4f8fe23a76aacdf3831f",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "MACD Long Strat",
+   "script": "ecosystem/library/f967234853c99eb6.pine",
+   "source_sha256": "f967234853c99eb626e9eca024eb4798b00365c9b3446d2eef70322a103206b7",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Double EMA CROSS",
+   "script": "ecosystem/library/f96b5b112fc8748d.pine",
+   "source_sha256": "f96b5b112fc8748dedfa799efdae5e626f4193247f9c009f6fd292f77cd221f2",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Atrend by OTS",
+   "script": "ecosystem/library/f970d39872b28d42.pine",
+   "source_sha256": "f970d39872b28d42d6215176227bbaf7cfc2c86cb45fc43650d70488377a55d6",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo Backtest 123 Reversal & Stochastic RSI",
+   "script": "ecosystem/library/f9be0e660bcd6767.pine",
+   "source_sha256": "f9be0e660bcd676737fe0d06d9889f5bf61d79b0d54624c28a140e9870037e19",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "Combo 2-20 EMA & Bill Williams Averages. 3Lines",
+   "script": "ecosystem/library/fa69857c587d1b54.pine",
+   "source_sha256": "fa69857c587d1b540c6cc1313fd67d943f509016d857e4f8865d6b258aea38d4",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "SSL Backtester With ATR SL TP and Money Management",
+   "script": "ecosystem/library/fcbb24e7080c73f4.pine",
+   "source_sha256": "fcbb24e7080c73f4c5c7ed256a799050118d280206ec2e0d67406c5e3daea828",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "D-Bot Alpha RSI Breakout Strategy",
+   "script": "ecosystem/library/fdeee26dca92e02b.pine",
+   "source_sha256": "fdeee26dca92e02b59e393d8baf57917bf7b81826b6981f1b62840f37783b375",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  },
+  {
+   "name": "[KL] Double Bollinger Bands Strategy (for Crypto-FOREX)",
+   "script": "ecosystem/library/ffa10719a6cadd6f.pine",
+   "source_sha256": "ffa10719a6cadd6f5cb84b0a28a94e58cc44ad77b4606d94729e9b6138afd172",
+   "bars": 300,
+   "qualified": true,
+   "calls": 600
+  }
+ ]
+}
