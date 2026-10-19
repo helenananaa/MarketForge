@@ -237,6 +237,28 @@ class PineBrokerTests(unittest.TestCase):
         result = self.run_source('strategy.exit("T",trail_points=2,trail_offset=1)', req)
         self.assertEqual(result["actions"][0]["BotOrder"]["action"]["SetPositionProtection"]["protection"]["trailing_distance_tick"], 5)
 
+    def test_exits_report_the_last_trade_levels_they_compare(self):
+        req = perp(broker_request([100]), position=2, avg=100)
+        req["observation"]["public_trades"] = [{"price_tick": 100}]
+        result = self.run_source('strategy.exit("X",profit=10,loss=5)', req)
+        self.assertEqual(result["state"]["_wake_prices"], [{"instrument_id": "V-BTC-PERP", "at_or_above": 110, "at_or_below": 95}])
+        # A trailing exit waits for its activation price, then trails on the exchange.
+        source = 'strategy.exit("T",trail_price=104,trail_offset=1)'
+        result = self.run_source(source, req)
+        self.assertEqual(result["state"]["_wake_prices"], [{"instrument_id": "V-BTC-PERP", "at_or_above": 104}])
+        ack(req, result)
+        req["observation"]["public_trades"] = [{"price_tick": 104}]
+        result = self.run_source(source, req)
+        self.assertIn("SetPositionProtection", result["actions"][0]["BotOrder"]["action"])
+        self.assertNotIn("_wake_prices", result["state"])
+        # A short position mirrors the levels; a flat one reports none.
+        short = perp(broker_request([100]), position=-2, avg=100)
+        short["observation"]["public_trades"] = [{"price_tick": 100}]
+        result = self.run_source('strategy.exit("X",profit=10,loss=5)', short)
+        self.assertEqual(result["state"]["_wake_prices"], [{"instrument_id": "V-BTC-PERP", "at_or_above": 105, "at_or_below": 90}])
+        flat = perp(broker_request([100]))
+        self.assertNotIn("_wake_prices", self.run_source('strategy.exit("X",profit=10,loss=5)', flat)["state"])
+
     def test_shared_account_instances_have_distinct_native_conditional_keys(self):
         req = perp(broker_request([100]))
         source = 'strategy.entry("L",strategy.long,qty=1,stop=110)'

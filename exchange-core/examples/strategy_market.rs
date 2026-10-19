@@ -203,6 +203,58 @@ fn settled_account(account: &Option<AccountSnapshot>) -> serde_json::Value {
     value
 }
 
+/// What decides whether a screened plugin is due: its last wake key, the wake
+/// time and last-trade levels it requested, and a receipt it has not read.
+#[derive(Clone, Default)]
+struct Screen {
+    key: Vec<u8>,
+    wake_ms: Option<u64>,
+    prices: Vec<PriceWake>,
+    receipt: bool,
+}
+
+/// A plugin's `_wake_prices` entry: call it once the last trade on the market
+/// is at or above / at or below a level that its decisions compare against.
+#[derive(Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PriceWake {
+    instrument_id: String,
+    at_or_above: Option<i64>,
+    at_or_below: Option<i64>,
+}
+
+/// Private inputs that only the account's own activity changes: resting
+/// orders, protections and the settled account, here and on related markets.
+fn private_inputs(view: &observation::SharedParticipantObservation) -> serde_json::Value {
+    serde_json::json!([
+        view.public.instrument_id,
+        view.own_orders,
+        view.position_protections,
+        settled_account(&view.own_account),
+        view.related_markets.iter().map(private_inputs).collect::<Vec<_>>(),
+    ])
+}
+
+/// True when the last trade on a reported market reached a requested level.
+fn price_reached(
+    view: &observation::SharedParticipantObservation,
+    wakes: &[PriceWake],
+) -> Result<bool, Box<dyn std::error::Error>> {
+    for wake in wakes {
+        let market = std::iter::once(view)
+            .chain(&view.related_markets)
+            .find(|v| v.public.instrument_id == wake.instrument_id)
+            .ok_or("price wake on a market the plugin does not observe")?;
+        if let Some(last) = market.public.public_trades.last().map(|t| t.price_tick)
+            && (wake.at_or_above.is_some_and(|p| last >= p)
+                || wake.at_or_below.is_some_and(|p| last <= p))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Stands in for a state that validation does not read (no tracked orders).
 const UNREAD_STATE: PersistedAgentKindState = PersistedAgentKindState::Noise { rng_state: 0 };
 
@@ -283,7 +335,7 @@ fn accept_actions(
     related: &[String],
     actions: &[OrderAction],
     polled: bool,
-    screen: &mut (Vec<u8>, Option<u64>),
+    screen: &mut Screen,
     actions_per_bot: &mut BTreeMap<String, u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if actions.len() > 64 {
@@ -301,12 +353,11 @@ fn accept_actions(
         actions,
         snapshot.as_ref().unwrap_or(&UNREAD_STATE),
     )?;
-    if let (true, Some(snapshot)) = (polled, &snapshot) {
-        screen.1 = match snapshot {
-            PersistedAgentKindState::Plugin { data, .. } => {
-                data.get("_next_wake_ms").and_then(serde_json::Value::as_u64)
-            }
-            _ => None,
+    if let (true, Some(PersistedAgentKindState::Plugin { data, .. })) = (polled, &snapshot) {
+        screen.wake_ms = data.get("_next_wake_ms").and_then(serde_json::Value::as_u64);
+        screen.prices = match data.get("_wake_prices") {
+            Some(value) => serde_json::from_value(value.clone())?,
+            None => vec![],
         };
     }
     *actions_per_bot
@@ -428,12 +479,26 @@ fn run_waves(
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .filter(|ms| *ms > 0);
+    // RESEARCH_PLUGIN_WAKES=events replaces polling: an event-driven plugin
+    // wakes only for what its decisions read between bars. That is a closed
+    // bar on any requested interval; a change in its own orders, protections,
+    // conditional orders or settled account, here or on a related market; a
+    // receipt for an order it placed; a wake time it requested; or the last
+    // trade reaching a level it reported in `_wake_prices`. Mark-price-only
+    // changes never wake it, so a plugin must report every price it compares.
+    let event_wakes = match std::env::var("RESEARCH_PLUGIN_WAKES").ok().as_deref() {
+        None => false,
+        Some("events") if poll_ms.is_none() => true,
+        Some("events") => {
+            return Err("RESEARCH_PLUGIN_WAKES=events replaces RESEARCH_PLUGIN_POLL_MS".into());
+        }
+        Some(other) => return Err(format!("unknown RESEARCH_PLUGIN_WAKES={other}").into()),
+    };
     let polled = templates
         .iter()
-        .map(|t| poll_ms.is_some() && registry.event_filter(t).is_some())
+        .map(|t| (poll_ms.is_some() || event_wakes) && registry.event_filter(t).is_some())
         .collect::<Vec<_>>();
-    // Per polled plugin: last wake key and its own requested wake time.
-    let mut screens = vec![(Vec::<u8>::new(), None::<u64>); templates.len()];
+    let mut screens = vec![Screen::default(); templates.len()];
     let mut profile = std::env::var("RESEARCH_PROFILE")
         .is_ok_and(|v| v == "1")
         .then(Profile::default);
@@ -490,22 +555,64 @@ fn run_waves(
                 let cfg = t.config();
                 let instrument = cfg.instrument_id.as_ref().ok_or("instrument required")?;
                 let started = std::time::Instant::now();
-                if let (true, Some(poll)) = (polled[i], poll_ms) {
+                if polled[i] {
                     let view = batch
-                        .shared_bot_observation(instrument, cfg.account_id, None, &[])
+                        .shared_bot_observation(
+                            instrument,
+                            cfg.account_id,
+                            None,
+                            if event_wakes { &related[i] } else { &[] },
+                        )
                         .map_err(|e| format!("{e:?}"))?;
                     let time = view.public.market_time_ms;
                     let bar = requests[i].map(|r| time / r.interval_ms);
                     let settled = settled_account(&view.own_account);
-                    let key = serde_json::to_vec(&(
-                        bar,
-                        time / poll,
-                        &view.own_orders,
-                        &view.position_protections,
-                        &settled,
-                    ))?;
-                    let woken = screens[i].1.is_some_and(|w| w <= time);
-                    if screens[i].0 == key && !woken {
+                    let (key, private) = match poll_ms {
+                        Some(poll) => (
+                            serde_json::to_vec(&(
+                                bar,
+                                time / poll,
+                                &view.own_orders,
+                                &view.position_protections,
+                                &settled,
+                            ))?,
+                            serde_json::Value::Null,
+                        ),
+                        None => {
+                            let simulation =
+                                rooms.simulation_room(room).map_err(|e| format!("{e:?}"))?;
+                            let mut conditions = vec![];
+                            for market in std::iter::once(instrument).chain(&related[i]) {
+                                let venue = simulation
+                                    .venue_id_for_instrument(market)
+                                    .ok_or("unknown related market")?;
+                                // Without the exchange's own scan cursor, which
+                                // moves every step while an order is armed.
+                                for c in simulation
+                                    .exchange(&venue)
+                                    .map_err(|e| format!("{e:?}"))?
+                                    .conditional_orders(market, cfg.account_id)
+                                {
+                                    conditions.push(serde_json::json!([
+                                        c.key,
+                                        c.spec,
+                                        c.status,
+                                        c.submitted_order_id
+                                    ]));
+                                }
+                            }
+                            let private = serde_json::json!([private_inputs(&view), conditions]);
+                            let bars = (
+                                bar,
+                                intervals[i].iter().map(|ms| time / ms).collect::<Vec<_>>(),
+                            );
+                            (serde_json::to_vec(&(bars, &private))?, private)
+                        }
+                    };
+                    let woken = screens[i].wake_ms.is_some_and(|w| w <= time);
+                    let priced = event_wakes && price_reached(&view, &screens[i].prices)?;
+                    let receipt = event_wakes && screens[i].receipt;
+                    if screens[i].key == key && !woken && !priced && !receipt {
                         actions_per_bot
                             .entry(t.participant_id().into())
                             .or_default();
@@ -515,12 +622,14 @@ fn run_waves(
                         }
                         continue;
                     }
-                    screens[i].0 = key;
+                    screens[i].key = key;
+                    screens[i].receipt = false;
                     if profile.is_some() {
+                        let bars = (bar, intervals[i].iter().map(|ms| time / ms).collect::<Vec<_>>());
                         let now = [
-                            part_hash(&bar)?,
-                            time / poll,
-                            part_hash(&(&view.own_orders, &view.position_protections))?,
+                            part_hash(&bars)?,
+                            poll_ms.map_or(0, |poll| time / poll),
+                            part_hash(&(&view.own_orders, &view.position_protections, &private))?,
                             part_hash(&settled)?,
                         ];
                         reasons[i] = match parts[i] {
@@ -528,6 +637,8 @@ fn run_waves(
                             Some(old) if old[0] != now[0] => "bar",
                             Some(old) if old[2] != now[2] || old[3] != now[3] => "account",
                             _ if woken => "wake",
+                            _ if receipt => "receipt",
+                            _ if priced => "price",
                             _ => "poll",
                         };
                         parts[i] = Some(now);
@@ -667,6 +778,7 @@ fn run_waves(
                     let mut state = bots[i].snapshot();
                     bots::record_bot_execution(&mut state, &action, &execution);
                     bots[i].prepare_reused_call(&state)?;
+                    screens[i].receipt = true;
                 }
                 let ActorExecutionResult::Accepted(result) = &execution.execution.result else {
                     *rejections

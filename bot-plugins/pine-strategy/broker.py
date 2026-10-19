@@ -531,7 +531,10 @@ def translate(intents, pyramiding, views, primary, config, state):
     return actions
 
 
-def evaluate_exits(state, views, config):
+def evaluate_exits(state, views, config, wakes=None):
+    """Install or trigger exits. `wakes` collects (instrument, direction,
+    price): the last-trade levels this check compares against, so a host that
+    skips mark-price-only wakes can call again when one is reached."""
     actions = []
     for key, spec in state.get("exit_specs", {}).items():
         view = views[spec["instrument"]]
@@ -552,12 +555,16 @@ def evaluate_exits(state, views, config):
         if stop is None and intent.get("loss") is not None: stop = avg - signed * intent["loss"] * tick
         last = view.get("public_trades", [])
         last_price = last[-1]["price_tick"] if last else None
-        if last_price is None: continue
+        if last_price is None:
+            if wakes is not None: wakes.append((spec["instrument"], 1, 1))  # the first trade
+            continue
         close_side = "Sell" if position > 0 else "Buy"
         take = strategy_price(take, "take profit", tick, close_side, False, config)
         stop = strategy_price(stop, "stop loss", tick, close_side, True, config)
         if any(price is not None and price % tick for price in (take, stop)):
             raise ValueError("exit price must align with the exchange tick size")
+        if wakes is not None:
+            wakes += [(spec["instrument"], d, p) for d, p in ((signed, take), (-signed, stop)) if p is not None]
         if ((take is not None and signed * (last_price - take) >= 0) or
                 (stop is not None and signed * (last_price - stop) <= 0)):
             actions += submit_order(state, view, config, spec["name"] + "_triggered", "Sell" if position > 0 else "Buy", qty, reduce=True, entry=spec["entry_id"])
@@ -567,6 +574,8 @@ def evaluate_exits(state, views, config):
         activation = strategy_price(activation, "trailing activation", tick, "Buy" if signed > 0 else "Sell", True, config)
         if activation is not None and signed * (last_price - activation) >= 0:
             spec["trail_active"] = True
+        if wakes is not None and activation is not None and not spec["trail_active"]:
+            wakes.append((spec["instrument"], signed, activation))
         trail = (quantized(intent["trail_offset"] * tick, "trailing distance", tick, up=True) if config.get("quantize_strategy_orders", False) else number(intent["trail_offset"] * tick, "trailing distance", 1)) if spec["trail_active"] else None
         if take is None and stop is None and trail is None: continue
         protection = {"take_profit_tick": take, "stop_loss_tick": stop, "trigger": "Last", "exit_qty": qty,
@@ -729,7 +738,16 @@ def decide(request, load_source, compile_program, digest, evaluate_external=None
     # replacement; never place an obsolete order before reading strategy.cancel.
     if not block_primary: actions += replacements(state, views, config)
     kind, account, position, _ = account_of(observation, config)
-    actions += evaluate_exits(state, views, config)
+    wakes = []
+    actions += evaluate_exits(state, views, config, wakes)
+    # Between bars only exits read the price; report their levels per market.
+    state.pop("_wake_prices", None)
+    levels = {}
+    for instrument, direction, price in wakes:
+        entry = levels.setdefault(instrument, {"instrument_id": instrument})
+        bound, pick = ("at_or_above", min) if direction > 0 else ("at_or_below", max)
+        entry[bound] = pick(entry.get(bound, price), price)
+    if levels: state["_wake_prices"] = [levels[k] for k in sorted(levels)]
     state.update(observed_position=position, observed_cash=str(account["cash_balance"]),
         last_fill_id=state["ledgers"][primary]["fills"][-1]["id"] if state["ledgers"][primary]["fills"] else -1,
         last_account=copy.deepcopy(observation["own_account"]))
