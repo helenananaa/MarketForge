@@ -175,6 +175,10 @@ impl ExchangeActor {
     ) -> Vec<crate::conditional_orders::ConditionalOrder> {
         let mut latest_seqs = Vec::<(&str, u64)>::new();
         let mut prices = Vec::<(&str, crate::ProtectionTrigger, Option<i64>)>::new();
+        // The lowest and highest trade after a cursor, per market and cursor
+        // (armed entries usually share one): a trade after it crossed a
+        // level exactly when one of the two did.
+        let mut extremes = Vec::<(&str, u64, Option<(i64, i64)>)>::new();
         let mut changes = Vec::new();
         for (key, p) in self.conditional_orders.iter() {
             if p.status != "armed" {
@@ -200,13 +204,29 @@ impl ExchangeActor {
             // record after the cursor exactly when the latest one is.
             let crossed = if p.spec.trigger == crate::ProtectionTrigger::Last {
                 match &self.markets[instrument].engine {
-                    MarketEngine::Perp(e) => {
-                        latest > p.last_checked_event_seq
-                            && e.event_history()
-                                .events_after(p.last_checked_event_seq)
-                                .any(|r| {
-                                    matches!(&r.event, crate::Event::TradePrinted(t) if crosses(t.price_tick))
-                                })
+                    MarketEngine::Perp(e) if latest > p.last_checked_event_seq => {
+                        let cursor = p.last_checked_event_seq;
+                        let range = match extremes
+                            .iter()
+                            .find(|(i, c, _)| *i == instrument && *c == cursor)
+                        {
+                            Some((_, _, range)) => *range,
+                            None => {
+                                let range = e.event_history().events_after(cursor).fold(
+                                    None,
+                                    |range: Option<(i64, i64)>, r| match &r.event {
+                                        crate::Event::TradePrinted(t) => Some(range.map_or(
+                                            (t.price_tick, t.price_tick),
+                                            |(low, high)| (low.min(t.price_tick), high.max(t.price_tick)),
+                                        )),
+                                        _ => range,
+                                    },
+                                );
+                                extremes.push((instrument, cursor, range));
+                                range
+                            }
+                        };
+                        range.is_some_and(|(low, high)| crosses(low) || crosses(high))
                     }
                     _ => false,
                 }
