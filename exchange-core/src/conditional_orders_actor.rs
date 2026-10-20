@@ -158,6 +158,13 @@ impl ExchangeActor {
             .collect()
     }
 
+    /// Every conditional order in key order; `conditional_orders` filters it.
+    pub fn all_conditional_orders(
+        &self,
+    ) -> impl Iterator<Item = &crate::conditional_orders::ConditionalOrder> {
+        self.conditional_orders.values()
+    }
+
     pub fn prepare_conditional_orders(
         &mut self,
     ) -> Vec<crate::conditional_orders::ConditionalOrder> {

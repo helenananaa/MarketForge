@@ -2534,6 +2534,36 @@ impl RoomObservationBatch<'_> {
         }))
     }
 
+    /// The frozen wave's public view of one market, without private fields.
+    /// The first caller for a market builds it once for the whole wave.
+    pub fn shared_public_observation(
+        &self,
+        instrument_id: &str,
+        account_id: AccountId,
+    ) -> Result<Arc<crate::ParticipantObservation>, RoomManagerError> {
+        // The cell is installed under a tiny directory lock; expensive public
+        // construction happens outside it and once for the entire frozen wave.
+        let cell = self
+            .shared_public
+            .expect("shared delivery requires a frozen native wave")
+            .lock()
+            .unwrap()
+            .entry(instrument_id.to_owned())
+            .or_default()
+            .clone();
+        cell.get_or_init(|| {
+            let mut public =
+                self.rooms
+                    .participant_observation(self.room_id, instrument_id, account_id)?;
+            public.own_account = None;
+            public.own_orders.clear();
+            public.position_protections.clear();
+            public.risk = None;
+            Ok(Arc::new(public))
+        })
+        .clone()
+    }
+
     pub fn shared_bot_observation(
         &mut self,
         instrument_id: &str,
@@ -2555,28 +2585,7 @@ impl RoomObservationBatch<'_> {
         related: &[String],
         own_fills: bool,
     ) -> Result<crate::observation::SharedParticipantObservation, RoomManagerError> {
-        // The cell is installed under a tiny directory lock; expensive public
-        // construction happens outside it and once for the entire frozen wave.
-        let cell = self
-            .shared_public
-            .expect("shared delivery requires a frozen native wave")
-            .lock()
-            .unwrap()
-            .entry(instrument_id.to_owned())
-            .or_default()
-            .clone();
-        let public = cell
-            .get_or_init(|| {
-                let mut public =
-                    self.rooms
-                        .participant_observation(self.room_id, instrument_id, account_id)?;
-                public.own_account = None;
-                public.own_orders.clear();
-                public.position_protections.clear();
-                public.risk = None;
-                Ok(Arc::new(public))
-            })
-            .clone()?;
+        let public = self.shared_public_observation(instrument_id, account_id)?;
         let room = self.rooms.simulation_room(self.room_id)?;
         let venue = room.venue_id_for_instrument(instrument_id).unwrap();
         let exchange = room

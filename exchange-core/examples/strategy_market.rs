@@ -184,33 +184,84 @@ fn fingerprint(
 
 /// Account fields that change only through the account's own activity (fills,
 /// fees, funding, margin state); mark price moves leave them unchanged.
-fn settled_account(account: &Option<AccountSnapshot>) -> serde_json::Value {
-    let mut value = serde_json::to_value(account).unwrap_or_default();
-    if let Some(perp) = value.get_mut("Perp").and_then(serde_json::Value::as_object_mut) {
-        perp.retain(|k, _| {
-            matches!(
-                k.as_str(),
-                "cash_balance"
-                    | "position_qty"
-                    | "avg_entry_price_tick"
-                    | "realized_pnl"
-                    | "fees_paid"
-                    | "funding_pnl"
-                    | "margin_status"
-            )
-        });
-    }
-    value
+#[derive(Clone, PartialEq, Eq)]
+enum Settled {
+    Spot(exchange_core::spot::SpotAccountSnapshot),
+    Perp {
+        cash_balance: i128,
+        position_qty: i128,
+        avg_entry_price_tick: i64,
+        realized_pnl: i128,
+        fees_paid: i128,
+        funding_pnl: i128,
+        margin_status: exchange_core::perp::PerpMarginStatus,
+    },
+}
+
+fn settled_account(account: Option<AccountSnapshot>) -> Option<Settled> {
+    account.map(|account| match account {
+        AccountSnapshot::Spot(a) => Settled::Spot(a),
+        AccountSnapshot::Perp(a) => Settled::Perp {
+            cash_balance: a.cash_balance,
+            position_qty: a.position_qty,
+            avg_entry_price_tick: a.avg_entry_price_tick,
+            realized_pnl: a.realized_pnl,
+            fees_paid: a.fees_paid,
+            funding_pnl: a.funding_pnl,
+            margin_status: a.margin_status,
+        },
+    })
+}
+
+/// A screened plugin's private inputs on one market it observes: resting
+/// orders, protections and the settled account.
+#[derive(Clone, PartialEq, Eq)]
+struct MarketInputs {
+    orders: Vec<exchange_core::model::Order>,
+    protections: Vec<PositionProtection>,
+    settled: Option<Settled>,
+}
+
+/// Inputs that only the account's own activity changes: per observed market
+/// (its own first) the market inputs, and its conditional orders there without
+/// the exchange's own scan cursor, which moves every step while one is armed.
+#[derive(Clone, PartialEq, Eq)]
+struct PrivateInputs {
+    markets: Vec<MarketInputs>,
+    conditions: Vec<(
+        String,
+        exchange_core::conditional_orders::ConditionalOrderSpec,
+        String,
+        Option<u64>,
+    )>,
+}
+
+/// A screened plugin is due when this changes: the bar index on each interval
+/// it reads, the poll period (polling only) and its private inputs. Typed
+/// equality of these values is equality of their JSON: none holds a float.
+#[derive(Clone, PartialEq, Eq)]
+struct WakeKey {
+    bars: (Option<u64>, Vec<u64>),
+    poll: Option<u64>,
+    private: PrivateInputs,
 }
 
 /// What decides whether a screened plugin is due: its last wake key, the wake
 /// time and last-trade levels it requested, and a receipt it has not read.
 #[derive(Clone, Default)]
 struct Screen {
-    key: Vec<u8>,
+    key: Option<WakeKey>,
     wake_ms: Option<u64>,
     prices: Vec<PriceWake>,
     receipt: bool,
+}
+
+/// A plugin screened for wakes: its index, account and the markets whose
+/// private inputs it compares, its own first.
+struct Screened {
+    bot: usize,
+    account: u64,
+    markets: Vec<String>,
 }
 
 /// A plugin's `_wake_prices` entry: call it once the last trade on the market
@@ -223,29 +274,120 @@ struct PriceWake {
     at_or_below: Option<i64>,
 }
 
-/// Private inputs that only the account's own activity changes: resting
-/// orders, protections and the settled account, here and on related markets.
-fn private_inputs(view: &observation::SharedParticipantObservation) -> serde_json::Value {
-    serde_json::json!([
-        view.public.instrument_id,
-        view.own_orders,
-        view.position_protections,
-        settled_account(&view.own_account),
-        view.related_markets.iter().map(private_inputs).collect::<Vec<_>>(),
-    ])
+/// The private inputs of every screened plugin that differ from its last wake
+/// key (None: unchanged), read from the committed state: the values its
+/// observation would show, without building the observation. Protections and
+/// conditional orders are grouped by market and account once, instead of
+/// filtering every entry on the venue for each plugin. Plugins are split
+/// across up to `threads` threads; results come back in plugin order.
+fn changed_private_inputs(
+    rooms: &RoomManager,
+    room: &str,
+    screened: &[Screened],
+    screens: &[Screen],
+    conditions: bool,
+    threads: usize,
+) -> Result<Vec<Option<PrivateInputs>>, Box<dyn std::error::Error>> {
+    type Entries<'a> = (
+        Vec<&'a PositionProtection>,
+        Vec<&'a exchange_core::conditional_orders::ConditionalOrder>,
+    );
+    let simulation = rooms.simulation_room(room).map_err(|e| format!("{e:?}"))?;
+    let mut venues = BTreeMap::<_, std::collections::BTreeSet<&str>>::new();
+    for s in screened {
+        for market in &s.markets {
+            let venue = simulation
+                .venue_id_for_instrument(market)
+                .ok_or("unknown related market")?;
+            venues.entry(venue).or_default().insert(market);
+        }
+    }
+    // Per (market, account), in the venue's key order, as the per-account
+    // accessors return them.
+    let mut entries = BTreeMap::<(&str, u64), Entries<'_>>::new();
+    for (venue, markets) in &venues {
+        let exchange = simulation.exchange(venue).map_err(|e| format!("{e:?}"))?;
+        for p in exchange.all_position_protections() {
+            if let Some(market) = markets.get(p.instrument_id.as_str()) {
+                entries.entry((*market, p.account_id)).or_default().0.push(p);
+            }
+        }
+        for c in exchange.all_conditional_orders() {
+            if let Some(market) = markets.get(c.instrument_id.as_str()) {
+                entries.entry((*market, c.account_id)).or_default().1.push(c);
+            }
+        }
+    }
+    let read = |s: &Screened| -> Result<Option<PrivateInputs>, String> {
+        let mut inputs = PrivateInputs {
+            markets: vec![],
+            conditions: vec![],
+        };
+        for (n, market) in s.markets.iter().enumerate() {
+            let found = entries.get(&(market.as_str(), s.account));
+            // A related market listed twice, or listed as the plugin's own,
+            // is observed once but has its conditional orders compared again.
+            if !s.markets[..n].contains(market) {
+                let account = rooms
+                    .account_snapshot_for(room, market, s.account)
+                    .map_err(|e| format!("{e:?}"))?
+                    .filter(|a| match a {
+                        AccountSnapshot::Spot(a) => a.account_id == s.account,
+                        AccountSnapshot::Perp(a) => a.account_id == s.account,
+                    });
+                inputs.markets.push(MarketInputs {
+                    orders: rooms
+                        .resting_orders_for_account(room, market, s.account)
+                        .map_err(|e| format!("{e:?}"))?,
+                    protections: found.map_or_else(Vec::new, |e| {
+                        e.0.iter().map(|p| (*p).clone()).collect()
+                    }),
+                    settled: settled_account(account),
+                });
+            }
+            if conditions {
+                for c in found.map_or(&[][..], |e| &e.1[..]) {
+                    inputs.conditions.push((
+                        c.key.clone(),
+                        c.spec.clone(),
+                        c.status.clone(),
+                        c.submitted_order_id,
+                    ));
+                }
+            }
+        }
+        let last = screens[s.bot].key.as_ref().map(|key| &key.private);
+        Ok((last != Some(&inputs)).then_some(inputs))
+    };
+    // Small populations are not worth a thread.
+    let chunk = screened.len().div_ceil(threads.max(1)).max(64);
+    if screened.len() <= chunk {
+        return Ok(screened.iter().map(&read).collect::<Result<_, _>>()?);
+    }
+    let results = std::thread::scope(|scope| {
+        let handles = screened
+            .chunks(chunk)
+            .map(|part| scope.spawn(|| part.iter().map(&read).collect::<Result<Vec<_>, _>>()))
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("screen thread panicked"))
+            .collect::<Result<Vec<_>, _>>()
+    })?;
+    Ok(results.into_iter().flatten().collect())
 }
 
 /// True when the last trade on a reported market reached a requested level.
 fn price_reached(
-    view: &observation::SharedParticipantObservation,
+    markets: &[std::sync::Arc<ParticipantObservation>],
     wakes: &[PriceWake],
 ) -> Result<bool, Box<dyn std::error::Error>> {
     for wake in wakes {
-        let market = std::iter::once(view)
-            .chain(&view.related_markets)
-            .find(|v| v.public.instrument_id == wake.instrument_id)
+        let market = markets
+            .iter()
+            .find(|v| v.instrument_id == wake.instrument_id)
             .ok_or("price wake on a market the plugin does not observe")?;
-        if let Some(last) = market.public.public_trades.last().map(|t| t.price_tick)
+        if let Some(last) = market.public_trades.last().map(|t| t.price_tick)
             && (wake.at_or_above.is_some_and(|p| last >= p)
                 || wake.at_or_below.is_some_and(|p| last <= p))
         {
@@ -316,14 +458,6 @@ fn action_kind(action: &OrderAction) -> String {
         Some(inner) => format!("BotOrder.{}", name(inner)),
         None => name(&value),
     }
-}
-
-/// Hash of one serialized wake-key component, to tell which component changed.
-fn part_hash(value: &impl serde::Serialize) -> Result<u64, serde_json::Error> {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    serde_json::to_vec(value)?.hash(&mut hasher);
-    Ok(hasher.finish())
 }
 
 /// Checks one bot's actions, then records its requested wake and action count.
@@ -467,6 +601,10 @@ fn run_waves(
         .collect::<std::collections::BTreeSet<_>>();
     let mut book_snapshots = vec![];
     let mut actions_per_bot = BTreeMap::<String, u64>::new();
+    // Every bot is listed, also one that never acts.
+    for t in templates {
+        actions_per_bot.insert(t.participant_id().into(), 0);
+    }
     let mut history_cursor = rooms
         .execution_history_len(room)
         .map_err(|e| format!("{e:?}"))?;
@@ -499,12 +637,25 @@ fn run_waves(
         .map(|t| (poll_ms.is_some() || event_wakes) && registry.event_filter(t).is_some())
         .collect::<Vec<_>>();
     let mut screens = vec![Screen::default(); templates.len()];
+    // Polling compares only the plugin's own market; event wakes compare its
+    // related markets and conditional orders as well.
+    let screened = (0..templates.len())
+        .filter(|&i| polled[i])
+        .map(|i| {
+            let cfg = templates[i].config();
+            let own = cfg.instrument_id.clone().ok_or("instrument required")?;
+            let related = if event_wakes { &related[i][..] } else { &[] };
+            Ok(Screened {
+                bot: i,
+                account: cfg.account_id,
+                markets: std::iter::once(own).chain(related.iter().cloned()).collect(),
+            })
+        })
+        .collect::<Result<Vec<_>, &str>>()?;
     let mut profile = std::env::var("RESEARCH_PROFILE")
         .is_ok_and(|v| v == "1")
         .then(Profile::default);
-    // Per polled plugin: hashes of the last key's bar, poll, order and account
-    // parts, and the reason the current call is due (profiling only).
-    let mut parts = vec![None::<[u64; 4]>; templates.len()];
+    // The reason the current call of each plugin is due (profiling only).
     let mut reasons = vec!["unpolled"; templates.len()];
     // Each wave extends the previous wave's receipts, candles and account
     // indexes by the new execution suffix instead of replaying the whole log.
@@ -550,99 +701,95 @@ fn run_waves(
             if let Some(p) = &mut profile {
                 p.add("wave", started);
             }
+            // The private inputs of each screened plugin that changed since
+            // its last wake key, read before any plugin decides: the committed
+            // state does not change during the wave.
+            let started = std::time::Instant::now();
+            let mut changed = vec![None; templates.len()];
+            if !screened.is_empty() {
+                let inputs = changed_private_inputs(
+                    rooms,
+                    room,
+                    &screened,
+                    &screens,
+                    event_wakes,
+                    plugin_threads,
+                )?;
+                for (s, inputs) in screened.iter().zip(inputs) {
+                    changed[s.bot] = inputs;
+                }
+            }
+            // Public views by market; the wave builds each for its first caller.
+            let mut public = Vec::<(&str, std::sync::Arc<ParticipantObservation>)>::new();
+            if let Some(p) = &mut profile {
+                p.add("screen", started);
+            }
             for (i, bot) in bots.iter_mut().enumerate() {
                 let t = &templates[i];
                 let cfg = t.config();
                 let instrument = cfg.instrument_id.as_ref().ok_or("instrument required")?;
                 let started = std::time::Instant::now();
                 if polled[i] {
-                    let view = batch
-                        .shared_bot_observation(
-                            instrument,
-                            cfg.account_id,
-                            None,
-                            if event_wakes { &related[i] } else { &[] },
-                        )
-                        .map_err(|e| format!("{e:?}"))?;
-                    let time = view.public.market_time_ms;
-                    let bar = requests[i].map(|r| time / r.interval_ms);
-                    let settled = settled_account(&view.own_account);
-                    let (key, private) = match poll_ms {
-                        Some(poll) => (
-                            serde_json::to_vec(&(
-                                bar,
-                                time / poll,
-                                &view.own_orders,
-                                &view.position_protections,
-                                &settled,
-                            ))?,
-                            serde_json::Value::Null,
-                        ),
-                        None => {
-                            let simulation =
-                                rooms.simulation_room(room).map_err(|e| format!("{e:?}"))?;
-                            let mut conditions = vec![];
-                            for market in std::iter::once(instrument).chain(&related[i]) {
-                                let venue = simulation
-                                    .venue_id_for_instrument(market)
-                                    .ok_or("unknown related market")?;
-                                // Without the exchange's own scan cursor, which
-                                // moves every step while an order is armed.
-                                for c in simulation
-                                    .exchange(&venue)
-                                    .map_err(|e| format!("{e:?}"))?
-                                    .conditional_orders(market, cfg.account_id)
-                                {
-                                    conditions.push(serde_json::json!([
-                                        c.key,
-                                        c.spec,
-                                        c.status,
-                                        c.submitted_order_id
-                                    ]));
-                                }
+                    // Public views in the order its observation builds them.
+                    let mut markets = vec![];
+                    let related = related[i].iter().filter(|m| event_wakes && *m != instrument);
+                    for market in std::iter::once(instrument).chain(related) {
+                        let view = match public.iter().find(|(m, _)| *m == market) {
+                            Some((_, view)) => view.clone(),
+                            None => {
+                                let view = batch
+                                    .shared_public_observation(market, cfg.account_id)
+                                    .map_err(|e| format!("{e:?}"))?;
+                                public.push((market, view.clone()));
+                                view
                             }
-                            let private = serde_json::json!([private_inputs(&view), conditions]);
-                            let bars = (
-                                bar,
-                                intervals[i].iter().map(|ms| time / ms).collect::<Vec<_>>(),
-                            );
-                            (serde_json::to_vec(&(bars, &private))?, private)
-                        }
-                    };
+                        };
+                        markets.push(view);
+                    }
+                    let time = markets[0].market_time_ms;
+                    let extra = intervals[i].iter().filter(|_| event_wakes);
+                    let bars = (
+                        requests[i].map(|r| time / r.interval_ms),
+                        extra.map(|ms| time / ms).collect::<Vec<_>>(),
+                    );
+                    let poll = poll_ms.map(|poll| time / poll);
+                    let changed = changed[i].take();
+                    let same = changed.is_none()
+                        && screens[i]
+                            .key
+                            .as_ref()
+                            .is_some_and(|key| key.bars == bars && key.poll == poll);
                     let woken = screens[i].wake_ms.is_some_and(|w| w <= time);
-                    let priced = event_wakes && price_reached(&view, &screens[i].prices)?;
+                    let priced = event_wakes && price_reached(&markets, &screens[i].prices)?;
                     let receipt = event_wakes && screens[i].receipt;
-                    if screens[i].key == key && !woken && !priced && !receipt {
-                        actions_per_bot
-                            .entry(t.participant_id().into())
-                            .or_default();
+                    if same && !woken && !priced && !receipt {
                         decisions.push(vec![]);
                         if let Some(p) = &mut profile {
                             p.add("screen", started);
                         }
                         continue;
                     }
-                    screens[i].key = key;
-                    screens[i].receipt = false;
                     if profile.is_some() {
-                        let bars = (bar, intervals[i].iter().map(|ms| time / ms).collect::<Vec<_>>());
-                        let now = [
-                            part_hash(&bars)?,
-                            poll_ms.map_or(0, |poll| time / poll),
-                            part_hash(&(&view.own_orders, &view.position_protections, &private))?,
-                            part_hash(&settled)?,
-                        ];
-                        reasons[i] = match parts[i] {
+                        reasons[i] = match &screens[i].key {
                             None => "first",
-                            Some(old) if old[0] != now[0] => "bar",
-                            Some(old) if old[2] != now[2] || old[3] != now[3] => "account",
+                            Some(old) if old.bars != bars => "bar",
+                            Some(_) if changed.is_some() => "account",
                             _ if woken => "wake",
                             _ if receipt => "receipt",
                             _ if priced => "price",
                             _ => "poll",
                         };
-                        parts[i] = Some(now);
                     }
+                    let private = match changed {
+                        Some(private) => private,
+                        None => screens[i].key.take().ok_or("plugin was not screened")?.private,
+                    };
+                    screens[i].key = Some(WakeKey {
+                        bars,
+                        poll,
+                        private,
+                    });
+                    screens[i].receipt = false;
                 }
                 if let Some(p) = &mut profile {
                     p.add("screen", started);

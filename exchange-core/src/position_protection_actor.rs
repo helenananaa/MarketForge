@@ -81,6 +81,11 @@ impl ExchangeActor {
             .collect()
     }
 
+    /// Every position protection in key order; `position_protections` filters it.
+    pub fn all_position_protections(&self) -> impl Iterator<Item = &crate::PositionProtection> {
+        self.position_protections.values()
+    }
+
     pub fn protection_price(
         &self,
         instrument: &str,
