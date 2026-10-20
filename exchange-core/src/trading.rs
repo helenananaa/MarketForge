@@ -864,6 +864,10 @@ impl PerpTradingEngine {
         self.accounts.account_snapshot(account_id)
     }
 
+    pub(crate) fn account(&self, account_id: AccountId) -> Option<&crate::perp::PerpAccount> {
+        self.accounts.account(account_id)
+    }
+
     pub(crate) fn margin_state(&self) -> crate::perp::PerpMarginState {
         self.accounts.margin_state()
     }

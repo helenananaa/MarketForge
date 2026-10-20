@@ -32,6 +32,44 @@ impl ExchangeActor {
     }
 
     pub fn complete_flat_position_protections(&mut self) {
+        // An entry reads only its account's position, so all are checked by
+        // reference before any is written.
+        let flat = self
+            .position_protections
+            .iter()
+            .filter(|(_, p)| matches!(p.status.as_str(), "armed" | "triggered"))
+            .filter(|(_, p)| {
+                self.protected_qty(&p.instrument_id, p.account_id, p.position_side)
+                    .flatten()
+                    .is_some_and(|qty| qty == 0 || (qty > 0) != (p.exit_side == Side::Sell))
+            })
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        for key in flat {
+            self.position_protections.get_mut(&key).unwrap().status = "completed".into();
+        }
+    }
+
+    /// `position_qty` of the account's snapshot on a perpetual, read from the
+    /// stored account, whose positions the snapshot copies: None when the
+    /// market is not a perpetual or has no such account.
+    fn protected_qty(
+        &self,
+        instrument: &str,
+        account: AccountId,
+        side: crate::PositionSide,
+    ) -> Option<Option<i128>> {
+        let MarketEngine::Perp(engine) = &self.markets.get(instrument)?.engine else {
+            return None;
+        };
+        engine
+            .account(account)
+            .map(|a| crate::position_protection::account_position_qty(a, side))
+    }
+
+    /// The pass `complete_flat_position_protections` replaced. Tests compare.
+    #[cfg(test)]
+    pub(crate) fn complete_flat_position_protections_reference(&mut self) {
         for key in self
             .position_protections
             .keys()
@@ -356,7 +394,259 @@ impl ExchangeActor {
     }
 
     /// Called only inside the exchange mutation transaction. No model or timer.
+    /// Runs after every accepted order, so entries are read by reference and an
+    /// entry is written only when it changes. An entry reads market, account
+    /// and order state but never another entry, so checking every entry before
+    /// writing any is the same as writing each in turn.
     pub fn prepare_position_exits(
+        &mut self,
+    ) -> Vec<crate::position_protection::PositionExitRequest> {
+        let mut exits = Vec::new();
+        let mut writes = Vec::new();
+        for (key, stored) in self.position_protections.iter() {
+            if !matches!(stored.status.as_str(), "armed" | "awaiting_fill" | "triggered") {
+                continue;
+            }
+            let Some(qty) =
+                self.protected_qty(&stored.instrument_id, stored.account_id, stored.position_side)
+            else {
+                continue;
+            };
+            let qty = qty.unwrap_or(0);
+            let mut p = stored.clone();
+            if p.status == "triggered" {
+                if let (Some(previous), Some(remaining)) =
+                    (p.last_observed_qty, p.remaining_exit_qty)
+                {
+                    p.remaining_exit_qty =
+                        Some(remaining.saturating_sub(previous.saturating_sub(qty.unsigned_abs())));
+                }
+                if p.spec.exit_qty.is_none()
+                    && p.triggered_by.as_deref() != Some("take_profit_step")
+                {
+                    p.remaining_exit_qty = Some(qty.unsigned_abs());
+                }
+                if p.remaining_exit_qty == Some(0) {
+                    if p.triggered_by.as_deref() == Some("take_profit_step") {
+                        p.take_profit_step += 1;
+                        p.status = if p.take_profit_step >= p.spec.take_profit_steps.len()
+                            && p.spec.stop_loss_tick.is_none()
+                            && p.spec.trailing_distance_tick.is_none()
+                        {
+                            "completed"
+                        } else {
+                            "armed"
+                        }
+                        .into();
+                        p.triggered_by = None;
+                        p.remaining_exit_qty = None;
+                        p.last_exit_order_id = None;
+                    } else {
+                        p.status = "completed".into();
+                    }
+                }
+            }
+            p.last_observed_qty = Some(qty.unsigned_abs());
+            // The entry as it will be written; `p` keeps the values read below.
+            let mut current = p.clone();
+            if p.status != "completed" {
+                exits.extend(self.position_exit(p, &mut current, qty));
+            }
+            if current != *stored {
+                writes.push((key.clone(), current));
+            }
+        }
+        for (key, p) in writes {
+            self.position_protections.insert(key, p);
+        }
+        exits
+    }
+
+    /// The rest of one entry's exit check, once its observed position is
+    /// recorded: `p` is the entry as read, `current` as it will be written.
+    fn position_exit(
+        &self,
+        mut p: crate::PositionProtection,
+        current: &mut crate::PositionProtection,
+        qty: i128,
+    ) -> Option<crate::position_protection::PositionExitRequest> {
+        let parent_exists = p.entry_order_id.is_some_and(|id| {
+            self.order_owner_for(&p.instrument_id, id).ok().flatten() == Some(p.account_id)
+        });
+        current.last_checked_event_seq = self.protection_event_seq(&p.instrument_id);
+        if qty == 0 || (qty > 0) != (p.exit_side == Side::Sell) {
+            if !(p.status == "awaiting_fill" && parent_exists && qty == 0) {
+                current.status = "completed".into();
+            }
+            return None;
+        }
+        let mut price = self.protection_price(&p.instrument_id, p.spec.trigger);
+        let mut watermark = p.trailing_watermark_tick;
+        let mut crossed = |price: i64| {
+            watermark = Some(watermark.map_or(price, |previous| {
+                if qty > 0 {
+                    previous.max(price)
+                } else {
+                    previous.min(price)
+                }
+            }));
+            let long = qty > 0;
+            if p.spec
+                .stop_loss_tick
+                .is_some_and(|sl| if long { price <= sl } else { price >= sl })
+            {
+                Some("stop_loss".to_string())
+            } else if p.spec.trailing_distance_tick.zip(watermark).is_some_and(
+                |(distance, watermark)| {
+                    if long {
+                        price <= watermark.saturating_sub(distance)
+                    } else {
+                        price >= watermark.saturating_add(distance)
+                    }
+                },
+            ) {
+                Some("trailing_stop".into())
+            } else if p
+                .spec
+                .take_profit_steps
+                .get(p.take_profit_step)
+                .is_some_and(|s| {
+                    if long {
+                        price >= s.price_tick
+                    } else {
+                        price <= s.price_tick
+                    }
+                })
+            {
+                Some("take_profit_step".into())
+            } else if p
+                .spec
+                .take_profit_tick
+                .is_some_and(|tp| if long { price >= tp } else { price <= tp })
+            {
+                Some("take_profit".to_string())
+            } else {
+                None
+            }
+        };
+        let crossing = if p.spec.trigger == crate::ProtectionTrigger::Last {
+            let MarketEngine::Perp(engine) = &self.markets[&p.instrument_id].engine else {
+                return None;
+            };
+            engine
+                .event_history()
+                .events_after(p.last_checked_event_seq)
+                .find_map(|e| match &e.event {
+                    crate::Event::TradePrinted(t) => crossed(t.price_tick)
+                        .filter(|r| {
+                            p.status != "triggered" || r == "stop_loss" || r == "trailing_stop"
+                        })
+                        .map(|r| (r, t.price_tick)),
+                    _ => None,
+                })
+        } else {
+            None
+        };
+        let new_reason = if let Some((reason, trigger_price)) = crossing {
+            price = Some(trigger_price);
+            Some(reason)
+        } else {
+            price.and_then(&mut crossed)
+        };
+        let reason = if p.status == "triggered" {
+            new_reason
+                .filter(|r| r == "stop_loss" || r == "trailing_stop")
+                .or_else(|| p.triggered_by.clone())
+        } else {
+            new_reason
+        };
+        current.trailing_watermark_tick = watermark;
+        let preempt = matches!(
+            p.triggered_by.as_deref(),
+            Some("take_profit" | "take_profit_step")
+        ) && matches!(reason.as_deref(), Some("stop_loss" | "trailing_stop"));
+        let mut cancellations = p
+            .entry_order_id
+            .filter(|_| parent_exists)
+            .into_iter()
+            .collect::<Vec<_>>();
+        if preempt {
+            if let Some(id) = p.last_exit_order_id {
+                cancellations.push(id);
+            }
+            p.remaining_exit_qty = None;
+            p.last_exit_order_id = None;
+        }
+        let config = self.market(&p.instrument_id).ok().map(|m| m.config());
+        let cap = match config {
+            Some(crate::MarketConfig::Perp(c)) => c.risk.max_order_qty.unwrap_or(u64::MAX),
+            _ => u64::MAX,
+        };
+        let lot = config.map_or(1, |c| c.instrument().lot_size);
+        let target = p
+            .remaining_exit_qty
+            .unwrap_or_else(|| {
+                if reason.as_deref() == Some("take_profit_step") {
+                    u128::from(p.spec.take_profit_steps[p.take_profit_step].qty)
+                } else {
+                    p.spec.exit_qty.map_or(qty.unsigned_abs(), u128::from)
+                }
+            })
+            .min(qty.unsigned_abs());
+        let exit_qty = target.min(u128::from(cap)) as u64;
+        let exit_qty = exit_qty - exit_qty % lot;
+        let exit_qty = match (&self.markets[&p.instrument_id].engine, config) {
+            (MarketEngine::Perp(engine), Some(crate::MarketConfig::Perp(c))) => {
+                if let Some(price) = p.spec.exit_price_tick {
+                    let cap = c.risk.max_order_notional.map_or(u128::from(exit_qty), |n| {
+                        (n / i128::from(price)).max(0) as u128
+                    });
+                    let q = u128::from(exit_qty).min(cap) as u64;
+                    q - q % lot
+                } else {
+                    engine.position_exit_qty(
+                        p.exit_side,
+                        exit_qty,
+                        lot,
+                        c.risk.max_order_notional,
+                    )
+                }
+            }
+            _ => 0,
+        };
+        let exit_pending = p.last_exit_order_id.is_some_and(|id| {
+            self.order_owner_for(&p.instrument_id, id).ok().flatten() == Some(p.account_id)
+        });
+        if let Some(reason) = reason {
+            if current.status != "triggered" || preempt {
+                current.triggered_by = Some(reason);
+                current.trigger_price_tick = price;
+                current.triggered_at_market_time_ms = Some(self.clock.market_time_ms());
+                current.remaining_exit_qty = Some(target);
+            }
+            current.status = "triggered".into();
+            if exit_pending && !preempt {
+                return None;
+            }
+            if exit_qty > 0 || parent_exists {
+                return Some((
+                    p.instrument_id,
+                    p.account_id,
+                    p.position_side,
+                    exit_qty,
+                    cancellations,
+                    p.spec.exit_price_tick,
+                ));
+            }
+        } else {
+            current.status = "armed".into();
+        }
+        None
+    }
+
+    /// The pass `prepare_position_exits` replaced. Tests compare.
+    #[cfg(test)]
+    pub(crate) fn prepare_position_exits_reference(
         &mut self,
     ) -> Vec<crate::position_protection::PositionExitRequest> {
         let mut exits = Vec::new();

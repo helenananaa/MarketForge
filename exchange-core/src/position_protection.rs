@@ -91,6 +91,16 @@ pub fn position_qty(account: &crate::PerpAccountSnapshot, side: PositionSide) ->
     }
 }
 
+/// `position_qty` read from the stored account, whose positions its snapshot copies.
+pub(crate) fn account_position_qty(account: &crate::perp::PerpAccount, side: PositionSide) -> Option<i128> {
+    match (&account.hedge_positions, side) {
+        (None, PositionSide::Both) => Some(account.position_qty),
+        (Some(p), PositionSide::Long) => Some(p.long.qty),
+        (Some(p), PositionSide::Short) => Some(-p.short.qty),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PositionRisk {
     pub mark_price_tick: i64,

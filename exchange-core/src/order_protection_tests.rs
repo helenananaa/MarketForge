@@ -495,3 +495,220 @@ fn protection_unbounded_reduce_only_sweeps_but_cannot_reverse_the_position() {
         }
     )));
 }
+
+#[test]
+fn conditional_order_scan_matches_the_reference_scan() {
+    // Mark moves (no perp event), trades at random prices, and armed, replaced
+    // and cancelled entries on both triggers; each step compares the scan with
+    // the reference on copies of the venue, before and after the room's pass.
+    let room = "conditional-scan";
+    let mut rooms = RoomManager::new();
+    rooms
+        .create_room(pending_perp_liquidation_scenario(room))
+        .unwrap();
+    let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+    let mut next = move |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed % n
+    };
+    let mut order_id = 1_000;
+    let mut triggered = 0;
+    for step in 0..1_000 {
+        let simulation = rooms.simulation_room(room).unwrap();
+        let venue = simulation.venue_id_for_instrument("V-BTC-PERP").unwrap();
+        let mut fast = simulation.exchange(&venue).unwrap().clone();
+        let mut reference = fast.clone();
+        let a = fast.prepare_conditional_orders();
+        let b = reference.prepare_conditional_orders_reference();
+        assert_eq!(a, b, "step {step}");
+        // The scan writes only conditional orders; the whole venue (with its
+        // growing log) is compared now and then.
+        assert!(
+            fast.all_conditional_orders().eq(reference.all_conditional_orders()),
+            "step {step}"
+        );
+        if step % 100 == 0 {
+            assert_eq!(
+                serde_json::to_value(&fast).unwrap(),
+                serde_json::to_value(&reference).unwrap(),
+                "step {step}"
+            );
+        }
+        triggered += a.len();
+        let price = 90 + next(21) as i64;
+        let command = match next(6) {
+            0 => Command::SetMarkPrice(SetMarkPrice { price_tick: price }),
+            1 | 2 => Command::SetConditionalOrder {
+                account_id: [10, 20, 30][next(3) as usize],
+                key: format!("k{}", next(8)),
+                spec: (next(5) != 0).then(|| {
+                    Box::new(crate::conditional_orders::ConditionalOrderSpec {
+                        side: if next(2) == 0 { Side::Buy } else { Side::Sell },
+                        position_side: crate::PositionSide::Both,
+                        qty: 1,
+                        trigger_price_tick: price,
+                        above: next(2) == 0,
+                        trigger: if next(2) == 0 {
+                            crate::ProtectionTrigger::Last
+                        } else {
+                            crate::ProtectionTrigger::Mark
+                        },
+                        limit_price_tick: (next(2) == 0).then_some(price),
+                        protection: None,
+                    })
+                }),
+            },
+            _ => {
+                order_id += 1;
+                let (side, account) = if next(2) == 0 { (Side::Sell, 10) } else { (Side::Buy, 30) };
+                Command::NewOrder(NewOrder {
+                    position_side: crate::model::PositionSide::Both,
+                    order_id,
+                    account_id: account,
+                    side,
+                    qty: 1 + next(3),
+                    reduce_only: false,
+                    kind: OrderKind::Limit { price_tick: price },
+                })
+            }
+        };
+        // Half the steps skip the room's own pass, so the next comparison
+        // sees new events after the cursors as well as none.
+        if next(2) == 0 {
+            rooms
+                .apply_to_instrument(room, "V-BTC-PERP", command)
+                .unwrap();
+        } else {
+            rooms
+                .simulation_room_mut(room)
+                .unwrap()
+                .apply_to_instrument("V-BTC-PERP", command)
+                .unwrap();
+        }
+    }
+    assert!(triggered > 20, "only {triggered} entries triggered");
+}
+
+#[test]
+fn position_exit_scans_match_the_reference_scans() {
+    // Two accounts trade into, out of and across positions and set
+    // take-profit, stop, trailing and partial exits on both triggers while the
+    // mark and the last trade move. Each step compares both passes with their
+    // references on copies of the venue, before and after the room's own pass.
+    let room = "exit-scan";
+    let mut rooms = RoomManager::new();
+    rooms
+        .create_room(pending_perp_liquidation_scenario(room))
+        .unwrap();
+    let mut seed = 0x2545_F491_4F6C_DD1Du64;
+    let mut next = move |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed % n
+    };
+    let mut order_id = 1_000;
+    let (mut exits, mut armed, mut completed) = (0, 0, 0);
+    for step in 0..1_000 {
+        let simulation = rooms.simulation_room(room).unwrap();
+        let venue = simulation.venue_id_for_instrument("V-BTC-PERP").unwrap();
+        let actor = simulation.exchange(&venue).unwrap();
+        armed += actor
+            .all_position_protections()
+            .filter(|p| p.status == "armed")
+            .count();
+        let (mut fast, mut reference) = (actor.clone(), actor.clone());
+        let a = fast.prepare_position_exits();
+        let b = reference.prepare_position_exits_reference();
+        assert_eq!(a, b, "step {step}");
+        assert_eq!(
+            fast.all_position_protections().collect::<Vec<_>>(),
+            reference.all_position_protections().collect::<Vec<_>>(),
+            "step {step}"
+        );
+        exits += a.len();
+        let (mut fast, mut reference) = (actor.clone(), actor.clone());
+        fast.complete_flat_position_protections();
+        reference.complete_flat_position_protections_reference();
+        let done = |a: &crate::ExchangeActor| {
+            a.all_position_protections()
+                .filter(|p| p.status == "completed")
+                .count()
+        };
+        completed += done(&reference) - done(actor);
+        assert_eq!(
+            fast.all_position_protections().collect::<Vec<_>>(),
+            reference.all_position_protections().collect::<Vec<_>>(),
+            "step {step}"
+        );
+        if step % 100 == 0 {
+            assert_eq!(
+                serde_json::to_value(&fast).unwrap(),
+                serde_json::to_value(&reference).unwrap(),
+                "step {step}"
+            );
+        }
+        let price = 92 + next(17) as i64;
+        let account = if next(2) == 0 { 10 } else { 30 };
+        // Either direction, so positions cross zero.
+        let long = next(2) == 0;
+        let command = match next(7) {
+            0 => Command::SetMarkPrice(SetMarkPrice { price_tick: price }),
+            1 | 2 => {
+                let distance = 1 + next(6) as i64;
+                Command::SetPositionProtection {
+                    account_id: account,
+                    position_side: crate::PositionSide::Both,
+                    protection: (next(6) != 0).then(|| {
+                        Box::new(crate::PositionProtectionSpec {
+                            take_profit_tick: (next(2) == 0)
+                                .then_some(if long { 100 + distance } else { 100 - distance }),
+                            stop_loss_tick: (next(2) == 0)
+                                .then_some(if long { 100 - distance } else { 100 + distance }),
+                            trigger: if next(2) == 0 {
+                                crate::ProtectionTrigger::Last
+                            } else {
+                                crate::ProtectionTrigger::Mark
+                            },
+                            trailing_distance_tick: (next(3) == 0).then_some(distance),
+                            exit_price_tick: None,
+                            exit_qty: (next(3) == 0).then_some(1),
+                            take_profit_steps: vec![],
+                        })
+                    }),
+                }
+            }
+            _ => {
+                order_id += 1;
+                Command::NewOrder(NewOrder {
+                    position_side: crate::model::PositionSide::Both,
+                    order_id,
+                    account_id: account,
+                    side: if long { Side::Buy } else { Side::Sell },
+                    qty: 1 + next(3),
+                    reduce_only: false,
+                    kind: OrderKind::Limit { price_tick: price },
+                })
+            }
+        };
+        // Half the steps skip the room's own pass, so the next comparison
+        // sees moved prices and positions as well as settled ones.
+        if next(2) == 0 {
+            rooms
+                .apply_to_instrument(room, "V-BTC-PERP", command)
+                .unwrap();
+        } else {
+            rooms
+                .simulation_room_mut(room)
+                .unwrap()
+                .apply_to_instrument("V-BTC-PERP", command)
+                .unwrap();
+        }
+    }
+    assert!(
+        exits > 20 && armed > 200 && completed > 5,
+        "exits {exits}, armed {armed}, completed {completed}"
+    );
+}

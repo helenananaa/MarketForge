@@ -165,7 +165,85 @@ impl ExchangeActor {
         self.conditional_orders.values()
     }
 
+    /// Triggers every armed conditional order whose price was crossed, and
+    /// moves each armed entry's event cursor to its market's latest event.
+    /// Runs after every accepted order, so entries are read by reference and
+    /// only entries that change are written: an entry reads market state and
+    /// never another entry, so checking all before writing any is the same.
     pub fn prepare_conditional_orders(
+        &mut self,
+    ) -> Vec<crate::conditional_orders::ConditionalOrder> {
+        let mut latest_seqs = Vec::<(&str, u64)>::new();
+        let mut prices = Vec::<(&str, crate::ProtectionTrigger, Option<i64>)>::new();
+        let mut changes = Vec::new();
+        for (key, p) in self.conditional_orders.iter() {
+            if p.status != "armed" {
+                continue;
+            }
+            let crosses = |price: i64| {
+                if p.spec.above {
+                    price >= p.spec.trigger_price_tick
+                } else {
+                    price <= p.spec.trigger_price_tick
+                }
+            };
+            let instrument = p.instrument_id.as_str();
+            let latest = match latest_seqs.iter().find(|(i, _)| *i == instrument) {
+                Some((_, seq)) => *seq,
+                None => {
+                    let seq = self.protection_event_seq(instrument);
+                    latest_seqs.push((instrument, seq));
+                    seq
+                }
+            };
+            // Event sequence numbers grow in append order, so there is a
+            // record after the cursor exactly when the latest one is.
+            let crossed = if p.spec.trigger == crate::ProtectionTrigger::Last {
+                match &self.markets[instrument].engine {
+                    MarketEngine::Perp(e) => {
+                        latest > p.last_checked_event_seq
+                            && e.event_history()
+                                .events_after(p.last_checked_event_seq)
+                                .any(|r| {
+                                    matches!(&r.event, crate::Event::TradePrinted(t) if crosses(t.price_tick))
+                                })
+                    }
+                    _ => false,
+                }
+            } else {
+                false
+            } || {
+                let trigger = p.spec.trigger;
+                let price = match prices.iter().find(|(i, t, _)| *i == instrument && *t == trigger) {
+                    Some((_, _, price)) => *price,
+                    None => {
+                        let price = self.protection_price(instrument, trigger);
+                        prices.push((instrument, trigger, price));
+                        price
+                    }
+                };
+                price.is_some_and(crosses)
+            };
+            if crossed || latest != p.last_checked_event_seq {
+                changes.push((key.clone(), latest, crossed.then(|| p.clone())));
+            }
+        }
+        let mut result = Vec::new();
+        for (key, latest, triggered) in changes {
+            let current = self.conditional_orders.get_mut(&key).unwrap();
+            current.last_checked_event_seq = latest;
+            if let Some(p) = triggered {
+                current.status = "triggered".into();
+                result.push(p);
+            }
+        }
+        result
+    }
+
+    /// The scan `prepare_conditional_orders` replaced: every entry cloned,
+    /// every armed entry rewritten. Tests compare the two.
+    #[cfg(test)]
+    pub(crate) fn prepare_conditional_orders_reference(
         &mut self,
     ) -> Vec<crate::conditional_orders::ConditionalOrder> {
         let mut result = Vec::new();
