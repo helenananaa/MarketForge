@@ -187,7 +187,7 @@ def account_of(view, config):
     return kind, account, position, avg
 
 
-@lru_cache(maxsize=256)
+@lru_cache(maxsize=1024)
 def lowered_source(source):
     """external_pass_source(lower_order_calls(source)); both are pure."""
     return external_pass_source(lower_order_calls(source))

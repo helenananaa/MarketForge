@@ -151,7 +151,7 @@ def ledger_before(state, time):
     return cash, position, cost
 
 
-@lru_cache(maxsize=64)
+@lru_cache(maxsize=1024)
 def prepared_source(source):
     import pine_compat
     if pine_compat.__version__ not in ("0.3.1", "0.3.1+mf1"):
