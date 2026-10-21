@@ -12,6 +12,8 @@ fn risk_order(id: u64, account: u64, side: Side, price: i64, qty: u64, hedge: bo
 }
 
 fn adaptive_risk_fixture(count: u64, active: u64, hedge: bool, linked: bool) -> ExchangeActor {
+    // These tests also change actor fields directly.
+    super::DIRECT_TEST_MUTATIONS.set(true);
     let mut configs = vec![venue_spot_config("spot", "BTC", "USDT")];
     for (id, base) in [("btc", "BTC"), ("eth", "ETH"), ("sol", "SOL")] {
         let mut config = venue_perp_config(id, base, "USDT");

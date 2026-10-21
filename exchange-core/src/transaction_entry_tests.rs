@@ -68,6 +68,8 @@ fn entry_compare<T: std::fmt::Debug + PartialEq>(
 }
 
 fn entry_fixture(hedge: bool, liquidation: bool, waterfall: u8) -> ExchangeActor {
+    // These tests also change actor fields directly.
+    super::DIRECT_TEST_MUTATIONS.set(true);
     let mut markets = vec![venue_spot_config("s", "BTC", "USDT")];
     for (id, quote) in [("p", "USDT"), ("q", "USDT"), ("r", "USDC")] {
         let mut config = venue_perp_config(id, "BTC", quote);
@@ -588,4 +590,297 @@ fn transaction_entries_funding_deficit_liquidation_and_cold_restore_keep_liabili
             .contains(&20)
     );
     entry_compare(&mut actor, &mut reference, |a| a.advance_clock(2)).unwrap();
+}
+
+#[test]
+fn in_place_orders_match_staged_orders_through_rollbacks() {
+    // Two copies of a venue take the same random orders, cancels and mark
+    // moves on its spot and perp markets: one runs orders in place, the other
+    // staged. Now and then a venue balance is moved on both for a few steps,
+    // so that settlements fail: the in-place copy must rebuild its state from
+    // its checkpoint and reject the order as staged. Every result, and the
+    // whole venue now and then, must match. (Every recorded mutation also
+    // checks that the checkpoint and the replay rebuild the state.)
+    let mut fast = entry_fixture(false, false, 0);
+    let mut staged = fast.clone();
+    let mut seed = 0xD1B5_4A32_D192_ED03u64;
+    let mut next = move |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed % n
+    };
+    let (rebuilds, _) = super::REBUILDS.get();
+    let (mut accepted, mut rejected) = (0, 0);
+    let mut order_id = 1_000;
+    let mut moved: Option<(u64, u64, &str, i128)> = None;
+    for step in 0..1_500 {
+        match moved {
+            Some((until, account, asset, delta)) if step == until => {
+                for actor in [&mut fast, &mut staged] {
+                    actor
+                        .venue_accounts
+                        .apply_signed_delta(account, asset, -delta)
+                        .unwrap();
+                }
+                moved = None;
+            }
+            None if next(30) == 0 => {
+                let account = 1 + next(40);
+                let asset = if next(2) == 0 { "USDT" } else { "BTC" };
+                let delta = -(1 + next(20_000) as i128);
+                if fast
+                    .venue_accounts
+                    .apply_signed_delta(account, asset, delta)
+                    .is_ok()
+                {
+                    staged
+                        .venue_accounts
+                        .apply_signed_delta(account, asset, delta)
+                        .unwrap();
+                    moved = Some((step + 1 + next(3), account, asset, delta));
+                }
+            }
+            _ => {}
+        }
+        let instrument = ["s", "p", "q", "r"][next(4) as usize];
+        order_id += 1;
+        let command = match next(6) {
+            0 => Command::CancelOrder(CancelOrder {
+                order_id: order_id - 1 - next(30),
+            }),
+            1 => Command::SetMarkPrice(SetMarkPrice {
+                price_tick: 95 + next(11) as i64,
+            }),
+            _ => {
+                let side = if next(2) == 0 { Side::Buy } else { Side::Sell };
+                limit(
+                    order_id,
+                    1 + next(40),
+                    side,
+                    95 + next(11) as i64,
+                    1 + next(20),
+                )
+            }
+        };
+        let a = fast.apply_to_instrument(instrument, command.clone());
+        super::STAGED_ORDERS.set(true);
+        let b = staged.apply_to_instrument(instrument, command);
+        super::STAGED_ORDERS.set(false);
+        assert_eq!(a, b, "step {step}");
+        match a.map(|e| e.result) {
+            Ok(ActorExecutionResult::Accepted(_)) => accepted += 1,
+            Ok(ActorExecutionResult::Rejected(ActorRejectReason::Clearing(_))) => rejected += 1,
+            _ => {}
+        }
+        if step % 50 == 0 {
+            assert_eq!(
+                canonical_actor(&fast),
+                canonical_actor(&staged),
+                "step {step}"
+            );
+        }
+    }
+    assert_eq!(canonical_actor(&fast), canonical_actor(&staged));
+    let (all, _) = super::REBUILDS.get();
+    assert!(
+        accepted > 300 && rejected > 20 && all - rebuilds > 20,
+        "accepted {accepted}, clearing rejections {rejected}, rebuilds {}",
+        all - rebuilds
+    );
+}
+
+#[test]
+fn a_rebuild_replays_the_mutations_since_the_checkpoint() {
+    let mut actor = entry_fixture(false, false, 0);
+    actor.untracked(|_| ());
+    for (id, side) in [(2_001, Side::Buy), (2_002, Side::Sell)] {
+        actor
+            .apply_to_instrument("p", limit(id, 30 + id - 2_000, side, 100, 3))
+            .unwrap();
+    }
+    assert_eq!(actor.undo.ops.len(), 2);
+    let before = canonical_actor(&actor);
+    actor.rebuild_from_checkpoint();
+    actor.undo.busy = false;
+    assert_eq!(canonical_actor(&actor), before);
+}
+
+#[test]
+fn every_public_mutation_is_recorded_or_drops_the_checkpoint() {
+    // Every public mutation of the actor must be replayable or forget the
+    // checkpoint; a new one belongs in one of these two lists.
+    let with_checkpoint = || {
+        let mut actor = entry_fixture(false, false, 0);
+        actor.untracked(|_| ());
+        actor
+            .apply_to_instrument("p", limit(2_001, 31, Side::Buy, 90, 1))
+            .unwrap();
+        assert!(actor.undo.checkpoint.is_some());
+        actor
+    };
+    let order = crate::conditional_orders::ConditionalOrder {
+        key: "k".into(),
+        instrument_id: "p".into(),
+        account_id: 31,
+        spec: crate::conditional_orders::ConditionalOrderSpec {
+            side: Side::Buy,
+            position_side: crate::PositionSide::Both,
+            qty: 1,
+            trigger_price_tick: 90,
+            above: false,
+            trigger: crate::ProtectionTrigger::Mark,
+            limit_price_tick: None,
+            protection: None,
+        },
+        status: "triggered".into(),
+        last_checked_event_seq: 0,
+        submitted_order_id: None,
+    };
+    let recorded: [(&str, &str, Box<dyn Fn(&mut ExchangeActor)>); 11] = [
+        (
+            "order",
+            "Apply",
+            Box::new(|a| {
+                let _ = a.apply_to_instrument("p", limit(2_002, 32, Side::Sell, 110, 1));
+            }),
+        ),
+        (
+            "cancel",
+            "Apply",
+            Box::new(|a| {
+                let _ = a.apply_to_instrument(
+                    "p",
+                    Command::CancelOrder(CancelOrder { order_id: 2_001 }),
+                );
+            }),
+        ),
+        (
+            "advance_clock",
+            "AdvanceClock(",
+            Box::new(|a| {
+                let _ = a.advance_clock(1);
+            }),
+        ),
+        (
+            "advance_clock_venue_only",
+            "AdvanceClockVenueOnly",
+            Box::new(|a| {
+                let _ = a.advance_clock_venue_only(1);
+            }),
+        ),
+        (
+            "take_clock_executions",
+            "TakeClockExecutions",
+            Box::new(|a| {
+                let _ = a.take_clock_executions();
+            }),
+        ),
+        (
+            "liquidate_account",
+            "Liquidate",
+            Box::new(|a| {
+                let _ = a.liquidate_account("p", 20, 9_001);
+            }),
+        ),
+        (
+            "complete_flat_position_protections",
+            "CompleteFlatProtections",
+            Box::new(|a| a.complete_flat_position_protections()),
+        ),
+        (
+            "prepare_position_exits",
+            "PreparePositionExits",
+            Box::new(|a| {
+                let _ = a.prepare_position_exits();
+            }),
+        ),
+        (
+            "record_position_exit",
+            "RecordPositionExit",
+            Box::new(|a| a.record_position_exit("p", 20, crate::PositionSide::Both, 1)),
+        ),
+        (
+            "prepare_conditional_orders",
+            "PrepareConditionalOrders",
+            Box::new(|a| {
+                let _ = a.prepare_conditional_orders();
+            }),
+        ),
+        (
+            "record_conditional_order",
+            "RecordConditionalOrder",
+            Box::new(move |a| a.record_conditional_order(&order, 1, true)),
+        ),
+    ];
+    for (name, op, mutation) in &recorded {
+        let mut actor = with_checkpoint();
+        let ops = actor.undo.ops.len();
+        mutation(&mut actor);
+        assert_eq!(actor.undo.ops.len(), ops + 1, "{name} is not recorded once");
+        let last = format!("{:?}", actor.undo.ops.back().unwrap());
+        assert!(last.starts_with(op), "{name} records {last}");
+        assert!(!actor.undo.busy, "{name}");
+    }
+    let dropped: [(&str, fn(&mut ExchangeActor)); 17] = [
+        ("set_portfolio_balance", |a| {
+            a.set_portfolio_balance(31, "USDT", 5)
+        }),
+        ("allocate_from_portfolio", |a| {
+            let _ = a.allocate_from_portfolio(31, "USDT", 1);
+        }),
+        ("apply_venue_asset_delta", |a| {
+            let _ = a.apply_venue_asset_delta(31, "USDT", 1);
+        }),
+        ("submit_deposit", |a| {
+            let _ = a.submit_deposit(31, "USDT", 1);
+        }),
+        ("submit_venue_deposit", |a| {
+            let _ = a.submit_venue_deposit(31, "USDT", 1);
+        }),
+        ("submit_rejected_venue_deposit", |a| {
+            let _ = a.submit_rejected_venue_deposit(
+                31,
+                "USDT",
+                1,
+                VenueTransferRejectReason::InsufficientAvailableBalance,
+            );
+        }),
+        ("submit_withdrawal", |a| {
+            let _ = a.submit_withdrawal(31, "USDT", 1);
+        }),
+        ("submit_venue_withdrawal", |a| {
+            let _ = a.submit_venue_withdrawal(31, "USDT", 1);
+        }),
+        ("normalize_after_restore", |a| {
+            let _ = a.normalize_after_restore();
+        }),
+        ("primary_market_mut", |a| {
+            let _ = a.primary_market_mut();
+        }),
+        ("market_mut", |a| {
+            let _ = a.market_mut("p");
+        }),
+        ("pause", |a| a.pause()),
+        ("resume", |a| a.resume()),
+        ("close", |a| a.close()),
+        ("restore_status", |a| {
+            a.restore_status(MarketStatus::Running)
+        }),
+        ("create_account", |a| {
+            let _ = a.create_account(500, 10);
+        }),
+        ("create_spot_account_with_position", |a| {
+            let _ = a.create_spot_account_with_position(501, 10, 1);
+        }),
+    ];
+    for (name, mutation) in dropped {
+        let mut actor = with_checkpoint();
+        mutation(&mut actor);
+        assert!(
+            actor.undo.checkpoint.is_none(),
+            "{name} keeps the checkpoint"
+        );
+        assert!(!actor.undo.busy, "{name}");
+    }
 }

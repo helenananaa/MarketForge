@@ -29,7 +29,7 @@ impl ExchangeActor {
                 .any(|p| matches!(p.status.as_str(), "armed" | "awaiting_fill" | "triggered"))
     }
 
-    pub fn complete_flat_position_protections(&mut self) {
+    fn complete_flat_position_protections_body(&mut self) {
         // An entry reads only its account's position, so all are checked by
         // reference before any is written.
         let flat = self
@@ -67,7 +67,7 @@ impl ExchangeActor {
 
     /// The pass `complete_flat_position_protections` replaced. Tests compare.
     #[cfg(test)]
-    pub(crate) fn complete_flat_position_protections_reference(&mut self) {
+    fn complete_flat_position_protections_reference_body(&mut self) {
         for key in self
             .position_protections
             .keys()
@@ -396,7 +396,7 @@ impl ExchangeActor {
     /// entry is written only when it changes. An entry reads market, account
     /// and order state but never another entry, so checking every entry before
     /// writing any is the same as writing each in turn.
-    pub fn prepare_position_exits(
+    fn prepare_position_exits_body(
         &mut self,
     ) -> Vec<crate::position_protection::PositionExitRequest> {
         let mut exits = Vec::new();
@@ -644,7 +644,7 @@ impl ExchangeActor {
 
     /// The pass `prepare_position_exits` replaced. Tests compare.
     #[cfg(test)]
-    pub(crate) fn prepare_position_exits_reference(
+    fn prepare_position_exits_reference_body(
         &mut self,
     ) -> Vec<crate::position_protection::PositionExitRequest> {
         let mut exits = Vec::new();
@@ -887,7 +887,7 @@ impl ExchangeActor {
         exits
     }
 
-    pub fn record_position_exit(
+    fn record_position_exit_body(
         &mut self,
         instrument: &str,
         account: AccountId,

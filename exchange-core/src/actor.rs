@@ -122,6 +122,8 @@ pub struct ExchangeActor {
     /// remain unchanged; only the cash that can actually be frozen is capped.
     #[serde(default)]
     funding_collateral_shortfalls: MarketReservations,
+    #[serde(skip)]
+    undo: UndoLog,
 }
 
 impl ExchangeActor {
@@ -248,6 +250,7 @@ impl ExchangeActor {
             conditional_orders: Default::default(),
             pending_clock_executions: Vec::new(),
             funding_collateral_shortfalls: MarketReservations::default(),
+            undo: UndoLog::default(),
         })
     }
 
@@ -308,6 +311,7 @@ impl ExchangeActor {
             conditional_orders: Default::default(),
             pending_clock_executions: Vec::new(),
             funding_collateral_shortfalls: MarketReservations::default(),
+            undo: UndoLog::default(),
         })
     }
 
@@ -359,7 +363,7 @@ impl ExchangeActor {
         self.portfolios.account_snapshots()
     }
 
-    pub fn set_portfolio_balance(
+    fn set_portfolio_balance_body(
         &mut self,
         account_id: AccountId,
         asset_id: impl Into<String>,
@@ -372,7 +376,7 @@ impl ExchangeActor {
         &self.portfolios
     }
 
-    pub fn allocate_from_portfolio(
+    fn allocate_from_portfolio_body(
         &mut self,
         account_id: AccountId,
         asset_id: impl Into<String>,
@@ -407,7 +411,7 @@ impl ExchangeActor {
         Ok(())
     }
 
-    pub fn apply_venue_asset_delta(
+    fn apply_venue_asset_delta_body(
         &mut self,
         account_id: AccountId,
         asset_id: impl Into<String>,
@@ -441,7 +445,7 @@ impl ExchangeActor {
         self.clock
     }
 
-    pub fn advance_clock(&mut self, steps: u64) -> Result<Vec<VenueTransfer>, ClearingError> {
+    fn advance_clock_body(&mut self, steps: u64) -> Result<Vec<VenueTransfer>, ClearingError> {
         let mut staged = self.clone();
         let completed = staged.advance_clock_venue_only(steps)?;
         for transfer in &completed {
@@ -451,7 +455,7 @@ impl ExchangeActor {
         Ok(completed)
     }
 
-    pub fn advance_clock_venue_only(
+    fn advance_clock_venue_only_body(
         &mut self,
         steps: u64,
     ) -> Result<Vec<VenueTransfer>, ClearingError> {
@@ -484,7 +488,7 @@ impl ExchangeActor {
         Ok(completed)
     }
 
-    pub(crate) fn take_clock_executions(&mut self) -> Vec<ActorExecution> {
+    fn take_clock_executions_body(&mut self) -> Vec<ActorExecution> {
         std::mem::take(&mut self.pending_clock_executions)
     }
 
@@ -682,7 +686,7 @@ impl ExchangeActor {
         Ok(())
     }
 
-    pub fn submit_deposit(
+    fn submit_deposit_body(
         &mut self,
         account_id: AccountId,
         asset_id: impl Into<String>,
@@ -750,7 +754,7 @@ impl ExchangeActor {
         transfer
     }
 
-    pub fn submit_venue_deposit(
+    fn submit_venue_deposit_body(
         &mut self,
         account_id: AccountId,
         asset_id: impl Into<String>,
@@ -790,7 +794,7 @@ impl ExchangeActor {
         )
     }
 
-    pub fn submit_rejected_venue_deposit(
+    fn submit_rejected_venue_deposit_body(
         &mut self,
         account_id: AccountId,
         asset_id: impl Into<String>,
@@ -806,7 +810,7 @@ impl ExchangeActor {
         )
     }
 
-    pub fn submit_withdrawal(
+    fn submit_withdrawal_body(
         &mut self,
         account_id: AccountId,
         asset_id: impl Into<String>,
@@ -861,7 +865,7 @@ impl ExchangeActor {
         transfer
     }
 
-    pub fn submit_venue_withdrawal(
+    fn submit_venue_withdrawal_body(
         &mut self,
         account_id: AccountId,
         asset_id: impl Into<String>,
@@ -964,7 +968,7 @@ impl ExchangeActor {
         }
     }
 
-    pub(crate) fn normalize_after_restore(&mut self) -> Result<(), ClearingError> {
+    fn normalize_after_restore_body(&mut self) -> Result<(), ClearingError> {
         let mut staged = self.clone();
         staged.spot_sync_baselines.clear();
         staged.venue_validation_baseline = None;
@@ -1023,7 +1027,7 @@ impl ExchangeActor {
             .expect("validated exchange config must have a primary market")
     }
 
-    pub fn primary_market_mut(&mut self) -> &mut MarketActor {
+    fn primary_market_mut_body(&mut self) -> &mut MarketActor {
         self.venue_accounts.invalidate_margin_changes();
         self.venue_accounts.reservation_changes.invalidate();
         let instrument_id = self.primary_instrument_id().to_string();
@@ -1042,7 +1046,7 @@ impl ExchangeActor {
             })
     }
 
-    pub fn market_mut(
+    fn market_mut_body(
         &mut self,
         instrument_id: &str,
     ) -> Result<&mut MarketActor, ActorRejectReason> {
@@ -1061,31 +1065,31 @@ impl ExchangeActor {
         self.primary_market().status()
     }
 
-    pub fn pause(&mut self) {
+    fn pause_body(&mut self) {
         for market in self.markets.values_mut() {
             market.pause();
         }
     }
 
-    pub fn resume(&mut self) {
+    fn resume_body(&mut self) {
         for market in self.markets.values_mut() {
             market.resume();
         }
     }
 
-    pub fn close(&mut self) {
+    fn close_body(&mut self) {
         for market in self.markets.values_mut() {
             market.close();
         }
     }
 
-    pub fn restore_status(&mut self, status: MarketStatus) {
+    fn restore_status_body(&mut self, status: MarketStatus) {
         for market in self.markets.values_mut() {
             market.restore_status(status);
         }
     }
 
-    pub fn create_account(
+    fn create_account_body(
         &mut self,
         account_id: AccountId,
         cash_balance: Money,
@@ -1111,7 +1115,7 @@ impl ExchangeActor {
         primary.expect("validated exchange config must have a primary market")
     }
 
-    pub fn create_spot_account_with_position(
+    fn create_spot_account_with_position_body(
         &mut self,
         account_id: AccountId,
         cash_balance: Money,
@@ -1150,12 +1154,15 @@ impl ExchangeActor {
         self.apply_to_instrument_from(instrument_id, command, CommandOrigin::External)
     }
 
-    pub fn apply_to_instrument_from(
+    /// `apply_to_instrument_from`, with the plain order transaction in place
+    /// or staged; None in place when it must roll back.
+    fn apply_to_instrument_from_mode(
         &mut self,
         instrument_id: &str,
         command: Command,
         origin: CommandOrigin,
-    ) -> Result<ActorExecution, ActorRejectReason> {
+        in_place: bool,
+    ) -> Result<Option<ActorExecution>, ActorRejectReason> {
         let wallet_before = self.venue_accounts.wallet_state();
         let margin_before = self.margin_state();
         if matches!(command, Command::SetConditionalOrder { .. }) {
@@ -1171,7 +1178,7 @@ impl ExchangeActor {
             }
             self.attach_wallet_updates(&mut execution, &wallet_before);
             self.attach_margin_updates(&mut execution, &margin_before);
-            return Ok(execution);
+            return Ok(Some(execution));
         }
         if matches!(
             command,
@@ -1190,27 +1197,25 @@ impl ExchangeActor {
             }
             self.attach_wallet_updates(&mut execution, &wallet_before);
             self.attach_margin_updates(&mut execution, &margin_before);
-            return Ok(execution);
+            return Ok(Some(execution));
         }
         let retained = command.clone();
-        let mut execution = self.apply_to_instrument_inner(instrument_id, command, origin)?;
+        let Some(mut execution) =
+            self.apply_to_instrument_synced_mode(instrument_id, command, origin, true, in_place)?
+        else {
+            return Ok(None);
+        };
         if matches!(execution.result, ActorExecutionResult::Rejected(_)) {
             execution.rejected_command = Some(retained);
         }
         self.attach_wallet_updates(&mut execution, &wallet_before);
         self.attach_margin_updates(&mut execution, &margin_before);
-        Ok(execution)
+        Ok(Some(execution))
     }
 
-    fn apply_to_instrument_inner(
-        &mut self,
-        instrument_id: &str,
-        command: Command,
-        origin: CommandOrigin,
-    ) -> Result<ActorExecution, ActorRejectReason> {
-        self.apply_to_instrument_synced(instrument_id, command, origin, true)
-    }
-
+    /// Tests: an order transaction, staged, with or without the incremental
+    /// scopes; not recorded, like any direct test mutation.
+    #[cfg(test)]
     fn apply_to_instrument_synced(
         &mut self,
         instrument_id: &str,
@@ -1218,6 +1223,29 @@ impl ExchangeActor {
         origin: CommandOrigin,
         incremental: bool,
     ) -> Result<ActorExecution, ActorRejectReason> {
+        self.untracked(|a| {
+            Ok(a.apply_to_instrument_synced_mode(
+                instrument_id,
+                command,
+                origin,
+                incremental,
+                false,
+            )?
+            .expect("a staged order never needs a rebuild"))
+        })
+    }
+
+    /// The order transaction, in place or on a staged copy; None in place
+    /// when a clearing error leaves the state part-way and the caller must
+    /// rebuild it (see `UndoLog`).
+    fn apply_to_instrument_synced_mode(
+        &mut self,
+        instrument_id: &str,
+        command: Command,
+        origin: CommandOrigin,
+        incremental: bool,
+        in_place: bool,
+    ) -> Result<Option<ActorExecution>, ActorRejectReason> {
         if !self.markets.contains_key(instrument_id) {
             return Err(ActorRejectReason::InstrumentNotFound {
                 instrument_id: instrument_id.to_string(),
@@ -1243,7 +1271,7 @@ impl ExchangeActor {
                     })
             };
             if let Some(reason) = reason {
-                return Ok(ActorExecution {
+                return Ok(Some(ActorExecution {
                     rejected_command: None,
                     room_id: self.room_id.clone(),
                     instrument_id: instrument_id.into(),
@@ -1257,11 +1285,11 @@ impl ExchangeActor {
                     is_liquidation: false,
                     wallet_updates: Vec::new(),
                     margin_updates: Vec::new(),
-                });
+                }));
             }
         }
         if matches!(command, Command::SettleFunding(_)) {
-            return Ok(ActorExecution {
+            return Ok(Some(ActorExecution {
                 rejected_command: None,
                 room_id: self.room_id.clone(),
                 instrument_id: instrument_id.into(),
@@ -1275,7 +1303,7 @@ impl ExchangeActor {
                 is_liquidation: false,
                 wallet_updates: Vec::new(),
                 margin_updates: Vec::new(),
-            });
+            }));
         }
         if let Some(price) = self.perp_price_snapshot(instrument_id)? {
             let rejection = match &command {
@@ -1291,7 +1319,7 @@ impl ExchangeActor {
                 _ => None,
             };
             if let Some(reason) = rejection {
-                return Ok(ActorExecution {
+                return Ok(Some(ActorExecution {
                     rejected_command: None,
                     price_updates: Vec::new(),
                     funding_settlement: None,
@@ -1305,7 +1333,7 @@ impl ExchangeActor {
                     market_time_ms: self.clock.market_time_ms(),
                     status: self.status(),
                     result: ActorExecutionResult::Rejected(reason),
-                });
+                }));
             }
         }
         let before_book = self.config.markets.iter().any(|market| {
@@ -1315,7 +1343,7 @@ impl ExchangeActor {
             .perp_quote_assets_affected_by_instrument(instrument_id)
             .expect("instrument existence was checked above");
         if let Some(rejection) = self.check_venue_rules(instrument_id, &command)? {
-            return Ok(ActorExecution {
+            return Ok(Some(ActorExecution {
                 rejected_command: None,
                 price_updates: Vec::new(),
                 funding_settlement: None,
@@ -1329,30 +1357,75 @@ impl ExchangeActor {
                 market_time_ms: self.clock.market_time_ms(),
                 status: self.status(),
                 result: ActorExecutionResult::Rejected(ActorRejectReason::VenueRule(rejection)),
-            });
+            }));
         }
 
+        if in_place {
+            return Ok(self
+                .settle_order(
+                    instrument_id,
+                    command,
+                    origin,
+                    incremental,
+                    command_seq,
+                    before_book.as_ref(),
+                    &affected_perp_quote_assets,
+                    true,
+                )
+                .ok());
+        }
         let mut staged = {
             let _timer = crate::performance::Timer::start(0);
             self.clone()
         };
-        if let Err(error) = staged.reconcile_market_reservations() {
-            return Ok(self.clearing_rejection(instrument_id, command_seq, error));
-        }
-        if let Err(error) = staged.sync_market_accounts_from_venue(instrument_id) {
-            return Ok(self.clearing_rejection(instrument_id, command_seq, error));
-        }
+        Ok(Some(
+            match staged.settle_order(
+                instrument_id,
+                command,
+                origin,
+                incremental,
+                command_seq,
+                before_book.as_ref(),
+                &affected_perp_quote_assets,
+                false,
+            ) {
+                Ok(execution) => {
+                    *self = staged;
+                    execution
+                }
+                Err(error) => self.clearing_rejection(instrument_id, command_seq, error),
+            },
+        ))
+    }
+
+    /// What an order changes once its prechecks pass, on the state it runs on:
+    /// a clearing error rejects the whole order. In place an engine error
+    /// does too (staged, the market rejects it and keeps the rest).
+    #[allow(clippy::too_many_arguments)]
+    fn settle_order(
+        &mut self,
+        instrument_id: &str,
+        command: Command,
+        origin: CommandOrigin,
+        incremental: bool,
+        command_seq: ActorSeq,
+        before_book: Option<&BookSnapshot>,
+        affected_perp_quote_assets: &BTreeSet<String>,
+        in_place: bool,
+    ) -> Result<ActorExecution, ClearingError> {
+        self.reconcile_market_reservations()?;
+        self.sync_market_accounts_from_venue(instrument_id)?;
         // Pre-command reconciliation and full margin synchronization establish a baseline.
         // Only ordinary perp orders have account-local effects; mark/funding
         // changes and spot collateral changes retain the full group path.
         let mut affected_accounts =
-            if incremental && staged.markets[instrument_id].kind() == MarketKind::Perp {
+            if incremental && self.markets[instrument_id].kind() == MarketKind::Perp {
                 match &command {
                     Command::NewOrder(order) => Some(BTreeSet::from([order.account_id])),
                     Command::CancelOrder(_)
                     | Command::AmendOrder(_)
                     | Command::ExpireOrder { .. } => Some(
-                        staged.markets[instrument_id]
+                        self.markets[instrument_id]
                             .order_owner(command.order_id())
                             .into_iter()
                             .collect(),
@@ -1366,14 +1439,14 @@ impl ExchangeActor {
             } else {
                 None
             };
-        let mut execution = staged
+        let mut execution = self
             .markets
             .get_mut(instrument_id)
             .expect("validated instrument")
-            .apply_from(command, origin);
+            .apply_from_mode(command, origin, in_place)?;
         execution.command_seq = command_seq;
         execution.instrument_id = instrument_id.to_string();
-        execution.market_time_ms = staged.clock.market_time_ms();
+        execution.market_time_ms = self.clock.market_time_ms();
         if matches!(execution.result, ActorExecutionResult::Accepted(_)) {
             if let (Some(accounts), ActorExecutionResult::Accepted(MarketExecution::Perp(result))) =
                 (&mut affected_accounts, &execution.result)
@@ -1390,46 +1463,28 @@ impl ExchangeActor {
             // back to the complete reconciliation; cross-margin checks below
             // retain their original full scope.
             let reconciled = if affected_accounts.is_some() {
-                staged.reconcile_market_reservations_for(affected_accounts.as_ref())
+                self.reconcile_market_reservations_for(affected_accounts.as_ref())
             } else {
                 #[cfg(test)]
                 if tests::FULL_POST_RESERVATION_REFERENCE.get() {
-                    staged.reconcile_market_reservations_for(None)
+                    self.reconcile_market_reservations_for(None)
                 } else {
-                    staged.reconcile_market_reservations()
+                    self.reconcile_market_reservations()
                 }
                 #[cfg(not(test))]
-                staged.reconcile_market_reservations()
+                self.reconcile_market_reservations()
             };
-            if let Err(error) = reconciled {
-                return Ok(self.clearing_rejection(instrument_id, command_seq, error));
-            }
-            if let Err(error) = staged.sync_venue_accounts_from_execution(instrument_id, &execution)
-            {
-                return Ok(self.clearing_rejection(instrument_id, command_seq, error));
-            }
-            if let Err(error) =
-                staged.refresh_price_links(instrument_id, before_book.as_ref(), &mut execution)
-            {
-                return Ok(self.clearing_rejection(instrument_id, command_seq, error));
-            }
-            if !execution.price_updates.is_empty()
-                && let Err(error) = staged.reconcile_market_reservations()
-            {
-                return Ok(self.clearing_rejection(instrument_id, command_seq, error));
-            }
+            reconciled?;
+            self.sync_venue_accounts_from_execution(instrument_id, &execution)?;
+            self.refresh_price_links(instrument_id, before_book, &mut execution)?;
             if !execution.price_updates.is_empty() {
+                self.reconcile_market_reservations()?;
                 affected_accounts = None;
             }
-            for quote_asset in &affected_perp_quote_assets {
-                if let Err(error) =
-                    staged.sync_perp_cross_margin_group_for(quote_asset, affected_accounts.as_ref())
-                {
-                    return Ok(self.clearing_rejection(instrument_id, command_seq, error));
-                }
+            for quote_asset in affected_perp_quote_assets {
+                self.sync_perp_cross_margin_group_for(quote_asset, affected_accounts.as_ref())?;
             }
         }
-        *self = staged;
         Ok(execution)
     }
 
@@ -1680,7 +1735,7 @@ impl ExchangeActor {
         Ok(())
     }
 
-    pub fn liquidate_account(
+    fn liquidate_account_body(
         &mut self,
         instrument_id: &str,
         account_id: AccountId,
@@ -3426,23 +3481,40 @@ impl MarketActor {
     }
 
     pub fn apply_from(&mut self, command: Command, origin: CommandOrigin) -> ActorExecution {
+        self.apply_from_mode(command, origin, false)
+            .expect("a staged engine reports its errors as rejections")
+    }
+
+    /// `apply_from`, in place an engine error is returned: it leaves the
+    /// engine part-way, for a caller that discards it.
+    fn apply_from_mode(
+        &mut self,
+        command: Command,
+        origin: CommandOrigin,
+        in_place: bool,
+    ) -> Result<ActorExecution, ClearingError> {
         let retained = command.clone();
         let before = self.engine.book().depth_state();
-        let mut execution = self.apply_from_inner(command, origin);
+        let mut execution = self.apply_from_inner(command, origin, in_place)?;
         if matches!(execution.result, ActorExecutionResult::Accepted(_)) {
             execution.book_delta = Some(self.engine.book().delta_since(&before));
         }
         if matches!(execution.result, ActorExecutionResult::Rejected(_)) {
             execution.rejected_command = Some(retained);
         }
-        execution
+        Ok(execution)
     }
 
-    fn apply_from_inner(&mut self, command: Command, origin: CommandOrigin) -> ActorExecution {
+    fn apply_from_inner(
+        &mut self,
+        command: Command,
+        origin: CommandOrigin,
+        in_place: bool,
+    ) -> Result<ActorExecution, ClearingError> {
         let seq = self.take_command_seq();
 
         if matches!(command, Command::SettleFunding(_)) {
-            return ActorExecution {
+            return Ok(ActorExecution {
                 rejected_command: None,
                 room_id: self.room_id.clone(),
                 instrument_id: self.config.instrument_id().into(),
@@ -3456,11 +3528,11 @@ impl MarketActor {
                 wallet_updates: Vec::new(),
                 margin_updates: Vec::new(),
                 result: ActorExecutionResult::Rejected(ActorRejectReason::FundingManaged),
-            };
+            });
         }
 
         if self.status == MarketStatus::Closed {
-            return ActorExecution {
+            return Ok(ActorExecution {
                 rejected_command: None,
                 price_updates: Vec::new(),
                 funding_settlement: None,
@@ -3474,14 +3546,14 @@ impl MarketActor {
                 market_time_ms: 0,
                 status: self.status,
                 result: ActorExecutionResult::Rejected(ActorRejectReason::MarketClosed),
-            };
+            });
         }
 
         if self.status == MarketStatus::Paused
             && matches!(command, Command::NewOrder(_))
             && origin != CommandOrigin::Scheduler
         {
-            return ActorExecution {
+            return Ok(ActorExecution {
                 rejected_command: None,
                 price_updates: Vec::new(),
                 funding_settlement: None,
@@ -3495,15 +3567,21 @@ impl MarketActor {
                 market_time_ms: 0,
                 status: self.status,
                 result: ActorExecutionResult::Rejected(ActorRejectReason::MarketPaused),
-            };
+            });
         }
 
-        let result = match self.engine.apply(command) {
+        let applied = if in_place {
+            self.engine.apply_in_place(command)
+        } else {
+            self.engine.apply(command)
+        };
+        let result = match applied {
             Ok(result) => ActorExecutionResult::Accepted(result),
+            Err(error) if in_place => return Err(error),
             Err(error) => ActorExecutionResult::Rejected(ActorRejectReason::Clearing(error)),
         };
 
-        ActorExecution {
+        Ok(ActorExecution {
             rejected_command: None,
             price_updates: Vec::new(),
             funding_settlement: None,
@@ -3517,7 +3595,7 @@ impl MarketActor {
             market_time_ms: 0,
             status: self.status,
             result,
-        }
+        })
     }
 
     pub fn liquidate_account(
@@ -3740,6 +3818,17 @@ impl MarketEngine {
         }
     }
 
+    /// `apply` without the staged copy: an error leaves the engine part-way.
+    pub(crate) fn apply_in_place(
+        &mut self,
+        command: Command,
+    ) -> Result<MarketExecution, ClearingError> {
+        match self {
+            Self::Spot(engine) => engine.apply_in_place(command).map(MarketExecution::Spot),
+            Self::Perp(engine) => engine.apply_in_place(command).map(MarketExecution::Perp),
+        }
+    }
+
     pub(crate) fn book(&self) -> &crate::engine::OrderBook {
         match self {
             Self::Spot(e) => e.book(),
@@ -3807,6 +3896,7 @@ fn reject_reason_from_venue_account_error(error: VenueAccountError) -> VenueTran
 
 include!("position_protection_actor.rs");
 include!("conditional_orders_actor.rs");
+include!("actor_undo.rs");
 
 #[cfg(test)]
 mod tests {

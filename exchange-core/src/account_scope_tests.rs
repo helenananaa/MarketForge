@@ -12,6 +12,8 @@ fn account_scope_reference<T>(operation: impl FnOnce() -> T) -> T {
 }
 
 fn account_scope_fixture() -> ExchangeActor {
+    // These tests also change actor fields directly.
+    super::DIRECT_TEST_MUTATIONS.set(true);
     let mut actor = ExchangeActor::new(
         "account-scopes",
         ExchangeConfig::new(

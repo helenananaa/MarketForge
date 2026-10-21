@@ -160,6 +160,15 @@ impl SpotTradingEngine {
         Ok(execution)
     }
 
+    /// `apply` without the staged copy: an error leaves the engine part-way,
+    /// for a caller that discards it.
+    pub(crate) fn apply_in_place(
+        &mut self,
+        command: Command,
+    ) -> Result<SpotTradingExecution, ClearingError> {
+        self.apply_inner(command)
+    }
+
     fn apply_inner(&mut self, command: Command) -> Result<SpotTradingExecution, ClearingError> {
         if matches!(
             command,
@@ -433,6 +442,15 @@ impl PerpTradingEngine {
         let execution = staged.apply_inner(command)?;
         *self = staged;
         Ok(execution)
+    }
+
+    /// `apply` without the staged copy: an error leaves the engine part-way,
+    /// for a caller that discards it.
+    pub(crate) fn apply_in_place(
+        &mut self,
+        command: Command,
+    ) -> Result<PerpTradingExecution, ClearingError> {
+        self.apply_inner(command)
     }
 
     fn apply_inner(&mut self, command: Command) -> Result<PerpTradingExecution, ClearingError> {

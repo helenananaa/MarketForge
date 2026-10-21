@@ -184,7 +184,7 @@ impl ExchangeActor {
     /// reach, which the index finds by range. Fresh entries are checked from
     /// their own cursor. The cursors move by writing the market's mark, when
     /// any armed entry's would move. Results come in key order.
-    pub fn prepare_conditional_orders(
+    fn prepare_conditional_orders_body(
         &mut self,
     ) -> Vec<crate::conditional_orders::ConditionalOrder> {
         #[cfg(test)]
@@ -303,7 +303,7 @@ impl ExchangeActor {
     /// The scan `prepare_conditional_orders` replaced: every armed entry
     /// checked from its own cursor, and each one that changes written.
     #[cfg(test)]
-    pub(crate) fn prepare_conditional_orders_reference(
+    fn prepare_conditional_orders_reference_body(
         &mut self,
     ) -> Vec<crate::conditional_orders::ConditionalOrder> {
         let mut latest_seqs = Vec::<(&str, u64)>::new();
@@ -360,7 +360,7 @@ impl ExchangeActor {
         result
     }
 
-    pub fn record_conditional_order(
+    fn record_conditional_order_body(
         &mut self,
         p: &crate::conditional_orders::ConditionalOrder,
         id: u64,
