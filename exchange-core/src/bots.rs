@@ -423,6 +423,11 @@ pub trait BotFactory: Send + Sync {
     fn reads_own_fills(&self) -> bool {
         true
     }
+    /// How many decisions the factory can run at once, such as its worker
+    /// processes; a host may size its dispatch threads to it. Metadata only.
+    fn parallel_calls(&self) -> Option<usize> {
+        None
+    }
     fn create(
         &self,
         template: &AgentTemplate,
@@ -449,6 +454,11 @@ impl BotRegistry {
         self.factories
             .get(template.bot_id())
             .is_none_or(|f| f.reads_own_fills())
+    }
+    pub fn parallel_calls(&self, template: &AgentTemplate) -> Option<usize> {
+        self.factories
+            .get(template.bot_id())
+            .and_then(|f| f.parallel_calls())
     }
     pub fn additional_intervals(&self, template: &AgentTemplate) -> Result<Vec<u64>, BotError> {
         let factory = self

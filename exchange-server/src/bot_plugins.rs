@@ -198,6 +198,9 @@ pub fn bot_registry_from_env() -> Result<BotRegistry, BotError> {
 }
 
 impl BotFactory for ProcessBotFactory {
+    fn parallel_calls(&self) -> Option<usize> {
+        self.manifest.worker_pool.as_ref().map(|pool| pool.workers)
+    }
     fn supports_instance_reuse(&self) -> bool {
         // Retaining the exact expected state has a memory cost. Only opt-in
         // eligible event hosts reuse this adapter, after the scheduler's guards.

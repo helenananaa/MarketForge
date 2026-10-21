@@ -662,17 +662,26 @@ fn run_waves(
     // History that cannot be proven append-only is rebuilt cold, as before.
     let mut previous_wave: Option<exchange_core::room::NativeObservationWave> = None;
     // Worker calls of due event-driven plugins (process workers) run on
-    // several threads; everything else stays on this thread in bot order.
+    // several threads, by default one per worker of the largest pool;
+    // everything else stays on this thread in bot order.
     // RESEARCH_PLUGIN_THREADS=1 makes the calls one at a time.
-    let plugin_threads = std::env::var("RESEARCH_PLUGIN_THREADS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(8)
-        .max(1);
     let concurrent = templates
         .iter()
         .map(|t| registry.event_filter(t).is_some())
         .collect::<Vec<_>>();
+    let plugin_threads = std::env::var("RESEARCH_PLUGIN_THREADS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .or_else(|| {
+            templates
+                .iter()
+                .zip(&concurrent)
+                .filter(|(_, concurrent)| **concurrent)
+                .filter_map(|(t, _)| registry.parallel_calls(t))
+                .max()
+        })
+        .unwrap_or(8)
+        .max(1);
     // Bots that never read their fill history get observations without it.
     let own_fills = templates
         .iter()
