@@ -2,6 +2,10 @@
 #[allow(dead_code)]
 #[path = "../../exchange-core/examples/strategy_market.rs"]
 mod research;
+// Each order makes a few hundred small allocations, and the system heap slows
+// as account count grows; mimalloc keeps them cheap without changing results.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let registry =
         exchange_server::bot_plugins::load_bot_plugins(std::path::Path::new("bot-plugins"))?;

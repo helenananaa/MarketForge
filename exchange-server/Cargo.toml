@@ -51,4 +51,5 @@ tower-http = { version = "0.6", features = ["cors"] }
 libc = "0.2"
 
 [dev-dependencies]
+mimalloc = "0.1.52"
 tokio-tungstenite = "0.29"
