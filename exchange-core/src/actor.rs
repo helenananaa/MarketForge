@@ -94,8 +94,7 @@ pub struct ExchangeActor {
     #[serde(skip)]
     margin_liquidation_baselines: BTreeMap<String, BTreeSet<AccountId>>,
     #[serde(default)]
-    conditional_orders:
-        crate::shared_map::SharedMap<String, crate::conditional_orders::ConditionalOrder>,
+    conditional_orders: crate::conditional_orders::ConditionalOrders,
     #[serde(default)]
     position_protections: crate::shared_map::SharedMap<String, crate::PositionProtection>,
     room_id: RoomId,
@@ -135,7 +134,7 @@ impl ExchangeActor {
     ) -> Option<BTreeSet<AccountId>> {
         if self.config != previous.config
             || self.status() != previous.status()
-            || !self.conditional_orders.ptr_eq(&previous.conditional_orders)
+            || !self.conditional_orders.same(&previous.conditional_orders)
             || !self
                 .position_protections
                 .ptr_eq(&previous.position_protections)
@@ -246,7 +245,7 @@ impl ExchangeActor {
             spot_trade_prices: BTreeMap::new(),
             funding_states: BTreeMap::new(),
             position_protections: crate::shared_map::SharedMap::default(),
-            conditional_orders: crate::shared_map::SharedMap::default(),
+            conditional_orders: Default::default(),
             pending_clock_executions: Vec::new(),
             funding_collateral_shortfalls: MarketReservations::default(),
         })
@@ -306,7 +305,7 @@ impl ExchangeActor {
             spot_trade_prices: BTreeMap::new(),
             funding_states: BTreeMap::new(),
             position_protections: crate::shared_map::SharedMap::default(),
-            conditional_orders: crate::shared_map::SharedMap::default(),
+            conditional_orders: Default::default(),
             pending_clock_executions: Vec::new(),
             funding_collateral_shortfalls: MarketReservations::default(),
         })

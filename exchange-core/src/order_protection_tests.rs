@@ -523,12 +523,19 @@ fn conditional_order_scan_matches_the_reference_scan() {
         let a = fast.prepare_conditional_orders();
         let b = reference.prepare_conditional_orders_reference();
         assert_eq!(a, b, "step {step}");
-        // The scan writes only conditional orders; the whole venue (with its
-        // growing log) is compared now and then.
-        assert!(
-            fast.all_conditional_orders().eq(reference.all_conditional_orders()),
-            "step {step}"
-        );
+        // The scan writes only conditional orders, which read with their
+        // cursors; the whole venue (with its growing log) is compared now and then.
+        let exact = |actor: &ExchangeActor| {
+            actor
+                .all_conditional_orders()
+                .map(|(p, cursor)| (p.clone(), cursor))
+                .map(|(mut p, cursor)| {
+                    p.last_checked_event_seq = cursor;
+                    p
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(exact(&fast), exact(&reference), "step {step}");
         if step % 100 == 0 {
             assert_eq!(
                 serde_json::to_value(&fast).unwrap(),
@@ -589,6 +596,136 @@ fn conditional_order_scan_matches_the_reference_scan() {
         }
     }
     assert!(triggered > 20, "only {triggered} entries triggered");
+}
+
+#[test]
+fn conditional_orders_match_eager_cursors_in_lockstep() {
+    // Two rooms take the same commands; one runs the reference pass, which
+    // checks every armed entry from its own cursor and rewrites the cursor.
+    // Each step the triggered entries, every account's conditional orders,
+    // the command results and (now and then) the venue JSON must match, a
+    // pass must change the entries exactly when the reference writes one,
+    // and a venue restored from its JSON must run the same pass.
+    use crate::actor::CONDITIONAL_REFERENCE;
+    let room = "conditional-lockstep";
+    let mut lazy = RoomManager::new();
+    let mut eager = RoomManager::new();
+    for rooms in [&mut lazy, &mut eager] {
+        rooms
+            .create_room(pending_perp_liquidation_scenario(room))
+            .unwrap();
+    }
+    let venue = |rooms: &RoomManager| {
+        let simulation = rooms.simulation_room(room).unwrap();
+        let venue = simulation.venue_id_for_instrument("V-BTC-PERP").unwrap();
+        simulation.exchange(&venue).unwrap().clone()
+    };
+    let orders = |actor: &ExchangeActor| {
+        [10, 20, 30]
+            .map(|account| actor.conditional_orders("V-BTC-PERP", account))
+            .concat()
+    };
+    let mut seed = 0x6A09_E667_F3BC_C908u64;
+    let mut next = move |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed % n
+    };
+    let mut order_id = 1_000;
+    let (mut triggered, mut moved, mut still, mut submitted) = (0, 0, 0, 0);
+    for step in 0..1_500 {
+        let (a, b) = (venue(&lazy), venue(&eager));
+        assert_eq!(orders(&a), orders(&b), "step {step}");
+        let (mut fa, mut fb) = (a.clone(), b.clone());
+        let ra = fa.prepare_conditional_orders();
+        CONDITIONAL_REFERENCE.set(true);
+        let rb = fb.prepare_conditional_orders();
+        CONDITIONAL_REFERENCE.set(false);
+        assert_eq!(ra, rb, "step {step}");
+        assert_eq!(orders(&fa), orders(&fb), "step {step}");
+        let changed = !fa.conditional_orders_unchanged(&a);
+        assert_eq!(changed, !fb.conditional_orders_unchanged(&b), "step {step}");
+        triggered += ra.len();
+        match (changed, ra.is_empty()) {
+            (true, true) => moved += 1,
+            (false, _) => still += 1,
+            _ => {}
+        }
+        if step % 50 == 0 {
+            let json = serde_json::to_value(&a).unwrap();
+            assert_eq!(json, serde_json::to_value(&b).unwrap(), "step {step}");
+            let mut restored: ExchangeActor = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&restored).unwrap(), json, "step {step}");
+            assert_eq!(restored.prepare_conditional_orders(), ra, "step {step}");
+            assert_eq!(orders(&restored), orders(&fa), "step {step}");
+        }
+        let price = 90 + next(21) as i64;
+        let command = match next(7) {
+            0 => Command::SetMarkPrice(SetMarkPrice { price_tick: price }),
+            1..=3 => Command::SetConditionalOrder {
+                account_id: [10, 20, 30][next(3) as usize],
+                key: format!("k{}", next(8)),
+                spec: (next(6) != 0).then(|| {
+                    Box::new(crate::conditional_orders::ConditionalOrderSpec {
+                        side: if next(2) == 0 { Side::Buy } else { Side::Sell },
+                        position_side: crate::PositionSide::Both,
+                        qty: 1,
+                        trigger_price_tick: price + next(9) as i64 - 4,
+                        above: next(2) == 0,
+                        trigger: if next(2) == 0 {
+                            crate::ProtectionTrigger::Last
+                        } else {
+                            crate::ProtectionTrigger::Mark
+                        },
+                        limit_price_tick: (next(2) == 0).then_some(price),
+                        protection: None,
+                    })
+                }),
+            },
+            _ => {
+                order_id += 1;
+                let (side, account) = if next(2) == 0 { (Side::Sell, 10) } else { (Side::Buy, 30) };
+                Command::NewOrder(NewOrder {
+                    position_side: crate::model::PositionSide::Both,
+                    order_id,
+                    account_id: account,
+                    side,
+                    qty: 1 + next(3),
+                    reduce_only: false,
+                    kind: OrderKind::Limit { price_tick: price },
+                })
+            }
+        };
+        // Half the steps skip the room's own pass (and the orders it submits).
+        let pass = next(2) == 0;
+        let mut results = Vec::new();
+        for (rooms, reference) in [(&mut lazy, false), (&mut eager, true)] {
+            CONDITIONAL_REFERENCE.set(reference);
+            let result = if pass {
+                format!("{:?}", rooms.apply_to_instrument(room, "V-BTC-PERP", command.clone()))
+            } else {
+                format!(
+                    "{:?}",
+                    rooms
+                        .simulation_room_mut(room)
+                        .unwrap()
+                        .apply_to_instrument("V-BTC-PERP", command.clone())
+                )
+            };
+            CONDITIONAL_REFERENCE.set(false);
+            results.push(result);
+        }
+        assert_eq!(results[0], results[1], "step {step}");
+        submitted += orders(&venue(&lazy))
+            .iter()
+            .filter(|o| o.submitted_order_id.is_some())
+            .count();
+    }
+    assert!(
+        triggered > 20 && moved > 50 && still > 50 && submitted > 20,
+        "triggered {triggered}, moved {moved}, still {still}, submitted {submitted}"
+    );
 }
 
 #[test]

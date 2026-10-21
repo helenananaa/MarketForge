@@ -22,9 +22,7 @@ impl ExchangeActor {
     }
 
     pub fn has_active_position_protections(&self) -> bool {
-        self.conditional_orders
-            .values()
-            .any(|p| p.status == "armed")
+        self.conditional_orders.has_armed()
             || self
                 .position_protections
                 .values()

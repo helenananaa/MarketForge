@@ -312,7 +312,8 @@ fn changed_private_inputs(
                 entries.entry((*market, p.account_id)).or_default().0.push(p);
             }
         }
-        for c in exchange.all_conditional_orders() {
+        // The wake key leaves out the scan cursor.
+        for (c, _) in exchange.all_conditional_orders() {
             if let Some(market) = markets.get(c.instrument_id.as_str()) {
                 entries.entry((*market, c.account_id)).or_default().1.push(c);
             }
