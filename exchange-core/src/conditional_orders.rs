@@ -74,7 +74,9 @@ impl ConditionalOrders {
     /// The entry's event cursor.
     pub(crate) fn cursor(&self, entry: &ConditionalOrder) -> u64 {
         if entry.status == "armed" {
-            entry.last_checked_event_seq.max(self.mark(&entry.instrument_id))
+            entry
+                .last_checked_event_seq
+                .max(self.mark(&entry.instrument_id))
         } else {
             entry.last_checked_event_seq
         }
@@ -226,7 +228,8 @@ impl Serialize for ConditionalOrders {
 
 impl<'de> Deserialize<'de> for ConditionalOrders {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let entries = std::collections::BTreeMap::<String, ConditionalOrder>::deserialize(deserializer)?;
+        let entries =
+            std::collections::BTreeMap::<String, ConditionalOrder>::deserialize(deserializer)?;
         let mut orders = Self::default();
         for (key, entry) in entries {
             orders.insert(key, entry);
