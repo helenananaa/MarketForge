@@ -914,24 +914,24 @@ impl RoomManager {
 
     fn refresh_pending_liquidations(&mut self, room_id: &str) -> Result<(), RoomManagerError> {
         let _timer = crate::performance::Timer::start(3);
-        let instrument_ids = {
-            let room = self.simulation_room(room_id)?;
-            let mut instrument_ids = Vec::new();
-            for venue_id in room.venue_ids() {
-                let exchange = room
-                    .exchange(venue_id)
-                    .map_err(RoomManagerError::Simulation)?;
-                instrument_ids.extend(exchange.instrument_ids().into_iter().map(str::to_string));
+        // Candidates read only the simulation room, so collecting them before
+        // enqueueing gives the same queue without copying instrument ids.
+        let mut triggers = Vec::new();
+        let room = self.simulation_room(room_id)?;
+        for venue_id in room.venue_ids() {
+            let exchange = room
+                .exchange(venue_id)
+                .map_err(RoomManagerError::Simulation)?;
+            for instrument_id in exchange.instrument_ids_iter() {
+                triggers.extend(self.liquidation_candidates_for_instrument(
+                    room_id,
+                    instrument_id,
+                    true,
+                )?);
             }
-            instrument_ids
-        };
-
-        for instrument_id in instrument_ids {
-            for trigger in
-                self.liquidation_candidates_for_instrument(room_id, &instrument_id, true)?
-            {
-                self.enqueue_liquidation(room_id, trigger);
-            }
+        }
+        for trigger in triggers {
+            self.enqueue_liquidation(room_id, trigger);
         }
         Ok(())
     }

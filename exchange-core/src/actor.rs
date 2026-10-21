@@ -78,7 +78,8 @@ pub enum CommandOrigin {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MarketActor {
     room_id: RoomId,
-    config: MarketConfig,
+    // Immutable after construction; staged transactions share it.
+    config: std::sync::Arc<MarketConfig>,
     engine: MarketEngine,
     status: MarketStatus,
     next_command_seq: ActorSeq,
@@ -98,7 +99,8 @@ pub struct ExchangeActor {
     #[serde(default)]
     position_protections: crate::shared_map::SharedMap<String, crate::PositionProtection>,
     room_id: RoomId,
-    config: ExchangeConfig,
+    // Immutable after construction; staged transactions share it.
+    config: std::sync::Arc<ExchangeConfig>,
     markets: BTreeMap<InstrumentId, MarketActor>,
     venue_accounts: VenueAccountStore,
     #[serde(default)]
@@ -232,7 +234,7 @@ impl ExchangeActor {
             room_id,
             venue_rules: VenueRuleEngine::new(config.venue_rules.clone())
                 .map_err(MarketConfigError::VenueRule)?,
-            config,
+            config: config.into(),
             markets,
             venue_accounts: VenueAccountStore::new(),
             market_reservations: MarketReservations::default(),
@@ -292,7 +294,7 @@ impl ExchangeActor {
             room_id,
             venue_rules: VenueRuleEngine::new(config.venue_rules.clone())
                 .map_err(MarketConfigError::VenueRule)?,
-            config,
+            config: config.into(),
             markets,
             venue_accounts,
             market_reservations: MarketReservations::default(),
@@ -332,6 +334,14 @@ impl ExchangeActor {
 
     pub fn instrument_ids(&self) -> Vec<&str> {
         self.markets.keys().map(String::as_str).collect()
+    }
+
+    pub(crate) fn instrument_ids_iter(&self) -> impl Iterator<Item = &str> {
+        self.markets.keys().map(String::as_str)
+    }
+
+    pub(crate) fn has_instrument(&self, instrument_id: &str) -> bool {
+        self.markets.contains_key(instrument_id)
     }
 
     pub fn venue_account_snapshot(&self, account_id: AccountId) -> VenueAccountSnapshot {
@@ -1982,7 +1992,8 @@ impl ExchangeActor {
             .markets
             .get(instrument_id)
             .ok_or(ClearingError::AccountNotFound)?;
-        let instrument = market.config().instrument().clone();
+        let config = market.config.clone();
+        let instrument = config.instrument();
         if market.kind() == MarketKind::Perp {
             return self.sync_perp_cross_margin_group(&instrument.quote_asset);
         }
@@ -2092,13 +2103,17 @@ impl ExchangeActor {
             unreachable!("spot market");
         };
         if cache_scope {
-            self.spot_sync_baselines.insert(
-                instrument_id.to_owned(),
-                SpotVenueSyncState {
-                    wallet: self.venue_accounts.wallet_state(),
-                    accounts: engine.balance_state(),
-                },
-            );
+            let state = SpotVenueSyncState {
+                wallet: self.venue_accounts.wallet_state(),
+                accounts: engine.balance_state(),
+            };
+            match self.spot_sync_baselines.get_mut(instrument_id) {
+                Some(baseline) => *baseline = state,
+                None => {
+                    self.spot_sync_baselines
+                        .insert(instrument_id.to_owned(), state);
+                }
+            }
         } else {
             self.spot_sync_baselines.remove(instrument_id);
         }
@@ -3016,13 +3031,14 @@ impl ExchangeActor {
         instrument_id: &str,
         execution: &ActorExecution,
     ) -> Result<(), ClearingError> {
-        let Some(instrument) = self
+        let Some(config) = self
             .markets
             .get(instrument_id)
-            .map(|market| market.config().instrument().clone())
+            .map(|market| market.config.clone())
         else {
             return Ok(());
         };
+        let instrument = config.instrument();
 
         let ActorExecutionResult::Accepted(market_execution) = &execution.result else {
             return Ok(());
@@ -3311,7 +3327,7 @@ impl MarketActor {
         let engine = config.build_engine()?;
         Ok(Self {
             room_id: room_id.into(),
-            config,
+            config: config.into(),
             engine,
             status: MarketStatus::Running,
             next_command_seq: 0,

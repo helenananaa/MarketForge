@@ -393,8 +393,7 @@ impl SimulationRoom {
         instrument: &str,
         account: AccountId,
     ) -> Vec<crate::PositionProtection> {
-        self.venue_id_for_instrument(instrument)
-            .and_then(|v| self.exchanges.get(&v))
+        self.instrument_exchange(instrument)
             .map(|e| e.position_protections(instrument, account))
             .unwrap_or_default()
     }
@@ -480,17 +479,14 @@ impl SimulationRoom {
         command: Command,
         origin: crate::actor::CommandOrigin,
     ) -> Result<ActorExecution, ActorRejectReason> {
-        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
-            ActorRejectReason::InstrumentNotFound {
-                instrument_id: instrument_id.to_string(),
-            }
-        })?;
+        self.instrument_exchange(instrument_id)?;
         let command_seq = self.take_command_seq();
         let mut execution = self
             .exchanges
-            .get_mut(&venue_id)
+            .values_mut()
+            .find(|exchange| exchange.has_instrument(instrument_id))
             .map(Arc::make_mut)
-            .expect("venue id was resolved from exchanges")
+            .expect("venue was resolved from exchanges")
             .apply_to_instrument_from(instrument_id, command, origin)?;
         execution.command_seq = command_seq;
         Ok(execution)
@@ -526,14 +522,7 @@ impl SimulationRoom {
         &self,
         instrument_id: &str,
     ) -> Result<Option<crate::PerpPriceSnapshot>, ActorRejectReason> {
-        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
-            ActorRejectReason::InstrumentNotFound {
-                instrument_id: instrument_id.to_string(),
-            }
-        })?;
-        self.exchanges
-            .get(&venue_id)
-            .expect("resolved venue")
+        self.instrument_exchange(instrument_id)?
             .perp_price_snapshot(instrument_id)
     }
 
@@ -541,14 +530,7 @@ impl SimulationRoom {
         &self,
         instrument_id: &str,
     ) -> Result<BookSnapshot, ActorRejectReason> {
-        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
-            ActorRejectReason::InstrumentNotFound {
-                instrument_id: instrument_id.to_string(),
-            }
-        })?;
-        self.exchanges
-            .get(&venue_id)
-            .expect("venue id was resolved from exchanges")
+        self.instrument_exchange(instrument_id)?
             .book_snapshot_for(instrument_id)
     }
 
@@ -561,14 +543,7 @@ impl SimulationRoom {
         instrument_id: &str,
         account_id: AccountId,
     ) -> Result<Option<AccountSnapshot>, ActorRejectReason> {
-        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
-            ActorRejectReason::InstrumentNotFound {
-                instrument_id: instrument_id.to_string(),
-            }
-        })?;
-        self.exchanges
-            .get(&venue_id)
-            .expect("venue id was resolved from exchanges")
+        self.instrument_exchange(instrument_id)?
             .account_snapshot_for(instrument_id, account_id)
     }
 
@@ -580,14 +555,7 @@ impl SimulationRoom {
         &self,
         instrument_id: &str,
     ) -> Result<AccountSnapshots, ActorRejectReason> {
-        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
-            ActorRejectReason::InstrumentNotFound {
-                instrument_id: instrument_id.to_string(),
-            }
-        })?;
-        self.exchanges
-            .get(&venue_id)
-            .expect("venue id was resolved from exchanges")
+        self.instrument_exchange(instrument_id)?
             .account_snapshots_for(instrument_id)
     }
 
@@ -595,14 +563,7 @@ impl SimulationRoom {
         &self,
         instrument_id: &str,
     ) -> Result<Vec<AccountId>, ActorRejectReason> {
-        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
-            ActorRejectReason::InstrumentNotFound {
-                instrument_id: instrument_id.to_string(),
-            }
-        })?;
-        self.exchanges
-            .get(&venue_id)
-            .expect("venue id was resolved from exchanges")
+        self.instrument_exchange(instrument_id)?
             .pending_liquidation_accounts_for(instrument_id)
     }
 
@@ -624,14 +585,7 @@ impl SimulationRoom {
                     .collect(),
             });
         }
-        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
-            ActorRejectReason::InstrumentNotFound {
-                instrument_id: instrument_id.to_string(),
-            }
-        })?;
-        self.exchanges
-            .get(&venue_id)
-            .expect("venue id was resolved from exchanges")
+        self.instrument_exchange(instrument_id)?
             .liquidatable_account_ids_for(instrument_id)
     }
 
@@ -640,14 +594,7 @@ impl SimulationRoom {
         instrument_id: &str,
         account_id: AccountId,
     ) -> Result<bool, ActorRejectReason> {
-        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
-            ActorRejectReason::InstrumentNotFound {
-                instrument_id: instrument_id.into(),
-            }
-        })?;
-        self.exchanges
-            .get(&venue_id)
-            .expect("resolved venue")
+        self.instrument_exchange(instrument_id)?
             .liquidation_candidate_is_active_for(instrument_id, account_id)
     }
 
@@ -656,14 +603,7 @@ impl SimulationRoom {
         instrument_id: &str,
         account_id: AccountId,
     ) -> Result<Vec<(String, OrderId)>, ActorRejectReason> {
-        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
-            ActorRejectReason::InstrumentNotFound {
-                instrument_id: instrument_id.to_string(),
-            }
-        })?;
-        self.exchanges
-            .get(&venue_id)
-            .expect("venue id was resolved from exchanges")
+        self.instrument_exchange(instrument_id)?
             .cross_margin_collateral_orders_for_liquidation(instrument_id, account_id)
     }
 
@@ -672,14 +612,7 @@ impl SimulationRoom {
         instrument_id: &str,
         order_id: OrderId,
     ) -> Result<Option<AccountId>, ActorRejectReason> {
-        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
-            ActorRejectReason::InstrumentNotFound {
-                instrument_id: instrument_id.to_string(),
-            }
-        })?;
-        self.exchanges
-            .get(&venue_id)
-            .expect("venue id was resolved from exchanges")
+        self.instrument_exchange(instrument_id)?
             .order_owner_for(instrument_id, order_id)
     }
 
@@ -688,14 +621,7 @@ impl SimulationRoom {
         instrument_id: &str,
         account_id: AccountId,
     ) -> Result<Vec<crate::model::Order>, ActorRejectReason> {
-        let venue_id = self.venue_id_for_instrument(instrument_id).ok_or_else(|| {
-            ActorRejectReason::InstrumentNotFound {
-                instrument_id: instrument_id.to_string(),
-            }
-        })?;
-        self.exchanges
-            .get(&venue_id)
-            .expect("venue id was resolved from exchanges")
+        self.instrument_exchange(instrument_id)?
             .resting_orders_for_account(instrument_id, account_id)
     }
 
@@ -1025,10 +951,20 @@ impl SimulationRoom {
     pub fn venue_id_for_instrument(&self, instrument_id: &str) -> Option<VenueId> {
         self.exchanges.iter().find_map(|(venue_id, exchange)| {
             exchange
-                .instrument_ids()
-                .contains(&instrument_id)
+                .has_instrument(instrument_id)
                 .then(|| venue_id.clone())
         })
+    }
+
+    /// The exchange `venue_id_for_instrument` resolves, without copying its id.
+    fn instrument_exchange(&self, instrument_id: &str) -> Result<&ExchangeActor, ActorRejectReason> {
+        self.exchanges
+            .values()
+            .find(|exchange| exchange.has_instrument(instrument_id))
+            .map(Arc::as_ref)
+            .ok_or_else(|| ActorRejectReason::InstrumentNotFound {
+                instrument_id: instrument_id.to_string(),
+            })
     }
 
     fn apply_initial_portfolio(&mut self, portfolio: &ScenarioPortfolio) {
