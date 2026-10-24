@@ -15,10 +15,12 @@ use crate::{
     bot_wire::StateHint,
     bot_workers::{WorkerConfig, WorkerPool, WorkerReply},
 };
+#[cfg(not(feature = "pine-in-process"))]
+use exchange_core::BotDecisionResponse;
 use exchange_core::{
-    AgentTemplate, BOT_PROTOCOL_VERSION, BotConfig, BotDecisionRequest, BotDecisionResponse,
-    BotDescriptor, BotError, BotFactory, BotRegistry, MAX_BOT_ACTIONS, OrderAction,
-    ParticipantObservation, PersistedAgentKindState, ScheduledBot,
+    AgentTemplate, BOT_PROTOCOL_VERSION, BotConfig, BotDecisionRequest, BotDescriptor, BotError,
+    BotFactory, BotRegistry, MAX_BOT_ACTIONS, OrderAction, ParticipantObservation,
+    PersistedAgentKindState, ScheduledBot,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -152,7 +154,10 @@ pub fn load_bot_plugins(root: &Path) -> Result<BotRegistry, BotError> {
             .validate(manifest.market_data.is_some())?;
         // Affinity still pins each instance to one worker; an instance that
         // moves rebuilds its session from durable state, as after eviction.
-        override_workers(&mut manifest, std::env::var(BOT_WORKERS_ENV).ok().as_deref())?;
+        override_workers(
+            &mut manifest,
+            std::env::var(BOT_WORKERS_ENV).ok().as_deref(),
+        )?;
         if let Some(config) = &manifest.worker_pool {
             config.validate()?;
         }
@@ -330,7 +335,7 @@ impl BotFactory for ProcessBotFactory {
             else {
                 return Ok(None);
             };
-            if data["broker_schema"] != 3
+            if !matches!(data["broker_schema"].as_u64(), Some(3 | 4))
                 || data["evaluated_bars"]
                     .as_u64()
                     .is_none_or(|count| count == 0)
@@ -465,14 +470,22 @@ impl ScheduledBot for ProcessBot {
             (response, None, None, 0)
         } else {
             if self.config.plugin_id == "pine.strategy"
-                && self.state.get("broker_schema").and_then(Value::as_u64) == Some(3)
+                && matches!(
+                    self.state.get("broker_schema").and_then(Value::as_u64),
+                    Some(3 | 4)
+                )
             {
                 crate::bot_runtime_diagnostics::record_route(
                     "blocked",
                     Some("checkpoint_requires_direct"),
                 );
                 return Err(BotError(
-                    "Pine VM checkpoint requires qualified in-process runtime".into(),
+                    if self.state["broker_schema"] == 4 {
+                        "Pine replay state requires qualified in-process runtime"
+                    } else {
+                        "Pine VM checkpoint requires qualified in-process runtime"
+                    }
+                    .into(),
                 ));
             }
             crate::bot_runtime_diagnostics::record_route(
@@ -499,7 +512,12 @@ impl ScheduledBot for ProcessBot {
             let exchanged = self.factory.exchange_process(&request, hint.as_ref());
             let held = request.state;
             match exchanged {
-                Ok(reply) => (reply.response, reply.state_delta, Some(held), reply.request_id),
+                Ok(reply) => (
+                    reply.response,
+                    reply.state_delta,
+                    Some(held),
+                    reply.request_id,
+                ),
                 Err(error) => {
                     self.state = held.into();
                     return Err(error);
@@ -900,6 +918,14 @@ mod tests {
             (cursors[0].interval_ms, cursors[0].count, cursors[0].digest),
             (1000, 100, [0xaa; 32])
         );
+        data["broker_schema"] = serde_json::json!(4);
+        let replay_cursors = registry
+            .checkpoint_history_cursors(&template, &persisted(data.clone()))
+            .unwrap().unwrap();
+        assert_eq!(replay_cursors.len(), 1);
+        assert_eq!(replay_cursors[0].digest, cursors[0].digest);
+        assert_eq!(replay_cursors[0].count, cursors[0].count);
+        data["broker_schema"] = serde_json::json!(3);
         let mut process = factory.clone();
         process.in_process = None;
         assert!(
@@ -1514,7 +1540,7 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
     #[test]
     fn single_source_snapshot_is_call_scoped_and_next_call_observes_edits() {
         use crate::pine_inprocess::DirectAttempt;
-        let (_package, bot, host, _) = source_route_fixture();
+        let (_package, mut bot, host, _) = source_route_fixture();
         let view = source_route_observation();
         let expected = host
             .decide_borrowed(&bot.config, &bot.state, &view, 5000)
@@ -1544,6 +1570,13 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
             DirectAttempt::NotQualified("source_unqualified")
         ));
         assert_eq!(host.source_read_count(), before + 2);
+        bot.state = Arc::new(serde_json::json!({"broker_schema":4,"saved":"intact"}));
+        let saved = bot.snapshot();
+        assert_eq!(
+            bot.decide(&view).unwrap_err().0,
+            "Pine replay state requires qualified in-process runtime"
+        );
+        assert_eq!(bot.snapshot(), saved);
     }
 
     #[cfg(feature = "pine-in-process")]
@@ -1570,7 +1603,11 @@ print(json.dumps(dict(protocol_version=r['protocol_version'],plugin_id=r['plugin
         // chosen process route; its state would fail if reselected as direct.
         fs::write(&path, source).unwrap();
         let request = source_route_request(&bot, view.clone());
-        let response = bot.factory.exchange_process(&request, None).unwrap().response;
+        let response = bot
+            .factory
+            .exchange_process(&request, None)
+            .unwrap()
+            .response;
         assert_eq!(response.state["through"], "process");
         assert_eq!(host.source_read_count(), before + 1);
         fs::write(path, "// changed before schema3 execution").unwrap();

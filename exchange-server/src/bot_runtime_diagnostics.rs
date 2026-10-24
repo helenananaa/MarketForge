@@ -21,7 +21,7 @@ const MODES: [&str; 6] = [
     "no_evaluation",
     "unknown",
 ];
-const REASONS: [&str; 21] = [
+const REASONS: [&str; 23] = [
     "none",
     "feature_disabled",
     "disabled",
@@ -30,6 +30,8 @@ const REASONS: [&str; 21] = [
     "state_version",
     "execution_mode",
     "source_unqualified",
+    "ecosystem_config",
+    "ecosystem_history",
     "hedging",
     "noninteger_inputs",
     "hedge_state",

@@ -6,6 +6,7 @@ from pathlib import Path
 import random
 import subprocess
 import sys
+import tempfile
 import unittest
 
 from test_pine_bot import bot, ROOT
@@ -23,6 +24,7 @@ class PineInProcessTests(unittest.TestCase):
         cls.process = subprocess.Popen([str(executable), str(ROOT / "bot-plugins/pine-strategy")],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
         cls.addClassCleanup(cls.close)
+        cls.executable = executable.resolve()
 
     @classmethod
     def close(cls):
@@ -49,7 +51,9 @@ class PineInProcessTests(unittest.TestCase):
         return expected
 
     def test_six_sources_cached_rebuild_and_uncommitted_retry(self):
-        scripts = json.loads((ROOT / "bot-plugins/pine-strategy/incremental-qualified.json").read_text())["source_sha256"]
+        # Incremental-worker qualification now also contains library aliases;
+        # it is not the direct adapter's installed-script admission list.
+        scripts = ("ma.pine", "rsi.pine", "breakout.pine", "limit.pine", "perp.pine", "basis.pine")
         for script in scripts:
             for seed in range(3):
                 rng = random.Random(seed)
@@ -139,6 +143,57 @@ class PineInProcessTests(unittest.TestCase):
         next_req=broker_request([100,101,102],state=first["state"])
         self.assertIn("error",self.rust(next_req,timeout_ms=0))
         self.compare(next_req)
+
+    def test_ecosystem_hash_revocation_and_schema_two_checkpoint_boundary(self):
+        qualified = json.loads((ROOT / "exchange-server/src/pine_inprocess/ecosystem-qualified.json").read_text())
+        script = next(iter(qualified))
+        source = (ROOT / "bot-plugins/pine-strategy/scripts" / script).read_bytes()
+        with tempfile.TemporaryDirectory(prefix="pine-direct-admission-") as directory:
+            installed = Path(directory) / "scripts" / script
+            installed.parent.mkdir(parents=True)
+            installed.write_bytes(source)
+            env = {**os.environ, "MARKETFORGE_PINE_VM_CHECKPOINT": "1", "MARKETFORGE_PINE_REPLAY_STATE": "0"}
+            with subprocess.Popen([str(self.executable), directory], stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", env=env) as process:
+                def call(req):
+                    process.stdin.write(json.dumps({"request": req}) + "\n")
+                    process.stdin.flush()
+                    return json.loads(process.stdout.readline())
+                req = perp(broker_request(list(range(100, 132))))
+                req["config"].update(script=script, quantize_strategy_orders=True)
+                expected = bot.decide(copy.deepcopy(req))
+                self.assertEqual(call(req)["response"], expected)
+                self.assertEqual(expected["state"]["broker_schema"], 2)
+                off = copy.deepcopy(req)
+                off["config"]["quantize_strategy_orders"] = False
+                self.assertIn("error", call(off))
+                custom = copy.deepcopy(req)
+                custom["config"]["inputs"] = {"unqualified override": 1}
+                self.assertIn("error", call(custom))
+                installed.write_bytes(source + b"\n// changed source\n")
+                self.assertIn("error", call(req), "cached compilation must not bypass source revocation")
+                installed.write_bytes(source)
+                self.assertEqual(call(req)["response"], expected)
+                req["state"] = {**expected["state"], "broker_schema": 3}
+                self.assertIn("not qualified for VM checkpoints", call(req)["error"])
+                process.stdin.close()
+                process.wait(timeout=10)
+
+    def test_python_reference_still_matches_shared_broker_vectors(self):
+        module = bot.broker_module()
+        rows = json.loads((ROOT / "python/tests/fixtures/pine_broker_direct.json").read_text())
+        for row in rows:
+            with self.subTest(row["name"]):
+                state, config = copy.deepcopy(row["state"]), copy.deepcopy(row["config"])
+                views = {view["instrument_id"]: view for view in row["views"]}
+                def translate():
+                    actions = module.translate(row["intents"], row["pyramiding"], views, next(iter(views)), config, state)
+                    actions += module.replacements(state, views, config)
+                    return {"actions": actions, "state": state}
+                if row.get("error"):
+                    with self.assertRaises(ValueError): translate()
+                else:
+                    self.assertEqual(translate(), row["expected"])
 
 
 if __name__ == "__main__":unittest.main()

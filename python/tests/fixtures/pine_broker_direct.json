@@ -1,0 +1,6228 @@
+[
+  {
+    "name": "grid-long-0.8-None",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": 0.8,
+        "limit": null
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {}
+      }
+    }
+  },
+  {
+    "name": "grid-long-0.8-100.4",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": 0.8,
+        "limit": 100.4
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {}
+      }
+    }
+  },
+  {
+    "name": "grid-long-5.9-None",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": 5.9,
+        "limit": null
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "PlaceProtected": {
+                "side": "Buy",
+                "position_side": "Both",
+                "qty": 4,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 106,
+                "reduce_only": false
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Buy",
+            "requested_qty": 4
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "grid-long-5.9-100.4",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": 5.9,
+        "limit": 100.4
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "PlaceProtected": {
+                "side": "Buy",
+                "position_side": "Both",
+                "qty": 4,
+                "order_type": "Limit",
+                "price_tick": 100,
+                "reduce_only": false
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Buy",
+            "requested_qty": 4
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "grid-long-6-None",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": 6,
+        "limit": null
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "PlaceProtected": {
+                "side": "Buy",
+                "position_side": "Both",
+                "qty": 6,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 106,
+                "reduce_only": false
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Buy",
+            "requested_qty": 6
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "grid-long-6-100.4",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": 6,
+        "limit": 100.4
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "PlaceProtected": {
+                "side": "Buy",
+                "position_side": "Both",
+                "qty": 6,
+                "order_type": "Limit",
+                "price_tick": 100,
+                "reduce_only": false
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Buy",
+            "requested_qty": 6
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "grid-long-1e-10-None",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": 1e-10,
+        "limit": null
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {}
+      }
+    }
+  },
+  {
+    "name": "grid-long-1e-10-100.4",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": 1e-10,
+        "limit": 100.4
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {}
+      }
+    }
+  },
+  {
+    "name": "grid-short-0.8-None",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "short",
+        "qty": 0.8,
+        "limit": null
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {}
+      }
+    }
+  },
+  {
+    "name": "grid-short-0.8-100.4",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "short",
+        "qty": 0.8,
+        "limit": 100.4
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {}
+      }
+    }
+  },
+  {
+    "name": "grid-short-5.9-None",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "short",
+        "qty": 5.9,
+        "limit": null
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "PlaceProtected": {
+                "side": "Sell",
+                "position_side": "Both",
+                "qty": 4,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 94,
+                "reduce_only": false
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Sell",
+            "requested_qty": 4
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "grid-short-5.9-100.4",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "short",
+        "qty": 5.9,
+        "limit": 100.4
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "PlaceProtected": {
+                "side": "Sell",
+                "position_side": "Both",
+                "qty": 4,
+                "order_type": "Limit",
+                "price_tick": 102,
+                "reduce_only": false
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Sell",
+            "requested_qty": 4
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "grid-short-6-None",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "short",
+        "qty": 6,
+        "limit": null
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "PlaceProtected": {
+                "side": "Sell",
+                "position_side": "Both",
+                "qty": 6,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 94,
+                "reduce_only": false
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Sell",
+            "requested_qty": 6
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "grid-short-6-100.4",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "short",
+        "qty": 6,
+        "limit": 100.4
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "PlaceProtected": {
+                "side": "Sell",
+                "position_side": "Both",
+                "qty": 6,
+                "order_type": "Limit",
+                "price_tick": 102,
+                "reduce_only": false
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Sell",
+            "requested_qty": 6
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "grid-short-1e-10-None",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "short",
+        "qty": 1e-10,
+        "limit": null
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {}
+      }
+    }
+  },
+  {
+    "name": "grid-short-1e-10-100.4",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "short",
+        "qty": 1e-10,
+        "limit": 100.4
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {}
+      }
+    }
+  },
+  {
+    "name": "invalid-qty-True",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": true
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "error": true
+  },
+  {
+    "name": "invalid-qty-5",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": "5"
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "error": true
+  },
+  {
+    "name": "invalid-qty-0",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": 0
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "error": true
+  },
+  {
+    "name": "invalid-qty--1",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": -1
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "error": true
+  },
+  {
+    "name": "partial-close-7-{'qty': 2.9}",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L",
+        "qty": 2.9
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6",
+            "action": {
+              "PlaceProtected": {
+                "side": "Sell",
+                "position_side": "Both",
+                "qty": 2,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 96,
+                "reduce_only": true
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6": {
+            "instrument": "V-BTC-PERP",
+            "name": "L_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Sell",
+            "requested_qty": 2
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "partial-close-7-{'qty_percent': 33.3}",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L",
+        "qty_percent": 33.3
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6",
+            "action": {
+              "PlaceProtected": {
+                "side": "Sell",
+                "position_side": "Both",
+                "qty": 2,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 96,
+                "reduce_only": true
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6": {
+            "instrument": "V-BTC-PERP",
+            "name": "L_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Sell",
+            "requested_qty": 2
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "partial-close-7-{}",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L"
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6",
+            "action": {
+              "PlaceProtected": {
+                "side": "Sell",
+                "position_side": "Both",
+                "qty": 7,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 96,
+                "reduce_only": true
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6": {
+            "instrument": "V-BTC-PERP",
+            "name": "L_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Sell",
+            "requested_qty": 7
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "partial-close-7-{'qty_percent': 100.1}",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L",
+        "qty_percent": 100.1
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "error": true
+  },
+  {
+    "name": "partial-close-7-{'qty_percent': True}",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L",
+        "qty_percent": true
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "error": true
+  },
+  {
+    "name": "close-all-7",
+    "intents": [
+      {
+        "action": "close_all",
+        "id": ""
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [
+          {
+            "order_id": 51,
+            "side": "Buy",
+            "price_tick": 90,
+            "remaining_qty": 4
+          },
+          {
+            "order_id": 52,
+            "side": "Sell",
+            "price_tick": 110,
+            "remaining_qty": 4
+          }
+        ],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {
+        "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+          "entry": "L",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "L",
+          "order_id": 51,
+          "pending": false,
+          "side": "Buy"
+        },
+        "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+          "entry": "Z",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "Z",
+          "order_id": 52,
+          "pending": false,
+          "side": "Sell"
+        }
+      }
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "Cancel": {
+                "order_id": 51
+              }
+            }
+          }
+        },
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510",
+            "action": {
+              "Cancel": {
+                "order_id": 52
+              }
+            }
+          }
+        },
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "9b280503a39fbf37ae19fdec58bdf22cc318ab6593cb8cb5",
+            "action": {
+              "PlaceProtected": {
+                "side": "Sell",
+                "position_side": "Both",
+                "qty": 7,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 96,
+                "reduce_only": true
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "entry": "L",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "order_id": 51,
+            "pending": false,
+            "side": "Buy"
+          },
+          "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+            "entry": "Z",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "Z",
+            "order_id": 52,
+            "pending": false,
+            "side": "Sell"
+          },
+          "9b280503a39fbf37ae19fdec58bdf22cc318ab6593cb8cb5": {
+            "instrument": "V-BTC-PERP",
+            "name": "_all_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": null,
+            "side": "Sell",
+            "requested_qty": 7
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "duplicate-close-7",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L"
+      },
+      {
+        "action": "close",
+        "id": "L"
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6",
+            "action": {
+              "PlaceProtected": {
+                "side": "Sell",
+                "position_side": "Both",
+                "qty": 7,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 96,
+                "reduce_only": true
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6": {
+            "instrument": "V-BTC-PERP",
+            "name": "L_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Sell",
+            "requested_qty": 7
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "duplicate-all-7",
+    "intents": [
+      {
+        "action": "close_all",
+        "id": ""
+      },
+      {
+        "action": "close_all",
+        "id": ""
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "9b280503a39fbf37ae19fdec58bdf22cc318ab6593cb8cb5",
+            "action": {
+              "PlaceProtected": {
+                "side": "Sell",
+                "position_side": "Both",
+                "qty": 7,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 96,
+                "reduce_only": true
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "9b280503a39fbf37ae19fdec58bdf22cc318ab6593cb8cb5": {
+            "instrument": "V-BTC-PERP",
+            "name": "_all_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": null,
+            "side": "Sell",
+            "requested_qty": 7
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "partial-close--7-{'qty': 2.9}",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L",
+        "qty": 2.9
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": -7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": -7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6",
+            "action": {
+              "PlaceProtected": {
+                "side": "Buy",
+                "position_side": "Both",
+                "qty": 2,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 104,
+                "reduce_only": true
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": -7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6": {
+            "instrument": "V-BTC-PERP",
+            "name": "L_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Buy",
+            "requested_qty": 2
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "partial-close--7-{'qty_percent': 33.3}",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L",
+        "qty_percent": 33.3
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": -7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": -7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6",
+            "action": {
+              "PlaceProtected": {
+                "side": "Buy",
+                "position_side": "Both",
+                "qty": 2,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 104,
+                "reduce_only": true
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": -7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6": {
+            "instrument": "V-BTC-PERP",
+            "name": "L_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Buy",
+            "requested_qty": 2
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "partial-close--7-{}",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L"
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": -7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": -7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6",
+            "action": {
+              "PlaceProtected": {
+                "side": "Buy",
+                "position_side": "Both",
+                "qty": 7,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 104,
+                "reduce_only": true
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": -7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6": {
+            "instrument": "V-BTC-PERP",
+            "name": "L_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Buy",
+            "requested_qty": 7
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "partial-close--7-{'qty_percent': 100.1}",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L",
+        "qty_percent": 100.1
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": -7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": -7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "error": true
+  },
+  {
+    "name": "partial-close--7-{'qty_percent': True}",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L",
+        "qty_percent": true
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": -7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": -7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "error": true
+  },
+  {
+    "name": "close-all--7",
+    "intents": [
+      {
+        "action": "close_all",
+        "id": ""
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [
+          {
+            "order_id": 51,
+            "side": "Buy",
+            "price_tick": 90,
+            "remaining_qty": 4
+          },
+          {
+            "order_id": 52,
+            "side": "Sell",
+            "price_tick": 110,
+            "remaining_qty": 4
+          }
+        ],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": -7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": -7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {
+        "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+          "entry": "L",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "L",
+          "order_id": 51,
+          "pending": false,
+          "side": "Buy"
+        },
+        "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+          "entry": "Z",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "Z",
+          "order_id": 52,
+          "pending": false,
+          "side": "Sell"
+        }
+      }
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "Cancel": {
+                "order_id": 51
+              }
+            }
+          }
+        },
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510",
+            "action": {
+              "Cancel": {
+                "order_id": 52
+              }
+            }
+          }
+        },
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "9b280503a39fbf37ae19fdec58bdf22cc318ab6593cb8cb5",
+            "action": {
+              "PlaceProtected": {
+                "side": "Buy",
+                "position_side": "Both",
+                "qty": 7,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 104,
+                "reduce_only": true
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": -7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "entry": "L",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "order_id": 51,
+            "pending": false,
+            "side": "Buy"
+          },
+          "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+            "entry": "Z",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "Z",
+            "order_id": 52,
+            "pending": false,
+            "side": "Sell"
+          },
+          "9b280503a39fbf37ae19fdec58bdf22cc318ab6593cb8cb5": {
+            "instrument": "V-BTC-PERP",
+            "name": "_all_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": null,
+            "side": "Buy",
+            "requested_qty": 7
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "duplicate-close--7",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L"
+      },
+      {
+        "action": "close",
+        "id": "L"
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": -7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": -7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6",
+            "action": {
+              "PlaceProtected": {
+                "side": "Buy",
+                "position_side": "Both",
+                "qty": 7,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 104,
+                "reduce_only": true
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": -7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "5e9062cb1a1d1716b21a50ae93e358610419c005b37d55e6": {
+            "instrument": "V-BTC-PERP",
+            "name": "L_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Buy",
+            "requested_qty": 7
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "duplicate-all--7",
+    "intents": [
+      {
+        "action": "close_all",
+        "id": ""
+      },
+      {
+        "action": "close_all",
+        "id": ""
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": -7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": -7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "9b280503a39fbf37ae19fdec58bdf22cc318ab6593cb8cb5",
+            "action": {
+              "PlaceProtected": {
+                "side": "Buy",
+                "position_side": "Both",
+                "qty": 7,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 104,
+                "reduce_only": true
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": -7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "9b280503a39fbf37ae19fdec58bdf22cc318ab6593cb8cb5": {
+            "instrument": "V-BTC-PERP",
+            "name": "_all_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": null,
+            "side": "Buy",
+            "requested_qty": 7
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "cancel-all",
+    "intents": [
+      {
+        "action": "cancel_all",
+        "id": ""
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [
+          {
+            "order_id": 51,
+            "side": "Buy",
+            "price_tick": 90,
+            "remaining_qty": 4
+          },
+          {
+            "order_id": 52,
+            "side": "Sell",
+            "price_tick": 110,
+            "remaining_qty": 4
+          }
+        ],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {
+        "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+          "entry": "L",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "L",
+          "order_id": 51,
+          "pending": false,
+          "side": "Buy"
+        },
+        "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+          "entry": "Z",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "Z",
+          "order_id": 52,
+          "pending": false,
+          "side": "Sell"
+        }
+      }
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "Cancel": {
+                "order_id": 51
+              }
+            }
+          }
+        },
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510",
+            "action": {
+              "Cancel": {
+                "order_id": 52
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "entry": "L",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "order_id": 51,
+            "pending": false,
+            "side": "Buy"
+          },
+          "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+            "entry": "Z",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "Z",
+            "order_id": 52,
+            "pending": false,
+            "side": "Sell"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "cancel-named",
+    "intents": [
+      {
+        "action": "cancel",
+        "id": "L"
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [
+          {
+            "order_id": 51,
+            "side": "Buy",
+            "price_tick": 90,
+            "remaining_qty": 4
+          },
+          {
+            "order_id": 52,
+            "side": "Sell",
+            "price_tick": 110,
+            "remaining_qty": 4
+          }
+        ],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {
+        "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+          "entry": "L",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "L",
+          "order_id": 51,
+          "pending": false,
+          "side": "Buy"
+        },
+        "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+          "entry": "Z",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "Z",
+          "order_id": 52,
+          "pending": false,
+          "side": "Sell"
+        }
+      }
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "Cancel": {
+                "order_id": 51
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "entry": "L",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "order_id": 51,
+            "pending": false,
+            "side": "Buy"
+          },
+          "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+            "entry": "Z",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "Z",
+            "order_id": 52,
+            "pending": false,
+            "side": "Sell"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "reversal-lot-grid",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "short",
+        "qty": 5.9
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "PlaceProtected": {
+                "side": "Sell",
+                "position_side": "Both",
+                "qty": 10,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 96,
+                "reduce_only": false
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "L",
+            "side": "Sell",
+            "requested_qty": 10
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "two-spot-buys-share-cash",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "A",
+        "direction": "long",
+        "qty": 30,
+        "limit": 500.4
+      },
+      {
+        "action": "entry",
+        "id": "B",
+        "direction": "long",
+        "qty": 30,
+        "limit": 500.4
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-SPOT",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Spot": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "position_qty": 0,
+            "fees_paid": 0,
+            "available_cash": 10000,
+            "available_position": 0
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-SPOT::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-SPOT",
+            "key": "c7ae61e5f578f88724dceea9c21b0e0c4a07a178cdf91def",
+            "action": {
+              "PlaceProtected": {
+                "side": "Buy",
+                "position_side": "Both",
+                "qty": 18,
+                "order_type": "Limit",
+                "price_tick": 500,
+                "reduce_only": false
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-SPOT::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "c7ae61e5f578f88724dceea9c21b0e0c4a07a178cdf91def": {
+            "instrument": "V-BTC-SPOT",
+            "name": "A",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": "A",
+            "side": "Buy",
+            "requested_qty": 30
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "spot-close-all",
+    "intents": [
+      {
+        "action": "close_all",
+        "id": ""
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-SPOT",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Spot": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "position_qty": 7,
+            "fees_paid": 0,
+            "available_cash": 10000,
+            "available_position": 7
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 2
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-SPOT::L": {
+          "qty": 7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-SPOT",
+            "key": "a46b33eb8a7c8e46924271a5b8aaa6461f57f16d0f1e58a0",
+            "action": {
+              "PlaceProtected": {
+                "side": "Sell",
+                "position_side": "Both",
+                "qty": 6,
+                "order_type": "ImmediateOrCancel",
+                "price_tick": 96,
+                "reduce_only": false
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-SPOT::L": {
+            "qty": 7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "a46b33eb8a7c8e46924271a5b8aaa6461f57f16d0f1e58a0": {
+            "instrument": "V-BTC-SPOT",
+            "name": "_all_close",
+            "filled_qty": 0,
+            "pending": true,
+            "entry": null,
+            "side": "Sell",
+            "requested_qty": 6
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "strict-fractional",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": 5.9
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": false,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {}
+    },
+    "error": true
+  },
+  {
+    "name": "amend-less-aggressive",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": 4.8,
+        "limit": 88.8
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [
+          {
+            "order_id": 51,
+            "side": "Buy",
+            "price_tick": 90,
+            "remaining_qty": 4
+          },
+          {
+            "order_id": 52,
+            "side": "Sell",
+            "price_tick": 110,
+            "remaining_qty": 4
+          }
+        ],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {
+        "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+          "entry": "L",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "L",
+          "order_id": 51,
+          "pending": false,
+          "side": "Buy"
+        },
+        "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+          "entry": "Z",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "Z",
+          "order_id": 52,
+          "pending": false,
+          "side": "Sell"
+        }
+      }
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "Amend": {
+                "order_id": 51,
+                "price_tick": 88,
+                "qty": 3
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "entry": "L",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "order_id": 51,
+            "pending": true,
+            "side": "Buy",
+            "requested_qty": 4
+          },
+          "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+            "entry": "Z",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "Z",
+            "order_id": 52,
+            "pending": false,
+            "side": "Sell"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "cancel-before-replacement",
+    "intents": [
+      {
+        "action": "entry",
+        "id": "L",
+        "direction": "long",
+        "qty": 6.8,
+        "limit": 101.2
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [
+          {
+            "order_id": 51,
+            "side": "Buy",
+            "price_tick": 90,
+            "remaining_qty": 4
+          },
+          {
+            "order_id": 52,
+            "side": "Sell",
+            "price_tick": 110,
+            "remaining_qty": 4
+          }
+        ],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 0,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 2,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 0
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {
+        "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+          "entry": "L",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "L",
+          "order_id": 51,
+          "pending": false,
+          "side": "Buy"
+        },
+        "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+          "entry": "Z",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "Z",
+          "order_id": 52,
+          "pending": false,
+          "side": "Sell"
+        }
+      }
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "Cancel": {
+                "order_id": 51
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 0
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "entry": "L",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "order_id": 51,
+            "pending": true,
+            "side": "Buy",
+            "replacement": {
+              "name": "L",
+              "side": "Buy",
+              "qty": 6,
+              "limit": 100,
+              "stop": null,
+              "reduce": false,
+              "entry": "L",
+              "post_only": false
+            }
+          },
+          "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+            "entry": "Z",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "Z",
+            "order_id": 52,
+            "pending": false,
+            "side": "Sell"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "zero-close-with-live-order",
+    "intents": [
+      {
+        "action": "close",
+        "id": "L",
+        "qty": 0.8
+      }
+    ],
+    "pyramiding": 2,
+    "views": [
+      {
+        "version": 1,
+        "room_id": "test",
+        "instrument_id": "V-BTC-PERP",
+        "status": "Running",
+        "step": 1,
+        "market_time_ms": 1000,
+        "book": {
+          "asks": [
+            {
+              "price_tick": 102,
+              "qty": 100
+            }
+          ],
+          "bids": [
+            {
+              "price_tick": 98,
+              "qty": 100
+            }
+          ]
+        },
+        "own_orders": [
+          {
+            "order_id": 51,
+            "side": "Buy",
+            "price_tick": 90,
+            "remaining_qty": 4
+          },
+          {
+            "order_id": 52,
+            "side": "Sell",
+            "price_tick": 110,
+            "remaining_qty": 4
+          }
+        ],
+        "own_account": {
+          "Perp": {
+            "account_id": 300,
+            "cash_balance": 10000,
+            "available_cash": 10000,
+            "position_qty": 7,
+            "avg_entry_price_tick": 0,
+            "equity": 10000,
+            "realized_pnl": 0,
+            "unrealized_pnl": 0,
+            "fees_paid": 0,
+            "funding_pnl": 0,
+            "margin_status": "Healthy"
+          }
+        },
+        "bot_market_data": {
+          "interval_ms": 1000,
+          "candles": [
+            {
+              "schema_version": 1,
+              "open_time_ms": 0,
+              "close_time_ms": 1000,
+              "open_tick": 100,
+              "high_tick": 100,
+              "low_tick": 100,
+              "close_tick": 100,
+              "volume": 1,
+              "quote_volume": 100,
+              "trades": 1,
+              "is_final": true
+            }
+          ],
+          "own_fills": [],
+          "fill_details": [],
+          "truncated": false
+        },
+        "instrument": {
+          "tick_size": 1,
+          "lot_size": 1
+        }
+      }
+    ],
+    "config": {
+      "script": "ma.pine",
+      "execution_mode": "broker",
+      "quantize_strategy_orders": true,
+      "related_instruments": [],
+      "additional_intervals_ms": [],
+      "position_side": "Both",
+      "initial_avg_price_tick": 0,
+      "hedge_instrument_id": "",
+      "hedge_timeout_ms": 5000,
+      "inputs": {},
+      "bar_interval_ms": 1000,
+      "history_limit": 512,
+      "max_qty": 30,
+      "inventory_cap": 100,
+      "slippage_ticks": 2,
+      "fee_buffer_ppm": 1000
+    },
+    "state": {
+      "entries": {
+        "V-BTC-PERP::L": {
+          "qty": 7
+        }
+      },
+      "identity": "parity-fixture",
+      "orders": {
+        "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+          "entry": "L",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "L",
+          "order_id": 51,
+          "pending": false,
+          "side": "Buy"
+        },
+        "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+          "entry": "Z",
+          "filled_qty": 1,
+          "instrument": "V-BTC-PERP",
+          "name": "Z",
+          "order_id": 52,
+          "pending": false,
+          "side": "Sell"
+        }
+      }
+    },
+    "expected": {
+      "actions": [
+        {
+          "BotOrder": {
+            "instrument_id": "V-BTC-PERP",
+            "key": "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a",
+            "action": {
+              "Cancel": {
+                "order_id": 51
+              }
+            }
+          }
+        }
+      ],
+      "state": {
+        "entries": {
+          "V-BTC-PERP::L": {
+            "qty": 7
+          }
+        },
+        "identity": "parity-fixture",
+        "orders": {
+          "386e4b4a14906097c43ac81097b3fdd2d627b032b136ec2a": {
+            "entry": "L",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "L",
+            "order_id": 51,
+            "pending": false,
+            "side": "Buy"
+          },
+          "791f5f5208e1afa2e3a20ac044ce0d5e6b36e44a50b1e510": {
+            "entry": "Z",
+            "filled_qty": 1,
+            "instrument": "V-BTC-PERP",
+            "name": "Z",
+            "order_id": 52,
+            "pending": false,
+            "side": "Sell"
+          }
+        }
+      }
+    }
+  }
+]

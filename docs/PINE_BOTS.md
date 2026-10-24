@@ -201,12 +201,14 @@ session 必须与宿主已提交的完整 bar/账户/pass 前缀和设置
 从不原地修改已解码对象；因此 broker 对未变的 K 线和成交前缀按对象身份复用此前的解析，只解析、
 校验新增部分。清单另启用 `resident_state`（需 `delta_requests`）：worker 只回复相对请求 state 的
 补丁。宿主要求补丁路径互不包含，并逐个对照未修改的 state 检查后才应用，被拒绝的补丁不改变 state；
-宿主接受回复后，双方把同一补丁折叠进各自缓存的请求，下一次请求只携带宿主自己的修改。没有精确补丁
+宿主接受回复后，双方缓存同一完整 state。worker 在证明补丁逐值、逐类型相同且通过完整响应大小检查后，
+直接保留不可变的输出对象，避免冷启动或 Rust 接续后丢失已解析历史的对象共享；宿主仍折叠原补丁。
+下一次请求只携带宿主自己的修改。没有精确补丁
 时（首次决策、非 JSON 规范值）回复完整 state。durable state 仍是宿主持有的完整结构，worker 重启或
 淘汰后从中重建；完整响应的 1 MiB 上限仍按完整编码长度检查。宿主编码请求时，观察中的 K 线、自己的
 成交、成交明细和账户事件按类型数据比较，只把新增项转换为 JSON；state 直接与缓存比较，折叠后若只有
 宿主写入的顶层键（事件游标、观察时刻）变化，则只比较这些键，任何整体替换 state 的路径都回到完整比较。
-当前没有完整计算 checkpoint。
+Python 路径当前没有完整计算 checkpoint。
 
 自动调度先取得外部任务名额，再复制实际派发 bot 的状态；待处理队列只保存身份和索引。
 任务完成后继续派发本轮待处理实例，不要求等到下一次市场 tick。每个 bot 最多有一个在途决策，
@@ -312,6 +314,30 @@ HTTP 验收需要先构建当前 server；可用 `MARKETFORGE_TEST_SERVER` 指�
 可执行文件。PostgreSQL 重启验收需要独立的 `MARKETFORGE_TEST_DATABASE_URL`；设置
 `MARKETFORGE_REQUIRE_POSTGRES_TESTS=1` 可禁止静默跳过。验收启动和清理自己的
 loopback 服务端，证据写入 `target/pine-http/`。
+
+### 生态脚本的 Rust 直连范围
+
+构建 `exchange-server` 时启用 `--features pine-in-process`，并设置
+`MARKETFORGE_PINE_IN_PROCESS=1`，可使用现有 Rust Pine 解释器和交易适配层。
+原有 6 个精确源码之外，`exchange-server/src/pine_inprocess/ecosystem-qualified.json`
+增加 201 个精确源码 SHA256；这批脚本要求默认输入、显式
+`quantize_strategy_orders=true`，不支持自动对冲、`strategy.exit`、`strategy.order`
+或条件入场。源码改变会撤销准入，执行失败不会悄悄转交另一执行器重试。
+
+这批策略默认使用 schema 4 分块重放记录，超过 128 根后继续留在 Rust。
+正常运行复用 VM，只追加新数据；持久状态保留全部历史输入和原调用批次，以压缩块
+加短尾部保存。冷恢复仍由 Rust 重放完整记录并核对历史意图，它不是常量大小的 VM
+快照。已有 schema-2 状态先核对完整历史意图，再一次性迁移；不会截断历史、重置
+账户、替换策略或跳过网关、风控和撮合。
+
+`MARKETFORGE_PINE_VM_CHECKPOINT=1` 仍只为原有六个脚本选择 schema 3。
+仅用于旧路径对照的 `MARKETFORGE_PINE_REPLAY_STATE=0` 禁用新建和迁移 schema 4；
+此时 `MARKETFORGE_PINE_ECOSYSTEM_MAX_BARS`（1–8192，默认 128）恢复旧 schema-2
+路由阈值。已保存的 schema 4 始终要求合格 Rust 运行时，不能交回 Python。
+`MARKETFORGE_PINE_SESSION_CAPACITY`（1–8192，默认 4096）控制可丢弃的 VM 缓存容量。
+完整私有回执、状态大小、决策超时和运行时资源限制仍生效；无历史长度回退不等于
+无限容量或无限时长的性能保证。测量和恢复证据见
+[连续 Rust 执行验证](validation/2026-10-24-pine-continuous.md)。
 
 私有 adapter 的逐段一致性与缓存恢复验收：
 

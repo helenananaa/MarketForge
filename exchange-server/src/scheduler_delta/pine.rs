@@ -10,16 +10,21 @@ use std::{collections::BTreeMap, io::Write, sync::Arc};
 const ARRAYS: [&str; 3] = ["bars", "accounts", "evaluations"];
 const VM_ARRAYS: [&str; 2] = ["vm_tail", "vm_tail_intents"];
 
+#[path = "replay.rs"]
+mod replay;
+use replay::ReplayAppend;
+
 fn history_arrays(schema: u64) -> Option<&'static [&'static str]> {
     match schema {
         2 => Some(&ARRAYS),
         3 => Some(&VM_ARRAYS),
+        4 => Some(&[]), // bounded tails are replaced; archive chunks are appended
         _ => None,
     }
 }
 
 fn reconstructed_field(schema: u64) -> &'static str {
-    if schema == 3 {
+    if matches!(schema, 3 | 4) {
         "vm_checkpoint"
     } else {
         "providers"
@@ -51,6 +56,7 @@ struct ValidatedPayload {
     metadata: Arc<Map<String, Value>>,
     arrays: Arc<BTreeMap<String, Append>>,
     providers: Arc<BTreeMap<String, Append>>,
+    replay: Option<Arc<ReplayAppend>>,
     patch_sha256: [u8; 32],
 }
 
@@ -63,6 +69,11 @@ impl ValidatedPayload {
             && Arc::ptr_eq(&self.metadata, &hint.metadata)
             && Arc::ptr_eq(&self.arrays, &hint.arrays)
             && Arc::ptr_eq(&self.providers, &hint.providers)
+            && match (&self.replay, &hint.replay) {
+                (None, None) => true,
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                _ => false,
+            }
     }
 }
 
@@ -80,6 +91,8 @@ pub struct PineStateHint {
     metadata: Arc<Map<String, Value>>,
     arrays: Arc<BTreeMap<String, Append>>,
     providers: Arc<BTreeMap<String, Append>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    replay: Option<Arc<ReplayAppend>>,
     patch_sha256: [u8; 32],
     #[serde(skip)]
     prepared: Option<Prepared>,
@@ -243,12 +256,21 @@ impl PineStateHint {
                 return None;
             }
         } else if before_map.get("evaluated_bars")?.as_u64()? == 0
-            || before_map.get("vm_checkpoint")? != after_map.get("vm_checkpoint")?
+            || (schema == 3
+                && before_map.get("vm_checkpoint")? != after_map.get("vm_checkpoint")?)
         {
             // New checkpoints must be self-contained records. Never inherit an
             // old checkpoint across rollover, even when both tails are empty.
             return None;
         }
+        let replay = if schema == 4 {
+            Some(Arc::new(ReplayAppend::prepare(
+                before_map.get("vm_checkpoint")?,
+                after_map.get("vm_checkpoint")?,
+            )?))
+        } else {
+            None
+        };
         let arrays = keys
             .iter()
             .copied()
@@ -294,6 +316,7 @@ impl PineStateHint {
             metadata: Arc::new(metadata),
             arrays: Arc::new(arrays),
             providers: Arc::new(providers),
+            replay,
             patch_sha256: [0; 32],
             validated_payload: None,
             prepared: Some(Prepared {
@@ -314,6 +337,7 @@ impl PineStateHint {
                 metadata: Arc::clone(&hint.metadata),
                 arrays: Arc::clone(&hint.arrays),
                 providers: Arc::clone(&hint.providers),
+                replay: hint.replay.clone(),
                 patch_sha256: hint.patch_sha256,
             }));
         }
@@ -359,7 +383,8 @@ impl PineStateHint {
             || keys.iter().any(|key| !self.arrays.contains_key(*key))
             || keys.iter().any(|key| self.metadata.contains_key(*key))
             || self.metadata.contains_key(reconstructed_field(schema))
-            || (schema == 3 && !self.providers.is_empty())
+            || (schema != 2 && !self.providers.is_empty())
+            || ((schema == 4) != self.replay.is_some())
             || self
                 .metadata
                 .get("identity")
@@ -373,12 +398,27 @@ impl PineStateHint {
         {
             return Err(failure("shape, identity, or append length"));
         }
+        if let Some(replay) = &self.replay {
+            replay.validate()?;
+        }
         Ok(())
     }
 
     fn checksum(&self) -> Result<[u8; 32], JournalError> {
         #[cfg(test)]
         tests::record_hint_checksum();
+        if let Some(replay) = &self.replay {
+            return fingerprint(&(
+                "replay-append/1",
+                &self.plugin_version,
+                self.state_version,
+                &self.base_sha256,
+                &self.metadata,
+                &self.arrays,
+                &self.providers,
+                replay,
+            ));
+        }
         fingerprint(&(
             &self.plugin_version,
             self.state_version,
@@ -439,6 +479,14 @@ impl PineStateHint {
                     .ok_or_else(|| failure("missing VM checkpoint"))?
                     .clone(),
             );
+        } else if schema == 4 {
+            result.insert(
+                "vm_checkpoint".into(),
+                self.replay.as_ref().unwrap().materialize(
+                    base.get("vm_checkpoint")
+                        .ok_or_else(|| failure("missing replay archive"))?,
+                )?,
+            );
         } else {
             let previous = base
                 .get("providers")
@@ -472,6 +520,10 @@ impl PineStateHint {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "schema4_tests.rs"]
+mod schema4_tests;
 
 impl PineAgentDelta {
     pub(super) fn new(

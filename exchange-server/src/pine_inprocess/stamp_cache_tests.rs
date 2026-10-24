@@ -519,3 +519,99 @@ fn private_stamp_schema_two_keeps_the_original_transcript_path() {
         live.decide_value(&next, 5000).unwrap()
     );
 }
+
+#[test]
+fn ecosystem_replay_continues_identically_after_durable_journal_recovery() {
+    use crate::journal::{
+        InMemoryJournalStore, JournalStore, PendingJournalMutation, RoomMutation,
+    };
+    use crate::scheduler_delta::SchedulerDelta;
+    use exchange_core::{PersistedAgentKindState, SchedulerMode, SchedulerState};
+    use std::sync::Arc;
+
+    let spec: exchange_core::population::BackgroundMarket = serde_json::from_str(include_str!(
+        "../../../scripts/fixtures/microstructure_market.json"
+    ))
+    .unwrap();
+    let mut scheduler = SchedulerState::new(
+        "stamp-cache-test",
+        spec.agents.into_iter().take(1).collect(),
+        SchedulerMode::Auto { interval_ms: 1000 },
+    );
+    let live = host(true);
+    let script = "ecosystem/library/0068dd1dd9576132.pine";
+    let request = |count, state| {
+        let mut input = request(script, count, state);
+        input["config"]["quantize_strategy_orders"] = json!(true);
+        input["config"]["inputs"] = json!({});
+        input
+    };
+    let mut store = InMemoryJournalStore::new();
+    let mut committed = Value::Null;
+    for (index, count) in [7, 8, 15, 16, 127, 128, 129, 130, 256, 257]
+        .into_iter()
+        .enumerate()
+    {
+        let input = request(count, committed);
+        let actual = live.decide_value(&input, 5000).unwrap();
+        assert_eq!(actual["state"]["broker_schema"], 4);
+        let mut next = scheduler.clone();
+        next.revision += 1;
+        next.agents[0].kind_state = PersistedAgentKindState::Plugin {
+            plugin_id: "pine.strategy".into(),
+            plugin_version: "2.0.0".into(),
+            state_version: 1,
+            data: Arc::new(actual["state"].clone()),
+        };
+        let mutation = if index == 0 {
+            RoomMutation::SchedulerProgress {
+                clock_steps: 0,
+                state: next.clone(),
+                training: None,
+            }
+        } else {
+            let delta = SchedulerDelta::between(&scheduler, &next)
+                .unwrap()
+                .into_durable(&scheduler)
+                .unwrap();
+            let wire = serde_json::to_value(&delta).unwrap();
+            assert_eq!(wire["pine_changes"].as_array().unwrap().len(), 1);
+            RoomMutation::SchedulerDelta {
+                clock_steps: 1,
+                delta,
+                training: None,
+            }
+        };
+        store
+            .append_room_mutation(
+                &PendingJournalMutation::new("stamp-cache-test", 0, mutation),
+                &[],
+                &[],
+                None,
+            )
+            .unwrap();
+        let recovery = store.load_recovery().unwrap();
+        let states = crate::scheduler_states_from_recovery(&recovery).unwrap();
+        let restored = &states["stamp-cache-test"];
+        assert_eq!(
+            serde_json::to_vec(restored).unwrap(),
+            serde_json::to_vec(&next).unwrap()
+        );
+        let PersistedAgentKindState::Plugin { data, .. } = &restored.agents[0].kind_state else {
+            panic!("journal lost Pine state");
+        };
+        // A new Host has no private session, stamp, or archive encoding cache.
+        // Its next response must include the same intents/actions and seal.
+        let cold_input = request(count + 1, data.as_ref().clone());
+        let cold = host(true).decide_value(&cold_input, 5000).unwrap();
+        let warm = live.decide_value(&cold_input, 5000).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&cold).unwrap(),
+            serde_json::to_vec(&warm).unwrap()
+        );
+        // Discard that speculative response: the next turn must also recover
+        // from the exact journaled state, not assume it was committed.
+        committed = data.as_ref().clone();
+        scheduler = next;
+    }
+}

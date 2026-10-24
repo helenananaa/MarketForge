@@ -48,6 +48,76 @@ fn default_int(v: &Value, fallback: i64) -> Result<i64> {
         number(v, -MAX_EXACT)
     }
 }
+// Python uses Fraction(str(value)), not the binary floating-point fraction.
+// Retain that decimal boundary for prices, quantities and partial closes.
+fn strategy_decimal(value: &Value) -> Result<BigRational> {
+    if !value.is_number()
+        || !value
+            .as_f64()
+            .is_some_and(|n| n.is_finite() && n > 0.0 && n <= MAX_EXACT as f64)
+    {
+        return Err(error("expected a positive finite strategy value"));
+    }
+    let decimal = super::json_compat::python_json(value, false)?;
+    let (mantissa, exponent) = decimal.split_once('e').unwrap_or((&decimal, "0"));
+    let exponent: i32 = exponent.parse().map_err(io)?;
+    let fraction = mantissa
+        .split_once('.')
+        .map_or(0, |(_, tail)| tail.len() as i32);
+    let digits = BigInt::from_str(&mantissa.replace('.', "")).map_err(io)?;
+    let scale = fraction - exponent;
+    let ten = BigInt::from(10);
+    Ok(if scale >= 0 {
+        BigRational::new(digits, ten.pow(scale as u32))
+    } else {
+        BigRational::from_integer(digits * ten.pow((-scale) as u32))
+    })
+}
+fn quantized(value: &Value, quantum: i64, up: bool) -> Result<i64> {
+    if quantum < 1 {
+        return Err(error("invalid exchange grid"));
+    }
+    let scaled = strategy_decimal(value)? / rat(quantum);
+    let units = if up { scaled.ceil() } else { scaled.floor() }.to_integer();
+    (units * BigInt::from(quantum))
+        .to_i64()
+        .ok_or_else(|| error("strategy value overflow"))
+}
+fn strategy_price(value: &Value, tick: i64, side: &str, config: &Value) -> Result<Option<i64>> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    let price = if config["quantize_strategy_orders"] == true {
+        quantized(value, tick, side == "Sell")?
+    } else {
+        number(value, 1)?
+    };
+    if price <= 0 {
+        return Err(error("price below the exchange grid"));
+    }
+    Ok(Some(price))
+}
+fn close_quantity(intent: &Value, position: i64, config: &Value) -> Result<i64> {
+    let qty = position.abs();
+    if !intent["qty"].is_null() {
+        Ok(qty.min(if config["quantize_strategy_orders"] == true {
+            quantized(&intent["qty"], 1, false)?
+        } else {
+            number(&intent["qty"], 1)?
+        }))
+    } else if !intent["qty_percent"].is_null() {
+        let percent = strategy_decimal(&intent["qty_percent"])?;
+        if percent > rat(100) {
+            return Err(error("invalid close percentage"));
+        }
+        (percent * rat(qty) / rat(100))
+            .to_integer()
+            .to_i64()
+            .ok_or_else(|| error("close quantity overflow"))
+    } else {
+        Ok(qty)
+    }
+}
 fn rational(v: &Value) -> Result<BigRational> {
     let value = text(v)?;
     if let Some((n, d)) = value.split_once('/') {
@@ -185,7 +255,7 @@ pub fn feedback(state: &mut Value, views: &[&Value], config: &Value) -> Result<(
         let instrument = text(&view["instrument_id"])?;
         let (kind, a, position, _) = account(view, config)?;
         let data = &view["bot_market_data"];
-        let complete = if state["broker_schema"] == 3 {
+        let complete = if matches!(state["broker_schema"].as_u64(), Some(3 | 4)) {
             data["private_history_complete"] == true
         } else {
             data["truncated"] == false
@@ -520,7 +590,7 @@ fn submit(
     name: &str,
     side: &str,
     mut qty: i64,
-    limit: Option<i64>,
+    limit: &Value,
     reduce: bool,
     entry: Option<&str>,
     mut replacing: bool,
@@ -530,7 +600,16 @@ fn submit(
     let (kind, a, position, _) = account(view, config)?;
     let tick = default_int(&view["instrument"]["tick_size"], 1)?;
     let lot = default_int(&view["instrument"]["lot_size"], 1)?;
-    if tick < 1 || lot < 1 || qty % lot != 0 {
+    if tick < 1 || lot < 1 {
+        return Err(error("invalid exchange grid"));
+    }
+    if config["quantize_strategy_orders"] == true {
+        qty = qty.div_euclid(lot) * lot;
+        if qty <= 0 {
+            return Ok(Vec::new());
+        }
+    }
+    if qty % lot != 0 {
         return Err(error("order must align with the exchange grid"));
     }
     let requested = qty;
@@ -602,6 +681,7 @@ fn submit(
             })
             .unwrap_or_default());
     }
+    let limit = strategy_price(limit, tick, side, config)?;
     if limit.is_some_and(|n| n < 1 || n % tick != 0) {
         return Err(error("order price must align with exchange tick size"));
     }
@@ -696,7 +776,12 @@ pub fn translate(
     let mut budget = Budget::default();
     for intent in intents {
         let action = text(&intent["action"])?;
-        let name = text(&intent["id"])?;
+        let raw_name = text(&intent["id"])?;
+        let name = if raw_name.is_empty() {
+            "_all"
+        } else {
+            raw_name
+        };
         let (instrument, name) = name.split_once("::").unwrap_or((primary, name));
         let view = views
             .iter()
@@ -707,7 +792,15 @@ pub fn translate(
         }
         let (kind, _, position, _) = account(view, config)?;
         match action {
-            "cancel" => actions.extend(cancel(state, view, Some(name))?),
+            "cancel" | "cancel_all" => actions.extend(cancel(
+                state,
+                view,
+                if action == "cancel_all" {
+                    None
+                } else {
+                    Some(name)
+                },
+            )?),
             "entry" => {
                 if owned(state, view, Some(name))?
                     .iter()
@@ -724,7 +817,18 @@ pub fn translate(
                 if kind == "Spot" && side == "Sell" {
                     return Err(error("spot account cannot open a short position"));
                 }
-                let mut qty = number(&intent["qty"], 1)?;
+                let mut qty = if config["quantize_strategy_orders"] == true {
+                    quantized(
+                        &intent["qty"],
+                        default_int(&view["instrument"]["lot_size"], 1)?,
+                        false,
+                    )?
+                } else {
+                    number(&intent["qty"], 1)?
+                };
+                if qty <= 0 {
+                    continue;
+                }
                 if position.signum() * sign > 0 {
                     let active = state["entries"]
                         .as_object()
@@ -748,11 +852,6 @@ pub fn translate(
                 if !intent["stop"].is_null() {
                     return Err(error("unqualified conditional intent"));
                 }
-                let limit = if intent["limit"].is_null() {
-                    None
-                } else {
-                    Some(number(&intent["limit"], 1)?)
-                };
                 actions.extend(submit(
                     state,
                     view,
@@ -761,17 +860,33 @@ pub fn translate(
                     name,
                     side,
                     qty,
-                    limit,
+                    &intent["limit"],
                     false,
                     Some(name),
                     false,
                 )?);
             }
-            "close" => {
-                actions.extend(cancel(state, view, Some(name))?);
+            "close" | "close_all" => {
+                if owned(state, view, Some(&format!("{name}_close")))?
+                    .iter()
+                    .any(|(_, order, _)| order["pending"] == true)
+                {
+                    continue;
+                }
+                actions.extend(cancel(
+                    state,
+                    view,
+                    if action == "close_all" {
+                        None
+                    } else {
+                        Some(name)
+                    },
+                )?);
                 let owned =
                     default_int(&state["entries"][format!("{instrument}::{name}")]["qty"], 0)?;
-                let close = if position.signum() * owned.signum() > 0 {
+                let close = if action == "close_all" {
+                    position
+                } else if position.signum() * owned.signum() > 0 {
                     position.abs().min(owned.abs()) * position.signum()
                 } else {
                     0
@@ -779,11 +894,7 @@ pub fn translate(
                 if close == 0 {
                     continue;
                 }
-                let qty = if intent["qty"].is_null() {
-                    close.abs()
-                } else {
-                    close.abs().min(number(&intent["qty"], 1)?)
-                };
+                let qty = close_quantity(intent, close, config)?;
                 actions.extend(submit(
                     state,
                     view,
@@ -792,9 +903,9 @@ pub fn translate(
                     &format!("{name}_close"),
                     if close > 0 { "Sell" } else { "Buy" },
                     qty,
-                    None,
+                    &Value::Null,
                     kind == "Perp",
-                    Some(name),
+                    if action == "close" { Some(name) } else { None },
                     false,
                 )?);
             }
@@ -866,11 +977,7 @@ pub fn replacements(state: &mut Value, views: &[&Value], config: &Value) -> Resu
             text(&replacement["name"])?,
             text(&replacement["side"])?,
             number(&replacement["qty"], 0)?,
-            if replacement["limit"].is_null() {
-                None
-            } else {
-                Some(number(&replacement["limit"], 1)?)
-            },
+            &replacement["limit"],
             replacement["reduce"] == true,
             replacement["entry"].as_str(),
             true,

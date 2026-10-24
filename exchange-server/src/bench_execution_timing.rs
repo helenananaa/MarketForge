@@ -134,6 +134,9 @@ pub(crate) static JOURNAL_VALIDATE: Counter = Counter::new();
 pub(crate) static JOURNAL_SERIALIZE: Counter = Counter::new();
 pub(crate) static JOURNAL_COMPRESS: Counter = Counter::new();
 pub(crate) static BOT_WORKER_START: Counter = Counter::new();
+// Legacy label: direct calls stop this timer after route/source admission;
+// process calls stop it after request construction. Includes source-lock waits,
+// so it must not be interpreted as time spent cloning state.
 pub(crate) static BOT_REQUEST_CLONE: Counter = Counter::new();
 pub(crate) static BOT_STATE_RESTORE: Counter = Counter::new();
 pub(crate) static BOT_INPROCESS_CALL: Counter = Counter::new();

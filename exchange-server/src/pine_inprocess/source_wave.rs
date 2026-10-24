@@ -11,7 +11,7 @@ use std::{
 };
 
 #[derive(Default)]
-pub(super) struct Checks(Mutex<BTreeMap<(u64, String), bool>>);
+pub(super) struct Checks(Mutex<BTreeMap<(u64, String), Arc<OnceLock<bool>>>>);
 
 type Waves = Vec<(Weak<NativeObservationWave>, Arc<Checks>)>;
 static WAVES: OnceLock<Mutex<Waves>> = OnceLock::new();
@@ -66,11 +66,22 @@ pub(super) fn verified(host: u64, name: &str, read: impl FnOnce() -> bool) -> bo
     let Some(checks) = current else {
         return read();
     };
-    // Hold the lock through the first read: concurrent callers must share the
-    // same admission snapshot even when the file is edited during this wave.
-    let mut checks = checks.0.lock().unwrap();
-    *checks.entry((host, name.to_owned())).or_insert_with(read)
+    // Serialize initialization for this exact host/script, not every script in
+    // the wave. The directory lock never spans filesystem I/O. Same-key callers
+    // still share one success or rejection when files change during the wave.
+    let check = checks
+        .0
+        .lock()
+        .unwrap()
+        .entry((host, name.to_owned()))
+        .or_default()
+        .clone();
+    *check.get_or_init(read)
 }
+
+#[cfg(test)]
+#[path = "source_wave_parallel_tests.rs"]
+mod parallel_tests;
 
 #[cfg(test)]
 mod tests {

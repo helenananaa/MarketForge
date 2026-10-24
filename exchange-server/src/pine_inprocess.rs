@@ -1,4 +1,4 @@
-//! Opt-in in-process adapter for the six installed, hash-qualified bar-close
+//! Opt-in in-process adapter for installed, hash-qualified bar-close
 //! strategies. The process adapter remains authoritative for other sources,
 //! legacy mode, automatic hedging and position-protection configurations.
 //! Cached sessions are speculative: only the frozen committed transcript can
@@ -21,10 +21,14 @@ use std::{
 };
 
 mod broker;
+#[cfg(test)]
+mod broker_parity;
 mod checkpoint;
 #[cfg(test)]
 mod host_state_benchmark;
 mod json_compat;
+mod replay_log;
+mod source;
 pub(crate) mod source_wave;
 mod stamp_cache;
 use broker::{array, number, text};
@@ -66,8 +70,36 @@ fn io(error: impl std::fmt::Display) -> BotError {
 
 struct Program {
     source: String,
-    program: PreparedProgram,
+    name: String,
+    program: std::sync::OnceLock<Result<PreparedProgram, String>>,
+    checkpoint_qualified: bool,
 }
+impl Program {
+    fn compiled(&self) -> Result<&PreparedProgram, BotError> {
+        self.program
+            .get_or_init(|| {
+                let lowered = source::external_pass(&self.source).map_err(|e| e.0)?;
+                let analysis =
+                    pine_sema::analyze_source(&pine_syntax::SourceFile::new(&self.name, lowered));
+                if analysis
+                    .diagnostics
+                    .iter()
+                    .any(|d| matches!(d.severity, pine_syntax::Severity::Error))
+                {
+                    return Err(format!(
+                        "qualified Pine source failed analysis: {}",
+                        self.name
+                    ));
+                }
+                Ok(PreparedProgram::new(
+                    analysis.hir.ok_or("missing Pine HIR")?,
+                ))
+            })
+            .as_ref()
+            .map_err(error)
+    }
+}
+
 struct Session {
     runtime: HistoricalRuntime<'static>,
     transcript: Value,
@@ -104,7 +136,10 @@ pub struct Host {
     directory: std::path::PathBuf,
     programs: BTreeMap<String, Program>,
     sessions: Mutex<Sessions>,
+    session_capacity: usize,
+    ecosystem_max_bars: usize,
     checkpoint_enabled: bool,
+    replay_enabled: bool,
     #[cfg(test)]
     source_reads: std::sync::atomic::AtomicUsize,
 }
@@ -119,39 +154,39 @@ impl Host {
 
     pub fn load(directory: &Path) -> Result<Self, BotError> {
         let mut programs = BTreeMap::new();
-        for &(name, hash) in QUALIFIED {
+        let ecosystem: BTreeMap<String, String> =
+            serde_json::from_str(include_str!("pine_inprocess/ecosystem-qualified.json"))
+                .map_err(io)?;
+        let qualified = QUALIFIED
+            .iter()
+            .map(|&(name, hash)| (name, hash, true))
+            .chain(
+                ecosystem
+                    .iter()
+                    .map(|(name, hash)| (name.as_str(), hash.as_str(), false)),
+            );
+        for (name, hash, checkpoint_qualified) in qualified {
             let source = match std::fs::read_to_string(directory.join("scripts").join(name)) {
-                Ok(source) => source.replace("\r\n", "\n").replace('\r', "\n"),
+                Ok(source) => source::normalize(&source),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(e) => return Err(io(e)),
             };
             if format!("{:x}", Sha256::digest(source.as_bytes())) != hash {
                 continue;
             }
-            // These exact sources contain one simple strategy declaration and
-            // no strategy.order lowering, exit protection or user loops.
-            let start = source
-                .find("strategy(")
-                .ok_or_else(|| error("missing strategy declaration"))?;
-            let end = source[start..].find(')').unwrap() + start;
-            let lowered = format!(
-                "{}, calc_on_order_fills=true{}",
-                &source[..end],
-                &source[end..]
-            );
-            let analysis = pine_sema::analyze_source(&pine_syntax::SourceFile::new(name, lowered));
-            if analysis
-                .diagnostics
-                .iter()
-                .any(|d| matches!(d.severity, pine_syntax::Severity::Error))
-            {
-                return Err(error(format!(
-                    "qualified Pine source failed analysis: {name}"
-                )));
+            let program = Program {
+                source,
+                name: name.into(),
+                program: std::sync::OnceLock::new(),
+                checkpoint_qualified,
+            };
+            // Keep original-source startup validation. Ecosystem programs are
+            // compiled exactly once, on demand, and shared across instances.
+            // An unused installed script should not penalize every room startup.
+            if checkpoint_qualified {
+                program.compiled()?;
             }
-            let program =
-                PreparedProgram::new(analysis.hir.ok_or_else(|| error("missing Pine HIR"))?);
-            programs.insert(name.into(), Program { source, program });
+            programs.insert(name.into(), program);
         }
         Ok(Self {
             source_identity: {
@@ -162,8 +197,30 @@ impl Host {
             directory: directory.to_owned(),
             programs,
             sessions: Mutex::default(),
+            session_capacity: match std::env::var("MARKETFORGE_PINE_SESSION_CAPACITY") {
+                Ok(value) => value
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|n| (1..=8192).contains(n))
+                    .ok_or_else(|| error("Pine session capacity must be within 1..8192"))?,
+                Err(std::env::VarError::NotPresent) => 4096,
+                Err(e) => return Err(io(e)),
+            },
+            // Legacy comparison mode only (REPLAY_STATE=0). Continuous replay
+            // state bypasses this routing threshold, including migration from
+            // schema 2; already committed schema 4 never returns to Python.
+            ecosystem_max_bars: match std::env::var("MARKETFORGE_PINE_ECOSYSTEM_MAX_BARS") {
+                Ok(value) => value
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|n| (1..=8192).contains(n))
+                    .ok_or_else(|| error("Pine ecosystem history bound must be within 1..8192"))?,
+                Err(std::env::VarError::NotPresent) => 128,
+                Err(e) => return Err(io(e)),
+            },
             checkpoint_enabled: std::env::var("MARKETFORGE_PINE_VM_CHECKPOINT").as_deref()
                 == Ok("1"),
+            replay_enabled: std::env::var("MARKETFORGE_PINE_REPLAY_STATE").as_deref() != Ok("0"),
             #[cfg(test)]
             source_reads: std::sync::atomic::AtomicUsize::new(0),
         })
@@ -182,9 +239,9 @@ impl Host {
             && matches!(request.plugin_version.as_str(), "1.0.0" | "2.0.0")
             && request.state_version == 1
             && request.config["execution_mode"] == "broker"
-            && request.config["script"]
-                .as_str()
-                .is_some_and(qualified_source)
+            && request.config["script"].as_str().is_some_and(|name| {
+                qualified_source(name) && self.config_profile(name, &request.config)
+            })
             && request.config["hedge_instrument_id"].as_str() == Some("")
             && request.config["inputs"]
                 .as_object()
@@ -243,6 +300,9 @@ impl Host {
         {
             return Some("source_unqualified");
         }
+        if !self.config_profile(config.config["script"].as_str().unwrap(), &config.config) {
+            return Some("ecosystem_config");
+        }
         if config.config["hedge_instrument_id"].as_str() != Some("") {
             return Some("hedging");
         }
@@ -262,6 +322,19 @@ impl Host {
             return Some("exit_protection");
         }
         None
+    }
+
+    fn config_profile(&self, name: &str, config: &Value) -> bool {
+        // The new ecosystem cohort was qualified with its original default
+        // inputs and explicit exchange-grid normalization. Other configurations
+        // stay on the process adapter until independently qualified.
+        self.programs.get(name).is_some_and(|program| {
+            program.checkpoint_qualified
+                || (config["quantize_strategy_orders"] == true
+                    && config["inputs"]
+                        .as_object()
+                        .is_some_and(|inputs| inputs.is_empty()))
+        })
     }
 
     /// One current-source snapshot is the admission point for this attempt.
@@ -294,6 +367,68 @@ impl Host {
         wave_source_checks: bool,
         on_direct: impl FnOnce(),
     ) -> DirectAttempt {
+        if let Some(program) = config.config["script"]
+            .as_str()
+            .and_then(|name| self.programs.get(name))
+        {
+            let count = observation
+                .bot_market_data
+                .as_ref()
+                .map_or(0, |data| {
+                    data.candles.len().max(
+                        data.streams
+                            .iter()
+                            .map(|s| s.candles.len())
+                            .max()
+                            .unwrap_or(0),
+                    )
+                })
+                .max(
+                    observation
+                        .related_markets
+                        .iter()
+                        .filter_map(|view| view.bot_market_data.as_ref())
+                        .map(|data| {
+                            data.candles.len().max(
+                                data.streams
+                                    .iter()
+                                    .map(|s| s.candles.len())
+                                    .max()
+                                    .unwrap_or(0),
+                            )
+                        })
+                        .max()
+                        .unwrap_or(0),
+                );
+            let saved = state["bars"].as_array().map_or(0, Vec::len).max(
+                state["providers"].as_object().map_or(0, |providers| {
+                    providers
+                        .values()
+                        .filter_map(Value::as_array)
+                        .map(Vec::len)
+                        .max()
+                        .unwrap_or(0)
+                }),
+            );
+            if !history_profile(
+                program.checkpoint_qualified,
+                count.max(saved),
+                self.ecosystem_max_bars,
+            ) && !self.replay_enabled
+                && state["broker_schema"] != 4
+            {
+                // Release speculative VM memory after handing the durable schema-2
+                // transcript back to the process adapter. No execution has begun.
+                if let Some(identity) = state["identity"].as_str() {
+                    let key = format!("{identity}:{}", config.seed);
+                    if let Ok(mut sessions) = self.sessions.lock() {
+                        sessions.entries.remove(&key);
+                        sessions.order.retain(|name| name != &key);
+                    }
+                }
+                return DirectAttempt::NotQualified("ecosystem_history");
+            }
+        }
         let mut source = None;
         let reason = self.ineligible_reason_with_source(config, state, |name| {
             source = if wave_source_checks {
@@ -407,7 +542,7 @@ impl Host {
         self.source_reads
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let source = std::fs::read_to_string(self.directory.join("scripts").join(name)).ok()?;
-        (source.replace("\r\n", "\n").replace('\r', "\n") == program.source)
+        (source::normalize(&source) == program.source)
             .then_some(VerifiedSource { host: self, name })
     }
 
@@ -421,8 +556,10 @@ impl Host {
         if let Some(value) = sessions.entries.get(identity) {
             return Ok(value.clone());
         }
-        // Same total bound as four process workers with 512 sessions each.
-        while sessions.entries.len() >= 2048 {
+        // Bound speculative VM memory independently of durable bot state.
+        // The 3,000-instance cohort otherwise repeatedly evicts a 2,048-entry
+        // cache. Eviction still rebuilds from the frozen committed transcript.
+        while sessions.entries.len() >= self.session_capacity {
             let old = sessions.order.pop_front().unwrap();
             sessions.entries.remove(&old);
         }
@@ -506,7 +643,10 @@ impl Host {
     ) -> Result<(Vec<Value>, Value), BotError> {
         // The source proof is private and belongs to this call. Still recheck
         // metadata and input binding before session access or state mutation.
-        if !value_profile(input, committed) || !source.matches(self, input) {
+        if !value_profile(input, committed)
+            || !source.matches(self, input)
+            || !self.config_profile(text(&input["config"]["script"])?, &input["config"])
+        {
             return Err(outside_profile());
         }
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
@@ -532,8 +672,23 @@ impl Host {
         if request_bytes > crate::bot_plugins::MAX_REQUEST_BYTES {
             return Err(error("bot request exceeds size limit"));
         }
+        let program = &self.programs[text(&input["config"]["script"])?];
+        if committed["broker_schema"] == 3 && !program.checkpoint_qualified {
+            return Err(error("source is not qualified for VM checkpoints"));
+        }
+        if committed["broker_schema"] == 4
+            || (self.replay_enabled
+                && !program.checkpoint_qualified
+                && (committed.is_null() || committed.as_object().is_some_and(|o| o.is_empty())))
+        {
+            if program.checkpoint_qualified {
+                return Err(error("source is not qualified for replay state"));
+            }
+            return checkpoint::decide(self, input, committed, deadline);
+        }
         if committed["broker_schema"] == 3
             || (self.checkpoint_enabled
+                && program.checkpoint_qualified
                 && (committed.is_null() || committed.as_object().is_some_and(|o| o.is_empty())))
         {
             return checkpoint::decide(self, input, committed, deadline);
@@ -541,13 +696,21 @@ impl Host {
         let config = &input["config"];
         let observation = &input["observation"];
         let program = &self.programs[text(&config["script"])?];
-        let identity = digest(
-            &json!({"source": program.source, "config":config, "participant":input["participant"]}),
-        )?;
-        let mut state = if committed.is_null() {
-            json!({})
-        } else {
-            committed.clone()
+        // The process broker omits the disabled opt-in flag from its persisted
+        // identity. Keep already committed direct schema-2 identities usable;
+        // new instances and Python-restored states use the canonical identity.
+        let identity =
+            schema_two_identity(&program.source, config, &input["participant"], committed)?;
+        let mut state = {
+            #[cfg(feature = "bench-execution-timing")]
+            let _timer = crate::bench_execution_timing::Timer::start(
+                &crate::bench_execution_timing::BOT_PINE_WORKING_CLONE,
+            );
+            if committed.is_null() {
+                json!({})
+            } else {
+                committed.clone()
+            }
         };
         if !state.as_object().is_some_and(|o| o.is_empty())
             && (state["identity"] != identity || state["broker_schema"] != 2)
@@ -611,7 +774,13 @@ impl Host {
             state["broker_schema"] = json!(2);
             state["initial_capital"] = serde_json::to_value(equity).map_err(io)?;
         }
-        broker::feedback(&mut state, &views, config)?;
+        {
+            #[cfg(feature = "bench-execution-timing")]
+            let _timer = crate::bench_execution_timing::Timer::start(
+                &crate::bench_execution_timing::BOT_PINE_BROKER_FEEDBACK,
+            );
+            broker::feedback(&mut state, &views, config)?;
+        }
         let mut actions = Vec::new();
         if bars.len() > previous.len() {
             let mut frames = take_array(&mut state, "accounts")?;
@@ -715,7 +884,7 @@ impl Host {
             });
             if !reusable {
                 let mut overrides = InputOverrides::new();
-                let calls = pine_runtime::input_calls(&program.program);
+                let calls = pine_runtime::input_calls(program.compiled()?);
                 for (title, value) in config["inputs"].as_object().unwrap() {
                     let matches: Vec<_> = calls
                         .iter()
@@ -755,7 +924,7 @@ impl Host {
                 .map_err(io)?;
                 let runtime =
                     HistoricalRuntime::from_prepared_with_request_environment_and_input_overrides(
-                        &program.program,
+                        program.compiled()?,
                         RequestEnvironment::new(chart, Arc::new(NoRequestDataProvider)),
                         overrides,
                     );
@@ -801,6 +970,10 @@ impl Host {
                 .iter()
                 .map(account_frame)
                 .collect::<Result<Vec<_>, _>>()?;
+            #[cfg(feature = "bench-execution-timing")]
+            let vm_timer = crate::bench_execution_timing::Timer::start(
+                &crate::bench_execution_timing::BOT_PINE_VM_EXECUTE,
+            );
             if reusable {
                 cached
                     .runtime
@@ -822,6 +995,8 @@ impl Host {
                         .collect::<Result<Vec<_>, _>>()?,
                 )
                 .map_err(|e| error(e.message))?;
+            #[cfg(feature = "bench-execution-timing")]
+            drop(vm_timer);
             let intents = serde_json::to_value(
                 cached
                     .runtime
@@ -851,7 +1026,7 @@ impl Host {
             state["evaluations"] = Value::Array(evaluations);
             actions.extend(broker::translate(
                 &latest,
-                program.program.strategy_settings.pyramiding_limit,
+                program.compiled()?.strategy_settings.pyramiding_limit,
                 &views,
                 config,
                 &mut state,
@@ -873,7 +1048,22 @@ impl Host {
                     }
             );
             state["bars"] = Value::Array(bars);
-            cached.transcript = json!({"bars":state["bars"],"accounts":state["accounts"],"providers":state["providers"],"evaluations":state["evaluations"]});
+            // Executed account/provider passes are no longer read by the VM.
+            // Keep the full authoritative transcript in schema 2 for recovery,
+            // but release its redundant per-pass VM copies after a successful
+            // confirmed boundary. This is the runtime's existing checked API.
+            cached
+                .runtime
+                .compact_external_feedback()
+                .map_err(|e| error(e.message))?;
+            {
+                #[cfg(feature = "bench-execution-timing")]
+                let _timer = crate::bench_execution_timing::Timer::start(
+                    &crate::bench_execution_timing::BOT_PINE_STAMP_CLONE,
+                );
+                cached.transcript = json!({"bars":state["bars"], "accounts":state["accounts"],
+                    "providers":state["providers"], "evaluations":state["evaluations"]});
+            }
             *slot = Some(cached);
         } else {
             crate::bot_runtime_diagnostics::record_evaluation("direct", "no_evaluation", None);
@@ -890,8 +1080,18 @@ impl Host {
             .unwrap_or(json!(-1));
         state["last_account"] = observation["own_account"].clone();
         state.as_object_mut().unwrap().remove("_next_wake_ms");
+        if self.replay_enabled
+            && !program.checkpoint_qualified
+            && state["evaluated_bars"].as_u64().is_some_and(|n| n > 0)
+        {
+            checkpoint::migrate_replay(self, input, &mut state, deadline)?;
+        }
         let metadata = json!({"protocol_version":input["protocol_version"],"plugin_id":input["plugin_id"],"plugin_version":input["plugin_version"],"state_version":input["state_version"]});
         // Add two object entries without cloning the large state or action array.
+        #[cfg(feature = "bench-execution-timing")]
+        let response_timer = crate::bench_execution_timing::Timer::start(
+            &crate::bench_execution_timing::BOT_PINE_RESPONSE_LENGTH,
+        );
         let size = python_json_len(&metadata, true)?
             + 2
             + 11
@@ -899,6 +1099,8 @@ impl Host {
             + 2
             + 9
             + python_json_len(&state, true)?;
+        #[cfg(feature = "bench-execution-timing")]
+        drop(response_timer);
         if actions.len() > 64 || size > 1_048_576 {
             return Err(error("Pine decision exceeds bot action/state limits"));
         }
@@ -911,6 +1113,32 @@ impl Host {
 
 fn outside_profile() -> BotError {
     error("request is outside the qualified in-process Pine profile")
+}
+
+fn schema_two_identity(
+    source: &str,
+    config: &Value,
+    participant: &Value,
+    committed: &Value,
+) -> Result<String, BotError> {
+    let mut canonical = config.clone();
+    if canonical["quantize_strategy_orders"] != true {
+        canonical
+            .as_object_mut()
+            .ok_or_else(|| error("invalid config"))?
+            .remove("quantize_strategy_orders");
+    }
+    let identity =
+        digest(&json!({"source": source, "config": canonical, "participant": participant}))?;
+    if canonical != *config && committed["broker_schema"] == 2 && committed["identity"] != identity
+    {
+        let legacy =
+            digest(&json!({"source": source, "config": config, "participant": participant}))?;
+        if committed["identity"] == legacy {
+            return Ok(legacy);
+        }
+    }
+    Ok(identity)
 }
 
 fn value_profile(input: &Value, committed: &Value) -> bool {
@@ -1020,4 +1248,10 @@ mod source_route_tests {
         assert_eq!(first.source_read_count(), 2);
         assert_eq!(second.source_read_count(), 0);
     }
+}
+
+// Only the newly qualified ecosystem cohort uses this measured routing bound.
+// Public differential probes deliberately exercise the full semantic profile.
+fn history_profile(original: bool, bars: usize, maximum: usize) -> bool {
+    original || bars <= maximum
 }

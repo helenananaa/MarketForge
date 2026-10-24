@@ -1,5 +1,6 @@
 //! Compact durable execution for the existing hash-qualified Pine programs.
-//! VM checkpoints plus at most 31 frozen passes replace full transcripts.
+//! Original sources use VM snapshots; ecosystem sources use compressed replay
+//! chunks. Both keep at most 31 unarchived passes and an authoritative cursor.
 //! Candle windows are authorized by the host's complete-prefix hash chain.
 use super::*;
 use exchange_core::{
@@ -8,6 +9,26 @@ use exchange_core::{
 use serde::Deserialize;
 
 const CHECKPOINT_EVERY: usize = 32;
+
+// The host may include the primary timeframe again in additional streams.
+// Preserve the legacy adapter's coalescing for identical public history, while
+// refusing contradictory histories for the same instrument/timeframe.
+fn insert_stream<'a>(
+    streams: &mut BTreeMap<String, &'a Value>,
+    key: String,
+    stream: &'a Value,
+) -> Result<(), BotError> {
+    if let Some(previous) = streams.get(&key) {
+        for field in ["interval_ms", "candles", "history_proof", "truncated"] {
+            if previous[field] != stream[field] {
+                return Err(error("conflicting duplicate requested stream"));
+            }
+        }
+    } else {
+        streams.insert(key, stream);
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 fn stamp(state: &Value) -> Value {
@@ -133,9 +154,10 @@ fn fresh(
     program: &Program,
     config: &Value,
     observation: &Value,
+    compact: bool,
 ) -> Result<HistoricalRuntime<'static>, BotError> {
     let mut overrides = InputOverrides::new();
-    let calls = pine_runtime::input_calls(&program.program);
+    let calls = pine_runtime::input_calls(program.compiled()?);
     for (title, value) in config["inputs"].as_object().unwrap() {
         let matches: Vec<_> = calls
             .iter()
@@ -159,36 +181,41 @@ fn fresh(
         }
         overrides.insert(call.call_site_id, PineValue::Int(value));
     }
-    let values = calls
-        .iter()
-        .map(|call| {
-            let value = call
-                .title
-                .as_ref()
-                .and_then(|title| config["inputs"].get(title));
-            let value = if let Some(value) = value {
-                number(value, -broker::MAX_EXACT)?
-            } else if let Some(PineValue::Int(value)) = call.default_value {
-                value
-            } else {
-                return Err(error("compact history requires fixed integer inputs"));
-            };
-            Ok((call.call_site_id, value))
-        })
-        .collect::<Result<Vec<_>, BotError>>()?;
-    let specialized = PreparedProgram::new(
-        pine_sema::specialize_integer_input_history(&program.program, &values)
-            .ok_or_else(|| error("Pine input history cannot be statically specialized"))?,
-    );
-    if specialized
-        .series_history
-        .iter()
-        .any(|requirement| requirement.has_dynamic_offsets)
-    {
-        return Err(error(
-            "Pine configured history has no static retention bound",
-        ));
-    }
+    let specialized = if compact {
+        let values = calls
+            .iter()
+            .map(|call| {
+                let value = call
+                    .title
+                    .as_ref()
+                    .and_then(|title| config["inputs"].get(title));
+                let value = if let Some(value) = value {
+                    number(value, -broker::MAX_EXACT)?
+                } else if let Some(PineValue::Int(value)) = call.default_value {
+                    value
+                } else {
+                    return Err(error("compact history requires fixed integer inputs"));
+                };
+                Ok((call.call_site_id, value))
+            })
+            .collect::<Result<Vec<_>, BotError>>()?;
+        let specialized = PreparedProgram::new(
+            pine_sema::specialize_integer_input_history(program.compiled()?, &values)
+                .ok_or_else(|| error("Pine input history cannot be statically specialized"))?,
+        );
+        if specialized
+            .series_history
+            .iter()
+            .any(|requirement| requirement.has_dynamic_offsets)
+        {
+            return Err(error(
+                "Pine configured history has no static retention bound",
+            ));
+        }
+        specialized
+    } else {
+        program.compiled()?.clone()
+    };
     let tick = observation["instrument"]
         .get("tick_size")
         .map(|v| number(v, 1))
@@ -213,7 +240,7 @@ fn fresh(
 
 // Preserve floating-point input bits across the real durable JSON parser as
 // well as VM snapshots, without changing the global host parser's features.
-fn freeze(value: Value) -> Value {
+pub(super) fn freeze(value: Value) -> Value {
     match value {
         Value::Number(ref n) if n.is_f64() => {
             json!({"$f64":format!("{:016x}", n.as_f64().unwrap().to_bits())})
@@ -255,10 +282,11 @@ fn thaw(value: &Value) -> Result<Value, BotError> {
     }
     Ok(value.clone())
 }
-fn append(
+pub(super) fn append(
     runtime: &mut HistoricalRuntime<'static>,
     frozen: &[Value],
     deadline: Instant,
+    compact_outputs: bool,
 ) -> Result<Vec<Value>, BotError> {
     if frozen.is_empty() {
         return Ok(vec![]);
@@ -299,8 +327,136 @@ fn append(
     runtime
         .compact_external_feedback()
         .map_err(|e| error(format!("{e:?}")))?;
-    runtime.compact_external_outputs();
+    if compact_outputs {
+        runtime.compact_external_outputs();
+    }
     Ok(array(&intents)?.clone())
+}
+
+/// One-time conversion after the legacy path has validated and advanced its
+/// complete transcript. Replay and compare every historical intent before
+/// replacing storage; broker state and the already-produced actions stay intact.
+pub(super) fn migrate_replay(
+    host: &Host,
+    input: &Value,
+    state: &mut Value,
+    deadline: Instant,
+) -> Result<(), BotError> {
+    let config = &input["config"];
+    let observation = &input["observation"];
+    let program = &host.programs[text(&config["script"])?];
+    let count = number(&state["evaluated_bars"], 1)? as usize;
+    let bars = array(&state["bars"])?;
+    let accounts = array(&state["accounts"])?;
+    let evaluations = array(&state["evaluations"])?;
+    if bars.len() != count || accounts.len() != count || evaluations.len() != count {
+        return Err(error("legacy replay migration cursor mismatch"));
+    }
+    let mut streams = BTreeMap::new();
+    let mut views = vec![observation];
+    if let Some(related) = observation.get("related_markets") {
+        views.extend(array(related)?);
+    }
+    for view in views {
+        if view["bot_market_data"]["private_history_complete"] != true {
+            return Err(error("complete authoritative private history required"));
+        }
+        let data = &view["bot_market_data"];
+        streams.insert(
+            format!(
+                "{}:{}",
+                text(&view["instrument_id"])?,
+                timeframe(number(&data["interval_ms"], 1)?)?
+            ),
+            data,
+        );
+    }
+    if let Some(additional) = observation["bot_market_data"].get("streams") {
+        for data in array(additional)? {
+            let key = format!(
+                "{}:{}",
+                text(&data["instrument_id"])?,
+                timeframe(number(&data["interval_ms"], 1)?)?
+            );
+            insert_stream(&mut streams, key, data)?;
+        }
+    }
+    let providers = state["providers"]
+        .as_object()
+        .ok_or_else(|| error("missing legacy providers"))?;
+    if providers.len() != streams.len() {
+        return Err(error("legacy requested stream disappeared"));
+    }
+    let mut audits = serde_json::Map::new();
+    for (key, data) in streams {
+        let current = broker::checkpoint_bars(data, number(&observation["market_time_ms"], 0)?)?;
+        if providers.get(&key) != Some(&json!(current)) {
+            return Err(error(
+                "legacy requested-data prefix changed during migration",
+            ));
+        }
+        audits.insert(key, audit_stream(data, None)?.1);
+    }
+    // This hash-qualified cohort contains no request.* or legacy security()
+    // calls. Its full chart/account transcript is sufficient for execution.
+    let passes = (0..count)
+        .map(|index| {
+            Ok(freeze(
+                serde_json::to_value(ExternalPass {
+                    account: account_frame(&accounts[index])?,
+                    bar: bar(&bars[index])?,
+                    event_time_ms: number(&evaluations[index]["time"], 0)?,
+                    confirmed: true,
+                    request_data: Some(vec![]),
+                })
+                .map_err(io)?,
+            ))
+        })
+        .collect::<Result<Vec<_>, BotError>>()?;
+    let mut runtime = fresh(program, config, observation, false)?;
+    let intents = append(&mut runtime, &passes, deadline, false)?;
+    if digest(&json!(intents))? != text(&state["intents_digest"])? {
+        return Err(error("legacy intents differ during replay migration"));
+    }
+    let identity = digest(
+        &json!({"source":program.source,"config":config,"participant":input["participant"]}),
+    )?;
+    let old_identity = text(&state["identity"])?.to_owned();
+    state["identity"] = json!(identity);
+    state["broker_schema"] = json!(4);
+    state["vm_checkpoint"] = replay_log::empty();
+    state["vm_tail"] = json!([]);
+    state["vm_tail_intents"] = json!([]);
+    replay_log::commit(state, passes, intents, count as u64)?;
+    state["candle_audits"] = Value::Object(audits);
+    for key in [
+        "bars",
+        "accounts",
+        "providers",
+        "evaluations",
+        "intents_digest",
+    ] {
+        state.as_object_mut().unwrap().remove(key);
+    }
+    state["execution_seal"] = json!(execution_seal(state)?);
+    let mut stamp = stamp_cache::Stamp::default();
+    stamp.update(state).map_err(io)?;
+    // Release the old, full-transcript session and seed the compact path. No
+    // speculative cache is authoritative; an uncommitted retry still rebuilds.
+    *host
+        .session(&format!("{old_identity}:{}", input["seed"]))?
+        .lock()
+        .map_err(io)? = None;
+    *host
+        .session(&format!("checkpoint:{identity}:{}", input["seed"]))?
+        .lock()
+        .map_err(io)? = Some(Session {
+        runtime,
+        transcript: Value::Null,
+        checkpoint_stamp: Some(stamp),
+        settings: json!({"config":config,"seed":input["seed"],"tick":observation["instrument"]["tick_size"],"primary":observation["instrument_id"]}),
+    });
+    Ok(())
 }
 
 pub(super) fn decide(
@@ -312,6 +468,7 @@ pub(super) fn decide(
     let config = &input["config"];
     let observation = &input["observation"];
     let program = &host.programs[text(&config["script"])?];
+    let schema = if program.checkpoint_qualified { 3 } else { 4 };
     let identity = digest(
         &json!({"source":program.source,"config":config,"participant":input["participant"]}),
     )?;
@@ -327,7 +484,7 @@ pub(super) fn decide(
         }
     };
     let cold = state.as_object().is_some_and(|v| v.is_empty());
-    if !cold && (state["broker_schema"] != 3 || state["identity"] != identity) {
+    if !cold && (state["broker_schema"] != schema || state["identity"] != identity) {
         return Err(error("Pine checkpoint source/config/account changed"));
     }
     if !cold && state["execution_seal"].as_str() != Some(execution_seal(&state)?.as_str()) {
@@ -385,9 +542,10 @@ pub(super) fn decide(
                 text(&stream["instrument_id"])?,
                 timeframe(number(&stream["interval_ms"], 1)?)?
             );
-            if streams.insert(key, stream).is_some() {
+            if schema == 3 && streams.contains_key(&key) {
                 return Err(error("duplicate requested stream"));
             }
+            insert_stream(&mut streams, key, stream)?;
         }
     }
     if let Some(old) = state.get("candle_audits").and_then(Value::as_object)
@@ -464,8 +622,11 @@ pub(super) fn decide(
                         .unwrap_or(number(&config["initial_avg_price_tick"], 0)?)
                         as i128
         };
-        state = json!({"identity":identity,"broker_schema":3,"initial_capital":equity,
+        state = json!({"identity":identity,"broker_schema":schema,"initial_capital":equity,
             "vm_checkpoint":null,"vm_tail":[],"vm_tail_intents":[],"evaluated_bars":0});
+        if schema == 4 {
+            state["vm_checkpoint"] = replay_log::empty();
+        }
     }
     {
         #[cfg(feature = "bench-execution-timing")]
@@ -512,15 +673,19 @@ pub(super) fn decide(
         let mut cached = if reusable {
             cached.unwrap()
         } else {
-            let mut runtime = fresh(program, config, observation)?;
-            if !state["vm_checkpoint"].is_null() {
-                runtime
-                    .restore_external_checkpoint(&state["vm_checkpoint"], &identity)
-                    .map_err(|e| error(format!("{e:?}")))?;
-            }
-            let replayed = append(&mut runtime, array(&state["vm_tail"])?, deadline)?;
-            if freeze(Value::Array(replayed)) != state["vm_tail_intents"] {
-                return Err(error("checkpoint tail intents differ on recovery"));
+            let mut runtime = fresh(program, config, observation, schema == 3)?;
+            if schema == 4 {
+                replay_log::restore(&mut runtime, &state, deadline)?;
+            } else {
+                if !state["vm_checkpoint"].is_null() {
+                    runtime
+                        .restore_external_checkpoint(&state["vm_checkpoint"], &identity)
+                        .map_err(|e| error(format!("{e:?}")))?;
+                }
+                let replayed = append(&mut runtime, array(&state["vm_tail"])?, deadline, true)?;
+                if freeze(Value::Array(replayed)) != state["vm_tail_intents"] {
+                    return Err(error("checkpoint tail intents differ on recovery"));
+                }
             }
             Session {
                 runtime,
@@ -584,7 +749,7 @@ pub(super) fn decide(
             };
             frozen.push(freeze(serde_json::to_value(pass).map_err(io)?));
         }
-        let intents = append(&mut cached.runtime, &frozen, deadline)?;
+        let intents = append(&mut cached.runtime, &frozen, deadline, schema == 3)?;
         let latest = intents
             .iter()
             .filter(|v| v["bar_index"].as_u64() == Some(count - 1))
@@ -597,32 +762,36 @@ pub(super) fn decide(
             );
             actions.extend(broker::translate(
                 &latest,
-                program.program.strategy_settings.pyramiding_limit,
+                program.compiled()?.strategy_settings.pyramiding_limit,
                 &views,
                 config,
                 &mut state,
             )?);
         }
-        let mut tail = take_array(&mut state, "vm_tail")?;
-        tail.extend(frozen);
-        let mut tail_intents = take_array(&mut state, "vm_tail_intents")?;
-        tail_intents.extend(intents.into_iter().map(freeze));
-        if tail.len() >= CHECKPOINT_EVERY {
-            state["vm_checkpoint"] = {
-                #[cfg(feature = "bench-execution-timing")]
-                let _phase_timer = crate::bench_execution_timing::Timer::start(
-                    &crate::bench_execution_timing::BOT_PINE_VM_CHECKPOINT,
-                );
-                cached
-                    .runtime
-                    .export_external_checkpoint(&identity)
-                    .map_err(|e| error(format!("{e:?}")))?
-            };
-            tail.clear();
-            tail_intents.clear();
+        if schema == 4 {
+            replay_log::commit(&mut state, frozen, intents, count)?;
+        } else {
+            let mut tail = take_array(&mut state, "vm_tail")?;
+            tail.extend(frozen);
+            let mut tail_intents = take_array(&mut state, "vm_tail_intents")?;
+            tail_intents.extend(intents.into_iter().map(freeze));
+            if tail.len() >= CHECKPOINT_EVERY {
+                state["vm_checkpoint"] = {
+                    #[cfg(feature = "bench-execution-timing")]
+                    let _phase_timer = crate::bench_execution_timing::Timer::start(
+                        &crate::bench_execution_timing::BOT_PINE_VM_CHECKPOINT,
+                    );
+                    cached
+                        .runtime
+                        .export_external_checkpoint(&identity)
+                        .map_err(|e| error(format!("{e:?}")))?
+                };
+                tail.clear();
+                tail_intents.clear();
+            }
+            state["vm_tail"] = Value::Array(tail);
+            state["vm_tail_intents"] = Value::Array(tail_intents);
         }
-        state["vm_tail"] = Value::Array(tail);
-        state["vm_tail_intents"] = Value::Array(tail_intents);
         state["evaluated_bars"] = json!(count);
         state["last_bar_time"] = bars.last().unwrap()["time"].clone();
         state["last_intents"] = Value::Array(latest);

@@ -6,11 +6,17 @@ eligible Pine instances. Existing schema-2 instances keep their original full
 transcript protocol. Do not relabel an old state or erase its history to migrate
 an active account.
 
-The eligibility boundary remains the six exact installed Pine source hashes,
+The schema-3 eligibility boundary remains the six exact installed Pine source hashes,
 broker execution, integer input overrides, no automatic hedge and no exit
 protection. This change executes their compiled Pine programs; it does not
 replace them with separately handwritten strategy implementations. Arbitrary
-Pine source is still outside this qualified path.
+Pine source is still outside this checkpoint-qualified path. The separate
+[ecosystem direct cohort](validation/2026-10-24-pine-continuous.md) admits 201 exact
+sources using schema 4 compressed replay logs. Those logs retain full historical
+inputs and replay all of them on cold recovery; they are not schema-3 VM snapshots.
+Only that ecosystem cohort migrates existing schema-2 state after verifying all
+historical intents. The original six sources retain the schema-2 contract described
+above when restoring an existing schema-2 state.
 
 V9 verifies source once at each direct admission: it reads the complete current
 file and compares it exactly, after newline normalization, with the qualified
@@ -29,7 +35,7 @@ metadata check cannot authorize execution.
 
 Once direct execution starts, any error is returned without retrying through
 the process adapter. Only an initially unqualified route can consider the
-existing process path for compatible legacy state; schema 3 rejects that path
+existing process path for compatible legacy state; schemas 3 and 4 reject that path
 explicitly. Source-check multiplicity was normally two per direct call in v8
 and is normally one per admitted attempt in v9; this is a behavior description,
 not a measured performance claim.
