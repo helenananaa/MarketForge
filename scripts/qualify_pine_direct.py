@@ -33,6 +33,8 @@ def main():
     parser.add_argument("--replay-state", action="store_true")
     parser.add_argument("--check-migration", action="store_true",
                         help="also convert the Python state at bar 129 and retry from disk")
+    parser.add_argument("--check-errors", action="store_true",
+                        help="compare exact interpreter errors and retry from the last committed state")
     parser.add_argument("--timeout-ms", type=int, default=30000)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
@@ -86,7 +88,31 @@ def main():
                             for receipt in req["state"]["_host_receipts"]:
                                 receipt.update(accepted=False, order_id=None, error="qualification rejection")
                             rust_req["state"]["_host_receipts"] = copy.deepcopy(req["state"]["_host_receipts"])
-                        expected = bot.decide(copy.deepcopy(req))
+                        # Production requests pass through serde_json's sorted
+                        # object maps, including persisted exit insertion order.
+                        req = json.loads(json.dumps(req, sort_keys=True))
+                        rust_req = json.loads(json.dumps(rust_req, sort_keys=True))
+                        try:
+                            expected = bot.decide(copy.deepcopy(req))
+                        except Exception as error:
+                            if not args.check_errors:
+                                raise
+                            # An invalid strategy value must still fail closed,
+                            # both in a cached session and after cold recovery.
+                            for reset in (False, True):
+                                failed = rust(rust_req, reset)
+                                raw_error = failed.get("error")
+                                rust_error = raw_error
+                                # The Rust probe formats the runtime error's
+                                # typed wrapper; Python exposes its message.
+                                prefix = 'RuntimeError { message: '
+                                if isinstance(rust_error, str) and rust_error.startswith(prefix) and rust_error.endswith(' }'):
+                                    rust_error = json.loads(rust_error[len(prefix):-2])
+                                if rust_error != str(error) or "response" in failed:
+                                    raise AssertionError(f"error mismatch: Python={error}; Rust={failed}") from error
+                                row["comparisons"] += 1
+                            row.setdefault("matched_errors", []).append({"seed":seed, "bar":end, "error":str(error), "rust_error":raw_error})
+                            continue
                         actual = rust(rust_req, reset=end in (1,33,128,129,512))
                         reference = trading_projection(expected) if args.replay_state else expected
                         response = actual.get("response")

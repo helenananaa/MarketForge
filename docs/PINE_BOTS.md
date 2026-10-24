@@ -320,9 +320,17 @@ loopback 服务端，证据写入 `target/pine-http/`。
 构建 `exchange-server` 时启用 `--features pine-in-process`，并设置
 `MARKETFORGE_PINE_IN_PROCESS=1`，可使用现有 Rust Pine 解释器和交易适配层。
 原有 6 个精确源码之外，`exchange-server/src/pine_inprocess/ecosystem-qualified.json`
-增加 201 个精确源码 SHA256；这批脚本要求默认输入、显式
-`quantize_strategy_orders=true`，不支持自动对冲、`strategy.exit`、`strategy.order`
-或条件入场。源码改变会撤销准入，执行失败不会悄悄转交另一执行器重试。
+增加 201 个精确源码 SHA256；`exits-qualified.json` 再准入 11 个固定单一退出 ID
+的脚本，支持现有永续止盈止损适配。两组都要求默认输入和显式
+`quantize_strategy_orders=true`。自动对冲、`strategy.order`、条件入场，以及未列入
+独立准入表的退出策略继续使用进程适配层。源码改变会撤销准入，执行失败不会悄悄
+转交另一执行器重试。
+
+退出规格的更新、触发锁定、拒单重试、撤销核对、共享平仓预算和价格唤醒沿用 Python
+行为；仍通过相同交易网关提交。多退出 ID 暂不准入：Python 常驻缓存的插入顺序与
+JSON 冷恢复的键顺序可能不同，真实网关对照已发现命令顺序和拒单差异。不能只扩大
+名单；需要先明确并持久保存顺序语义，再通过逐笔回执及跨进程恢复验收。见
+[退出适配验证](validation/2026-10-24-pine-exits.md)。
 
 这批策略默认使用 schema 4 分块重放记录，超过 128 根后继续留在 Rust。
 正常运行复用 VM，只追加新数据；持久状态保留全部历史输入和原调用批次，以压缩块

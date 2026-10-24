@@ -1,0 +1,4260 @@
+{
+  "scope": "Opt-in, exact-hash, single fixed exit ID sources; unchanged trading semantics. Not universal speedup or production capacity qualification.",
+  "git_head": "b494d636fbe45ee3efd0480eec0a560857b2f4a1",
+  "added_sources": {
+    "ecosystem/library/0bbcfc33ace17047.pine": "0bbcfc33ace170475817a83239e43ba73faf06874339a189d1be53dbb5b9640b",
+    "ecosystem/library/1d966b917a19887f.pine": "1d966b917a19887f80881413ae8be040d5ecb9d6cc92150d00c9b3f54df048ab",
+    "ecosystem/library/37c9fe91c8bb0c11.pine": "37c9fe91c8bb0c11fc3d11497384f9c1b0db7b2d651944b5491ec6d4f020f15f",
+    "ecosystem/library/445aab19da9dec03.pine": "445aab19da9dec035c23f833578d6c81ed7414f06f4b589d1d87c570e3f390bb",
+    "ecosystem/library/4bf311a1c1d045a5.pine": "4bf311a1c1d045a5be7303c27c3b2a4b4d8ec0a7ae63007e1df5a7dc92c554cb",
+    "ecosystem/library/5f281234241c558c.pine": "5f281234241c558c8017c47acc93b1860f28ed2ed9827ec0ff6f5b400094d8de",
+    "ecosystem/library/69d77b08d3ec70f5.pine": "69d77b08d3ec70f579337bfce7bc1c1a86c1b085d68fd258fc6002d37050bd6c",
+    "ecosystem/library/7e6f8d9809699bb1.pine": "7e6f8d9809699bb16026faf3f42e07a95c8480b0bffcc848ceb6549d54bbb407",
+    "ecosystem/library/acadb920444d17a1.pine": "acadb920444d17a13857cc7a7e81884b7f4db56e823bdcbac1acb83b2d65365b",
+    "ecosystem/library/d4e09690084cd781.pine": "d4e09690084cd78173ca8534b5e08e2b8f5cb46281bcda027814ee6fbb7d1718",
+    "ecosystem/library/fcbb24e7080c73f4.pine": "fcbb24e7080c73f4c5c7ed256a799050118d280206ec2e0d67406c5e3daea828"
+  },
+  "added_instances": 138,
+  "total_direct_sources": 212,
+  "total_direct_instances": 2635,
+  "pine_instances": 3000,
+  "research": {
+    "plan_sha256": "cc6c44935d0e833a9a45c8f02325f271eeba35779e458652031d8398484611d4",
+    "runs": [
+      {
+        "variant": "before",
+        "case": "scale",
+        "wall_seconds": 33.83325309999964,
+        "phases_seconds": {
+          "accept": 0.2,
+          "builtin": 3.6,
+          "clock": 1.7,
+          "observe_plugin": 1.4,
+          "plugins_busy": 151.6,
+          "plugins_wall": 10.6,
+          "receipts": 0.1,
+          "screen": 1.9,
+          "submit": 8.6,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.0,
+          "submit_gateway": 8.3,
+          "wave": 1.0
+        },
+        "receipt_sha256": "997daa824b9f8629ffeb75df676c433a8552fc7759e28b25a717c58e768f17fa",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "267eb17086a0f258e6bf3280ee5dc72a3ba5a7cc6a62b4992e1f6e1f12a82410",
+        "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+        "profile": "profile step=1800 accept=0.2s builtin=3.6s clock=1.7s observe_plugin=1.4s plugins_busy=151.6s plugins_wall=10.6s receipts=0.1s screen=1.9s submit=8.6s submit_audit=0.0s submit_feedback=0.0s submit_gateway=8.3s wave=1.0s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\00-before-scale.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\00-before-scale.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 56045",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 50269",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 3279",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 2497",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 9559",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 7698",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 18324",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"replay\",reason=\"source_unqualified\"} 588",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 479"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "df08d652705deed662b5b9d2dd254ae2bcf53eaf6ead84e917219a13c1d6d3de",
+        "resources": {
+          "peak_sampled_rss_mib": 2354.87109375,
+          "peak_processes": 33,
+          "average_logical_cores": 4.212055068510828,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 17277,
+          "V-BTC-SPOT": 18544
+        }
+      },
+      {
+        "variant": "after",
+        "case": "scale",
+        "wall_seconds": 31.630362899999454,
+        "phases_seconds": {
+          "accept": 0.2,
+          "builtin": 3.6,
+          "clock": 1.7,
+          "observe_plugin": 1.5,
+          "plugins_busy": 135.1,
+          "plugins_wall": 9.1,
+          "receipts": 0.1,
+          "screen": 1.9,
+          "submit": 8.5,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.0,
+          "submit_gateway": 8.2,
+          "wave": 1.0
+        },
+        "receipt_sha256": "795281b2d44ae54bd5126d84e54517feff56dda0e83a7d03794344276c274412",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "7c3f8351a29912339b5678f9049deb8b5c62d3cf7eac412e227bad8c98119108",
+        "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+        "profile": "profile step=1800 accept=0.2s builtin=3.6s clock=1.7s observe_plugin=1.5s plugins_busy=135.1s plugins_wall=9.1s receipts=0.1s screen=1.9s submit=8.5s submit_audit=0.0s submit_feedback=0.0s submit_gateway=8.2s wave=1.0s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\01-after-scale.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\01-after-scale.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 64015",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 53175",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 8205",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 2635",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 6653",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 2772",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 10354",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"replay\",reason=\"source_unqualified\"} 588",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 341"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "df08d652705deed662b5b9d2dd254ae2bcf53eaf6ead84e917219a13c1d6d3de",
+        "resources": {
+          "peak_sampled_rss_mib": 2288.74609375,
+          "peak_processes": 33,
+          "average_logical_cores": 4.209295670230811,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 17277,
+          "V-BTC-SPOT": 18544
+        }
+      },
+      {
+        "variant": "after",
+        "case": "scale",
+        "wall_seconds": 40.0596031999994,
+        "phases_seconds": {
+          "accept": 0.2,
+          "builtin": 4.8,
+          "clock": 2.1,
+          "observe_plugin": 2.0,
+          "plugins_busy": 146.8,
+          "plugins_wall": 10.0,
+          "receipts": 0.2,
+          "screen": 2.4,
+          "submit": 11.8,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.0,
+          "submit_gateway": 11.3,
+          "wave": 1.3
+        },
+        "receipt_sha256": "795281b2d44ae54bd5126d84e54517feff56dda0e83a7d03794344276c274412",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "7c3f8351a29912339b5678f9049deb8b5c62d3cf7eac412e227bad8c98119108",
+        "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+        "profile": "profile step=1800 accept=0.2s builtin=4.8s clock=2.1s observe_plugin=2.0s plugins_busy=146.8s plugins_wall=10.0s receipts=0.2s screen=2.4s submit=11.8s submit_audit=0.0s submit_feedback=0.0s submit_gateway=11.3s wave=1.3s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\02-after-scale.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\02-after-scale.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 64015",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 53175",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 8205",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 2635",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 6653",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 2772",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 10354",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"replay\",reason=\"source_unqualified\"} 588",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 341"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "df08d652705deed662b5b9d2dd254ae2bcf53eaf6ead84e917219a13c1d6d3de",
+        "resources": {
+          "peak_sampled_rss_mib": 2289.01171875,
+          "peak_processes": 33,
+          "average_logical_cores": 3.520679968234161,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 17277,
+          "V-BTC-SPOT": 18544
+        }
+      },
+      {
+        "variant": "before",
+        "case": "scale",
+        "wall_seconds": 43.93728059999921,
+        "phases_seconds": {
+          "accept": 0.2,
+          "builtin": 5.2,
+          "clock": 2.2,
+          "observe_plugin": 2.0,
+          "plugins_busy": 162.6,
+          "plugins_wall": 11.5,
+          "receipts": 0.2,
+          "screen": 2.5,
+          "submit": 12.9,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.0,
+          "submit_gateway": 12.4,
+          "wave": 1.4
+        },
+        "receipt_sha256": "997daa824b9f8629ffeb75df676c433a8552fc7759e28b25a717c58e768f17fa",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "267eb17086a0f258e6bf3280ee5dc72a3ba5a7cc6a62b4992e1f6e1f12a82410",
+        "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+        "profile": "profile step=1800 accept=0.2s builtin=5.2s clock=2.2s observe_plugin=2.0s plugins_busy=162.6s plugins_wall=11.5s receipts=0.2s screen=2.5s submit=12.9s submit_audit=0.0s submit_feedback=0.0s submit_gateway=12.4s wave=1.4s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\03-before-scale.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\03-before-scale.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 56045",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 50269",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 3279",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 2497",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 9559",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 7698",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 18324",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"replay\",reason=\"source_unqualified\"} 588",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 479"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "df08d652705deed662b5b9d2dd254ae2bcf53eaf6ead84e917219a13c1d6d3de",
+        "resources": {
+          "peak_sampled_rss_mib": 2338.046875,
+          "peak_processes": 33,
+          "average_logical_cores": 3.501499166529645,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 17277,
+          "V-BTC-SPOT": 18544
+        }
+      },
+      {
+        "variant": "before",
+        "case": "scale",
+        "wall_seconds": 41.13030319999962,
+        "phases_seconds": {
+          "accept": 0.2,
+          "builtin": 4.7,
+          "clock": 2.2,
+          "observe_plugin": 1.8,
+          "plugins_busy": 164.1,
+          "plugins_wall": 11.5,
+          "receipts": 0.2,
+          "screen": 2.3,
+          "submit": 11.6,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.0,
+          "submit_gateway": 11.2,
+          "wave": 1.3
+        },
+        "receipt_sha256": "997daa824b9f8629ffeb75df676c433a8552fc7759e28b25a717c58e768f17fa",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "267eb17086a0f258e6bf3280ee5dc72a3ba5a7cc6a62b4992e1f6e1f12a82410",
+        "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+        "profile": "profile step=1800 accept=0.2s builtin=4.7s clock=2.2s observe_plugin=1.8s plugins_busy=164.1s plugins_wall=11.5s receipts=0.2s screen=2.3s submit=11.6s submit_audit=0.0s submit_feedback=0.0s submit_gateway=11.2s wave=1.3s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\04-before-scale.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\04-before-scale.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 56045",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 50269",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 3279",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 2497",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 9559",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 7698",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 18324",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"replay\",reason=\"source_unqualified\"} 588",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 479"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "df08d652705deed662b5b9d2dd254ae2bcf53eaf6ead84e917219a13c1d6d3de",
+        "resources": {
+          "peak_sampled_rss_mib": 2336.89453125,
+          "peak_processes": 33,
+          "average_logical_cores": 3.6877829506796695,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 17277,
+          "V-BTC-SPOT": 18544
+        }
+      },
+      {
+        "variant": "after",
+        "case": "scale",
+        "wall_seconds": 44.162730699999884,
+        "phases_seconds": {
+          "accept": 0.2,
+          "builtin": 5.6,
+          "clock": 2.4,
+          "observe_plugin": 2.2,
+          "plugins_busy": 144.5,
+          "plugins_wall": 9.8,
+          "receipts": 0.2,
+          "screen": 2.6,
+          "submit": 13.6,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.0,
+          "submit_gateway": 13.1,
+          "wave": 1.5
+        },
+        "receipt_sha256": "795281b2d44ae54bd5126d84e54517feff56dda0e83a7d03794344276c274412",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "7c3f8351a29912339b5678f9049deb8b5c62d3cf7eac412e227bad8c98119108",
+        "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+        "profile": "profile step=1800 accept=0.2s builtin=5.6s clock=2.4s observe_plugin=2.2s plugins_busy=144.5s plugins_wall=9.8s receipts=0.2s screen=2.6s submit=13.6s submit_audit=0.0s submit_feedback=0.0s submit_gateway=13.1s wave=1.5s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\05-after-scale.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\05-after-scale.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 64015",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 53175",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 8205",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 2635",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 6653",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 2772",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 10354",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"replay\",reason=\"source_unqualified\"} 588",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 341"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "df08d652705deed662b5b9d2dd254ae2bcf53eaf6ead84e917219a13c1d6d3de",
+        "resources": {
+          "peak_sampled_rss_mib": 2247.62890625,
+          "peak_processes": 33,
+          "average_logical_cores": 3.2491570529837515,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 17277,
+          "V-BTC-SPOT": 18544
+        }
+      },
+      {
+        "variant": "before",
+        "case": "long",
+        "wall_seconds": 47.777969400000075,
+        "phases_seconds": {
+          "accept": 0.1,
+          "builtin": 5.7,
+          "clock": 1.2,
+          "observe_plugin": 2.6,
+          "plugins_busy": 197.1,
+          "plugins_wall": 21.7,
+          "receipts": 0.2,
+          "screen": 0.1,
+          "submit": 13.3,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.1,
+          "submit_gateway": 12.9,
+          "wave": 1.3
+        },
+        "receipt_sha256": "44b50c1c1c42b8c3e099bb61f0081e734d19b8521d0f10582ff1a7d17cb84fc0",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "267eb17086a0f258e6bf3280ee5dc72a3ba5a7cc6a62b4992e1f6e1f12a82410",
+        "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+        "profile": "profile step=1500 accept=0.1s builtin=5.7s clock=1.2s observe_plugin=2.6s plugins_busy=197.1s plugins_wall=21.7s receipts=0.2s screen=0.1s submit=13.3s submit_audit=0.0s submit_feedback=0.1s submit_gateway=12.9s wave=1.3s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\06-before-long.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\06-before-long.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 28381",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 28138",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 224",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 19",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 7430",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 65",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 7500",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 5"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "e8c81aa02527de3ebf6b519d394a27f38520aec255d038f3f71511500b5926f1",
+        "resources": {
+          "peak_sampled_rss_mib": 1303.2421875,
+          "peak_processes": 9,
+          "average_logical_cores": 3.9018290041190804,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 28374,
+          "V-BTC-SPOT": 29909
+        }
+      },
+      {
+        "variant": "after",
+        "case": "long",
+        "wall_seconds": 46.27288670000053,
+        "phases_seconds": {
+          "accept": 0.1,
+          "builtin": 5.3,
+          "clock": 1.1,
+          "observe_plugin": 2.4,
+          "plugins_busy": 199.1,
+          "plugins_wall": 21.5,
+          "receipts": 0.2,
+          "screen": 0.1,
+          "submit": 12.9,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.1,
+          "submit_gateway": 12.6,
+          "wave": 1.2
+        },
+        "receipt_sha256": "f510e781c4005bf0a314cad42c29495f1998b8e5673a2abae9a424ce0ca1630a",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "7c3f8351a29912339b5678f9049deb8b5c62d3cf7eac412e227bad8c98119108",
+        "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+        "profile": "profile step=1500 accept=0.1s builtin=5.3s clock=1.1s observe_plugin=2.4s plugins_busy=199.1s plugins_wall=21.5s receipts=0.2s screen=0.1s submit=12.9s submit_audit=0.0s submit_feedback=0.1s submit_gateway=12.6s wave=1.2s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\07-after-long.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\07-after-long.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 29881",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 29624",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 237",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 20",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 5944",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 52",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 6000",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 4"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "e8c81aa02527de3ebf6b519d394a27f38520aec255d038f3f71511500b5926f1",
+        "resources": {
+          "peak_sampled_rss_mib": 1287.59375,
+          "peak_processes": 7,
+          "average_logical_cores": 3.9857274696674945,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 28374,
+          "V-BTC-SPOT": 29909
+        }
+      },
+      {
+        "variant": "after",
+        "case": "long",
+        "wall_seconds": 44.31415720000041,
+        "phases_seconds": {
+          "accept": 0.1,
+          "builtin": 4.8,
+          "clock": 1.2,
+          "observe_plugin": 2.3,
+          "plugins_busy": 201.1,
+          "plugins_wall": 21.6,
+          "receipts": 0.2,
+          "screen": 0.1,
+          "submit": 11.9,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.1,
+          "submit_gateway": 11.6,
+          "wave": 1.1
+        },
+        "receipt_sha256": "f510e781c4005bf0a314cad42c29495f1998b8e5673a2abae9a424ce0ca1630a",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "7c3f8351a29912339b5678f9049deb8b5c62d3cf7eac412e227bad8c98119108",
+        "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+        "profile": "profile step=1500 accept=0.1s builtin=4.8s clock=1.2s observe_plugin=2.3s plugins_busy=201.1s plugins_wall=21.6s receipts=0.2s screen=0.1s submit=11.9s submit_audit=0.0s submit_feedback=0.1s submit_gateway=11.6s wave=1.1s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\08-after-long.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\08-after-long.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 29881",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 29624",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 237",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 20",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 5944",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 52",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 6000",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 4"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "e8c81aa02527de3ebf6b519d394a27f38520aec255d038f3f71511500b5926f1",
+        "resources": {
+          "peak_sampled_rss_mib": 1295.234375,
+          "peak_processes": 7,
+          "average_logical_cores": 4.175498355815772,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 28374,
+          "V-BTC-SPOT": 29909
+        }
+      },
+      {
+        "variant": "before",
+        "case": "long",
+        "wall_seconds": 43.59704310000052,
+        "phases_seconds": {
+          "accept": 0.1,
+          "builtin": 4.6,
+          "clock": 1.2,
+          "observe_plugin": 2.3,
+          "plugins_busy": 199.1,
+          "plugins_wall": 21.6,
+          "receipts": 0.2,
+          "screen": 0.1,
+          "submit": 11.4,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.1,
+          "submit_gateway": 11.1,
+          "wave": 1.1
+        },
+        "receipt_sha256": "44b50c1c1c42b8c3e099bb61f0081e734d19b8521d0f10582ff1a7d17cb84fc0",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "267eb17086a0f258e6bf3280ee5dc72a3ba5a7cc6a62b4992e1f6e1f12a82410",
+        "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+        "profile": "profile step=1500 accept=0.1s builtin=4.6s clock=1.2s observe_plugin=2.3s plugins_busy=199.1s plugins_wall=21.6s receipts=0.2s screen=0.1s submit=11.4s submit_audit=0.0s submit_feedback=0.1s submit_gateway=11.1s wave=1.1s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\09-before-long.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\09-before-long.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 28381",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 28138",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 224",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 19",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 7430",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 65",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 7500",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 5"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "e8c81aa02527de3ebf6b519d394a27f38520aec255d038f3f71511500b5926f1",
+        "resources": {
+          "peak_sampled_rss_mib": 1301.375,
+          "peak_processes": 9,
+          "average_logical_cores": 4.289112750903458,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 28374,
+          "V-BTC-SPOT": 29909
+        }
+      },
+      {
+        "variant": "before",
+        "case": "long",
+        "wall_seconds": 39.51835879999999,
+        "phases_seconds": {
+          "accept": 0.1,
+          "builtin": 4.2,
+          "clock": 1.0,
+          "observe_plugin": 2.1,
+          "plugins_busy": 185.5,
+          "plugins_wall": 19.8,
+          "receipts": 0.2,
+          "screen": 0.1,
+          "submit": 10.1,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.1,
+          "submit_gateway": 9.9,
+          "wave": 1.0
+        },
+        "receipt_sha256": "44b50c1c1c42b8c3e099bb61f0081e734d19b8521d0f10582ff1a7d17cb84fc0",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "267eb17086a0f258e6bf3280ee5dc72a3ba5a7cc6a62b4992e1f6e1f12a82410",
+        "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+        "profile": "profile step=1500 accept=0.1s builtin=4.2s clock=1.0s observe_plugin=2.1s plugins_busy=185.5s plugins_wall=19.8s receipts=0.2s screen=0.1s submit=10.1s submit_audit=0.0s submit_feedback=0.1s submit_gateway=9.9s wave=1.0s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\10-before-long.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\10-before-long.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 28381",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 28138",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 224",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 19",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 7430",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 65",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 7500",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 5"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "e8c81aa02527de3ebf6b519d394a27f38520aec255d038f3f71511500b5926f1",
+        "resources": {
+          "peak_sampled_rss_mib": 1340.6171875,
+          "peak_processes": 9,
+          "average_logical_cores": 4.372389778457682,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 28374,
+          "V-BTC-SPOT": 29909
+        }
+      },
+      {
+        "variant": "after",
+        "case": "long",
+        "wall_seconds": 45.22132109999984,
+        "phases_seconds": {
+          "accept": 0.1,
+          "builtin": 4.7,
+          "clock": 1.2,
+          "observe_plugin": 2.3,
+          "plugins_busy": 205.0,
+          "plugins_wall": 22.2,
+          "receipts": 0.2,
+          "screen": 0.1,
+          "submit": 11.8,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.1,
+          "submit_gateway": 11.5,
+          "wave": 1.1
+        },
+        "receipt_sha256": "f510e781c4005bf0a314cad42c29495f1998b8e5673a2abae9a424ce0ca1630a",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "7c3f8351a29912339b5678f9049deb8b5c62d3cf7eac412e227bad8c98119108",
+        "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+        "profile": "profile step=1500 accept=0.1s builtin=4.7s clock=1.2s observe_plugin=2.3s plugins_busy=205.0s plugins_wall=22.2s receipts=0.2s screen=0.1s submit=11.8s submit_audit=0.0s submit_feedback=0.1s submit_gateway=11.5s wave=1.1s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\11-after-long.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\11-after-long.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 29881",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 29624",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 237",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 20",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 5944",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 52",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 6000",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 4"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "e8c81aa02527de3ebf6b519d394a27f38520aec255d038f3f71511500b5926f1",
+        "resources": {
+          "peak_sampled_rss_mib": 1291.984375,
+          "peak_processes": 7,
+          "average_logical_cores": 4.227081187264665,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 28374,
+          "V-BTC-SPOT": 29909
+        }
+      },
+      {
+        "variant": "before",
+        "case": "related",
+        "wall_seconds": 8.150081300000238,
+        "phases_seconds": {
+          "accept": 0.0,
+          "builtin": 1.5,
+          "clock": 0.3,
+          "observe_plugin": 0.1,
+          "plugins_busy": 11.2,
+          "plugins_wall": 1.2,
+          "receipts": 0.1,
+          "screen": 0.2,
+          "submit": 3.8,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.0,
+          "submit_gateway": 3.7,
+          "wave": 0.4
+        },
+        "receipt_sha256": "b7be0b18377bdff626b369536c767f5ad89f2c2ef4ba5b06e0f96514c6a683dd",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "267eb17086a0f258e6bf3280ee5dc72a3ba5a7cc6a62b4992e1f6e1f12a82410",
+        "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+        "profile": "profile step=600 accept=0.0s builtin=1.5s clock=0.3s observe_plugin=0.1s plugins_busy=11.2s plugins_wall=1.2s receipts=0.1s screen=0.2s submit=3.8s submit_audit=0.0s submit_feedback=0.0s submit_gateway=3.7s wave=0.4s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\12-before-related.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\12-before-related.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 1671",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 1174",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 296",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 201",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 239",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 151",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 440",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"replay\",reason=\"source_unqualified\"} 12",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 38"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "ffd77ea579872a11dc947fd2524db120fdde91dcad441adfab77d9f3b5c9ffb8",
+        "resources": {
+          "peak_sampled_rss_mib": 818.57421875,
+          "peak_processes": 33,
+          "average_logical_cores": 1.6384396010480122,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 7603,
+          "V-BTC-SPOT": 9817
+        }
+      },
+      {
+        "variant": "after",
+        "case": "related",
+        "wall_seconds": 6.357561999999234,
+        "phases_seconds": {
+          "accept": 0.0,
+          "builtin": 1.1,
+          "clock": 0.2,
+          "observe_plugin": 0.1,
+          "plugins_busy": 9.2,
+          "plugins_wall": 1.1,
+          "receipts": 0.1,
+          "screen": 0.2,
+          "submit": 2.8,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.0,
+          "submit_gateway": 2.7,
+          "wave": 0.3
+        },
+        "receipt_sha256": "1379e1b62cfd66f76973e98406772566464eeed6bf4c22ce968c8bc0d8cc4296",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "7c3f8351a29912339b5678f9049deb8b5c62d3cf7eac412e227bad8c98119108",
+        "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+        "profile": "profile step=600 accept=0.0s builtin=1.1s clock=0.2s observe_plugin=0.1s plugins_busy=9.2s plugins_wall=1.1s receipts=0.1s screen=0.2s submit=2.8s submit_audit=0.0s submit_feedback=0.0s submit_gateway=2.7s wave=0.3s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\13-after-related.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\13-after-related.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 1762",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 1243",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 307",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 212",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 170",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 140",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 349",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"replay\",reason=\"source_unqualified\"} 12",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 27"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "ffd77ea579872a11dc947fd2524db120fdde91dcad441adfab77d9f3b5c9ffb8",
+        "resources": {
+          "peak_sampled_rss_mib": 817.47265625,
+          "peak_processes": 33,
+          "average_logical_cores": 1.8008889212202994,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 7603,
+          "V-BTC-SPOT": 9817
+        }
+      },
+      {
+        "variant": "before",
+        "case": "poll",
+        "wall_seconds": 6.897774600000048,
+        "phases_seconds": {
+          "accept": 0.0,
+          "builtin": 1.1,
+          "clock": 0.1,
+          "observe_plugin": 0.0,
+          "plugins_busy": 10.5,
+          "plugins_wall": 0.9,
+          "receipts": 0.1,
+          "screen": 0.2,
+          "submit": 3.8,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.0,
+          "submit_gateway": 3.7,
+          "wave": 0.3
+        },
+        "receipt_sha256": "050eacf18715e6dde76fbdfc82353c13726a7a78526eed9406c5c4f5eac4eaf7",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "267eb17086a0f258e6bf3280ee5dc72a3ba5a7cc6a62b4992e1f6e1f12a82410",
+        "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+        "profile": "profile step=600 accept=0.0s builtin=1.1s clock=0.1s observe_plugin=0.0s plugins_busy=10.5s plugins_wall=0.9s receipts=0.1s screen=0.2s submit=3.8s submit_audit=0.0s submit_feedback=0.0s submit_gateway=3.7s wave=0.3s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\14-before-poll.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\14-before-poll.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 2167",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 1174",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 792",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 201",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 239",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 153",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 442",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"replay\",reason=\"source_unqualified\"} 12",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 38"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "1b36b24c37089a6826b499829054996c7ddf220024b713f3bfe17ac4247886a2",
+        "resources": {
+          "peak_sampled_rss_mib": 832.39453125,
+          "peak_processes": 33,
+          "average_logical_cores": 1.7763141890392666,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 7603,
+          "V-BTC-SPOT": 9817
+        }
+      },
+      {
+        "variant": "after",
+        "case": "poll",
+        "wall_seconds": 6.352552800000922,
+        "phases_seconds": {
+          "accept": 0.0,
+          "builtin": 1.0,
+          "clock": 0.1,
+          "observe_plugin": 0.0,
+          "plugins_busy": 8.6,
+          "plugins_wall": 0.8,
+          "receipts": 0.1,
+          "screen": 0.2,
+          "submit": 3.5,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.0,
+          "submit_gateway": 3.5,
+          "wave": 0.3
+        },
+        "receipt_sha256": "91b1588a45f6518979402ce4ae1e0d11daa129d7e5c4bca9c2d4ac0100dd1618",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "7c3f8351a29912339b5678f9049deb8b5c62d3cf7eac412e227bad8c98119108",
+        "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+        "profile": "profile step=600 accept=0.0s builtin=1.0s clock=0.1s observe_plugin=0.0s plugins_busy=8.6s plugins_wall=0.8s receipts=0.1s screen=0.2s submit=3.5s submit_audit=0.0s submit_feedback=0.0s submit_gateway=3.5s wave=0.3s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\15-after-poll.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\15-after-poll.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1",
+          "marketforge_bot_runtime_route_total{route=\"direct\",reason=\"none\"} 2288",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"append\",reason=\"none\"} 1243",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"no_evaluation\",reason=\"none\"} 833",
+          "marketforge_bot_runtime_evaluation_total{route=\"direct\",mode=\"checkpoint_restore\",reason=\"session_missing\"} 212",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"append\",reason=\"none\"} 170",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"no_evaluation\",reason=\"none\"} 112",
+          "marketforge_bot_runtime_route_total{route=\"process\",reason=\"source_unqualified\"} 321",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"replay\",reason=\"source_unqualified\"} 12",
+          "marketforge_bot_runtime_evaluation_total{route=\"process\",mode=\"rebuild\",reason=\"session_missing\"} 27"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "1b36b24c37089a6826b499829054996c7ddf220024b713f3bfe17ac4247886a2",
+        "resources": {
+          "peak_sampled_rss_mib": 834.43359375,
+          "peak_processes": 33,
+          "average_logical_cores": 1.8017396265110255,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 7603,
+          "V-BTC-SPOT": 9817
+        }
+      },
+      {
+        "variant": "before",
+        "case": "live",
+        "wall_seconds": 5.516559300000154,
+        "phases_seconds": {
+          "accept": 0.0,
+          "builtin": 1.1,
+          "clock": 0.1,
+          "plugins_busy": 0.0,
+          "plugins_wall": 0.0,
+          "receipts": 0.1,
+          "screen": 0.0,
+          "submit": 3.6,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.0,
+          "submit_gateway": 3.5,
+          "wave": 0.3
+        },
+        "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "267eb17086a0f258e6bf3280ee5dc72a3ba5a7cc6a62b4992e1f6e1f12a82410",
+        "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+        "profile": "profile step=600 accept=0.0s builtin=1.1s clock=0.1s plugins_busy=0.0s plugins_wall=0.0s receipts=0.1s screen=0.0s submit=3.6s submit_audit=0.0s submit_feedback=0.0s submit_gateway=3.5s wave=0.3s wakes(calls/acting/actions):  poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\16-before-live.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\16-before-live.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "d0e9ac73cba45276779ad991533fcf69b6315bc7e717dec13c066a4416bea64b",
+        "resources": {
+          "peak_sampled_rss_mib": 383.046875,
+          "peak_processes": 1,
+          "average_logical_cores": 0.9597900247703334,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 8466,
+          "V-BTC-SPOT": 10217
+        }
+      },
+      {
+        "variant": "after",
+        "case": "live",
+        "wall_seconds": 5.446554999998625,
+        "phases_seconds": {
+          "accept": 0.0,
+          "builtin": 1.1,
+          "clock": 0.1,
+          "plugins_busy": 0.0,
+          "plugins_wall": 0.0,
+          "receipts": 0.1,
+          "screen": 0.0,
+          "submit": 3.5,
+          "submit_audit": 0.0,
+          "submit_feedback": 0.0,
+          "submit_gateway": 3.5,
+          "wave": 0.2
+        },
+        "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+        "equal": true,
+        "exit_code": 0,
+        "exe_sha256": "7c3f8351a29912339b5678f9049deb8b5c62d3cf7eac412e227bad8c98119108",
+        "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+        "profile": "profile step=600 accept=0.0s builtin=1.1s clock=0.1s plugins_busy=0.0s plugins_wall=0.0s receipts=0.1s screen=0.0s submit=3.5s submit_audit=0.0s submit_feedback=0.0s submit_gateway=3.5s wave=0.2s wakes(calls/acting/actions):  poll_actions={}",
+        "receipt": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\17-after-live.receipt.json",
+        "log": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\research\\17-after-live.log",
+        "runtime_counters": [
+          "marketforge_bot_runtime_diagnostics 1"
+        ],
+        "comparison": "economic_receipts_and_broker_state",
+        "compared_sha256": "d0e9ac73cba45276779ad991533fcf69b6315bc7e717dec13c066a4416bea64b",
+        "resources": {
+          "peak_sampled_rss_mib": 319.10546875,
+          "peak_processes": 1,
+          "average_logical_cores": 0.9714263541976185,
+          "compiler_nonempty_samples": 0,
+          "errors": []
+        },
+        "completed": true,
+        "trades": {
+          "V-BTC-PERP": 8466,
+          "V-BTC-SPOT": 10217
+        }
+      }
+    ],
+    "all_equal": true
+  },
+  "qualification": {
+    "scripts": [
+      {
+        "script": "ecosystem/library/0068dd1dd9576132.pine",
+        "sha256": "0068dd1dd9576132a1c7d3538b18e0fe41da913fbe72ef408e0bed3948b4d7e3",
+        "comparisons": 32,
+        "intents": 1,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.6869055999995908
+      },
+      {
+        "script": "ecosystem/library/00b1a76f9ae2df25.pine",
+        "sha256": "00b1a76f9ae2df25ba164aa9670e22f224a6b9ca2519eb5ab9209bfdad029fab",
+        "comparisons": 32,
+        "intents": 13,
+        "actions": 13,
+        "passed": true,
+        "seconds": 0.7870233000012377
+      },
+      {
+        "script": "ecosystem/library/019d603b66bac70c.pine",
+        "sha256": "019d603b66bac70c8acc68a7b2ac853e29603dc31026ef940b380ee153730374",
+        "comparisons": 32,
+        "intents": 1,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.889136599998892
+      },
+      {
+        "script": "ecosystem/library/021868797701fd2a.pine",
+        "sha256": "021868797701fd2a7897b015730db7988e437a5bea7ab78d2dad9c3811ef05c9",
+        "comparisons": 32,
+        "intents": 10,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7767540000004374
+      },
+      {
+        "script": "ecosystem/library/03828f7a29e2a741.pine",
+        "sha256": "03828f7a29e2a741e455142526d88dbbb730423b12dabec4bf04299866c413b4",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.9701730999986466
+      },
+      {
+        "script": "ecosystem/library/03b8c894f4361d3d.pine",
+        "sha256": "03b8c894f4361d3d618a259c96b50b229e14bccd887511b8fdb47312653f3f20",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 1.0191157999997813
+      },
+      {
+        "script": "ecosystem/library/0550de5f280a532f.pine",
+        "sha256": "0550de5f280a532f25171b8c62c732b7770f0db07c1b93b37246733e80fc9147",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.9054737000005844
+      },
+      {
+        "script": "ecosystem/library/05ee8083d2e39752.pine",
+        "sha256": "05ee8083d2e397523e575cdcf185a2d27eca85e7a45fc2addbf2b45d40a9a4b2",
+        "comparisons": 32,
+        "intents": 32,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.0128538999997545
+      },
+      {
+        "script": "ecosystem/library/079c96e33fc7c8e8.pine",
+        "sha256": "079c96e33fc7c8e80ed7666bb0392cc5b4bd1d1be0a54f609daddd50063c2ce5",
+        "comparisons": 32,
+        "intents": 21,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.9000278999992588
+      },
+      {
+        "script": "ecosystem/library/09b0753057277966.pine",
+        "sha256": "09b075305727796649f970cc6f450045c4010ab649bc924851394712773b16ee",
+        "comparisons": 32,
+        "intents": 18,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.93183769999996
+      },
+      {
+        "script": "ecosystem/library/0b5accaa3a7f3022.pine",
+        "sha256": "0b5accaa3a7f30225af37996b454bfbb8fbb80034af27e16ade790b17f345d3a",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.8964228000004368
+      },
+      {
+        "script": "ecosystem/library/0c9f89d8f7a3c0b2.pine",
+        "sha256": "0c9f89d8f7a3c0b2d8741e77c366a73ff05047d2c68be5e96a187e755a22dee1",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.3584940999990067
+      },
+      {
+        "script": "ecosystem/library/0cafc560f96a08d3.pine",
+        "sha256": "0cafc560f96a08d3a7fb2b963a1a6cd48967c1f163d97b273187a9954809d2af",
+        "comparisons": 32,
+        "intents": 24,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8668222999986028
+      },
+      {
+        "script": "ecosystem/library/0d3c679fd3dea828.pine",
+        "sha256": "0d3c679fd3dea82826d52174a3d56781c2d10138472f733e40496b38828ecc48",
+        "comparisons": 32,
+        "intents": 17,
+        "actions": 17,
+        "passed": true,
+        "seconds": 0.9300839000006818
+      },
+      {
+        "script": "ecosystem/library/0ee551cc42560880.pine",
+        "sha256": "0ee551cc42560880a09c5e4da85f30d5701c0efb39b8b24e383fe238d4c3d4af",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 11,
+        "passed": true,
+        "seconds": 0.9442909999997937
+      },
+      {
+        "script": "ecosystem/library/108cf9cdeaa76c40.pine",
+        "sha256": "108cf9cdeaa76c4003b87309ff8187e8d8f6fa58ebfec82f3e6ec84727ef80d9",
+        "comparisons": 32,
+        "intents": 7,
+        "actions": 3,
+        "passed": true,
+        "seconds": 0.7915700000012293
+      },
+      {
+        "script": "ecosystem/library/10dc9ff5db6f6463.pine",
+        "sha256": "10dc9ff5db6f6463aaa5e5772b61d2cb25e07298784702788c502b3978330d70",
+        "comparisons": 32,
+        "intents": 14,
+        "actions": 14,
+        "passed": true,
+        "seconds": 1.0068952000001445
+      },
+      {
+        "script": "ecosystem/library/11617444fd87dbee.pine",
+        "sha256": "11617444fd87dbee08ca551d2f8371272bc0bad914428d791404bfaf78198ebd",
+        "comparisons": 32,
+        "intents": 13,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.8109466999994766
+      },
+      {
+        "script": "ecosystem/library/1597292e1046561b.pine",
+        "sha256": "1597292e1046561b60ecc61b84942f9aa24916f454ae9ed935336b45045f3089",
+        "comparisons": 32,
+        "intents": 22,
+        "actions": 8,
+        "passed": true,
+        "seconds": 1.0142323000000033
+      },
+      {
+        "script": "ecosystem/library/15e5fbc63c2c6206.pine",
+        "sha256": "15e5fbc63c2c6206feae065fcb12debc74f2d1190f02b828bd3fb1e030f47988",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9245286999994278
+      },
+      {
+        "script": "ecosystem/library/16b4d1ed5e2cb8b4.pine",
+        "sha256": "16b4d1ed5e2cb8b41396b910708ae29865a4505eff9d53567cd003c42341e10b",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.8356547000003047
+      },
+      {
+        "script": "ecosystem/library/1823d74b7c45750a.pine",
+        "sha256": "1823d74b7c45750a11bf2c958d7268cae31f36140279861b942df226fead6ea5",
+        "comparisons": 32,
+        "intents": 12,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9342885999994905
+      },
+      {
+        "script": "ecosystem/library/1904d58fa0a1a397.pine",
+        "sha256": "1904d58fa0a1a3973bcc84850bfb299479a9c8d10ce7a994e6012cffa35761c6",
+        "comparisons": 32,
+        "intents": 18,
+        "actions": 18,
+        "passed": true,
+        "seconds": 0.9675073999987944
+      },
+      {
+        "script": "ecosystem/library/1a9c81b80fbc7df9.pine",
+        "sha256": "1a9c81b80fbc7df93e84f2b9578b8a3f3665032f420a6a4f3179572cda300aa4",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.9010392999989563
+      },
+      {
+        "script": "ecosystem/library/1cc0df9f8540bcc0.pine",
+        "sha256": "1cc0df9f8540bcc06f24fb348673da27088bd3e17a4968fd3626e307f74a89db",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 1.0093813000003138
+      },
+      {
+        "script": "ecosystem/library/1d27249bb190d374.pine",
+        "sha256": "1d27249bb190d374fd4d42d953fde3685f21099cd94f0fd07b5ec22420e4b9b8",
+        "comparisons": 32,
+        "intents": 5,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.8872011000003113
+      },
+      {
+        "script": "ecosystem/library/1d477858c9f89261.pine",
+        "sha256": "1d477858c9f89261ed2a98c845a1b55d1b4619a9e86c3dad3169f78177b52cac",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.9255186000009417
+      },
+      {
+        "script": "ecosystem/library/1d4fa0a2fac7cc74.pine",
+        "sha256": "1d4fa0a2fac7cc74c3e042e2a26d02163a95c5c6f0a18cb8e6be7229f6d50eac",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9846925999991072
+      },
+      {
+        "script": "ecosystem/library/216e5b6c95a135fa.pine",
+        "sha256": "216e5b6c95a135fa701264723e9b25b6d8b2b80ba11303448bcbf9ef034afcb7",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 11,
+        "passed": true,
+        "seconds": 0.9477701000014349
+      },
+      {
+        "script": "ecosystem/library/21b8ea6253537516.pine",
+        "sha256": "21b8ea62535375165fc6bc1def5b2dfc9c3aa479bdcf870a78079505b0da430e",
+        "comparisons": 32,
+        "intents": 10,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.7841430999997101
+      },
+      {
+        "script": "ecosystem/library/220978a613c738ad.pine",
+        "sha256": "220978a613c738ad6890d271d5faa9d81cadf6b9437bae352e9f0b83b85e5223",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 19,
+        "passed": true,
+        "seconds": 1.0296668000009959
+      },
+      {
+        "script": "ecosystem/library/2210c70f2ce1c519.pine",
+        "sha256": "2210c70f2ce1c519ef1600c643ec6511a0253fba2cca03a11bf546c7545aa5e4",
+        "comparisons": 32,
+        "intents": 12,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8826991999994789
+      },
+      {
+        "script": "ecosystem/library/22b2bbac9871222c.pine",
+        "sha256": "22b2bbac9871222c809597c880e4726063422e60934be388fd71b95fb5065eee",
+        "comparisons": 32,
+        "intents": 8,
+        "actions": 4,
+        "passed": true,
+        "seconds": 0.9834631999983685
+      },
+      {
+        "script": "ecosystem/library/26db3187b95dceef.pine",
+        "sha256": "26db3187b95dceeffa1ab2a0c1ffd0a5fc51bc313e5649dda69c85c657fdcb86",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.9432859999997163
+      },
+      {
+        "script": "ecosystem/library/2712891380a4920f.pine",
+        "sha256": "2712891380a4920f19d8d0a5d6fb4316fdee193744c718054153ba62b5bce5ee",
+        "comparisons": 32,
+        "intents": 24,
+        "actions": 6,
+        "passed": true,
+        "seconds": 0.9000815999988845
+      },
+      {
+        "script": "ecosystem/library/283c5a751ad3ccc9.pine",
+        "sha256": "283c5a751ad3ccc90885eba5fb7a7c61ddffb5febe80f7a5b5ed77fdb5b9cffe",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9987471999993431
+      },
+      {
+        "script": "ecosystem/library/28d6f5f603b01d81.pine",
+        "sha256": "28d6f5f603b01d810a7f7160634ff0be96f76d8b9ea5048be6b6caca8efc5586",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.779443800000081
+      },
+      {
+        "script": "ecosystem/library/2bd9ca677621cca2.pine",
+        "sha256": "2bd9ca677621cca276c74aafcf11bdb8cae1af70a8fd7d747765969b495e1357",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 1.0104919999994308
+      },
+      {
+        "script": "ecosystem/library/2c01ce4adfae1814.pine",
+        "sha256": "2c01ce4adfae18142c83075e5a9085414a6b2c330b78ce39df59017bf1f1815f",
+        "comparisons": 32,
+        "intents": 36,
+        "actions": 18,
+        "passed": true,
+        "seconds": 1.1232748000002175
+      },
+      {
+        "script": "ecosystem/library/2d712996e46f1219.pine",
+        "sha256": "2d712996e46f121951b2907712bd51ad73fe701a26c6a54e52ef1fd37efac21d",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8639232000004995
+      },
+      {
+        "script": "ecosystem/library/2e9b3a2968b33967.pine",
+        "sha256": "2e9b3a2968b33967f0e01362b63470b898bdeae6d009c59106d303bda85bdba0",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.9009495999998762
+      },
+      {
+        "script": "ecosystem/library/30de8eeaefc4e1a5.pine",
+        "sha256": "30de8eeaefc4e1a5a53978082e1e763b929da13fcd93bf03a939fdce3dd2efc6",
+        "comparisons": 32,
+        "intents": 9,
+        "actions": 0,
+        "passed": true,
+        "seconds": 2.354190199999721
+      },
+      {
+        "script": "ecosystem/library/322d809b19a4ae3a.pine",
+        "sha256": "322d809b19a4ae3aab415e8abffa048b45dacaed4d37313c50e8f38c8c24b9fa",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 14,
+        "passed": true,
+        "seconds": 0.9099442000006093
+      },
+      {
+        "script": "ecosystem/library/3a84a957fa803e51.pine",
+        "sha256": "3a84a957fa803e512fd7b8e567f5cf0aba7c85d13cf55e23c45cf2371a581d58",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9243712999996205
+      },
+      {
+        "script": "ecosystem/library/3be3e35f1f480b14.pine",
+        "sha256": "3be3e35f1f480b144c58ffd46bf81d1b8eaeaa3cb1f5280dfc9dfbde50e2b0c3",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.85684399999991
+      },
+      {
+        "script": "ecosystem/library/3c9c28797ab33210.pine",
+        "sha256": "3c9c28797ab332106ea8b465273c8b6d8cc33928da2a7e983ff53ea981b8c5b7",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 1.1300240000000485
+      },
+      {
+        "script": "ecosystem/library/3cdd27959534d9ab.pine",
+        "sha256": "3cdd27959534d9ab9862670238ec64b264ae3d3a30238af812a887e0a4977872",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.9030492000001686
+      },
+      {
+        "script": "ecosystem/library/3f6d3de675dc14ca.pine",
+        "sha256": "3f6d3de675dc14ca06fa93e63a649be9d448c4f703b5629a2224fd4edc403ef9",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7122498999997333
+      },
+      {
+        "script": "ecosystem/library/4008a46b6033486c.pine",
+        "sha256": "4008a46b6033486c80202cf8031df0de6ccbf0bf9f29cc25bf65709f7c062e4a",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.874042699999336
+      },
+      {
+        "script": "ecosystem/library/41fee97b544d0941.pine",
+        "sha256": "41fee97b544d0941e9d50c1b3b8d2d6918421d9546265de9f4221a33d7919bef",
+        "comparisons": 32,
+        "intents": 18,
+        "actions": 18,
+        "passed": true,
+        "seconds": 0.8433774000004632
+      },
+      {
+        "script": "ecosystem/library/428884702e51321f.pine",
+        "sha256": "428884702e51321fae2534c6645ebf091555441e04f0ff225c47fb82abf12a68",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.670340299999225
+      },
+      {
+        "script": "ecosystem/library/4394ebd228f8925a.pine",
+        "sha256": "4394ebd228f8925a3b68e9ad276a29656d6ec9d398cbd36e1df0cefdfcb0bcb0",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.9435042000004614
+      },
+      {
+        "script": "ecosystem/library/4612abe570df8e86.pine",
+        "sha256": "4612abe570df8e867b561f3d29c1c89d218b99023ca205daa4a4764fba3ea33d",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.6682716999985132
+      },
+      {
+        "script": "ecosystem/library/466a346fd76cf677.pine",
+        "sha256": "466a346fd76cf677f21982d42302bd00b047db21e3bf98bd51f9df738146434a",
+        "comparisons": 32,
+        "intents": 6,
+        "actions": 6,
+        "passed": true,
+        "seconds": 0.7999572999997326
+      },
+      {
+        "script": "ecosystem/library/476c546b2bc04db3.pine",
+        "sha256": "476c546b2bc04db30d8af56a4e221aee64b1653f3d07f9a65a141971f4c19bbb",
+        "comparisons": 32,
+        "intents": 5,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7883890000011888
+      },
+      {
+        "script": "ecosystem/library/48c9a13c0d4cf69c.pine",
+        "sha256": "48c9a13c0d4cf69ce23c6accb247acefd5dd73d12f297a87b12f14216167eafb",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 14,
+        "passed": true,
+        "seconds": 0.8720352000000275
+      },
+      {
+        "script": "ecosystem/library/4956a4fb2acecce5.pine",
+        "sha256": "4956a4fb2acecce58bdb621b612d05e16e7cdeec2b715fb5be7d86cf9737a852",
+        "comparisons": 32,
+        "intents": 18,
+        "actions": 8,
+        "passed": true,
+        "seconds": 0.6767292999993515
+      },
+      {
+        "script": "ecosystem/library/4971d11df15625ca.pine",
+        "sha256": "4971d11df15625ca214ea27c11211bf208301120764aa72dd90dd677bc82429f",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7250827000007121
+      },
+      {
+        "script": "ecosystem/library/4a17ce8af2e2531a.pine",
+        "sha256": "4a17ce8af2e2531aacf24591e499deece76f085b9e548599ff38a9fb6902fd2e",
+        "comparisons": 32,
+        "intents": 23,
+        "actions": 18,
+        "passed": true,
+        "seconds": 0.6974104000000807
+      },
+      {
+        "script": "ecosystem/library/4b2f7b1d2b3e0550.pine",
+        "sha256": "4b2f7b1d2b3e05504d167a6b794a316e1a47cf3c12de21e1bbbd0a692d2f3572",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7648000000008324
+      },
+      {
+        "script": "ecosystem/library/4c71214337c5cf58.pine",
+        "sha256": "4c71214337c5cf58f6b1e87788714f26804727a3c7326f2674a3bd4fbe0213ac",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 14,
+        "passed": true,
+        "seconds": 0.8439423999989231
+      },
+      {
+        "script": "ecosystem/library/4dadeac115eb5bd4.pine",
+        "sha256": "4dadeac115eb5bd4ff56fec5102055f151eabd9e6343705f42862b8d74b6b2ac",
+        "comparisons": 32,
+        "intents": 19,
+        "actions": 1,
+        "passed": true,
+        "seconds": 0.8096470999989833
+      },
+      {
+        "script": "ecosystem/library/4e477ad1d5114462.pine",
+        "sha256": "4e477ad1d5114462506dc9d4508b7fbce1547d4b4163968c6010fbad31956614",
+        "comparisons": 32,
+        "intents": 4,
+        "actions": 4,
+        "passed": true,
+        "seconds": 0.7806129999989935
+      },
+      {
+        "script": "ecosystem/library/4f353de36d3c6109.pine",
+        "sha256": "4f353de36d3c6109571e3643a71fd07f494376e3dfd89c809d9dd05926fdf9b1",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.5536607000012737
+      },
+      {
+        "script": "ecosystem/library/4fe35954c4d1d914.pine",
+        "sha256": "4fe35954c4d1d9144372ad1b2995cfad28bca02168c20e5650db3281e09511ea",
+        "comparisons": 32,
+        "intents": 8,
+        "actions": 8,
+        "passed": true,
+        "seconds": 0.760734900000898
+      },
+      {
+        "script": "ecosystem/library/51f6d6d290ff1e44.pine",
+        "sha256": "51f6d6d290ff1e445bce5e64eb724c1fb7d91fe02b2f2f0a5c8bd2e1c3e06848",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.7867016000000149
+      },
+      {
+        "script": "ecosystem/library/53367a3c66b5f79b.pine",
+        "sha256": "53367a3c66b5f79bf794dd17ae6c4b5b94e684951aebd61dae5e7f1e768b36d5",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7178358000001026
+      },
+      {
+        "script": "ecosystem/library/548adcba636d6d0c.pine",
+        "sha256": "548adcba636d6d0c07e8109ddc52228c38ad2c9638deea36748320bcfb7f85cb",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7569066000014573
+      },
+      {
+        "script": "ecosystem/library/5625c6638c64c34c.pine",
+        "sha256": "5625c6638c64c34cd347747fe4fb6c3b54a4950adfca42226545118709caaf09",
+        "comparisons": 32,
+        "intents": 18,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7214093000002322
+      },
+      {
+        "script": "ecosystem/library/567d5737d49771a5.pine",
+        "sha256": "567d5737d49771a555e2e3a19218be289c33cca00615746941d2f06932023a75",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.6607788000001165
+      },
+      {
+        "script": "ecosystem/library/57c84554fcce8d4a.pine",
+        "sha256": "57c84554fcce8d4a59f80ec3c8c134edb6ca113927a04697bb23da8c3354df43",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.677890800001478
+      },
+      {
+        "script": "ecosystem/library/5b80f2e7d273221c.pine",
+        "sha256": "5b80f2e7d273221cb26728970ea97c0c820e1e2413a8568583f6ae8b53cd9e09",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 1.13582789999964
+      },
+      {
+        "script": "ecosystem/library/5bad8a1cb8d49f3e.pine",
+        "sha256": "5bad8a1cb8d49f3ea6a4c32cc9f19a19edb0cf3c753320b0ae4efe202c3c5cdc",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 1.0192879999995057
+      },
+      {
+        "script": "ecosystem/library/5cd56afcaac102db.pine",
+        "sha256": "5cd56afcaac102db46f649b7ca11a5964b351cae0fdd48f6df87ef9d267d04f1",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8672033000002557
+      },
+      {
+        "script": "ecosystem/library/5e487f4d5176b24d.pine",
+        "sha256": "5e487f4d5176b24d6775387b36b65122a642a487c8bb9f9e38cbece5714130e2",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 14,
+        "passed": true,
+        "seconds": 0.92347030000019
+      },
+      {
+        "script": "ecosystem/library/5f15a29c2c56ea70.pine",
+        "sha256": "5f15a29c2c56ea7099a0f26f898e230d349b3bbdf7853db44ed2bb754eaff430",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.8208979000010004
+      },
+      {
+        "script": "ecosystem/library/5f95f6788902aeb8.pine",
+        "sha256": "5f95f6788902aeb80f2469af454768900862cffe0d1ffa245716e4258c601acd",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.6879032999986521
+      },
+      {
+        "script": "ecosystem/library/63556a32e18b69b8.pine",
+        "sha256": "63556a32e18b69b86d614a29d620c0532ad4bd8c169ea8842ad2168301c74325",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7121652999994694
+      },
+      {
+        "script": "ecosystem/library/64778aa25343d7a1.pine",
+        "sha256": "64778aa25343d7a1da196a7a1a1ea8f1d930d3808e9c0fdf74939da68741d479",
+        "comparisons": 32,
+        "intents": 12,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.7154677999988053
+      },
+      {
+        "script": "ecosystem/library/6484821aa43ca22d.pine",
+        "sha256": "6484821aa43ca22d5079a0bfceb32827d85939297a86b2e7a45ef4d443143039",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8429477999998198
+      },
+      {
+        "script": "ecosystem/library/67c06d531684d5c1.pine",
+        "sha256": "67c06d531684d5c1ff770ef5fafba5ebc62649e663c9a8e4db3c1912d87f930c",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9245866000001115
+      },
+      {
+        "script": "ecosystem/library/6a7e649be8776a37.pine",
+        "sha256": "6a7e649be8776a3716efd6f60e75cb307759cb4dc9c65044724eb6cc8b5cb4df",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.6849896000003355
+      },
+      {
+        "script": "ecosystem/library/7339aa0a37739c22.pine",
+        "sha256": "7339aa0a37739c222c5e72f0f633b0293882f9ea45809186a1a2ce54b77c3b4b",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 1.0541807999998127
+      },
+      {
+        "script": "ecosystem/library/741ea2cdbec50fd7.pine",
+        "sha256": "741ea2cdbec50fd72fb900ae4a0a1ca4e6cd0a87eca34af7074a35ed9fa99005",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9789321999996901
+      },
+      {
+        "script": "ecosystem/library/74e4c72c632e3b48.pine",
+        "sha256": "74e4c72c632e3b48811d2d959ac2dcaf21d0da1d0e0fc0acef53d91a59fd4320",
+        "comparisons": 32,
+        "intents": 11,
+        "actions": 7,
+        "passed": true,
+        "seconds": 0.7382074000015564
+      },
+      {
+        "script": "ecosystem/library/75b7e27c93b76c80.pine",
+        "sha256": "75b7e27c93b76c80b92643904df017e22ccf3b827eda52e62e6e0790b8501200",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 48.72823810000045
+      },
+      {
+        "script": "ecosystem/library/76e6c67d03ba5802.pine",
+        "sha256": "76e6c67d03ba5802fc8db96a3ab2adc2f0bb6024ff56b9b5dbf41294291e4e73",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8307915999994293
+      },
+      {
+        "script": "ecosystem/library/780b31aea52b1ad6.pine",
+        "sha256": "780b31aea52b1ad68f8fc27d9910b7493e49bbe4a292efa0eb3e7639140ad7b8",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8644007000002603
+      },
+      {
+        "script": "ecosystem/library/7a26b282a71cd07f.pine",
+        "sha256": "7a26b282a71cd07fca8f48de631e7f94bc888e0db252ab58e13607bda60f3b76",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7884988000005251
+      },
+      {
+        "script": "ecosystem/library/7b3117ead338012c.pine",
+        "sha256": "7b3117ead338012c95c92a3e5b76e78121208523057f94892101497bc3fbbdac",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.8917621000000509
+      },
+      {
+        "script": "ecosystem/library/7b9727c8f69ec3be.pine",
+        "sha256": "7b9727c8f69ec3beba675ad6c89427da7f29faa96b9f1ea2d4452c2e15401ea3",
+        "comparisons": 32,
+        "intents": 18,
+        "actions": 8,
+        "passed": true,
+        "seconds": 0.7458503999987443
+      },
+      {
+        "script": "ecosystem/library/7ce607ca6a198dff.pine",
+        "sha256": "7ce607ca6a198dffef10f10ec06937fd97e2c32444a35a597a085763adbab91c",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.6513529000003473
+      },
+      {
+        "script": "ecosystem/library/7f8d9b105ea8c631.pine",
+        "sha256": "7f8d9b105ea8c631a7b4ec3c543af9f4cbfb74d32e36b484a1326341c28b9522",
+        "comparisons": 32,
+        "intents": 18,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7335817999992287
+      },
+      {
+        "script": "ecosystem/library/801b081348e3e2bb.pine",
+        "sha256": "801b081348e3e2bbee144255af72fe4a2c6f0c1f04c15a8589dad75f78ee1d7e",
+        "comparisons": 32,
+        "intents": 18,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7555797000004532
+      },
+      {
+        "script": "ecosystem/library/80f8ebadd4882916.pine",
+        "sha256": "80f8ebadd4882916721d475166a38f76bbb3073afdbc254c1e6f6d5745e72f9b",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.8797512999990431
+      },
+      {
+        "script": "ecosystem/library/81ac0bda2b3c5723.pine",
+        "sha256": "81ac0bda2b3c5723961a8bfd5e2aec15d76393fb0bd5745d590ff09819a16eb5",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8324615000001359
+      },
+      {
+        "script": "ecosystem/library/82723f77c8ab9032.pine",
+        "sha256": "82723f77c8ab9032cbeb06874ec2740bdd6f67adcadd9f9a422c859abc848efe",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8114609000003838
+      },
+      {
+        "script": "ecosystem/library/871b4aacf53f4506.pine",
+        "sha256": "871b4aacf53f450634144e8e2051303b5c0aa14aacd44964c9bf1051520648ec",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.8613600999997288
+      },
+      {
+        "script": "ecosystem/library/87cd7f2bae3e39bd.pine",
+        "sha256": "87cd7f2bae3e39bda8320227fc17ba74034a6fb48e83fcc554826956fb9b5130",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8254858999989665
+      },
+      {
+        "script": "ecosystem/library/892c55e22d4dbf9f.pine",
+        "sha256": "892c55e22d4dbf9f1039e51f1266a62de31f710db1c7c9da49d37697750e3c39",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.6539455000001908
+      },
+      {
+        "script": "ecosystem/library/895824231aad1c9f.pine",
+        "sha256": "895824231aad1c9f034a736bd1da2cb53062a0ad2dbc1e860366f7dab0bd0a6d",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 1.0242942000004405
+      },
+      {
+        "script": "ecosystem/library/899c3260dba08cdf.pine",
+        "sha256": "899c3260dba08cdf0a98c0cab53ac341b51c75f023cd687dc36caf8ccdf685e7",
+        "comparisons": 32,
+        "intents": 4,
+        "actions": 4,
+        "passed": true,
+        "seconds": 0.6672096000002057
+      },
+      {
+        "script": "ecosystem/library/8a09b0fc6388080a.pine",
+        "sha256": "8a09b0fc6388080af6d3ea45d74b79602b7f45f2f17dffa0ee30d6552ac665cd",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9781024999992951
+      },
+      {
+        "script": "ecosystem/library/8a84dc0f2f7f93d0.pine",
+        "sha256": "8a84dc0f2f7f93d07305c371ed10203bb56518f9bee644426fddc2e9189b0c10",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 11,
+        "passed": true,
+        "seconds": 0.8999320000002626
+      },
+      {
+        "script": "ecosystem/library/8ae04d9ae911dc02.pine",
+        "sha256": "8ae04d9ae911dc02301f08fefee62e8ad9def07f3e66e74476ea5360504008ca",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 17,
+        "passed": true,
+        "seconds": 0.9123378000003868
+      },
+      {
+        "script": "ecosystem/library/8b3757356c1abce7.pine",
+        "sha256": "8b3757356c1abce72a866ff6207d1da556e9bf730345f2fe267787b8ac401214",
+        "comparisons": 32,
+        "intents": 8,
+        "actions": 4,
+        "passed": true,
+        "seconds": 0.9512513999998191
+      },
+      {
+        "script": "ecosystem/library/8b615b4c39dcc3e8.pine",
+        "sha256": "8b615b4c39dcc3e8f060c6ed0e1d5cd6fb5110ff7eb0803132e1360be345e549",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.9942506999996112
+      },
+      {
+        "script": "ecosystem/library/8e020de28b57c773.pine",
+        "sha256": "8e020de28b57c7731a023b2dfe97cac67f387b31a2177d6533e551479210b473",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8180320999999822
+      },
+      {
+        "script": "ecosystem/library/9386d3d9c33b413f.pine",
+        "sha256": "9386d3d9c33b413f90f1cf5c18914a3869716c982da0042d05a1f00b0ab4db11",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.6778582999995706
+      },
+      {
+        "script": "ecosystem/library/94aea29df75a828b.pine",
+        "sha256": "94aea29df75a828b5a75207e9d6eaec5e8a1d365cab6730a03157828e756e3b4",
+        "comparisons": 32,
+        "intents": 15,
+        "actions": 2,
+        "passed": true,
+        "seconds": 0.7650815000015427
+      },
+      {
+        "script": "ecosystem/library/95103654ef6b20c7.pine",
+        "sha256": "95103654ef6b20c7a556c48272b72da377438c8b2c3c8a226e6503e4169c89fc",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7217634999997244
+      },
+      {
+        "script": "ecosystem/library/95d5265ed0648865.pine",
+        "sha256": "95d5265ed0648865833ccaf6954fad31d5bba77f7aeab530f1d0397a76a38b0d",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.2765290999996068
+      },
+      {
+        "script": "ecosystem/library/975f1aed4964b995.pine",
+        "sha256": "975f1aed4964b995906cd36dbc6aa276510857bfe13f3bcb8f6455f996772e45",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9546804999990854
+      },
+      {
+        "script": "ecosystem/library/97a95cf5065ff655.pine",
+        "sha256": "97a95cf5065ff655b8c747cbdeb4e2a9b94919d2da0f75f725649eef76b2dd26",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 14,
+        "passed": true,
+        "seconds": 0.9203486999995221
+      },
+      {
+        "script": "ecosystem/library/97dc4545a708c311.pine",
+        "sha256": "97dc4545a708c311aea79ad2475d3d6a928f0c7d8be2c60dc757a044f85fa7df",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.9690126000004966
+      },
+      {
+        "script": "ecosystem/library/9844d75541d189d8.pine",
+        "sha256": "9844d75541d189d841ea803397c0a8d13fc2f7b444768d568a776899c3be907e",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 2.677485300000626
+      },
+      {
+        "script": "ecosystem/library/98d8f66ff4d1de80.pine",
+        "sha256": "98d8f66ff4d1de806015620b83c08fefa9f88d6e5807141eb47ee31721d4a092",
+        "comparisons": 32,
+        "intents": 5,
+        "actions": 5,
+        "passed": true,
+        "seconds": 0.8184505999997782
+      },
+      {
+        "script": "ecosystem/library/9b7c0e8ab7749d52.pine",
+        "sha256": "9b7c0e8ab7749d52fa32e1948a10fc660558ef3004ed3a3d2f79761720921b34",
+        "comparisons": 32,
+        "intents": 1,
+        "actions": 1,
+        "passed": true,
+        "seconds": 0.921881400001439
+      },
+      {
+        "script": "ecosystem/library/9b84636c557d7695.pine",
+        "sha256": "9b84636c557d7695ad4947149db1c7188c31efb1cfeb1268798e8e7d37c6d062",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.8279366999995545
+      },
+      {
+        "script": "ecosystem/library/9c933182f993d4b6.pine",
+        "sha256": "9c933182f993d4b61bf20c2f8e5e4902e70aaebdfce2517adc312fb7f6b9a440",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8620599999994738
+      },
+      {
+        "script": "ecosystem/library/9cc1f5cfbc108ac8.pine",
+        "sha256": "9cc1f5cfbc108ac84f0efeb673ff25a84ce216f68c03f880a746077cdb1d829a",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7175368999996863
+      },
+      {
+        "script": "ecosystem/library/9eaa1eb5a134489b.pine",
+        "sha256": "9eaa1eb5a134489bda770f59ae74ce1c3dcf0b2772b1eaeb80bd0183fd6a5b40",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.9722598000007565
+      },
+      {
+        "script": "ecosystem/library/a0d83135e14adadf.pine",
+        "sha256": "a0d83135e14adadfb5280ebdc1b93b0464ab22d99b8fec8b9b7271bda7657fe8",
+        "comparisons": 32,
+        "intents": 4,
+        "actions": 2,
+        "passed": true,
+        "seconds": 0.937529299999369
+      },
+      {
+        "script": "ecosystem/library/a13c7e982dc02302.pine",
+        "sha256": "a13c7e982dc023023ea3d3d4b6c43aa87e3f346d5c3af46816616cf10530e7d8",
+        "comparisons": 32,
+        "intents": 18,
+        "actions": 18,
+        "passed": true,
+        "seconds": 0.819032999999763
+      },
+      {
+        "script": "ecosystem/library/a19376bcdf5a24e3.pine",
+        "sha256": "a19376bcdf5a24e34f5b0a8ba0bb716fe8e0dc4988a6168b04b5a34409c8669a",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.1565043999999034
+      },
+      {
+        "script": "ecosystem/library/a2209f18e573c8b5.pine",
+        "sha256": "a2209f18e573c8b58e443adc3b8b5af5a4fe36554990470e9c1e7d7bb696a448",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7151040000007924
+      },
+      {
+        "script": "ecosystem/library/a27700e49af7b637.pine",
+        "sha256": "a27700e49af7b6370038940e2cb54065bf4a8f670e63dd44333fab943343942e",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.9923914999999397
+      },
+      {
+        "script": "ecosystem/library/a34d184d75c23d93.pine",
+        "sha256": "a34d184d75c23d934364af047d5b08db7827c05be1f673793c272b327aa4c035",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 14,
+        "passed": true,
+        "seconds": 1.0139416000001802
+      },
+      {
+        "script": "ecosystem/library/a398c65bfd81497b.pine",
+        "sha256": "a398c65bfd81497ba0afa7c14aedbb266424fc814e6e29a40290f11c971667ec",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7234860999997181
+      },
+      {
+        "script": "ecosystem/library/a401084edda69d61.pine",
+        "sha256": "a401084edda69d61f35f51a4219219ee373be0b7cef73f6911ac27f02621854e",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 1.0709975000008853
+      },
+      {
+        "script": "ecosystem/library/a4a3b38e76a723c5.pine",
+        "sha256": "a4a3b38e76a723c5fc8105060648c30f203bd3240368ea593e9a8be4e6f357ab",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7287180000002991
+      },
+      {
+        "script": "ecosystem/library/a61a806a677cea4e.pine",
+        "sha256": "a61a806a677cea4ed8951d8009a0675e5ddb145296c5ea6ff2d90abbf4b4ad75",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9708140000002459
+      },
+      {
+        "script": "ecosystem/library/a6907161b007cb7d.pine",
+        "sha256": "a6907161b007cb7d6a133de4150b6b9d28285104acfef63e97ec958bf9b652ea",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.930169900000692
+      },
+      {
+        "script": "ecosystem/library/a77e51618594ffea.pine",
+        "sha256": "a77e51618594ffeaea09ee14d3359be4940483fb10efc914c7e1c89af71364e8",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9647009000000253
+      },
+      {
+        "script": "ecosystem/library/a8979f3009d5986e.pine",
+        "sha256": "a8979f3009d5986e222af0cee82cdccfd376a623e3d92722b546bb4ce8e3f080",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9761189000000741
+      },
+      {
+        "script": "ecosystem/library/a8f5c4688242ece5.pine",
+        "sha256": "a8f5c4688242ece55d698f001aad591f5b6e7b4e8ad9a917587b322b5e80d2c7",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.0193738999987545
+      },
+      {
+        "script": "ecosystem/library/ab4edebae7d8d64c.pine",
+        "sha256": "ab4edebae7d8d64ce8602a02c92b98fb34854b032d0254ef2f73f3fb3440493f",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9917691999999079
+      },
+      {
+        "script": "ecosystem/library/ab8656bcf68e20a7.pine",
+        "sha256": "ab8656bcf68e20a7793b0211ba627fcd28261693c2c808db80c1072fc6b40663",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9655094999998255
+      },
+      {
+        "script": "ecosystem/library/ac7f633202931cb3.pine",
+        "sha256": "ac7f633202931cb30d24247cc680771fbbf6ee7ae487605b01e22bfd08b509ff",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 1.1112757999999303
+      },
+      {
+        "script": "ecosystem/library/ae5f55aa8444cfb7.pine",
+        "sha256": "ae5f55aa8444cfb70806836c544ec87023f1a654b5ff78c22d63eae5cdf98a69",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.3435764000005292
+      },
+      {
+        "script": "ecosystem/library/b1e2d0af48b23284.pine",
+        "sha256": "b1e2d0af48b232849165147c33fc69502a1614177dd9317089a2e7755b189336",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.038432899998952
+      },
+      {
+        "script": "ecosystem/library/b35bb2abd328162e.pine",
+        "sha256": "b35bb2abd328162e7f8588bb6c13e52c126f34ffa4adac8369bd735178d1ccdf",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7414673000002949
+      },
+      {
+        "script": "ecosystem/library/b65f6499fed65602.pine",
+        "sha256": "b65f6499fed65602966a0c7fbc99765c8fd46bc1b33e3423f5219c97534e1662",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.9034981000004336
+      },
+      {
+        "script": "ecosystem/library/b6a363e9a07ff857.pine",
+        "sha256": "b6a363e9a07ff857dde70a85ff66bd5c7be4bad45a30c083b7ae4398d50fcbfd",
+        "comparisons": 32,
+        "intents": 18,
+        "actions": 18,
+        "passed": true,
+        "seconds": 0.8357015999990836
+      },
+      {
+        "script": "ecosystem/library/b72ff2653e573105.pine",
+        "sha256": "b72ff2653e573105d5408a3456fbbbd84bd91d0a95d4f1636220de6b38a89a42",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 1.0159486000011384
+      },
+      {
+        "script": "ecosystem/library/b9f6b6777ef28e48.pine",
+        "sha256": "b9f6b6777ef28e485275cea301623f3e27aa09b63d2bec2475313a5bf3e5ec2a",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.6558820999998716
+      },
+      {
+        "script": "ecosystem/library/ba6c790149b64a12.pine",
+        "sha256": "ba6c790149b64a1213a96c7ff396ec37ecda358e4561e07d04e8802b960bd970",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 1.0100294999992911
+      },
+      {
+        "script": "ecosystem/library/bb53b60a0808d14d.pine",
+        "sha256": "bb53b60a0808d14db1270ff07a089e353d9a3d75f7606c1ac0da40ada477662b",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 1.1599301999995077
+      },
+      {
+        "script": "ecosystem/library/bce3c3928b4e0b9e.pine",
+        "sha256": "bce3c3928b4e0b9e3d75185e0465eef0207fbc39cee94f185c06bfc271a07689",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.8077401999998983
+      },
+      {
+        "script": "ecosystem/library/bd6d662342667678.pine",
+        "sha256": "bd6d662342667678304eb77c980e48364c8b94a6d0eeb6d8f0cc50275c10f0ad",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.8521387000000686
+      },
+      {
+        "script": "ecosystem/library/be84a0d857a80fa4.pine",
+        "sha256": "be84a0d857a80fa4ebcbc1a979ba4a4d0e41b9528bcc33c3d85f65a819eaeab5",
+        "comparisons": 32,
+        "intents": 8,
+        "actions": 4,
+        "passed": true,
+        "seconds": 0.922343300000648
+      },
+      {
+        "script": "ecosystem/library/bea96e177a2c6a39.pine",
+        "sha256": "bea96e177a2c6a39239169308f57ec3c035bbe5ddd80a917f399ccc6dcd5e6a7",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 14,
+        "passed": true,
+        "seconds": 0.8610760999999911
+      },
+      {
+        "script": "ecosystem/library/bf3cdb546a20ab4a.pine",
+        "sha256": "bf3cdb546a20ab4af2f2f8ec4920175f0f7dfddd48187831200dc668a7af3b61",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.1213627999986784
+      },
+      {
+        "script": "ecosystem/library/c12e52e222ff7a28.pine",
+        "sha256": "c12e52e222ff7a28425307a2a5e1eda07e64439e8f79c86500650c0063c4c11f",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9353991000007227
+      },
+      {
+        "script": "ecosystem/library/c1e94a19b329fe47.pine",
+        "sha256": "c1e94a19b329fe47540fba39dc24a8fc7141a19176a8d8f540a9eb0b1e6e68b0",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 11,
+        "passed": true,
+        "seconds": 0.9745000000002619
+      },
+      {
+        "script": "ecosystem/library/c22c86e31151a82d.pine",
+        "sha256": "c22c86e31151a82dbd835954236677411a43a56e68a28a5fcedf7b9a1830d0b8",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 1.0820363000002544
+      },
+      {
+        "script": "ecosystem/library/c3256177b9f2c4a4.pine",
+        "sha256": "c3256177b9f2c4a4232042252ce54babab4e15c7ad7fbf2cb5885b328258f36f",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.9361432000005152
+      },
+      {
+        "script": "ecosystem/library/c3aacaf796337f35.pine",
+        "sha256": "c3aacaf796337f3524a88881bf94389b12014cedfc84c8238dea6b82eab6e44b",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 1.0221467999999732
+      },
+      {
+        "script": "ecosystem/library/c452d07eb6019ad1.pine",
+        "sha256": "c452d07eb6019ad15c927fcb7f99d35212b57e26df9ed9a32e43a628b2aafd3b",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.091861599999902
+      },
+      {
+        "script": "ecosystem/library/c4b9ca12fdf3134c.pine",
+        "sha256": "c4b9ca12fdf3134c2db5c9ed170615044d18d0ba0ae8be4f0d8e662b2c25ce8b",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.0545738999990135
+      },
+      {
+        "script": "ecosystem/library/c654d815a31d4aae.pine",
+        "sha256": "c654d815a31d4aae2c715a5cfac9263db6a44e391d482dd903c91bb928327662",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.9485860999993747
+      },
+      {
+        "script": "ecosystem/library/ca92a5d4a75c40a0.pine",
+        "sha256": "ca92a5d4a75c40a0d8aa4f61405d7cd6649b590f6d83ed4ec7c4d79727ed4efd",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.9603860999995959
+      },
+      {
+        "script": "ecosystem/library/cd90c3b700469ebe.pine",
+        "sha256": "cd90c3b700469ebed14e319eff3939c85297dc866242fadfb2a75d3b8aa50119",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.8228693000000931
+      },
+      {
+        "script": "ecosystem/library/cdcbd298ef75a2fa.pine",
+        "sha256": "cdcbd298ef75a2fa39bf7220b4862bee26288e860b0f7c049692d80471ad8a86",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.9851483999991615
+      },
+      {
+        "script": "ecosystem/library/ce91ee9d2bc655eb.pine",
+        "sha256": "ce91ee9d2bc655ebb18f6a2b4040205ca4f86f516ead64ad22a6911bd95e9038",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.6910076000003755
+      },
+      {
+        "script": "ecosystem/library/ce9d0d2006dadd72.pine",
+        "sha256": "ce9d0d2006dadd7288731ac31bde71d17ef1840d3d3c555f467bbad4fb974459",
+        "comparisons": 32,
+        "intents": 8,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.3135480000000825
+      },
+      {
+        "script": "ecosystem/library/d0c26a71e6da2d4d.pine",
+        "sha256": "d0c26a71e6da2d4dfe5f5581d2b9ce604d30071639bcf994736a39984c979611",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.9074855000017124
+      },
+      {
+        "script": "ecosystem/library/d16d1be1b28cc0d1.pine",
+        "sha256": "d16d1be1b28cc0d11ed191ff36c702ca0251f5465be79a5a02a352493541b170",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.853764699999374
+      },
+      {
+        "script": "ecosystem/library/d1c3e8e35c01b62c.pine",
+        "sha256": "d1c3e8e35c01b62cae0d647f32657fb5b89b622cf88fedc35cf9a043cf21fcb1",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 1.0415030000003753
+      },
+      {
+        "script": "ecosystem/library/d27dacb7c2bd791d.pine",
+        "sha256": "d27dacb7c2bd791d1c2059ec77005f23f495377429091d7c4aaa60b71b24be5c",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 1.072086100000888
+      },
+      {
+        "script": "ecosystem/library/d3b3933915feb600.pine",
+        "sha256": "d3b3933915feb60088acc271c829f1264936a1518cf611d75d8a75569f026f03",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.6750898999998753
+      },
+      {
+        "script": "ecosystem/library/d4571a0cf7ada000.pine",
+        "sha256": "d4571a0cf7ada000e79385fba6ce7b8ce65173913c9e1f5462c9582edc3b120a",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.8990440999987186
+      },
+      {
+        "script": "ecosystem/library/d653c72c8f6d613e.pine",
+        "sha256": "d653c72c8f6d613e021763e7261836b487bfe1918a2a3bc90ecbf130cee7cdbf",
+        "comparisons": 32,
+        "intents": 1,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.023645100000067
+      },
+      {
+        "script": "ecosystem/library/d6670ee41476dc6a.pine",
+        "sha256": "d6670ee41476dc6ad3bd1616cf3b3997e4c1a8fee8d2b3b65259ac811e2fd03b",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 14,
+        "passed": true,
+        "seconds": 1.000704999998561
+      },
+      {
+        "script": "ecosystem/library/d85db7f610a5629f.pine",
+        "sha256": "d85db7f610a5629fdf2d681e28e4930a06a5ceb90614c908b6c7cd66211311c4",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.8809416000003694
+      },
+      {
+        "script": "ecosystem/library/d881d3225da0254f.pine",
+        "sha256": "d881d3225da0254f4639f95a8c61620af0607fd6cca4732aca9b019237a87bc3",
+        "comparisons": 32,
+        "intents": 2,
+        "actions": 2,
+        "passed": true,
+        "seconds": 0.8395455999998376
+      },
+      {
+        "script": "ecosystem/library/d974012d061bec0d.pine",
+        "sha256": "d974012d061bec0db8693dc37382f02090c0cc003dba6c2c8ccebc5d65067792",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.0432884999991074
+      },
+      {
+        "script": "ecosystem/library/db32ec84a8ea0505.pine",
+        "sha256": "db32ec84a8ea05052248797afe284c2713e49102a3f736416450b053e4aef947",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 1.0517459000002418
+      },
+      {
+        "script": "ecosystem/library/dd67b390927ee018.pine",
+        "sha256": "dd67b390927ee0186d36f55703d95bd57b8b557b15095ec080dd4e7600862692",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.8380545999989408
+      },
+      {
+        "script": "ecosystem/library/e1fa78a512744c0d.pine",
+        "sha256": "e1fa78a512744c0d5d7a86b6b8c200384ab050ecd7778f86576553e4bc19c515",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.9145786000008229
+      },
+      {
+        "script": "ecosystem/library/e2a461cc2a3ff2b2.pine",
+        "sha256": "e2a461cc2a3ff2b218c5054b4b5e161974f8831dfad5e3d1c0f649ff9ff54a9f",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8355817000010575
+      },
+      {
+        "script": "ecosystem/library/e396d115571ef240.pine",
+        "sha256": "e396d115571ef240e5d0f23e9b5fb2d89813849321c5d9ae06db8d35118569c7",
+        "comparisons": 32,
+        "intents": 8,
+        "actions": 8,
+        "passed": true,
+        "seconds": 0.680358100000376
+      },
+      {
+        "script": "ecosystem/library/e4d666d9db526d0a.pine",
+        "sha256": "e4d666d9db526d0af072dd369da9f764505491f9f9cf97b359c94527863b058c",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.767218300001332
+      },
+      {
+        "script": "ecosystem/library/e5d38511d69a1a80.pine",
+        "sha256": "e5d38511d69a1a80b45b2a9bae4d50419e2bbf859ecf026ad0f22cb51bd91dad",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.908763600000384
+      },
+      {
+        "script": "ecosystem/library/e6bc575deff5802b.pine",
+        "sha256": "e6bc575deff5802b5617a51baeb0a2c4ed8279a5a33c4040e01ac066421b8582",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 11,
+        "passed": true,
+        "seconds": 0.7289013000008708
+      },
+      {
+        "script": "ecosystem/library/e6c523d6bb0da02c.pine",
+        "sha256": "e6c523d6bb0da02c5a28e753bbe3bdda8e4d0ec726ce5ea7dc8f7b871f50dfee",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.6928805999996257
+      },
+      {
+        "script": "ecosystem/library/e9a07449adc7b0ba.pine",
+        "sha256": "e9a07449adc7b0bacb5820d1ebb3eb780cd49c2be845098845ad0c424cf42dc5",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 14,
+        "passed": true,
+        "seconds": 0.828526299999794
+      },
+      {
+        "script": "ecosystem/library/eb1b9b940743b30e.pine",
+        "sha256": "eb1b9b940743b30e03db1d5a757496a93d5151827caa4cd852ec56d41a8b95f1",
+        "comparisons": 32,
+        "intents": 10,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.719991600000867
+      },
+      {
+        "script": "ecosystem/library/eb82395bbe8964c9.pine",
+        "sha256": "eb82395bbe8964c94d35952f2c2022d47068675f055fa8c15d4d5ab95b1485a3",
+        "comparisons": 32,
+        "intents": 16,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.7227316999997129
+      },
+      {
+        "script": "ecosystem/library/ecad268d912c4356.pine",
+        "sha256": "ecad268d912c43565e13926d6523ea18b10ae92083c5ee27ceda04acecb8634f",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.5995669000003545
+      },
+      {
+        "script": "ecosystem/library/ee2b49852875660c.pine",
+        "sha256": "ee2b49852875660c6410986a837784e7d67becf0b7ab968f7aa975a97245d02e",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.7062287000007927
+      },
+      {
+        "script": "ecosystem/library/f0dbd1d329dd2869.pine",
+        "sha256": "f0dbd1d329dd2869fb2b4c42cd8b842d969c863b34a1d443e9fc55f1b3fcfb88",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.5319634000006772
+      },
+      {
+        "script": "ecosystem/library/f21eaf4a32e55ed3.pine",
+        "sha256": "f21eaf4a32e55ed320c9a6ed722eced9833ce7871579c82c4b217995101a8358",
+        "comparisons": 32,
+        "intents": 31,
+        "actions": 13,
+        "passed": true,
+        "seconds": 0.663368099998479
+      },
+      {
+        "script": "ecosystem/library/f298b706ff958a09.pine",
+        "sha256": "f298b706ff958a09bf223941b7c6a273c8963f70632875bb93e514e726d30b3b",
+        "comparisons": 32,
+        "intents": 2,
+        "actions": 0,
+        "passed": true,
+        "seconds": 1.1127814999999828
+      },
+      {
+        "script": "ecosystem/library/f3bebacdb55cd0cb.pine",
+        "sha256": "f3bebacdb55cd0cb7472b763d6e6123f89bb8434d78a4f8fe23a76aacdf3831f",
+        "comparisons": 32,
+        "intents": 8,
+        "actions": 4,
+        "passed": true,
+        "seconds": 0.6070964000009553
+      },
+      {
+        "script": "ecosystem/library/f967234853c99eb6.pine",
+        "sha256": "f967234853c99eb626e9eca024eb4798b00365c9b3446d2eef70322a103206b7",
+        "comparisons": 32,
+        "intents": 12,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.5913263000002189
+      },
+      {
+        "script": "ecosystem/library/f96b5b112fc8748d.pine",
+        "sha256": "f96b5b112fc8748dedfa799efdae5e626f4193247f9c009f6fd292f77cd221f2",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.662066999999297
+      },
+      {
+        "script": "ecosystem/library/f970d39872b28d42.pine",
+        "sha256": "f970d39872b28d42d6215176227bbaf7cfc2c86cb45fc43650d70488377a55d6",
+        "comparisons": 32,
+        "intents": 1,
+        "actions": 1,
+        "passed": true,
+        "seconds": 0.7893074000003253
+      },
+      {
+        "script": "ecosystem/library/f9be0e660bcd6767.pine",
+        "sha256": "f9be0e660bcd676737fe0d06d9889f5bf61d79b0d54624c28a140e9870037e19",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 12,
+        "passed": true,
+        "seconds": 0.8550697000009677
+      },
+      {
+        "script": "ecosystem/library/fa69857c587d1b54.pine",
+        "sha256": "fa69857c587d1b540c6cc1313fd67d943f509016d857e4f8865d6b258aea38d4",
+        "comparisons": 32,
+        "intents": 20,
+        "actions": 10,
+        "passed": true,
+        "seconds": 0.6869962999990094
+      },
+      {
+        "script": "ecosystem/library/fdeee26dca92e02b.pine",
+        "sha256": "fdeee26dca92e02b59e393d8baf57917bf7b81826b6981f1b62840f37783b375",
+        "comparisons": 32,
+        "intents": 12,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.5785030999995797
+      },
+      {
+        "script": "ecosystem/library/0bbcfc33ace17047.pine",
+        "sha256": "0bbcfc33ace170475817a83239e43ba73faf06874339a189d1be53dbb5b9640b",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.6587687999999616
+      },
+      {
+        "script": "ecosystem/library/1d966b917a19887f.pine",
+        "sha256": "1d966b917a19887f80881413ae8be040d5ecb9d6cc92150d00c9b3f54df048ab",
+        "comparisons": 32,
+        "intents": 1,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.558692799999335
+      },
+      {
+        "script": "ecosystem/library/37c9fe91c8bb0c11.pine",
+        "sha256": "37c9fe91c8bb0c11fc3d11497384f9c1b0db7b2d651944b5491ec6d4f020f15f",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.5319675999999163
+      },
+      {
+        "script": "ecosystem/library/445aab19da9dec03.pine",
+        "sha256": "445aab19da9dec035c23f833578d6c81ed7414f06f4b589d1d87c570e3f390bb",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.5444464000011067
+      },
+      {
+        "script": "ecosystem/library/4bf311a1c1d045a5.pine",
+        "sha256": "4bf311a1c1d045a5be7303c27c3b2a4b4d8ec0a7ae63007e1df5a7dc92c554cb",
+        "comparisons": 36,
+        "intents": 6,
+        "actions": 0,
+        "passed": true,
+        "matched_errors": [
+          {
+            "seed": 19,
+            "bar": 1,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 31,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 32,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 33,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 64,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 65,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 128,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 129,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 256,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 512,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          }
+        ],
+        "seconds": 0.49482219999845256
+      },
+      {
+        "script": "ecosystem/library/5f281234241c558c.pine",
+        "sha256": "5f281234241c558c8017c47acc93b1860f28ed2ed9827ec0ff6f5b400094d8de",
+        "comparisons": 32,
+        "intents": 13,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.5346322000004875
+      },
+      {
+        "script": "ecosystem/library/69d77b08d3ec70f5.pine",
+        "sha256": "69d77b08d3ec70f579337bfce7bc1c1a86c1b085d68fd258fc6002d37050bd6c",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.5733127999992575
+      },
+      {
+        "script": "ecosystem/library/7e6f8d9809699bb1.pine",
+        "sha256": "7e6f8d9809699bb16026faf3f42e07a95c8480b0bffcc848ceb6549d54bbb407",
+        "comparisons": 35,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "matched_errors": [
+          {
+            "seed": 19,
+            "bar": 31,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 32,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 33,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 64,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 65,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 128,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 129,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 256,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 512,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          }
+        ],
+        "seconds": 0.5046215000002121
+      },
+      {
+        "script": "ecosystem/library/acadb920444d17a1.pine",
+        "sha256": "acadb920444d17a13857cc7a7e81884b7f4db56e823bdcbac1acb83b2d65365b",
+        "comparisons": 32,
+        "intents": 40,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7191645999992033
+      },
+      {
+        "script": "ecosystem/library/d4e09690084cd781.pine",
+        "sha256": "d4e09690084cd78173ca8534b5e08e2b8f5cb46281bcda027814ee6fbb7d1718",
+        "comparisons": 36,
+        "intents": 3,
+        "actions": 3,
+        "passed": true,
+        "matched_errors": [
+          {
+            "seed": 19,
+            "bar": 1,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 31,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 32,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 33,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 64,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 65,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 128,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 129,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 256,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          },
+          {
+            "seed": 19,
+            "bar": 512,
+            "error": "E_EXTERNAL_UNSUPPORTED: order value must be numeric",
+            "rust_error": "RuntimeError { message: \"E_EXTERNAL_UNSUPPORTED: order value must be numeric\" }"
+          }
+        ],
+        "seconds": 0.4448563000005379
+      },
+      {
+        "script": "ecosystem/library/fcbb24e7080c73f4.pine",
+        "sha256": "fcbb24e7080c73f4c5c7ed256a799050118d280206ec2e0d67406c5e3daea828",
+        "comparisons": 32,
+        "intents": 0,
+        "actions": 0,
+        "passed": true,
+        "seconds": 0.7365255999993678
+      }
+    ],
+    "probe_sha256": "f74b83a195a9b1127bc764eef9a764c7558e0b1220b89754b19b6f39e96e4ff1",
+    "manifest_sha256": "2b5e878b4f0806ed84b7560d431158fbac419afd13a5f34e57317ee41951ffe8",
+    "replay_state": true,
+    "check_migration": true,
+    "timeout_ms": 5000,
+    "python_runtime": {
+      "version": "0.3.1+mf1",
+      "sha256": "4e12faa2992f5934f8c7fdc875fe6858ea56bc469d89e2b2fc203286d6b54075"
+    },
+    "adapter_sha256": {
+      "bot.py": "8bee96d0681c3ee7fcbcebfe985d260fadc65f5e7c2b323ce2621a22cdced459",
+      "broker.py": "229eb40f283c003e1ca5fa9d837d153e0de613812b8002e7f7962616a2f7d236",
+      "incremental.py": "66158d6dca7f746dbdddaf79135bff9c3aa2517dbc5a89c67fdd7482496c8f32",
+      "incremental-qualified.json": "5c929a1965f9b3c095e8c065bd085c89d5b733099e653b16862780308011686b"
+    }
+  },
+  "recovery": {
+    "exe_sha256": "7c3f8351a29912339b5678f9049deb8b5c62d3cf7eac412e227bad8c98119108",
+    "recipe_sha256": "9c84db00bf79311ff4636f55f4c0ae5f90726dea509fdc47fb8d30a85fff9038",
+    "segment_steps": 70,
+    "require_direct_segments": true,
+    "runs": [
+      {
+        "audit_sha256": "993187eb2e34b012e8c520764dba83a061bd1180c0403769adc09df1842ead50",
+        "audit_equal": true,
+        "name": "process",
+        "segments": [
+          [
+            210,
+            false
+          ]
+        ],
+        "route_evidence": [
+          {
+            "step": 210,
+            "requested_direct": false,
+            "direct_calls": 0
+          }
+        ],
+        "sha256": "b36ba57086a09cb307acf1aafe3c6a91f7f5a86a064843153c6385e304405d54",
+        "equal": true,
+        "trades": {
+          "V-BTC-PERP": 3281,
+          "V-BTC-SPOT": 3809
+        }
+      },
+      {
+        "audit_sha256": "993187eb2e34b012e8c520764dba83a061bd1180c0403769adc09df1842ead50",
+        "audit_equal": true,
+        "name": "direct",
+        "segments": [
+          [
+            210,
+            true
+          ]
+        ],
+        "route_evidence": [
+          {
+            "step": 210,
+            "requested_direct": true,
+            "direct_calls": 2310
+          }
+        ],
+        "sha256": "b36ba57086a09cb307acf1aafe3c6a91f7f5a86a064843153c6385e304405d54",
+        "equal": true,
+        "trades": {
+          "V-BTC-PERP": 3281,
+          "V-BTC-SPOT": 3809
+        }
+      },
+      {
+        "audit_sha256": "993187eb2e34b012e8c520764dba83a061bd1180c0403769adc09df1842ead50",
+        "audit_equal": true,
+        "name": "direct-restarted",
+        "segments": [
+          [
+            70,
+            true
+          ],
+          [
+            140,
+            true
+          ],
+          [
+            210,
+            true
+          ]
+        ],
+        "route_evidence": [
+          {
+            "step": 70,
+            "requested_direct": true,
+            "direct_calls": 770
+          },
+          {
+            "step": 140,
+            "requested_direct": true,
+            "direct_calls": 770
+          },
+          {
+            "step": 210,
+            "requested_direct": true,
+            "direct_calls": 770
+          }
+        ],
+        "sha256": "b36ba57086a09cb307acf1aafe3c6a91f7f5a86a064843153c6385e304405d54",
+        "equal": true,
+        "trades": {
+          "V-BTC-PERP": 3281,
+          "V-BTC-SPOT": 3809
+        }
+      },
+      {
+        "audit_sha256": "993187eb2e34b012e8c520764dba83a061bd1180c0403769adc09df1842ead50",
+        "audit_equal": true,
+        "name": "process-direct-restarted",
+        "segments": [
+          [
+            70,
+            false
+          ],
+          [
+            140,
+            true
+          ],
+          [
+            210,
+            true
+          ]
+        ],
+        "route_evidence": [
+          {
+            "step": 70,
+            "requested_direct": false,
+            "direct_calls": 0
+          },
+          {
+            "step": 140,
+            "requested_direct": true,
+            "direct_calls": 770
+          },
+          {
+            "step": 210,
+            "requested_direct": true,
+            "direct_calls": 770
+          }
+        ],
+        "sha256": "b36ba57086a09cb307acf1aafe3c6a91f7f5a86a064843153c6385e304405d54",
+        "equal": true,
+        "trades": {
+          "V-BTC-PERP": 3281,
+          "V-BTC-SPOT": 3809
+        }
+      }
+    ]
+  },
+  "recovery_coverage": {
+    "audit_lines": 70814,
+    "pine_gateway_actions": {
+      "PlaceProtected": 52,
+      "SetPositionProtection": 29,
+      "protection_accepted": 26,
+      "protection_rejected": 3
+    },
+    "sources_with_gateway_actions": {
+      "ecosystem/library/d4e09690084cd781.pine": 10,
+      "ecosystem/library/fcbb24e7080c73f4.pine": 20,
+      "ecosystem/library/37c9fe91c8bb0c11.pine": 13,
+      "ecosystem/library/445aab19da9dec03.pine": 13,
+      "ecosystem/library/acadb920444d17a1.pine": 8,
+      "ecosystem/library/69d77b08d3ec70f5.pine": 15,
+      "ecosystem/library/0bbcfc33ace17047.pine": 2
+    },
+    "sources_without_gateway_actions": [
+      "ecosystem/library/1d966b917a19887f.pine",
+      "ecosystem/library/4bf311a1c1d045a5.pine",
+      "ecosystem/library/5f281234241c558c.pine",
+      "ecosystem/library/7e6f8d9809699bb1.pine"
+    ]
+  },
+  "http": [
+    {
+      "name": "before-1",
+      "report": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\http-before-1\\report.json",
+      "report_sha256": "cd31c325b3b5d214c0b1c682aadea3147dac91f05c78ef7d3e80fe1d9b44a474",
+      "scope": "212 exact ecosystem Pine sources plus 300 original native liquidity agents; one-second bars; short in-memory-journal HTTP probe, not production capacity",
+      "recipe_sha256": "76008baecc8dc9d40e47c1018ecac33d7e891904a06e7139722aac5aba11a8eb",
+      "server_sha256": "4ddd400e8c74963a1b20430f1b9f1c7b4ae72f492447daf1be992c18181d454b",
+      "measurement_seconds": 45.0,
+      "strategy_p95_ms": 204.077,
+      "decision_p95_ms": 59.271,
+      "place_p95_ms": 26.652499998817802,
+      "peak_process_tree_rss_mib": 886.59375,
+      "compiler_nonempty_samples": 0,
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "trace_shutdown_complete": true,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "no_input_feed_errors": true,
+        "recent_nonempty_input": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": null,
+        "all_native_pine_lookbacks_exercised": null,
+        "all_horizon_groups_exercised": true,
+        "no_closed_bar_backlog_after_pause": false,
+        "no_closed_bar_backlog_at_cutoff": false,
+        "no_skipped_bar_decisions": false,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": null,
+        "requested_runtime_route": false,
+        "bot_durable_receipts": true,
+        "full_requested_duration_observed": true,
+        "sustained_target": null,
+        "no_harness_errors": true,
+        "process_sampling_complete": true,
+        "no_multi_second_clock_stall": null,
+        "metric_window_captured": true,
+        "long_run_cutoff_receipts": null,
+        "long_run_cycle_input": null,
+        "sustained_accepted_coverage": null,
+        "pine_checkpoint_schema": null
+      },
+      "receipt_audit": {
+        "errors": [],
+        "trace_errors": 0,
+        "complete_generated_action_receipts": true,
+        "complete_decision_outcomes": true,
+        "qualified": true,
+        "bar_cohort_action_dispositions": {
+          "accepted": 1104,
+          "rejected": 4
+        }
+      },
+      "discard_reasons": {
+        "('decision_discarded', 'epoch_changed_in_ready_queue')": 76
+      },
+      "first_discard_wall_us": 50170740,
+      "window_end_wall_us": 50001919,
+      "shutdown": {
+        "version": 1,
+        "mode": "trace_graceful",
+        "requested": true,
+        "timeout_seconds": 15,
+        "forced_kill": false,
+        "qualified": true,
+        "acknowledgement": {
+          "marker": {
+            "decision_sequence": 102755,
+            "process_id": 26720,
+            "schema_version": 1,
+            "stage": "trace_complete",
+            "trace_errors": 0,
+            "wall_us": 51210718
+          },
+          "trace_bytes": 44854680,
+          "trace_path": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\http-before-1\\bots-212\\bot-receipts.jsonl",
+          "version": 1
+        },
+        "acknowledgement_path": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\http-before-1\\bots-212\\bot-receipts.jsonl.complete.json",
+        "exit_code": 0,
+        "elapsed_seconds": 1.2226787999989028
+      },
+      "cutoff_progress": {
+        "market_time_ms": 200000,
+        "observed_instances": 212,
+        "missing_participants": [],
+        "instances_behind": 52,
+        "backlog_bars": {
+          "count": 212,
+          "p50": 0,
+          "p95": 2,
+          "max": 2
+        },
+        "scope": "required closed bars at scheduled cutoff versus per-decision durable publication at or before cutoff; post-cutoff drain cannot erase backlog"
+      },
+      "language_groups": {
+        "native": {
+          "instances": 300,
+          "initialized": 300,
+          "evaluated_bars": 0,
+          "skipped_bar_decisions": 0,
+          "observed": 45,
+          "lag_sim_ms": {
+            "count": 45,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 212,
+          "initialized": 212,
+          "evaluated_bars": 42074,
+          "skipped_bar_decisions": 105,
+          "observed": 212,
+          "lag_sim_ms": {
+            "count": 212,
+            "p50_ms": 1000,
+            "p95_ms": 1000,
+            "max_ms": 1000
+          },
+          "closed_bar_backlog": {
+            "count": 212,
+            "p50": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "instances_behind_closed_bars": 128
+        }
+      }
+    },
+    {
+      "name": "after-1",
+      "report": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\http-after-1\\report.json",
+      "report_sha256": "0f618ef9a7b0673354ebaaa83cb08fb5b645f39fdd95138c626763b2e3063cbc",
+      "scope": "212 exact ecosystem Pine sources plus 300 original native liquidity agents; one-second bars; short in-memory-journal HTTP probe, not production capacity",
+      "recipe_sha256": "76008baecc8dc9d40e47c1018ecac33d7e891904a06e7139722aac5aba11a8eb",
+      "server_sha256": "426bc9b9a4c893130c233804daf7b9f04aa1ec80b1ee4ac544174d24e5d565b1",
+      "measurement_seconds": 45.0,
+      "strategy_p95_ms": 181.723,
+      "decision_p95_ms": 54.035,
+      "place_p95_ms": 27.48549999887473,
+      "peak_process_tree_rss_mib": 673.16015625,
+      "compiler_nonempty_samples": 0,
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "trace_shutdown_complete": true,
+        "literal_step_rate": true,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "no_input_feed_errors": true,
+        "recent_nonempty_input": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": null,
+        "all_native_pine_lookbacks_exercised": null,
+        "all_horizon_groups_exercised": true,
+        "no_closed_bar_backlog_after_pause": false,
+        "no_closed_bar_backlog_at_cutoff": false,
+        "no_skipped_bar_decisions": false,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": null,
+        "requested_runtime_route": true,
+        "bot_durable_receipts": false,
+        "full_requested_duration_observed": true,
+        "sustained_target": null,
+        "no_harness_errors": true,
+        "process_sampling_complete": true,
+        "no_multi_second_clock_stall": null,
+        "metric_window_captured": true,
+        "long_run_cutoff_receipts": null,
+        "long_run_cycle_input": null,
+        "sustained_accepted_coverage": null,
+        "pine_checkpoint_schema": null
+      },
+      "receipt_audit": {
+        "errors": [],
+        "trace_errors": 0,
+        "complete_generated_action_receipts": true,
+        "complete_decision_outcomes": true,
+        "qualified": false,
+        "bar_cohort_action_dispositions": {
+          "accepted": 1744,
+          "rejected": 3,
+          "discarded": 4
+        }
+      },
+      "discard_reasons": {
+        "('decision_discarded', 'epoch_changed_in_ready_queue')": 64
+      },
+      "first_discard_wall_us": 50122248,
+      "window_end_wall_us": 50012108,
+      "shutdown": {
+        "version": 1,
+        "mode": "trace_graceful",
+        "requested": true,
+        "timeout_seconds": 15,
+        "forced_kill": false,
+        "qualified": true,
+        "acknowledgement": {
+          "marker": {
+            "decision_sequence": 102767,
+            "process_id": 43452,
+            "schema_version": 1,
+            "stage": "trace_complete",
+            "trace_errors": 0,
+            "wall_us": 51217806
+          },
+          "trace_bytes": 44846198,
+          "trace_path": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\http-after-1\\bots-212\\bot-receipts.jsonl",
+          "version": 1
+        },
+        "acknowledgement_path": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\http-after-1\\bots-212\\bot-receipts.jsonl.complete.json",
+        "exit_code": 0,
+        "elapsed_seconds": 1.451758899998822
+      },
+      "cutoff_progress": {
+        "market_time_ms": 201000,
+        "observed_instances": 212,
+        "missing_participants": [],
+        "instances_behind": 212,
+        "backlog_bars": {
+          "count": 212,
+          "p50": 2,
+          "p95": 2,
+          "max": 2
+        },
+        "scope": "required closed bars at scheduled cutoff versus per-decision durable publication at or before cutoff; post-cutoff drain cannot erase backlog"
+      },
+      "language_groups": {
+        "native": {
+          "instances": 300,
+          "initialized": 300,
+          "evaluated_bars": 0,
+          "skipped_bar_decisions": 0,
+          "observed": 45,
+          "lag_sim_ms": {
+            "count": 45,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 212,
+          "initialized": 212,
+          "evaluated_bars": 42005,
+          "skipped_bar_decisions": 11,
+          "observed": 212,
+          "lag_sim_ms": {
+            "count": 212,
+            "p50_ms": 1000,
+            "p95_ms": 1000,
+            "max_ms": 1000
+          },
+          "closed_bar_backlog": {
+            "count": 212,
+            "p50": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "instances_behind_closed_bars": 197
+        }
+      }
+    },
+    {
+      "name": "after-2",
+      "report": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\http-after-2\\report.json",
+      "report_sha256": "da26b75c9d1034b7c189980747f586ac745476a5bb5f1c24a128c52b4d17ae2e",
+      "scope": "212 exact ecosystem Pine sources plus 300 original native liquidity agents; one-second bars; short in-memory-journal HTTP probe, not production capacity",
+      "recipe_sha256": "76008baecc8dc9d40e47c1018ecac33d7e891904a06e7139722aac5aba11a8eb",
+      "server_sha256": "426bc9b9a4c893130c233804daf7b9f04aa1ec80b1ee4ac544174d24e5d565b1",
+      "measurement_seconds": 45.0,
+      "strategy_p95_ms": 173.322,
+      "decision_p95_ms": 51.664,
+      "place_p95_ms": 21.10750000065309,
+      "peak_process_tree_rss_mib": 657.6171875,
+      "compiler_nonempty_samples": 0,
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "trace_shutdown_complete": true,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "no_input_feed_errors": true,
+        "recent_nonempty_input": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": null,
+        "all_native_pine_lookbacks_exercised": null,
+        "all_horizon_groups_exercised": true,
+        "no_closed_bar_backlog_after_pause": false,
+        "no_closed_bar_backlog_at_cutoff": false,
+        "no_skipped_bar_decisions": true,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": null,
+        "requested_runtime_route": true,
+        "bot_durable_receipts": false,
+        "full_requested_duration_observed": true,
+        "sustained_target": null,
+        "no_harness_errors": true,
+        "process_sampling_complete": true,
+        "no_multi_second_clock_stall": null,
+        "metric_window_captured": true,
+        "long_run_cutoff_receipts": null,
+        "long_run_cycle_input": null,
+        "sustained_accepted_coverage": null,
+        "pine_checkpoint_schema": null
+      },
+      "receipt_audit": {
+        "errors": [],
+        "trace_errors": 0,
+        "complete_generated_action_receipts": true,
+        "complete_decision_outcomes": true,
+        "qualified": false,
+        "bar_cohort_action_dispositions": {
+          "accepted": 1378,
+          "rejected": 1,
+          "discarded": 12
+        }
+      },
+      "discard_reasons": {
+        "('decision_discarded', 'epoch_changed_in_ready_queue')": 212
+      },
+      "first_discard_wall_us": 50149880,
+      "window_end_wall_us": 50002313,
+      "shutdown": {
+        "version": 1,
+        "mode": "trace_graceful",
+        "requested": true,
+        "timeout_seconds": 15,
+        "forced_kill": false,
+        "qualified": true,
+        "acknowledgement": {
+          "marker": {
+            "decision_sequence": 102912,
+            "process_id": 36456,
+            "schema_version": 1,
+            "stage": "trace_complete",
+            "trace_errors": 0,
+            "wall_us": 51008172
+          },
+          "trace_bytes": 44948856,
+          "trace_path": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\http-after-2\\bots-212\\bot-receipts.jsonl",
+          "version": 1
+        },
+        "acknowledgement_path": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\http-after-2\\bots-212\\bot-receipts.jsonl.complete.json",
+        "exit_code": 0,
+        "elapsed_seconds": 1.2608609999988403
+      },
+      "cutoff_progress": {
+        "market_time_ms": 201000,
+        "observed_instances": 212,
+        "missing_participants": [],
+        "instances_behind": 212,
+        "backlog_bars": {
+          "count": 212,
+          "p50": 1,
+          "p95": 1,
+          "max": 1
+        },
+        "scope": "required closed bars at scheduled cutoff versus per-decision durable publication at or before cutoff; post-cutoff drain cannot erase backlog"
+      },
+      "language_groups": {
+        "native": {
+          "instances": 300,
+          "initialized": 300,
+          "evaluated_bars": 0,
+          "skipped_bar_decisions": 0,
+          "observed": 45,
+          "lag_sim_ms": {
+            "count": 45,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 212,
+          "initialized": 212,
+          "evaluated_bars": 42006,
+          "skipped_bar_decisions": 0,
+          "observed": 212,
+          "lag_sim_ms": {
+            "count": 212,
+            "p50_ms": 1000,
+            "p95_ms": 1000,
+            "max_ms": 1000
+          },
+          "closed_bar_backlog": {
+            "count": 212,
+            "p50": 1,
+            "p95": 1,
+            "max": 1
+          },
+          "instances_behind_closed_bars": 196
+        }
+      }
+    },
+    {
+      "name": "before-2",
+      "report": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\http-before-2\\report.json",
+      "report_sha256": "8e149f95edaf96b2b289e8d45f7572a0e1cc4086669822ee5e79fbc507839b35",
+      "scope": "212 exact ecosystem Pine sources plus 300 original native liquidity agents; one-second bars; short in-memory-journal HTTP probe, not production capacity",
+      "recipe_sha256": "76008baecc8dc9d40e47c1018ecac33d7e891904a06e7139722aac5aba11a8eb",
+      "server_sha256": "4ddd400e8c74963a1b20430f1b9f1c7b4ae72f492447daf1be992c18181d454b",
+      "measurement_seconds": 45.0,
+      "strategy_p95_ms": 180.655,
+      "decision_p95_ms": 56.134,
+      "place_p95_ms": 51.18159999983618,
+      "peak_process_tree_rss_mib": 876.4375,
+      "compiler_nonempty_samples": 0,
+      "qualified": {
+        "order_p95_under_250ms": true,
+        "configured_step_rate": true,
+        "configured_40_steps_per_second": null,
+        "trace_shutdown_complete": true,
+        "literal_step_rate": false,
+        "all_languages_initialized": true,
+        "no_bot_errors": true,
+        "no_input_feed_errors": true,
+        "recent_nonempty_input": true,
+        "no_closed_bar_backlog": false,
+        "all_pine_lookbacks_exercised": null,
+        "all_native_pine_lookbacks_exercised": null,
+        "all_horizon_groups_exercised": true,
+        "no_closed_bar_backlog_after_pause": false,
+        "no_closed_bar_backlog_at_cutoff": false,
+        "no_skipped_bar_decisions": false,
+        "compiler_quiet": true,
+        "no_parallel_benchmark_server": true,
+        "diagnostic_stages_present": null,
+        "requested_runtime_route": false,
+        "bot_durable_receipts": true,
+        "full_requested_duration_observed": true,
+        "sustained_target": null,
+        "no_harness_errors": true,
+        "process_sampling_complete": true,
+        "no_multi_second_clock_stall": null,
+        "metric_window_captured": true,
+        "long_run_cutoff_receipts": null,
+        "long_run_cycle_input": null,
+        "sustained_accepted_coverage": null,
+        "pine_checkpoint_schema": null
+      },
+      "receipt_audit": {
+        "errors": [],
+        "trace_errors": 0,
+        "complete_generated_action_receipts": true,
+        "complete_decision_outcomes": true,
+        "qualified": true,
+        "bar_cohort_action_dispositions": {
+          "accepted": 1309
+        }
+      },
+      "discard_reasons": {},
+      "first_discard_wall_us": null,
+      "window_end_wall_us": 50001470,
+      "shutdown": {
+        "version": 1,
+        "mode": "trace_graceful",
+        "requested": true,
+        "timeout_seconds": 15,
+        "forced_kill": false,
+        "qualified": true,
+        "acknowledgement": {
+          "marker": {
+            "decision_sequence": 102824,
+            "process_id": 12428,
+            "schema_version": 1,
+            "stage": "trace_complete",
+            "trace_errors": 0,
+            "wall_us": 51185264
+          },
+          "trace_bytes": 44870294,
+          "trace_path": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\http-before-2\\bots-212\\bot-receipts.jsonl",
+          "version": 1
+        },
+        "acknowledgement_path": "E:\\projects\\MarketForge-tuning\\.local\\exits-20261024\\http-before-2\\bots-212\\bot-receipts.jsonl.complete.json",
+        "exit_code": 0,
+        "elapsed_seconds": 1.1664853999991465
+      },
+      "cutoff_progress": {
+        "market_time_ms": 201000,
+        "observed_instances": 212,
+        "missing_participants": [],
+        "instances_behind": 212,
+        "backlog_bars": {
+          "count": 212,
+          "p50": 1,
+          "p95": 2,
+          "max": 2
+        },
+        "scope": "required closed bars at scheduled cutoff versus per-decision durable publication at or before cutoff; post-cutoff drain cannot erase backlog"
+      },
+      "language_groups": {
+        "native": {
+          "instances": 300,
+          "initialized": 300,
+          "evaluated_bars": 0,
+          "skipped_bar_decisions": 0,
+          "observed": 45,
+          "lag_sim_ms": {
+            "count": 45,
+            "p50_ms": 0,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          "closed_bar_backlog": null,
+          "instances_behind_closed_bars": 0
+        },
+        "pine": {
+          "instances": 212,
+          "initialized": 212,
+          "evaluated_bars": 42170,
+          "skipped_bar_decisions": 56,
+          "observed": 212,
+          "lag_sim_ms": {
+            "count": 212,
+            "p50_ms": 0,
+            "p95_ms": 1000,
+            "max_ms": 1000
+          },
+          "closed_bar_backlog": {
+            "count": 212,
+            "p50": 0,
+            "p95": 1,
+            "max": 1
+          },
+          "instances_behind_closed_bars": 32
+        }
+      }
+    }
+  ],
+  "research_aggregate": {
+    "scale": {
+      "before": {
+        "samples": 3,
+        "wall_seconds": [
+          33.83325309999964,
+          43.93728059999921,
+          41.13030319999962
+        ],
+        "mean_wall_seconds": 39.63361229999949,
+        "mean_plugins_wall_seconds": 11.2,
+        "mean_gateway_seconds": 10.633333333333333,
+        "mean_peak_sampled_rss_mib": 2343.2708333333335
+      },
+      "after": {
+        "samples": 3,
+        "wall_seconds": [
+          31.630362899999454,
+          40.0596031999994,
+          44.162730699999884
+        ],
+        "mean_wall_seconds": 38.61756559999958,
+        "mean_plugins_wall_seconds": 9.633333333333333,
+        "mean_gateway_seconds": 10.866666666666667,
+        "mean_peak_sampled_rss_mib": 2275.12890625
+      },
+      "wall_change_pct": -2.563598524174704
+    },
+    "long": {
+      "before": {
+        "samples": 3,
+        "wall_seconds": [
+          47.777969400000075,
+          43.59704310000052,
+          39.51835879999999
+        ],
+        "mean_wall_seconds": 43.63112376666686,
+        "mean_plugins_wall_seconds": 21.033333333333335,
+        "mean_gateway_seconds": 11.3,
+        "mean_peak_sampled_rss_mib": 1315.078125
+      },
+      "after": {
+        "samples": 3,
+        "wall_seconds": [
+          46.27288670000053,
+          44.31415720000041,
+          45.22132109999984
+        ],
+        "mean_wall_seconds": 45.26945500000026,
+        "mean_plugins_wall_seconds": 21.766666666666666,
+        "mean_gateway_seconds": 11.9,
+        "mean_peak_sampled_rss_mib": 1291.6041666666667
+      },
+      "wall_change_pct": 3.754959973286409
+    },
+    "related": {
+      "before": {
+        "samples": 1,
+        "wall_seconds": [
+          8.150081300000238
+        ],
+        "mean_wall_seconds": 8.150081300000238,
+        "mean_plugins_wall_seconds": 1.2,
+        "mean_gateway_seconds": 3.7,
+        "mean_peak_sampled_rss_mib": 818.57421875
+      },
+      "after": {
+        "samples": 1,
+        "wall_seconds": [
+          6.357561999999234
+        ],
+        "mean_wall_seconds": 6.357561999999234,
+        "mean_plugins_wall_seconds": 1.1,
+        "mean_gateway_seconds": 2.7,
+        "mean_peak_sampled_rss_mib": 817.47265625
+      },
+      "wall_change_pct": -21.993882441405233
+    },
+    "poll": {
+      "before": {
+        "samples": 1,
+        "wall_seconds": [
+          6.897774600000048
+        ],
+        "mean_wall_seconds": 6.897774600000048,
+        "mean_plugins_wall_seconds": 0.9,
+        "mean_gateway_seconds": 3.7,
+        "mean_peak_sampled_rss_mib": 832.39453125
+      },
+      "after": {
+        "samples": 1,
+        "wall_seconds": [
+          6.352552800000922
+        ],
+        "mean_wall_seconds": 6.352552800000922,
+        "mean_plugins_wall_seconds": 0.8,
+        "mean_gateway_seconds": 3.5,
+        "mean_peak_sampled_rss_mib": 834.43359375
+      },
+      "wall_change_pct": -7.90431453064765
+    },
+    "live": {
+      "before": {
+        "samples": 1,
+        "wall_seconds": [
+          5.516559300000154
+        ],
+        "mean_wall_seconds": 5.516559300000154,
+        "mean_plugins_wall_seconds": 0.0,
+        "mean_gateway_seconds": 3.5,
+        "mean_peak_sampled_rss_mib": 383.046875
+      },
+      "after": {
+        "samples": 1,
+        "wall_seconds": [
+          5.446554999998625
+        ],
+        "mean_wall_seconds": 5.446554999998625,
+        "mean_plugins_wall_seconds": 0.0,
+        "mean_gateway_seconds": 3.5,
+        "mean_peak_sampled_rss_mib": 319.10546875
+      },
+      "wall_change_pct": -1.268984818155161
+    }
+  },
+  "retained_binary_sha256": {
+    "selected-exits-probe.exe": "f74b83a195a9b1127bc764eef9a764c7558e0b1220b89754b19b6f39e96e4ff1",
+    "selected-exits-server.exe": "426bc9b9a4c893130c233804daf7b9f04aa1ec80b1ee4ac544174d24e5d565b1",
+    "selected-exits.exe": "7c3f8351a29912339b5678f9049deb8b5c62d3cf7eac412e227bad8c98119108"
+  },
+  "rejected_multi_exit_candidate": {
+    "exe_sha256": "8b7da06004b99ed78ed2b15ca952b881f9c756e5997c6cc5f183859c09c3fbfe",
+    "recipe_sha256": "b7c5c43790409c7195a0d9407904b5912afd04b72cb0986f96a4750984a24b50",
+    "segment_steps": 70,
+    "require_direct_segments": true,
+    "runs": [
+      {
+        "audit_sha256": "84f822302320f5ab0578aa2f3f5ecbdb2dceb762f830e7d0d069e7eb843c552d",
+        "audit_equal": true,
+        "name": "process",
+        "segments": [
+          [
+            210,
+            false
+          ]
+        ],
+        "route_evidence": [
+          {
+            "step": 210,
+            "requested_direct": false,
+            "direct_calls": 0
+          }
+        ],
+        "sha256": "1994799ba27c6496797ccf509977c99e0d30b07a5ad3956edb90171b75b99071",
+        "equal": true,
+        "trades": {
+          "V-BTC-PERP": 3592,
+          "V-BTC-SPOT": 3809
+        }
+      },
+      {
+        "audit_sha256": "6f4b199431a0176332bf01ef0d29e5be02fb63c72e0206c89262089fd438d59a",
+        "audit_equal": false,
+        "name": "direct",
+        "segments": [
+          [
+            210,
+            true
+          ]
+        ],
+        "route_evidence": [
+          {
+            "step": 210,
+            "requested_direct": true,
+            "direct_calls": 5670
+          }
+        ],
+        "sha256": "4e190994c6c990988edd42b7d9c92497b32cbeb1701cc73941f233b68ea51c5a",
+        "equal": false,
+        "trades": {
+          "V-BTC-PERP": 3592,
+          "V-BTC-SPOT": 3809
+        }
+      }
+    ]
+  },
+  "order_inventory": [
+    {
+      "script": "ecosystem/library/0ba432e3093815af.pine",
+      "exit_ids": [
+        "long",
+        "short"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/0bbcfc33ace17047.pine",
+      "exit_ids": [
+        "Riposte close"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": true
+    },
+    {
+      "script": "ecosystem/library/0e07b7e189253835.pine",
+      "exit_ids": [
+        "TP Long",
+        "TP Short"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/1c3e7a6d00f4a1c9.pine",
+      "exit_ids": [
+        "Exit Long",
+        "Exit Short"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/1d966b917a19887f.pine",
+      "exit_ids": [
+        "Long Exit"
+      ],
+      "exit_calls": 1,
+      "qualified_single_exit": true
+    },
+    {
+      "script": "ecosystem/library/37c9fe91c8bb0c11.pine",
+      "exit_ids": [
+        "exit"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": true
+    },
+    {
+      "script": "ecosystem/library/3964e98f6646fd00.pine",
+      "exit_ids": [
+        "Compra",
+        "Venta"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/40cbb0653ef8cdc3.pine",
+      "exit_ids": [
+        "Exit Long",
+        "Exit Short"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/445aab19da9dec03.pine",
+      "exit_ids": [
+        "exit"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": true
+    },
+    {
+      "script": "ecosystem/library/46eab0499c9a4bc9.pine",
+      "exit_ids": [
+        "XL TP",
+        "XS TP"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/4bf311a1c1d045a5.pine",
+      "exit_ids": [
+        "Stop"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": true
+    },
+    {
+      "script": "ecosystem/library/5f281234241c558c.pine",
+      "exit_ids": [
+        "LE"
+      ],
+      "exit_calls": 3,
+      "qualified_single_exit": true
+    },
+    {
+      "script": "ecosystem/library/660e65aadf0a9b74.pine",
+      "exit_ids": [
+        "LONG SL",
+        "SHORT SL"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/688caf1916812892.pine",
+      "exit_ids": [
+        "Exit Long",
+        "Exit Short"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/69d77b08d3ec70f5.pine",
+      "exit_ids": [
+        "SL"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": true
+    },
+    {
+      "script": "ecosystem/library/6e0d7c7ac6e1a2c6.pine",
+      "exit_ids": [
+        "Long exit",
+        "Short exit"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/6e439c64f5726aa5.pine",
+      "exit_ids": [
+        "X_long",
+        "x_short"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/7e6f8d9809699bb1.pine",
+      "exit_ids": [
+        "Stop Loss"
+      ],
+      "exit_calls": 1,
+      "qualified_single_exit": true
+    },
+    {
+      "script": "ecosystem/library/94e787eabb083132.pine",
+      "exit_ids": [
+        "full",
+        "partial"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/95cf9f1e6231d665.pine",
+      "exit_ids": [
+        "Long TP/SL",
+        "Short TP/SL"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/acadb920444d17a1.pine",
+      "exit_ids": [
+        "Exit"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": true
+    },
+    {
+      "script": "ecosystem/library/b0dd0b0a7fda8c3e.pine",
+      "exit_ids": [
+        "Exit L",
+        "Exit S"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/b98f5d3bb3557a74.pine",
+      "exit_ids": [
+        "Long Exit",
+        "Short Exit"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/cea499e5f5cb9d0b.pine",
+      "exit_ids": [
+        "Long TP/SL",
+        "Short TP/SL"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    },
+    {
+      "script": "ecosystem/library/d4e09690084cd781.pine",
+      "exit_ids": [
+        "Stop"
+      ],
+      "exit_calls": 1,
+      "qualified_single_exit": true
+    },
+    {
+      "script": "ecosystem/library/fcbb24e7080c73f4.pine",
+      "exit_ids": [
+        "X"
+      ],
+      "exit_calls": 2,
+      "qualified_single_exit": true
+    },
+    {
+      "script": "ecosystem/library/ffa10719a6cadd6f.pine",
+      "exit_ids": [],
+      "exit_calls": 2,
+      "qualified_single_exit": false
+    }
+  ],
+  "http_aggregate": {
+    "before": {
+      "mean_run_strategy_p95_ms": 192.36599999999999,
+      "mean_peak_process_tree_rss_mib": 881.515625
+    },
+    "after": {
+      "mean_run_strategy_p95_ms": 177.5225,
+      "mean_peak_process_tree_rss_mib": 665.388671875
+    },
+    "strategy_p95_change_pct": -7.716280423775501,
+    "rss_change_pct": -24.517654253150646
+  },
+  "validation": {
+    "rust_passed": 393,
+    "rust_ignored": 12,
+    "python_passed": 43,
+    "oracle_vectors": 217,
+    "source_comparisons": 6795,
+    "expected_error_cases": 29,
+    "research_receipts_equal": true,
+    "research_compiler_samples": 0
+  },
+  "source_audit": {
+    "baseline_file_count": 4479,
+    "changed_existing": [
+      "exchange-server/src/pine_inprocess/broker_parity.rs",
+      "scripts/benchmark_pine_ecosystem.py",
+      "scripts/qualify_pine_direct.py",
+      "docs/PINE_BOTS.md",
+      "exchange-server/src/pine_inprocess.rs",
+      "exchange-server/src/pine_inprocess/broker.rs",
+      "exchange-server/src/pine_inprocess/checkpoint.rs"
+    ],
+    "missing": [],
+    "unchanged_python_broker_sha256": "229eb40f283c003e1ca5fa9d837d153e0de613812b8002e7f7962616a2f7d236"
+  },
+  "retained_source_sha256": {
+    "exchange-server/src/pine_inprocess/broker_parity.rs": "785fcd5852c53b22425132b088c5fea4abff0b8e5ba9fa39df0babfe10ac1aa5",
+    "scripts/benchmark_pine_ecosystem.py": "d53123fa1a50c3817bd43c568376fbae6e309dc30c886b0c0bd5073496715024",
+    "scripts/qualify_pine_direct.py": "6af9fa850d2db5d6be716480749642491340849f9196e6c7a4d354ad4f36b695",
+    "docs/PINE_BOTS.md": "fb81062f1ede0beee9f38453ac8682e41ed12d0c70b8bd514e1c72f8c6ea9c88",
+    "exchange-server/src/pine_inprocess.rs": "2deb6c63f1dab389c3afc789473f5ca83978e2657021bc79a6b2f9ce91b55c19",
+    "exchange-server/src/pine_inprocess/broker.rs": "4ec5ebe55a689da4c3304123ee1c107e1e6fcd25baeb13dafc754cef70912c07",
+    "exchange-server/src/pine_inprocess/checkpoint.rs": "f7992f9d41fe61b7489f2cdd09faa4a783fb8de4109fa619dd2edbf59c2de027",
+    "exchange-server/src/pine_inprocess/broker/exits.rs": "5b7c36c3d651b17c27c3d21c328df4f5b9569655963cab2933e7851f39f39784",
+    "exchange-server/src/pine_inprocess/exits-qualified.json": "78c8a1f55241d219ee73556d9f26619d776958e064d401caf0ef5fe54525319a",
+    "scripts/pine_exit_parity_fixtures.py": "954088377b277ad46e8428be48c20113ae87124b52372f97d373c3918c94d53b",
+    "python/tests/fixtures/pine_exit_direct.json": "bd398115ee9ff9b3ac54485be432396c2642b38b5cee11c42d9e72e1a627961c"
+  },
+  "retained_patch_sha256": "0b2440b2dbc5fa8bcdd26d03796bc2dccf70b02c2e8e41dc71c0e679c3560807"
+}

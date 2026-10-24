@@ -1,6 +1,6 @@
 //! Opt-in in-process adapter for installed, hash-qualified bar-close
 //! strategies. The process adapter remains authoritative for other sources,
-//! legacy mode, automatic hedging and position-protection configurations.
+//! legacy mode and automatic hedging. Exit protection is separately hash-qualified.
 //! Cached sessions are speculative: only the frozen committed transcript can
 //! authorize reuse. Orders still go through the existing scheduler/gateway.
 use exchange_core::{
@@ -73,6 +73,7 @@ struct Program {
     name: String,
     program: std::sync::OnceLock<Result<PreparedProgram, String>>,
     checkpoint_qualified: bool,
+    exit_qualified: bool,
 }
 impl Program {
     fn compiled(&self) -> Result<&PreparedProgram, BotError> {
@@ -157,11 +158,19 @@ impl Host {
         let ecosystem: BTreeMap<String, String> =
             serde_json::from_str(include_str!("pine_inprocess/ecosystem-qualified.json"))
                 .map_err(io)?;
+        let exits: BTreeMap<String, String> =
+            serde_json::from_str(include_str!("pine_inprocess/exits-qualified.json"))
+                .map_err(io)?;
         let qualified = QUALIFIED
             .iter()
             .map(|&(name, hash)| (name, hash, true))
             .chain(
                 ecosystem
+                    .iter()
+                    .map(|(name, hash)| (name.as_str(), hash.as_str(), false)),
+            )
+            .chain(
+                exits
                     .iter()
                     .map(|(name, hash)| (name.as_str(), hash.as_str(), false)),
             );
@@ -179,6 +188,7 @@ impl Host {
                 name: name.into(),
                 program: std::sync::OnceLock::new(),
                 checkpoint_qualified,
+                exit_qualified: exits.contains_key(name),
             };
             // Keep original-source startup validation. Ecosystem programs are
             // compiled exactly once, on demand, and shared across instances.
@@ -247,10 +257,7 @@ impl Host {
                 .as_object()
                 .is_some_and(|o| o.values().all(|v| v.is_i64()))
             && request.state.get("hedge").is_none()
-            && request
-                .state
-                .get("exit_specs")
-                .is_none_or(|v| v.as_object().is_some_and(|o| o.is_empty()))
+            && self.exit_profile(&request.config, &request.state)
     }
 
     pub fn eligible_borrowed(&self, config: &BotConfig, state: &Value) -> bool {
@@ -315,13 +322,23 @@ impl Host {
         if state.get("hedge").is_some() {
             return Some("hedge_state");
         }
-        if state
-            .get("exit_specs")
-            .is_some_and(|v| !v.as_object().is_some_and(|o| o.is_empty()))
-        {
+        if !self.exit_profile(&config.config, state) {
             return Some("exit_protection");
         }
         None
+    }
+
+    fn exit_profile(&self, config: &Value, state: &Value) -> bool {
+        state.get("exit_specs").is_none_or(|v| {
+            v.as_object().is_some_and(|o| {
+                o.is_empty()
+                    || (o.len() == 1
+                        && config["script"]
+                            .as_str()
+                            .and_then(|name| self.programs.get(name))
+                            .is_some_and(|p| p.exit_qualified))
+            })
+        })
     }
 
     fn config_profile(&self, name: &str, config: &Value) -> bool {
@@ -644,6 +661,7 @@ impl Host {
         // The source proof is private and belongs to this call. Still recheck
         // metadata and input binding before session access or state mutation.
         if !value_profile(input, committed)
+            || !self.exit_profile(&input["config"], committed)
             || !source.matches(self, input)
             || !self.config_profile(text(&input["config"]["script"])?, &input["config"])
         {
@@ -782,7 +800,8 @@ impl Host {
             broker::feedback(&mut state, &views, config)?;
         }
         let mut actions = Vec::new();
-        if bars.len() > previous.len() {
+        let evaluated = bars.len() > previous.len();
+        if evaluated {
             let mut frames = take_array(&mut state, "accounts")?;
             for (index, bar) in bars.iter().enumerate().skip(previous.len()) {
                 let cutoff = (index != bars.len() - 1)
@@ -1035,7 +1054,6 @@ impl Host {
             state["last_bar_time"] = bars.last().unwrap()["time"].clone();
             state["last_intents"] = Value::Array(latest);
             state["intents_digest"] = json!(digest(&intents)?);
-            state["last_actions"] = json!(actions);
             state["skipped_bar_decisions"] = json!(
                 state
                     .get("skipped_bar_decisions")
@@ -1068,7 +1086,10 @@ impl Host {
         } else {
             crate::bot_runtime_diagnostics::record_evaluation("direct", "no_evaluation", None);
         }
-        actions.extend(broker::replacements(&mut state, &views, config)?);
+        actions.extend(broker::finish(&mut state, &views, config, true)?);
+        if evaluated {
+            state["last_actions"] = json!(actions);
+        }
         let (_, account, position, _) = broker::account(observation, config)?;
         state["observed_position"] = json!(position);
         state["observed_cash"] = json!(broker::decimal(&account["cash_balance"])?);
@@ -1152,9 +1173,7 @@ fn value_profile(input: &Value, committed: &Value) -> bool {
             .as_object()
             .is_some_and(|o| o.values().all(Value::is_i64))
         && committed.get("hedge").is_none()
-        && committed
-            .get("exit_specs")
-            .is_none_or(|v| v.as_object().is_some_and(|o| o.is_empty()))
+        && committed.get("exit_specs").is_none_or(Value::is_object)
 }
 
 /// Called only on the owned speculative working copy. Failed decisions leave

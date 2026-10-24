@@ -62,3 +62,70 @@ fn ecosystem_history_route_boundary_does_not_limit_original_sources() {
     assert!(!history_profile(false, 129, 128));
     assert!(history_profile(true, 8192, 128));
 }
+
+#[test]
+fn python_exit_protection_order_rounding_latch_retry_cancel_and_wake_vectors() {
+    let rows: Value = serde_json::from_str(include_str!(
+        "../../../python/tests/fixtures/pine_exit_direct.json"
+    ))
+    .unwrap();
+    for row in rows.as_array().unwrap() {
+        let mut state = row["state"].clone();
+        let views: Vec<_> = row["views"].as_array().unwrap().iter().collect();
+        let result = broker::translate(
+            row["intents"].as_array().unwrap(),
+            2,
+            &views,
+            &row["config"],
+            &mut state,
+        )
+        .and_then(|mut actions| {
+            actions.extend(broker::finish(&mut state, &views, &row["config"], true)?);
+            Ok(json!({"actions":actions,"state":state}))
+        });
+        if row["error"] == true {
+            assert!(result.is_err(), "{}: {result:?}", row["name"]);
+        } else {
+            assert_eq!(
+                result.unwrap_or_else(|e| panic!("{}: {e:?}", row["name"])),
+                row["expected"],
+                "{}",
+                row["name"]
+            );
+        }
+    }
+}
+
+#[test]
+fn restored_exit_state_requires_separate_source_qualification() {
+    let host = Host::load(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../bot-plugins/pine-strategy"),
+    )
+    .unwrap();
+    let state = json!({"exit_specs":{"owned":{}}});
+    assert!(host.exit_profile(
+        &json!({"script":"ecosystem/library/fcbb24e7080c73f4.pine"}),
+        &state
+    ));
+    for script in [
+        "ma.pine",
+        "ecosystem/library/0068dd1dd9576132.pine",
+        "ecosystem/library/179a641fbb9d2f08.pine",
+        "ecosystem/library/660e65aadf0a9b74.pine",
+        "ecosystem/library/952d678dd81772a2.pine",
+    ] {
+        assert!(
+            !host.exit_profile(&json!({"script":script}), &state),
+            "{script}"
+        );
+    }
+    assert!(!host.exit_profile(
+        &json!({"script":"ecosystem/library/fcbb24e7080c73f4.pine"}),
+        &json!({"exit_specs":[]})
+    ));
+    assert!(!host.exit_profile(
+        &json!({"script":"ecosystem/library/fcbb24e7080c73f4.pine"}),
+        &json!({"exit_specs":{"first":{},"second":{}}})
+    ));
+    assert!(!host.source_is_current("ecosystem/library/660e65aadf0a9b74.pine"));
+}

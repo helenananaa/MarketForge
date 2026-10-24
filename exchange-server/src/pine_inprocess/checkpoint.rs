@@ -795,7 +795,6 @@ pub(super) fn decide(
         state["evaluated_bars"] = json!(count);
         state["last_bar_time"] = bars.last().unwrap()["time"].clone();
         state["last_intents"] = Value::Array(latest);
-        state["last_actions"] = json!(actions);
         state["skipped_bar_decisions"] = json!(
             state["skipped_bar_decisions"].as_u64().unwrap_or(0)
                 + if cold {
@@ -826,7 +825,10 @@ pub(super) fn decide(
         let _phase_timer = crate::bench_execution_timing::Timer::start(
             &crate::bench_execution_timing::BOT_PINE_BROKER_REPLACEMENTS,
         );
-        actions.extend(broker::replacements(&mut state, &views, config)?);
+        actions.extend(broker::finish(&mut state, &views, config, true)?);
+    }
+    if start < bars.len() {
+        state["last_actions"] = json!(actions);
     }
     let (_, account, position, _) = broker::account(observation, config)?;
     state["observed_position"] = json!(position);

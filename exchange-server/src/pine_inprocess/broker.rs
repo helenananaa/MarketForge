@@ -1,4 +1,5 @@
-//! Schema-2 broker translation for the hash-qualified entry/close/cancel sources.
+//! Broker translation for hash-qualified sources. The gateway remains authoritative.
+mod exits;
 use super::{error, io};
 use exchange_core::BotError;
 use num_bigint::BigInt;
@@ -573,6 +574,7 @@ fn cancel(state: &mut Value, view: &Value, name: Option<&str>) -> Result<Vec<Val
             ));
         }
     }
+    actions.extend(exits::cancel(state, view, name)?);
     Ok(actions)
 }
 #[derive(Default)]
@@ -792,6 +794,14 @@ pub fn translate(
         }
         let (kind, _, position, _) = account(view, config)?;
         match action {
+            "exit" => {
+                if kind != "Perp" {
+                    return Err(error(
+                        "exchange position protection requires a perpetual market",
+                    ));
+                }
+                exits::register(state, views, config, instrument, name, intent)?;
+            }
             "cancel" | "cancel_all" => actions.extend(cancel(
                 state,
                 view,
@@ -925,7 +935,17 @@ fn store_budget(state: &mut Value, budget: &Budget) {
     state["_inprocess_budget"] = json!({"reserved":budget.reserved.iter().map(|((i,s),q)|json!([i,s,q])).collect::<Vec<_>>(),
         "cash":budget.cash.iter().map(|(i,q)|json!([i,q.to_string()])).collect::<Vec<_>>()});
 }
+#[cfg(test)]
 pub fn replacements(state: &mut Value, views: &[&Value], config: &Value) -> Result<Vec<Value>> {
+    finish(state, views, config, false)
+}
+/// Replacements and exit-triggered reductions share the decision's reservations.
+pub fn finish(
+    state: &mut Value,
+    views: &[&Value],
+    config: &Value,
+    evaluate_exits: bool,
+) -> Result<Vec<Value>> {
     let temporary = state.as_object_mut().unwrap().remove("_inprocess_budget");
     let mut budget = Budget::default();
     if let Some(temp) = temporary {
@@ -982,6 +1002,9 @@ pub fn replacements(state: &mut Value, views: &[&Value], config: &Value) -> Resu
             replacement["entry"].as_str(),
             true,
         )?);
+    }
+    if evaluate_exits {
+        actions.extend(exits::evaluate(state, views, config, &mut budget)?);
     }
     Ok(actions)
 }

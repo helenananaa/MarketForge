@@ -21,9 +21,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--ecosystem-recipe", type=Path, required=True)
+    parser.add_argument("--qualified-manifest", type=Path,
+                        default=ROOT / "exchange-server/src/pine_inprocess/ecosystem-qualified.json")
     args, remaining = parser.parse_known_args()
     original = json.loads(args.ecosystem_recipe.read_text(encoding="utf-8-sig"))
-    qualified = json.loads((ROOT / "exchange-server/src/pine_inprocess/ecosystem-qualified.json").read_text(encoding="utf-8"))
+    qualified = json.loads(args.qualified_manifest.read_text(encoding="utf-8"))
     pine_owners = {a["Plugin"]["participant"]["account_id"] for a in original["agents"]
                    if a["Plugin"]["plugin_id"] == "pine.strategy"}
     seen, agents = set(), []
@@ -70,6 +72,7 @@ def main():
         scope = f"{len(seen)} exact ecosystem Pine sources plus {len(agents)-len(seen)} original native liquidity agents; one-second bars; short in-memory-journal HTTP probe, not production capacity"
         report["scope"] = scope
         report["ecosystem_recipe_sha256"] = hashlib.sha256(args.ecosystem_recipe.read_bytes()).hexdigest()
+        report["qualified_manifest_sha256"] = hashlib.sha256(args.qualified_manifest.read_bytes()).hexdigest()
         for case in report.get("cases", []):
             case["scope"] = scope
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
