@@ -1,7 +1,10 @@
 //! Research a strategy population using the existing frozen native observation
 //! wave and the real gateway. This changes no production scheduler or data path.
 use exchange_core::*;
+use rayon::prelude::*;
 use std::collections::BTreeMap;
+#[path = "support/research_audit.rs"]
+mod audit;
 #[path = "support/research_checkpoint.rs"]
 mod checkpoint;
 
@@ -286,7 +289,7 @@ fn changed_private_inputs(
     screened: &[Screened],
     screens: &[Screen],
     conditions: bool,
-    threads: usize,
+    pool: &rayon::ThreadPool,
 ) -> Result<Vec<Option<PrivateInputs>>, Box<dyn std::error::Error>> {
     type Entries<'a> = (
         Vec<&'a PositionProtection>,
@@ -309,13 +312,21 @@ fn changed_private_inputs(
         let exchange = simulation.exchange(venue).map_err(|e| format!("{e:?}"))?;
         for p in exchange.all_position_protections() {
             if let Some(market) = markets.get(p.instrument_id.as_str()) {
-                entries.entry((*market, p.account_id)).or_default().0.push(p);
+                entries
+                    .entry((*market, p.account_id))
+                    .or_default()
+                    .0
+                    .push(p);
             }
         }
         // The wake key leaves out the scan cursor.
         for (c, _) in exchange.all_conditional_orders() {
             if let Some(market) = markets.get(c.instrument_id.as_str()) {
-                entries.entry((*market, c.account_id)).or_default().1.push(c);
+                entries
+                    .entry((*market, c.account_id))
+                    .or_default()
+                    .1
+                    .push(c);
             }
         }
     }
@@ -340,9 +351,8 @@ fn changed_private_inputs(
                     orders: rooms
                         .resting_orders_for_account(room, market, s.account)
                         .map_err(|e| format!("{e:?}"))?,
-                    protections: found.map_or_else(Vec::new, |e| {
-                        e.0.iter().map(|p| (*p).clone()).collect()
-                    }),
+                    protections: found
+                        .map_or_else(Vec::new, |e| e.0.iter().map(|p| (*p).clone()).collect()),
                     settled: settled_account(account),
                 });
             }
@@ -361,20 +371,18 @@ fn changed_private_inputs(
         Ok((last != Some(&inputs)).then_some(inputs))
     };
     // Small populations are not worth a thread.
-    let chunk = screened.len().div_ceil(threads.max(1)).max(64);
+    let chunk = screened.len().div_ceil(pool.current_num_threads()).max(64);
     if screened.len() <= chunk {
         return Ok(screened.iter().map(&read).collect::<Result<_, _>>()?);
     }
-    let results = std::thread::scope(|scope| {
-        let handles = screened
-            .chunks(chunk)
-            .map(|part| scope.spawn(|| part.iter().map(&read).collect::<Result<Vec<_>, _>>()))
-            .collect::<Vec<_>>();
-        handles
-            .into_iter()
-            .map(|h| h.join().expect("screen thread panicked"))
-            .collect::<Result<Vec<_>, _>>()
-    })?;
+    let results = pool.install(|| {
+        screened
+            .par_chunks(chunk)
+            .map(|part| part.iter().map(&read).collect::<Result<Vec<_>, _>>())
+            .collect::<Vec<_>>()
+    });
+    // Inspect errors in input order, independent of task completion order.
+    let results = results.into_iter().collect::<Result<Vec<_>, _>>()?;
     Ok(results.into_iter().flatten().collect())
 }
 
@@ -410,6 +418,8 @@ struct Profile {
     wakes: BTreeMap<&'static str, (u64, u64, u64)>,
     // Action kinds returned by calls that only the poll interval made due.
     poll_actions: BTreeMap<String, u64>,
+    script_enabled: bool,
+    scripts: BTreeMap<String, (u64, std::time::Duration, u64)>,
 }
 
 impl Profile {
@@ -444,6 +454,16 @@ impl Profile {
             "profile step={step} {phases} wakes(calls/acting/actions): {wakes} poll_actions={:?}",
             self.poll_actions
         );
+        if self.script_enabled {
+            for (script, (calls, elapsed, actions)) in &self.scripts {
+                eprintln!(
+                    "script_profile {}",
+                    serde_json::json!({"step":step,"script":script,
+                    "calls":calls,"elapsed_seconds":elapsed.as_secs_f64(),"actions":actions,
+                    "scope":"summed plugin call wall time, includes waiting; not CPU or whole-run wall time"})
+                );
+            }
+        }
     }
 }
 
@@ -489,7 +509,9 @@ fn accept_actions(
         snapshot.as_ref().unwrap_or(&UNREAD_STATE),
     )?;
     if let (true, Some(PersistedAgentKindState::Plugin { data, .. })) = (polled, &snapshot) {
-        screen.wake_ms = data.get("_next_wake_ms").and_then(serde_json::Value::as_u64);
+        screen.wake_ms = data
+            .get("_next_wake_ms")
+            .and_then(serde_json::Value::as_u64);
         screen.prices = match data.get("_wake_prices") {
             Some(value) => serde_json::from_value(value.clone())?,
             None => vec![],
@@ -508,9 +530,13 @@ fn accept_actions(
 fn decide_concurrently(
     bots: &mut [Box<dyn ScheduledBot>],
     due: Vec<(usize, ParticipantObservation)>,
-    threads: usize,
+    pool: &rayon::ThreadPool,
 ) -> (
-    Vec<(usize, Result<Vec<OrderAction>, BotError>)>,
+    Vec<(
+        usize,
+        Result<Vec<OrderAction>, BotError>,
+        std::time::Duration,
+    )>,
     std::time::Duration,
 ) {
     let mut observations = due.into_iter().peekable();
@@ -521,37 +547,35 @@ fn decide_concurrently(
             work.push((i, bot, observation));
         }
     }
-    let workers = threads.min(work.len());
+    if work.is_empty() {
+        return (vec![], std::time::Duration::ZERO);
+    }
+    // Keep FIFO dispatch: subdividing the bot list into work-stealing chunks
+    // can block several threads on the same instance-affine process worker.
     let queue = std::sync::Mutex::new(work.into_iter());
-    let mut results = std::thread::scope(|scope| {
-        let handles = (0..workers)
-            .map(|_| {
-                scope.spawn(|| {
-                    let mut done = vec![];
-                    let mut busy = std::time::Duration::ZERO;
-                    loop {
-                        let next = queue.lock().unwrap().next();
-                        let Some((i, bot, observation)) = next else {
-                            break (done, busy);
-                        };
-                        let started = std::time::Instant::now();
-                        done.push((i, bot.decide(&observation)));
-                        busy += started.elapsed();
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
+    let results = pool.broadcast(|_| {
+        let mut done = vec![];
         let mut busy = std::time::Duration::ZERO;
-        let mut results = vec![];
-        for handle in handles {
-            let (done, time) = handle.join().expect("plugin decision thread panicked");
-            results.extend(done);
-            busy += time;
+        loop {
+            let next = queue.lock().unwrap().next();
+            let Some((i, bot, observation)) = next else {
+                break (done, busy);
+            };
+            let started = std::time::Instant::now();
+            let result = bot.decide(&observation);
+            let elapsed = started.elapsed();
+            done.push((i, result, elapsed));
+            busy += elapsed;
         }
-        (results, busy)
     });
-    results.0.sort_by_key(|(i, _)| *i);
-    results
+    let mut busy = std::time::Duration::ZERO;
+    let mut decisions = vec![];
+    for (done, time) in results {
+        busy += time;
+        decisions.extend(done);
+    }
+    decisions.sort_by_key(|(i, _, _)| *i);
+    (decisions, busy)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -596,6 +620,7 @@ fn run_waves(
     let mut rejections = BTreeMap::<String, u64>::new();
     let mut trades = BTreeMap::<String, u64>::new();
     let mut receipts = vec![];
+    let mut audit = audit::Audit::open()?;
     let instruments = templates
         .iter()
         .map(|t| t.config().instrument_id.clone().unwrap())
@@ -649,13 +674,18 @@ fn run_waves(
             Ok(Screened {
                 bot: i,
                 account: cfg.account_id,
-                markets: std::iter::once(own).chain(related.iter().cloned()).collect(),
+                markets: std::iter::once(own)
+                    .chain(related.iter().cloned())
+                    .collect(),
             })
         })
         .collect::<Result<Vec<_>, &str>>()?;
     let mut profile = std::env::var("RESEARCH_PROFILE")
         .is_ok_and(|v| v == "1")
         .then(Profile::default);
+    if let Some(p) = &mut profile {
+        p.script_enabled = std::env::var("RESEARCH_SCRIPT_PROFILE").as_deref() == Ok("1");
+    }
     // The reason the current call of each plugin is due (profiling only).
     let mut reasons = vec!["unpolled"; templates.len()];
     // Each wave extends the previous wave's receipts, candles and account
@@ -683,6 +713,12 @@ fn run_waves(
         })
         .unwrap_or(8)
         .max(1);
+    // Reuse the same bounded workers across waves. They only read a frozen
+    // observation or exclusively own a bot; all gateway commits stay serial.
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(plugin_threads)
+        .thread_name(|i| format!("research-{i}"))
+        .build()?;
     // Bots that never read their fill history get observations without it.
     let own_fills = templates
         .iter()
@@ -717,14 +753,8 @@ fn run_waves(
             let started = std::time::Instant::now();
             let mut changed = vec![None; templates.len()];
             if !screened.is_empty() {
-                let inputs = changed_private_inputs(
-                    rooms,
-                    room,
-                    &screened,
-                    &screens,
-                    event_wakes,
-                    plugin_threads,
-                )?;
+                let inputs =
+                    changed_private_inputs(rooms, room, &screened, &screens, event_wakes, &pool)?;
                 for (s, inputs) in screened.iter().zip(inputs) {
                     changed[s.bot] = inputs;
                 }
@@ -742,7 +772,9 @@ fn run_waves(
                 if polled[i] {
                     // Public views in the order its observation builds them.
                     let mut markets = vec![];
-                    let related = related[i].iter().filter(|m| event_wakes && *m != instrument);
+                    let related = related[i]
+                        .iter()
+                        .filter(|m| event_wakes && *m != instrument);
                     for market in std::iter::once(instrument).chain(related) {
                         let view = match public.iter().find(|(m, _)| *m == market) {
                             Some((_, view)) => view.clone(),
@@ -792,7 +824,13 @@ fn run_waves(
                     }
                     let private = match changed {
                         Some(private) => private,
-                        None => screens[i].key.take().ok_or("plugin was not screened")?.private,
+                        None => {
+                            screens[i]
+                                .key
+                                .take()
+                                .ok_or("plugin was not screened")?
+                                .private
+                        }
                     };
                     screens[i].key = Some(WakeKey {
                         bars,
@@ -805,11 +843,22 @@ fn run_waves(
                     p.add("screen", started);
                 }
                 let started = std::time::Instant::now();
+                let mut history = requests[i];
+                if matches!(t, AgentTemplate::Plugin(plugin) if plugin.plugin_id == "pine.strategy")
+                    && let Some(cursors) = registry
+                        .checkpoint_history_cursors(t, &bot.snapshot())
+                        .map_err(|e| format!("{e:?}"))?
+                    && let Some(history) = &mut history
+                {
+                    history.max_bars = batch
+                        .checkpoint_window_max_bars(&cursors)
+                        .map_err(|e| format!("{e:?}"))?;
+                }
                 let obs = batch
                     .shared_bot_observation_with(
                         instrument,
                         cfg.account_id,
-                        requests[i],
+                        history,
                         &related[i],
                         own_fills[i],
                     )
@@ -819,7 +868,7 @@ fn run_waves(
                     batch
                         .enrich_data(
                             &mut owned,
-                            requests[i],
+                            history,
                             &related[i],
                             &intervals[i],
                             registry.account_events(t),
@@ -876,13 +925,13 @@ fn run_waves(
             }
         }
         let started = std::time::Instant::now();
-        let (results, busy) = decide_concurrently(bots, due, plugin_threads);
+        let (results, busy) = decide_concurrently(bots, due, &pool);
         if let Some(p) = &mut profile {
             p.add("plugins_wall", started);
             *p.phases.entry("plugins_busy").or_default() += busy;
         }
         let started = std::time::Instant::now();
-        for (i, result) in results {
+        for (i, result, elapsed) in results {
             let t = &templates[i];
             let actions = result.map_err(|e| {
                 format!(
@@ -904,6 +953,19 @@ fn run_waves(
             )?;
             if let Some(p) = &mut profile {
                 p.wake(reasons[i], &actions);
+                if p.script_enabled
+                    && let AgentTemplate::Plugin(plugin) = t
+                {
+                    let script = plugin
+                        .config
+                        .get("script")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or(&plugin.plugin_id);
+                    let entry = p.scripts.entry(script.to_owned()).or_default();
+                    entry.0 += 1;
+                    entry.1 += elapsed;
+                    entry.2 += actions.len() as u64;
+                }
             }
             decisions[i] = actions;
         }
@@ -920,6 +982,7 @@ fn run_waves(
             for action in actions {
                 let (instrument, resolved) = bots::resolve_bot_order(instrument, &action)?;
                 let mut gateway = OrderGateway::new_scheduler(rooms, *order_id);
+                let gateway_started = profile.as_ref().map(|_| std::time::Instant::now());
                 let execution = gateway
                     .submit_action(GatewayRequest {
                         participant_id: t.participant_id().into(),
@@ -929,7 +992,18 @@ fn run_waves(
                         action: resolved.clone(),
                     })
                     .map_err(|e| format!("{e:?}"))?;
+                if let Some(p) = &mut profile {
+                    p.add("submit_gateway", gateway_started.unwrap());
+                }
+                let audit_started = profile.as_ref().map(|_| std::time::Instant::now());
+                if let Some(audit) = &mut audit {
+                    audit.gateway(&action, &execution)?;
+                }
+                if let Some(p) = &mut profile {
+                    p.add("submit_audit", audit_started.unwrap());
+                }
                 *order_id = gateway.next_order_id();
+                let feedback_started = profile.as_ref().map(|_| std::time::Instant::now());
                 bots[i].execution_feedback(&action, &execution);
                 if matches!(action, OrderAction::BotOrder { .. }) {
                     // Taken, not shared, so recording does not copy the state.
@@ -937,6 +1011,9 @@ fn run_waves(
                     bots::record_bot_execution(&mut state, &action, &execution);
                     bots[i].prepare_reused_call(&state)?;
                     screens[i].receipt = true;
+                }
+                if let Some(p) = &mut profile {
+                    p.add("submit_feedback", feedback_started.unwrap());
                 }
                 let ActorExecutionResult::Accepted(result) = &execution.execution.result else {
                     *rejections
@@ -970,6 +1047,9 @@ fn run_waves(
             .execution_history_from(room, history_cursor)
             .map_err(|e| format!("{e:?}"))?
         {
+            if let Some(audit) = &mut audit {
+                audit.authoritative(execution)?;
+            }
             if let ActorExecutionResult::Accepted(result) = &execution.result {
                 let events = match result {
                     MarketExecution::Spot(r) => &r.events,
@@ -1021,6 +1101,9 @@ fn run_waves(
                 fills.len()
             );
         }
+    }
+    if let Some(audit) = &mut audit {
+        audit.finish()?;
     }
     Ok(
         serde_json::json!({"runner":"existing_native_observation_wave","bots":templates.len(),"steps":steps,"simulation_time_ms":rooms.clock(room).map_err(|e|format!("{e:?}"))?.market_time_ms(),

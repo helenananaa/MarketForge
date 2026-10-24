@@ -1,0 +1,3891 @@
+{
+  "base_commit": "b494d636fbe45ee3efd0480eec0a560857b2f4a1",
+  "branch": "feat/endogenous-market-tuning",
+  "changes_uncommitted": true,
+  "method": "Serial frozen binaries and Python packages; ABBA primary cases; exact stdout bytes; end-to-end wall and nested phase times kept separate.",
+  "excluded": [
+    "screen-runs: interrupted because compilation overlapped timing; not used in any comparison"
+  ],
+  "scope": "Local synthetic research and isolated armed protection scans; not live deployment or capacity qualification.",
+  "recipes": {
+    "scale": {
+      "path": "docs\\validation\\2026-10-23-research-optimizations-inputs\\scale.json.gz",
+      "sha256_uncompressed": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+      "steps": 1800,
+      "seconds": 1,
+      "env": {
+        "RESEARCH_PLUGIN_WAKES": "events"
+      }
+    },
+    "related": {
+      "path": "docs\\validation\\2026-10-23-research-optimizations-inputs\\related.json.gz",
+      "sha256_uncompressed": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+      "steps": 600,
+      "seconds": 1,
+      "env": {
+        "RESEARCH_PLUGIN_WAKES": "events"
+      }
+    },
+    "poll": {
+      "path": "docs\\validation\\2026-10-23-research-optimizations-inputs\\poll.json.gz",
+      "sha256_uncompressed": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+      "steps": 600,
+      "seconds": 1,
+      "env": {
+        "RESEARCH_PLUGIN_POLL_MS": "60000"
+      }
+    },
+    "live": {
+      "path": "docs\\validation\\2026-10-23-research-optimizations-inputs\\live.json.gz",
+      "sha256_uncompressed": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+      "steps": 600,
+      "seconds": 1,
+      "env": {}
+    },
+    "long": {
+      "path": "docs\\validation\\2026-10-23-research-optimizations-inputs\\long.json.gz",
+      "sha256_uncompressed": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+      "steps": 1500,
+      "seconds": 3,
+      "env": {
+        "RESEARCH_PLUGIN_WAKES": "events"
+      }
+    },
+    "uncapped": {
+      "path": "docs\\validation\\2026-10-23-research-optimizations-inputs\\uncapped.json.gz",
+      "sha256_uncompressed": "35e6e14a410b30817232ea9c7070f507043d55c71943ad868865af01ab0e6373",
+      "steps": 5000,
+      "seconds": 1,
+      "env": {}
+    },
+    "capped": {
+      "path": "docs\\validation\\2026-10-23-research-optimizations-inputs\\capped.json.gz",
+      "sha256_uncompressed": "5e63e1d5b69332d788a6ff9eb25bd3254b6713d28c1097e50460e410b2ee0da4",
+      "steps": 5000,
+      "seconds": 1,
+      "env": {}
+    },
+    "uncapped_stable": {
+      "path": "docs\\validation\\2026-10-23-research-optimizations-inputs\\uncapped_stable.json.gz",
+      "sha256_uncompressed": "35e6e14a410b30817232ea9c7070f507043d55c71943ad868865af01ab0e6373",
+      "steps": 50000,
+      "seconds": 1,
+      "env": {}
+    }
+  },
+  "runtime_sha256": "4e12faa2992f5934f8c7fdc875fe6858ea56bc469d89e2b2fc203286d6b54075",
+  "runtime_version": "0.3.1+mf1",
+  "frozen_plugin_sha256": {
+    "python-baseline": {
+      "bot.json": "46f6024475152e1c1c27429966004949887c25255bad75038fa876a3505ed08a",
+      "bot.py": "ae48fe94730aa5ee580454d7aff8120eca26f302690990017a71efeb454d8dd1",
+      "broker.py": "229eb40f283c003e1ca5fa9d837d153e0de613812b8002e7f7962616a2f7d236",
+      "incremental-qualified.json": "5c929a1965f9b3c095e8c065bd085c89d5b733099e653b16862780308011686b",
+      "incremental.py": "c0bd1deaf23244ffc853dda924080dfa062f1ac78359eef4f7f2babe1c73d58a",
+      "requirements.txt": "3d821cea89cfca890dbe05adf78a691f9c36bcb965f39b26d3c83c0076d312ae",
+      "transport.py": "84c5a4a5275732c4ece30f121dd0848fc73fab1b884b586f3ed6029b7e041a58"
+    },
+    "python-prefix": {
+      "bot.json": "46f6024475152e1c1c27429966004949887c25255bad75038fa876a3505ed08a",
+      "bot.py": "38e024446cb86c0864038d31fe1c573386b6c5f541e7496a5c13cbb2ac13bc27",
+      "broker.py": "0a98f2d60f5e93f32834b54807d2e484321ca195c479f41b952c37008e39be56",
+      "incremental-qualified.json": "5c929a1965f9b3c095e8c065bd085c89d5b733099e653b16862780308011686b",
+      "incremental.py": "3edbc86d45fde8ade7183b0735ad93be48a19bc887fc9758e47cd65e149ae0c9",
+      "requirements.txt": "3d821cea89cfca890dbe05adf78a691f9c36bcb965f39b26d3c83c0076d312ae",
+      "transport.py": "84c5a4a5275732c4ece30f121dd0848fc73fab1b884b586f3ed6029b7e041a58"
+    }
+  },
+  "source_sha256": {
+    "Cargo.lock": "601ab6a953c6940b054e98a79b057316ff4dda08b537d1e27a99cc1ee2e1b76c",
+    "exchange-core/Cargo.toml": "4eb126d433334ed31cef68cd9eab67d002172ad89171885a4b48b1b2ebb085ce",
+    "exchange-core/examples/strategy_market.rs": "3896c88963d82c434838d5559a1cd7c7c959b99a9898807583f013ab1d5afb38",
+    "exchange-core/src/position_protection_actor.rs": "8ca084481e780d4fd6021e52dca4b70cffb56559e57abe7f3b8398fb0184e551",
+    "exchange-server/Cargo.toml": "a36df00aeb1b995b1a288dd793c654904949fd63d47dcee4c95e09fc15694f14",
+    "python/tests/test_bot_runtime_receipts.py": "d0971e40de0c4bedbaa90a1b63fa3f0aa73f221a28ae2d074073844bbf17f614",
+    "python/tests/test_pine_bot.py": "27211214f71db1ff7c219ed2a4df5efc3cf7470cb5827b8ebe489ae309a38dfc",
+    "exchange-core/examples/position_protection_bench.rs": "f6356a3078420bac87055f8f3fea385e4ac18fa51bffc121c0d8856321b85ee5",
+    "scripts/benchmark_research_optimizations.py": "ec27e366fcdfa26b446436c1123d1b72d55097397d90ecd1a4c3ec226ad44b7d"
+  },
+  "experiments": [
+    {
+      "experiment": "rejected_dispatch_chunks",
+      "evidence": ".local\\optimization-20261023\\pool-runs",
+      "before_variant": "baseline",
+      "after_variant": "pool",
+      "groups": [
+        {
+          "case": "scale",
+          "before_seconds": [
+            54.92404179999721,
+            58.88502679999874
+          ],
+          "after_seconds": [
+            55.87707620000219,
+            58.119880499998544
+          ],
+          "before_mean": 56.90453429999798,
+          "after_mean": 56.99847835000037,
+          "reduction_percent": -0.16509062266834018,
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875"
+        },
+        {
+          "case": "related",
+          "before_seconds": [
+            7.120116300000518
+          ],
+          "after_seconds": [
+            6.455253299998731
+          ],
+          "before_mean": 7.120116300000518,
+          "after_mean": 6.455253299998731,
+          "reduction_percent": 9.337810956848259,
+          "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7"
+        },
+        {
+          "case": "poll",
+          "before_seconds": [
+            8.276540099999693
+          ],
+          "after_seconds": [
+            7.581759000000602
+          ],
+          "before_mean": 8.276540099999693,
+          "after_mean": 7.581759000000602,
+          "reduction_percent": 8.394583867226313,
+          "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a"
+        },
+        {
+          "case": "live",
+          "before_seconds": [
+            4.940762899997935
+          ],
+          "after_seconds": [
+            4.5497847000006
+          ],
+          "before_mean": 4.940762899997935,
+          "after_mean": 4.5497847000006,
+          "reduction_percent": 7.91331638272903,
+          "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6"
+        },
+        {
+          "case": "long",
+          "before_seconds": [
+            57.00324980000005
+          ],
+          "after_seconds": [
+            56.24930229999882
+          ],
+          "before_mean": 57.00324980000005,
+          "after_mean": 56.24930229999882,
+          "reduction_percent": 1.3226395032678084,
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b"
+        }
+      ],
+      "plan": {
+        "variants": {
+          "pool": {
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline",
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool.exe"
+          },
+          "baseline": {
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline",
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\baseline.exe"
+          }
+        },
+        "cases": {
+          "scale": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\s3000.json",
+            "steps": 1800,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          },
+          "related": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\rel241.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          },
+          "poll": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\p241.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_POLL_MS": "60000"
+            }
+          },
+          "live": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\perf0.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {}
+          },
+          "long": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\long24.json",
+            "steps": 1500,
+            "seconds": 3,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          }
+        },
+        "runs": [
+          {
+            "variant": "baseline",
+            "case": "scale"
+          },
+          {
+            "variant": "pool",
+            "case": "scale"
+          },
+          {
+            "variant": "pool",
+            "case": "scale"
+          },
+          {
+            "variant": "baseline",
+            "case": "scale"
+          },
+          {
+            "variant": "baseline",
+            "case": "related"
+          },
+          {
+            "variant": "pool",
+            "case": "related"
+          },
+          {
+            "variant": "baseline",
+            "case": "poll"
+          },
+          {
+            "variant": "pool",
+            "case": "poll"
+          },
+          {
+            "variant": "baseline",
+            "case": "live"
+          },
+          {
+            "variant": "pool",
+            "case": "live"
+          },
+          {
+            "variant": "baseline",
+            "case": "long"
+          },
+          {
+            "variant": "pool",
+            "case": "long"
+          }
+        ]
+      },
+      "summary": {
+        "plan_sha256": "a34706cee013c06e7146bb387cc29881f7780b6ee285b8489b2b164fc3607d9b",
+        "runs": [
+          {
+            "variant": "baseline",
+            "case": "scale",
+            "wall_seconds": 54.92404179999721,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 4.7,
+              "clock": 2.0,
+              "observe_plugin": 0.7,
+              "plugins_busy": 379.7,
+              "plugins_wall": 25.3,
+              "receipts": 0.2,
+              "screen": 4.8,
+              "submit": 11.1,
+              "wave": 1.3
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=4.7s clock=2.0s observe_plugin=0.7s plugins_busy=379.7s plugins_wall=25.3s receipts=0.2s screen=4.8s submit=11.1s wave=1.3s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\00-baseline-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\00-baseline-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "scale",
+            "wall_seconds": 55.87707620000219,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 4.7,
+              "clock": 2.2,
+              "observe_plugin": 0.7,
+              "plugins_busy": 420.4,
+              "plugins_wall": 27.8,
+              "receipts": 0.2,
+              "screen": 2.5,
+              "submit": 11.2,
+              "wave": 1.3
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "11800ee539cdfd2696a8b54bb39505f386c87240517649962b56365d8b929651",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=4.7s clock=2.2s observe_plugin=0.7s plugins_busy=420.4s plugins_wall=27.8s receipts=0.2s screen=2.5s submit=11.2s wave=1.3s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\01-pool-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\01-pool-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "scale",
+            "wall_seconds": 58.119880499998544,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 5.4,
+              "clock": 2.2,
+              "observe_plugin": 0.8,
+              "plugins_busy": 397.5,
+              "plugins_wall": 26.5,
+              "receipts": 0.2,
+              "screen": 2.6,
+              "submit": 12.8,
+              "wave": 1.4
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "11800ee539cdfd2696a8b54bb39505f386c87240517649962b56365d8b929651",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=5.4s clock=2.2s observe_plugin=0.8s plugins_busy=397.5s plugins_wall=26.5s receipts=0.2s screen=2.6s submit=12.8s wave=1.4s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\02-pool-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\02-pool-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "scale",
+            "wall_seconds": 58.88502679999874,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 4.9,
+              "clock": 2.1,
+              "observe_plugin": 0.8,
+              "plugins_busy": 390.4,
+              "plugins_wall": 26.1,
+              "receipts": 0.2,
+              "screen": 4.8,
+              "submit": 11.7,
+              "wave": 1.4
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=4.9s clock=2.1s observe_plugin=0.8s plugins_busy=390.4s plugins_wall=26.1s receipts=0.2s screen=4.8s submit=11.7s wave=1.4s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\03-baseline-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\03-baseline-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "related",
+            "wall_seconds": 7.120116300000518,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.1,
+              "clock": 0.2,
+              "observe_plugin": 0.0,
+              "plugins_busy": 19.9,
+              "plugins_wall": 1.7,
+              "receipts": 0.0,
+              "screen": 0.5,
+              "submit": 2.7,
+              "wave": 0.2
+            },
+            "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+            "profile": "profile step=600 accept=0.0s builtin=1.1s clock=0.2s observe_plugin=0.0s plugins_busy=19.9s plugins_wall=1.7s receipts=0.0s screen=0.5s submit=2.7s wave=0.2s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\04-baseline-related.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\04-baseline-related.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "related",
+            "wall_seconds": 6.455253299998731,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.0,
+              "clock": 0.2,
+              "observe_plugin": 0.0,
+              "plugins_busy": 17.9,
+              "plugins_wall": 1.5,
+              "receipts": 0.0,
+              "screen": 0.2,
+              "submit": 2.6,
+              "wave": 0.2
+            },
+            "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "11800ee539cdfd2696a8b54bb39505f386c87240517649962b56365d8b929651",
+            "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+            "profile": "profile step=600 accept=0.0s builtin=1.0s clock=0.2s observe_plugin=0.0s plugins_busy=17.9s plugins_wall=1.5s receipts=0.0s screen=0.2s submit=2.6s wave=0.2s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\05-pool-related.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\05-pool-related.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "poll",
+            "wall_seconds": 8.276540099999693,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.2,
+              "clock": 0.1,
+              "observe_plugin": 0.0,
+              "plugins_busy": 19.8,
+              "plugins_wall": 1.4,
+              "receipts": 0.1,
+              "screen": 0.5,
+              "submit": 4.1,
+              "wave": 0.3
+            },
+            "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+            "profile": "profile step=600 accept=0.0s builtin=1.2s clock=0.1s observe_plugin=0.0s plugins_busy=19.8s plugins_wall=1.4s receipts=0.1s screen=0.5s submit=4.1s wave=0.3s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\06-baseline-poll.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\06-baseline-poll.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "poll",
+            "wall_seconds": 7.581759000000602,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.1,
+              "clock": 0.1,
+              "observe_plugin": 0.0,
+              "plugins_busy": 21.3,
+              "plugins_wall": 1.5,
+              "receipts": 0.1,
+              "screen": 0.2,
+              "submit": 3.8,
+              "wave": 0.3
+            },
+            "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "11800ee539cdfd2696a8b54bb39505f386c87240517649962b56365d8b929651",
+            "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+            "profile": "profile step=600 accept=0.0s builtin=1.1s clock=0.1s observe_plugin=0.0s plugins_busy=21.3s plugins_wall=1.5s receipts=0.1s screen=0.2s submit=3.8s wave=0.3s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\07-pool-poll.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\07-pool-poll.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "live",
+            "wall_seconds": 4.940762899997935,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.0,
+              "clock": 0.1,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.1,
+              "screen": 0.0,
+              "submit": 3.2,
+              "wave": 0.2
+            },
+            "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+            "profile": "profile step=600 accept=0.0s builtin=1.0s clock=0.1s plugins_busy=0.0s plugins_wall=0.0s receipts=0.1s screen=0.0s submit=3.2s wave=0.2s wakes(calls/acting/actions):  poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\08-baseline-live.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\08-baseline-live.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 8466,
+              "V-BTC-SPOT": 10217
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "live",
+            "wall_seconds": 4.5497847000006,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.9,
+              "clock": 0.1,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.0,
+              "screen": 0.0,
+              "submit": 3.0,
+              "wave": 0.2
+            },
+            "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "11800ee539cdfd2696a8b54bb39505f386c87240517649962b56365d8b929651",
+            "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+            "profile": "profile step=600 accept=0.0s builtin=0.9s clock=0.1s plugins_busy=0.0s plugins_wall=0.0s receipts=0.0s screen=0.0s submit=3.0s wave=0.2s wakes(calls/acting/actions):  poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\09-pool-live.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\09-pool-live.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 8466,
+              "V-BTC-SPOT": 10217
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "long",
+            "wall_seconds": 57.00324980000005,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 5.4,
+              "clock": 1.1,
+              "observe_plugin": 3.3,
+              "plugins_busy": 263.2,
+              "plugins_wall": 30.6,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 12.8,
+              "wave": 1.2
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=5.4s clock=1.1s observe_plugin=3.3s plugins_busy=263.2s plugins_wall=30.6s receipts=0.2s screen=0.1s submit=12.8s wave=1.2s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\10-baseline-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\10-baseline-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "long",
+            "wall_seconds": 56.24930229999882,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 5.4,
+              "clock": 1.1,
+              "observe_plugin": 3.2,
+              "plugins_busy": 273.7,
+              "plugins_wall": 30.2,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 12.5,
+              "wave": 1.2
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "11800ee539cdfd2696a8b54bb39505f386c87240517649962b56365d8b929651",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=5.4s clock=1.1s observe_plugin=3.2s plugins_busy=273.7s plugins_wall=30.2s receipts=0.2s screen=0.1s submit=12.5s wave=1.2s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\11-pool-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-runs\\11-pool-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          }
+        ],
+        "all_equal": true
+      }
+    },
+    {
+      "experiment": "retained_persistent_fifo_pool",
+      "evidence": ".local\\optimization-20261023\\pool-queue-runs",
+      "before_variant": "baseline",
+      "after_variant": "pool",
+      "groups": [
+        {
+          "case": "scale",
+          "before_seconds": [
+            66.556349399998,
+            62.936692200000834
+          ],
+          "after_seconds": [
+            63.37917269999889,
+            51.63651769999706
+          ],
+          "before_mean": 64.74652079999942,
+          "after_mean": 57.50784519999797,
+          "reduction_percent": 11.18002251018484,
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875"
+        },
+        {
+          "case": "related",
+          "before_seconds": [
+            9.30256140000347
+          ],
+          "after_seconds": [
+            7.390678799998568
+          ],
+          "before_mean": 9.30256140000347,
+          "after_mean": 7.390678799998568,
+          "reduction_percent": 20.552216941069457,
+          "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7"
+        },
+        {
+          "case": "poll",
+          "before_seconds": [
+            8.949773400003323
+          ],
+          "after_seconds": [
+            8.979049000001396
+          ],
+          "before_mean": 8.949773400003323,
+          "after_mean": 8.979049000001396,
+          "reduction_percent": -0.3271099578684433,
+          "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a"
+        },
+        {
+          "case": "live",
+          "before_seconds": [
+            5.688030399996933
+          ],
+          "after_seconds": [
+            4.500879299997905
+          ],
+          "before_mean": 5.688030399996933,
+          "after_mean": 4.500879299997905,
+          "reduction_percent": 20.87104000006167,
+          "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6"
+        },
+        {
+          "case": "long",
+          "before_seconds": [
+            51.17869570000039
+          ],
+          "after_seconds": [
+            53.49677680000241
+          ],
+          "before_mean": 51.17869570000039,
+          "after_mean": 53.49677680000241,
+          "reduction_percent": -4.529386824529813,
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b"
+        }
+      ],
+      "plan": {
+        "variants": {
+          "pool": {
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline",
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue.exe"
+          },
+          "baseline": {
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline",
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\baseline.exe"
+          }
+        },
+        "cases": {
+          "scale": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\s3000.json",
+            "steps": 1800,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          },
+          "related": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\rel241.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          },
+          "poll": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\p241.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_POLL_MS": "60000"
+            }
+          },
+          "live": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\perf0.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {}
+          },
+          "long": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\long24.json",
+            "steps": 1500,
+            "seconds": 3,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          }
+        },
+        "runs": [
+          {
+            "variant": "baseline",
+            "case": "scale"
+          },
+          {
+            "variant": "pool",
+            "case": "scale"
+          },
+          {
+            "variant": "pool",
+            "case": "scale"
+          },
+          {
+            "variant": "baseline",
+            "case": "scale"
+          },
+          {
+            "variant": "baseline",
+            "case": "related"
+          },
+          {
+            "variant": "pool",
+            "case": "related"
+          },
+          {
+            "variant": "baseline",
+            "case": "poll"
+          },
+          {
+            "variant": "pool",
+            "case": "poll"
+          },
+          {
+            "variant": "baseline",
+            "case": "live"
+          },
+          {
+            "variant": "pool",
+            "case": "live"
+          },
+          {
+            "variant": "baseline",
+            "case": "long"
+          },
+          {
+            "variant": "pool",
+            "case": "long"
+          }
+        ]
+      },
+      "summary": {
+        "plan_sha256": "cb6f6507f1487e00264833b63dc17df9ad258eb35bb84cb3b382284f21d849b0",
+        "runs": [
+          {
+            "variant": "baseline",
+            "case": "scale",
+            "wall_seconds": 66.556349399998,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 6.0,
+              "clock": 2.7,
+              "observe_plugin": 0.9,
+              "plugins_busy": 457.7,
+              "plugins_wall": 30.4,
+              "receipts": 0.2,
+              "screen": 5.5,
+              "submit": 13.9,
+              "wave": 1.8
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=6.0s clock=2.7s observe_plugin=0.9s plugins_busy=457.7s plugins_wall=30.4s receipts=0.2s screen=5.5s submit=13.9s wave=1.8s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\00-baseline-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\00-baseline-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "scale",
+            "wall_seconds": 63.37917269999889,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 5.7,
+              "clock": 2.7,
+              "observe_plugin": 0.8,
+              "plugins_busy": 457.6,
+              "plugins_wall": 30.1,
+              "receipts": 0.2,
+              "screen": 2.9,
+              "submit": 13.3,
+              "wave": 1.7
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=5.7s clock=2.7s observe_plugin=0.8s plugins_busy=457.6s plugins_wall=30.1s receipts=0.2s screen=2.9s submit=13.3s wave=1.7s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\01-pool-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\01-pool-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "scale",
+            "wall_seconds": 51.63651769999706,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 4.1,
+              "clock": 2.0,
+              "observe_plugin": 0.7,
+              "plugins_busy": 405.7,
+              "plugins_wall": 26.6,
+              "receipts": 0.2,
+              "screen": 2.3,
+              "submit": 9.5,
+              "wave": 1.2
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=4.1s clock=2.0s observe_plugin=0.7s plugins_busy=405.7s plugins_wall=26.6s receipts=0.2s screen=2.3s submit=9.5s wave=1.2s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\02-pool-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\02-pool-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "scale",
+            "wall_seconds": 62.936692200000834,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 5.7,
+              "clock": 2.5,
+              "observe_plugin": 0.8,
+              "plugins_busy": 414.4,
+              "plugins_wall": 27.7,
+              "receipts": 0.2,
+              "screen": 5.4,
+              "submit": 12.8,
+              "wave": 1.7
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=5.7s clock=2.5s observe_plugin=0.8s plugins_busy=414.4s plugins_wall=27.7s receipts=0.2s screen=5.4s submit=12.8s wave=1.7s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\03-baseline-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\03-baseline-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "related",
+            "wall_seconds": 9.30256140000347,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.5,
+              "clock": 0.3,
+              "observe_plugin": 0.0,
+              "plugins_busy": 24.2,
+              "plugins_wall": 2.1,
+              "receipts": 0.1,
+              "screen": 0.6,
+              "submit": 3.7,
+              "wave": 0.4
+            },
+            "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+            "profile": "profile step=600 accept=0.0s builtin=1.5s clock=0.3s observe_plugin=0.0s plugins_busy=24.2s plugins_wall=2.1s receipts=0.1s screen=0.6s submit=3.7s wave=0.4s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\04-baseline-related.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\04-baseline-related.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "related",
+            "wall_seconds": 7.390678799998568,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.2,
+              "clock": 0.3,
+              "observe_plugin": 0.0,
+              "plugins_busy": 22.2,
+              "plugins_wall": 1.8,
+              "receipts": 0.1,
+              "screen": 0.2,
+              "submit": 2.9,
+              "wave": 0.3
+            },
+            "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+            "profile": "profile step=600 accept=0.0s builtin=1.2s clock=0.3s observe_plugin=0.0s plugins_busy=22.2s plugins_wall=1.8s receipts=0.1s screen=0.2s submit=2.9s wave=0.3s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\05-pool-related.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\05-pool-related.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "poll",
+            "wall_seconds": 8.949773400003323,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.2,
+              "clock": 0.1,
+              "observe_plugin": 0.0,
+              "plugins_busy": 24.0,
+              "plugins_wall": 1.7,
+              "receipts": 0.1,
+              "screen": 0.5,
+              "submit": 4.2,
+              "wave": 0.4
+            },
+            "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+            "profile": "profile step=600 accept=0.0s builtin=1.2s clock=0.1s observe_plugin=0.0s plugins_busy=24.0s plugins_wall=1.7s receipts=0.1s screen=0.5s submit=4.2s wave=0.4s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\06-baseline-poll.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\06-baseline-poll.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "poll",
+            "wall_seconds": 8.979049000001396,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.4,
+              "clock": 0.1,
+              "observe_plugin": 0.0,
+              "plugins_busy": 22.5,
+              "plugins_wall": 1.6,
+              "receipts": 0.1,
+              "screen": 0.2,
+              "submit": 4.5,
+              "wave": 0.4
+            },
+            "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+            "profile": "profile step=600 accept=0.0s builtin=1.4s clock=0.1s observe_plugin=0.0s plugins_busy=22.5s plugins_wall=1.6s receipts=0.1s screen=0.2s submit=4.5s wave=0.4s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\07-pool-poll.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\07-pool-poll.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "live",
+            "wall_seconds": 5.688030399996933,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.2,
+              "clock": 0.1,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.1,
+              "screen": 0.0,
+              "submit": 3.7,
+              "wave": 0.3
+            },
+            "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+            "profile": "profile step=600 accept=0.0s builtin=1.2s clock=0.1s plugins_busy=0.0s plugins_wall=0.0s receipts=0.1s screen=0.0s submit=3.7s wave=0.3s wakes(calls/acting/actions):  poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\08-baseline-live.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\08-baseline-live.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 8466,
+              "V-BTC-SPOT": 10217
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "live",
+            "wall_seconds": 4.500879299997905,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.9,
+              "clock": 0.1,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.1,
+              "screen": 0.0,
+              "submit": 2.9,
+              "wave": 0.2
+            },
+            "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+            "profile": "profile step=600 accept=0.0s builtin=0.9s clock=0.1s plugins_busy=0.0s plugins_wall=0.0s receipts=0.1s screen=0.0s submit=2.9s wave=0.2s wakes(calls/acting/actions):  poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\09-pool-live.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\09-pool-live.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 8466,
+              "V-BTC-SPOT": 10217
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "long",
+            "wall_seconds": 51.17869570000039,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 4.2,
+              "clock": 1.0,
+              "observe_plugin": 2.7,
+              "plugins_busy": 264.0,
+              "plugins_wall": 29.9,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 9.7,
+              "wave": 1.1
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=4.2s clock=1.0s observe_plugin=2.7s plugins_busy=264.0s plugins_wall=29.9s receipts=0.2s screen=0.1s submit=9.7s wave=1.1s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\10-baseline-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\10-baseline-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "long",
+            "wall_seconds": 53.49677680000241,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 4.4,
+              "clock": 1.1,
+              "observe_plugin": 2.9,
+              "plugins_busy": 291.2,
+              "plugins_wall": 31.6,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 10.3,
+              "wave": 1.1
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=4.4s clock=1.1s observe_plugin=2.9s plugins_busy=291.2s plugins_wall=31.6s receipts=0.2s screen=0.1s submit=10.3s wave=1.1s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\11-pool-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue-runs\\11-pool-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          }
+        ],
+        "all_equal": true
+      }
+    },
+    {
+      "experiment": "rejected_private_candidates_v1",
+      "evidence": ".local\\optimization-20261023\\screen-runs-clean",
+      "before_variant": "baseline",
+      "after_variant": "pool",
+      "groups": [
+        {
+          "case": "scale",
+          "before_seconds": [
+            59.28812730000209,
+            62.14698059999864
+          ],
+          "after_seconds": [
+            66.32819519999975,
+            68.83719320000091
+          ],
+          "before_mean": 60.717553950000365,
+          "after_mean": 67.58269420000033,
+          "reduction_percent": -11.306681187541368,
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875"
+        },
+        {
+          "case": "related",
+          "before_seconds": [
+            7.922783999998501
+          ],
+          "after_seconds": [
+            8.299208100001124
+          ],
+          "before_mean": 7.922783999998501,
+          "after_mean": 8.299208100001124,
+          "reduction_percent": -4.751159440957808,
+          "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7"
+        },
+        {
+          "case": "poll",
+          "before_seconds": [
+            7.358312600001227
+          ],
+          "after_seconds": [
+            8.007859800000006
+          ],
+          "before_mean": 7.358312600001227,
+          "after_mean": 8.007859800000006,
+          "reduction_percent": -8.827393389058646,
+          "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a"
+        },
+        {
+          "case": "live",
+          "before_seconds": [
+            5.707788499999879
+          ],
+          "after_seconds": [
+            5.266651699999784
+          ],
+          "before_mean": 5.707788499999879,
+          "after_mean": 5.266651699999784,
+          "reduction_percent": 7.728681607598187,
+          "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6"
+        },
+        {
+          "case": "long",
+          "before_seconds": [
+            58.710892299997795
+          ],
+          "after_seconds": [
+            61.769634999996924
+          ],
+          "before_mean": 58.710892299997795,
+          "after_mean": 61.769634999996924,
+          "reduction_percent": -5.209838549837964,
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b"
+        }
+      ],
+      "plan": {
+        "variants": {
+          "pool": {
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline",
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen.exe"
+          },
+          "baseline": {
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline",
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue.exe"
+          }
+        },
+        "cases": {
+          "scale": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\s3000.json",
+            "steps": 1800,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          },
+          "related": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\rel241.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          },
+          "poll": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\p241.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_POLL_MS": "60000"
+            }
+          },
+          "live": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\perf0.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {}
+          },
+          "long": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\long24.json",
+            "steps": 1500,
+            "seconds": 3,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          }
+        },
+        "runs": [
+          {
+            "variant": "baseline",
+            "case": "scale"
+          },
+          {
+            "variant": "pool",
+            "case": "scale"
+          },
+          {
+            "variant": "pool",
+            "case": "scale"
+          },
+          {
+            "variant": "baseline",
+            "case": "scale"
+          },
+          {
+            "variant": "baseline",
+            "case": "related"
+          },
+          {
+            "variant": "pool",
+            "case": "related"
+          },
+          {
+            "variant": "baseline",
+            "case": "poll"
+          },
+          {
+            "variant": "pool",
+            "case": "poll"
+          },
+          {
+            "variant": "baseline",
+            "case": "live"
+          },
+          {
+            "variant": "pool",
+            "case": "live"
+          },
+          {
+            "variant": "baseline",
+            "case": "long"
+          },
+          {
+            "variant": "pool",
+            "case": "long"
+          }
+        ]
+      },
+      "summary": {
+        "plan_sha256": "1705bbf54b06cbdcb99ef7da662a30c0afcf6e79e1f055fb0dc53bd52d0a3100",
+        "runs": [
+          {
+            "variant": "baseline",
+            "case": "scale",
+            "wall_seconds": 59.28812730000209,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 5.4,
+              "clock": 2.4,
+              "observe_plugin": 0.8,
+              "plugins_busy": 428.9,
+              "plugins_wall": 28.3,
+              "receipts": 0.2,
+              "screen": 2.7,
+              "submit": 12.8,
+              "wave": 1.5
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=5.4s clock=2.4s observe_plugin=0.8s plugins_busy=428.9s plugins_wall=28.3s receipts=0.2s screen=2.7s submit=12.8s wave=1.5s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\00-baseline-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\00-baseline-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "scale",
+            "wall_seconds": 66.32819519999975,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 5.9,
+              "clock": 2.5,
+              "observe_plugin": 0.9,
+              "plugins_busy": 445.4,
+              "plugins_wall": 29.4,
+              "receipts": 0.2,
+              "screen": 4.0,
+              "submit": 14.3,
+              "wave": 1.7
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "3c08014c78f2830df1b50f3d4feebaeff039bf954acdd1f47fb89e3ec1fd253c",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=5.9s clock=2.5s observe_plugin=0.9s plugins_busy=445.4s plugins_wall=29.4s receipts=0.2s screen=4.0s submit=14.3s wave=1.7s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\01-pool-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\01-pool-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "scale",
+            "wall_seconds": 68.83719320000091,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 6.1,
+              "clock": 2.6,
+              "observe_plugin": 0.9,
+              "plugins_busy": 468.0,
+              "plugins_wall": 30.9,
+              "receipts": 0.2,
+              "screen": 4.1,
+              "submit": 14.8,
+              "wave": 1.7
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "3c08014c78f2830df1b50f3d4feebaeff039bf954acdd1f47fb89e3ec1fd253c",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=6.1s clock=2.6s observe_plugin=0.9s plugins_busy=468.0s plugins_wall=30.9s receipts=0.2s screen=4.1s submit=14.8s wave=1.7s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\02-pool-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\02-pool-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "scale",
+            "wall_seconds": 62.14698059999864,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 5.4,
+              "clock": 2.4,
+              "observe_plugin": 0.9,
+              "plugins_busy": 446.7,
+              "plugins_wall": 29.4,
+              "receipts": 0.2,
+              "screen": 2.7,
+              "submit": 12.6,
+              "wave": 1.5
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=5.4s clock=2.4s observe_plugin=0.9s plugins_busy=446.7s plugins_wall=29.4s receipts=0.2s screen=2.7s submit=12.6s wave=1.5s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\03-baseline-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\03-baseline-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "related",
+            "wall_seconds": 7.922783999998501,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.3,
+              "clock": 0.3,
+              "observe_plugin": 0.0,
+              "plugins_busy": 20.7,
+              "plugins_wall": 1.8,
+              "receipts": 0.1,
+              "screen": 0.2,
+              "submit": 3.3,
+              "wave": 0.3
+            },
+            "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+            "profile": "profile step=600 accept=0.0s builtin=1.3s clock=0.3s observe_plugin=0.0s plugins_busy=20.7s plugins_wall=1.8s receipts=0.1s screen=0.2s submit=3.3s wave=0.3s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\04-baseline-related.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\04-baseline-related.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "related",
+            "wall_seconds": 8.299208100001124,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.3,
+              "clock": 0.3,
+              "observe_plugin": 0.0,
+              "plugins_busy": 21.6,
+              "plugins_wall": 1.8,
+              "receipts": 0.1,
+              "screen": 0.4,
+              "submit": 3.5,
+              "wave": 0.3
+            },
+            "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "3c08014c78f2830df1b50f3d4feebaeff039bf954acdd1f47fb89e3ec1fd253c",
+            "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+            "profile": "profile step=600 accept=0.0s builtin=1.3s clock=0.3s observe_plugin=0.0s plugins_busy=21.6s plugins_wall=1.8s receipts=0.1s screen=0.4s submit=3.5s wave=0.3s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\05-pool-related.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\05-pool-related.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "poll",
+            "wall_seconds": 7.358312600001227,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.1,
+              "clock": 0.1,
+              "observe_plugin": 0.0,
+              "plugins_busy": 21.3,
+              "plugins_wall": 1.5,
+              "receipts": 0.1,
+              "screen": 0.2,
+              "submit": 3.7,
+              "wave": 0.3
+            },
+            "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+            "profile": "profile step=600 accept=0.0s builtin=1.1s clock=0.1s observe_plugin=0.0s plugins_busy=21.3s plugins_wall=1.5s receipts=0.1s screen=0.2s submit=3.7s wave=0.3s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\06-baseline-poll.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\06-baseline-poll.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "poll",
+            "wall_seconds": 8.007859800000006,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.1,
+              "clock": 0.1,
+              "observe_plugin": 0.0,
+              "plugins_busy": 22.6,
+              "plugins_wall": 1.6,
+              "receipts": 0.1,
+              "screen": 0.3,
+              "submit": 3.9,
+              "wave": 0.3
+            },
+            "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "3c08014c78f2830df1b50f3d4feebaeff039bf954acdd1f47fb89e3ec1fd253c",
+            "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+            "profile": "profile step=600 accept=0.0s builtin=1.1s clock=0.1s observe_plugin=0.0s plugins_busy=22.6s plugins_wall=1.6s receipts=0.1s screen=0.3s submit=3.9s wave=0.3s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\07-pool-poll.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\07-pool-poll.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "live",
+            "wall_seconds": 5.707788499999879,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.2,
+              "clock": 0.1,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.1,
+              "screen": 0.0,
+              "submit": 3.6,
+              "wave": 0.3
+            },
+            "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+            "profile": "profile step=600 accept=0.0s builtin=1.2s clock=0.1s plugins_busy=0.0s plugins_wall=0.0s receipts=0.1s screen=0.0s submit=3.6s wave=0.3s wakes(calls/acting/actions):  poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\08-baseline-live.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\08-baseline-live.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 8466,
+              "V-BTC-SPOT": 10217
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "live",
+            "wall_seconds": 5.266651699999784,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.1,
+              "clock": 0.1,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.1,
+              "screen": 0.0,
+              "submit": 3.5,
+              "wave": 0.3
+            },
+            "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "3c08014c78f2830df1b50f3d4feebaeff039bf954acdd1f47fb89e3ec1fd253c",
+            "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+            "profile": "profile step=600 accept=0.0s builtin=1.1s clock=0.1s plugins_busy=0.0s plugins_wall=0.0s receipts=0.1s screen=0.0s submit=3.5s wave=0.3s wakes(calls/acting/actions):  poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\09-pool-live.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\09-pool-live.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 8466,
+              "V-BTC-SPOT": 10217
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "long",
+            "wall_seconds": 58.710892299997795,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 5.1,
+              "clock": 1.2,
+              "observe_plugin": 3.1,
+              "plugins_busy": 300.0,
+              "plugins_wall": 33.1,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 12.0,
+              "wave": 1.2
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=5.1s clock=1.2s observe_plugin=3.1s plugins_busy=300.0s plugins_wall=33.1s receipts=0.2s screen=0.1s submit=12.0s wave=1.2s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\10-baseline-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\10-baseline-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "long",
+            "wall_seconds": 61.769634999996924,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 5.3,
+              "clock": 1.2,
+              "observe_plugin": 3.3,
+              "plugins_busy": 314.4,
+              "plugins_wall": 34.7,
+              "receipts": 0.2,
+              "screen": 1.0,
+              "submit": 12.7,
+              "wave": 1.3
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "3c08014c78f2830df1b50f3d4feebaeff039bf954acdd1f47fb89e3ec1fd253c",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=5.3s clock=1.2s observe_plugin=3.3s plugins_busy=314.4s plugins_wall=34.7s receipts=0.2s screen=1.0s submit=12.7s wave=1.3s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\11-pool-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-runs-clean\\11-pool-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          }
+        ],
+        "all_equal": true
+      }
+    },
+    {
+      "experiment": "rejected_private_candidates_v2",
+      "evidence": ".local\\optimization-20261023\\screen-v2-runs",
+      "before_variant": "baseline",
+      "after_variant": "pool",
+      "groups": [
+        {
+          "case": "scale",
+          "before_seconds": [
+            47.66567149999537,
+            54.616850200000044
+          ],
+          "after_seconds": [
+            56.69291589999921,
+            54.30628059999435
+          ],
+          "before_mean": 51.14126084999771,
+          "after_mean": 55.49959824999678,
+          "reduction_percent": -8.52215476810887,
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875"
+        },
+        {
+          "case": "related",
+          "before_seconds": [
+            6.652764800004661
+          ],
+          "after_seconds": [
+            6.955175200004305
+          ],
+          "before_mean": 6.652764800004661,
+          "after_mean": 6.955175200004305,
+          "reduction_percent": -4.5456349215807546,
+          "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7"
+        },
+        {
+          "case": "poll",
+          "before_seconds": [
+            6.995198099997651
+          ],
+          "after_seconds": [
+            6.201772100001108
+          ],
+          "before_mean": 6.995198099997651,
+          "after_mean": 6.201772100001108,
+          "reduction_percent": 11.342437893171454,
+          "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a"
+        },
+        {
+          "case": "live",
+          "before_seconds": [
+            4.388675199996214
+          ],
+          "after_seconds": [
+            4.681042199998046
+          ],
+          "before_mean": 4.388675199996214,
+          "after_mean": 4.681042199998046,
+          "reduction_percent": -6.661850938572167,
+          "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6"
+        },
+        {
+          "case": "long",
+          "before_seconds": [
+            42.173480900004506
+          ],
+          "after_seconds": [
+            42.954853200004436
+          ],
+          "before_mean": 42.173480900004506,
+          "after_mean": 42.954853200004436,
+          "reduction_percent": -1.852757427950058,
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b"
+        }
+      ],
+      "plan": {
+        "variants": {
+          "pool": {
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline",
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2.exe"
+          },
+          "baseline": {
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline",
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue.exe"
+          }
+        },
+        "cases": {
+          "scale": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\s3000.json",
+            "steps": 1800,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          },
+          "related": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\rel241.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          },
+          "poll": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\p241.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_POLL_MS": "60000"
+            }
+          },
+          "live": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\perf0.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {}
+          },
+          "long": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\long24.json",
+            "steps": 1500,
+            "seconds": 3,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          }
+        },
+        "runs": [
+          {
+            "variant": "baseline",
+            "case": "scale"
+          },
+          {
+            "variant": "pool",
+            "case": "scale"
+          },
+          {
+            "variant": "pool",
+            "case": "scale"
+          },
+          {
+            "variant": "baseline",
+            "case": "scale"
+          },
+          {
+            "variant": "baseline",
+            "case": "related"
+          },
+          {
+            "variant": "pool",
+            "case": "related"
+          },
+          {
+            "variant": "baseline",
+            "case": "poll"
+          },
+          {
+            "variant": "pool",
+            "case": "poll"
+          },
+          {
+            "variant": "baseline",
+            "case": "live"
+          },
+          {
+            "variant": "pool",
+            "case": "live"
+          },
+          {
+            "variant": "baseline",
+            "case": "long"
+          },
+          {
+            "variant": "pool",
+            "case": "long"
+          }
+        ]
+      },
+      "summary": {
+        "plan_sha256": "22b7bd327dfd7adbabd3ff10321e88afe5be3e59eb27e971798be9db3fba58a2",
+        "runs": [
+          {
+            "variant": "baseline",
+            "case": "scale",
+            "wall_seconds": 47.66567149999537,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 3.8,
+              "clock": 1.8,
+              "observe_plugin": 0.6,
+              "plugins_busy": 370.7,
+              "plugins_wall": 24.4,
+              "receipts": 0.1,
+              "screen": 2.1,
+              "submit": 8.9,
+              "wave": 1.0
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=3.8s clock=1.8s observe_plugin=0.6s plugins_busy=370.7s plugins_wall=24.4s receipts=0.1s screen=2.1s submit=8.9s wave=1.0s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\00-baseline-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\00-baseline-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "scale",
+            "wall_seconds": 56.69291589999921,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 4.7,
+              "clock": 2.1,
+              "observe_plugin": 0.8,
+              "plugins_busy": 406.8,
+              "plugins_wall": 26.8,
+              "receipts": 0.2,
+              "screen": 3.0,
+              "submit": 10.8,
+              "wave": 1.3
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "8e11218ce4d67074ca736acdbfaac7218b07f21ca8d7d4d521489485ecde558a",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=4.7s clock=2.1s observe_plugin=0.8s plugins_busy=406.8s plugins_wall=26.8s receipts=0.2s screen=3.0s submit=10.8s wave=1.3s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\01-pool-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\01-pool-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "scale",
+            "wall_seconds": 54.30628059999435,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 4.2,
+              "clock": 2.0,
+              "observe_plugin": 0.7,
+              "plugins_busy": 403.2,
+              "plugins_wall": 26.5,
+              "receipts": 0.2,
+              "screen": 2.7,
+              "submit": 10.2,
+              "wave": 1.2
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "8e11218ce4d67074ca736acdbfaac7218b07f21ca8d7d4d521489485ecde558a",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=4.2s clock=2.0s observe_plugin=0.7s plugins_busy=403.2s plugins_wall=26.5s receipts=0.2s screen=2.7s submit=10.2s wave=1.2s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\02-pool-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\02-pool-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "scale",
+            "wall_seconds": 54.616850200000044,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 5.0,
+              "clock": 2.2,
+              "observe_plugin": 0.8,
+              "plugins_busy": 393.9,
+              "plugins_wall": 25.9,
+              "receipts": 0.2,
+              "screen": 2.5,
+              "submit": 11.9,
+              "wave": 1.3
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=5.0s clock=2.2s observe_plugin=0.8s plugins_busy=393.9s plugins_wall=25.9s receipts=0.2s screen=2.5s submit=11.9s wave=1.3s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\03-baseline-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\03-baseline-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "related",
+            "wall_seconds": 6.652764800004661,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.1,
+              "clock": 0.2,
+              "observe_plugin": 0.0,
+              "plugins_busy": 19.2,
+              "plugins_wall": 1.6,
+              "receipts": 0.1,
+              "screen": 0.2,
+              "submit": 2.6,
+              "wave": 0.2
+            },
+            "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+            "profile": "profile step=600 accept=0.0s builtin=1.1s clock=0.2s observe_plugin=0.0s plugins_busy=19.2s plugins_wall=1.6s receipts=0.1s screen=0.2s submit=2.6s wave=0.2s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\04-baseline-related.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\04-baseline-related.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "related",
+            "wall_seconds": 6.955175200004305,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.1,
+              "clock": 0.2,
+              "observe_plugin": 0.0,
+              "plugins_busy": 19.2,
+              "plugins_wall": 1.6,
+              "receipts": 0.1,
+              "screen": 0.3,
+              "submit": 2.9,
+              "wave": 0.2
+            },
+            "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "8e11218ce4d67074ca736acdbfaac7218b07f21ca8d7d4d521489485ecde558a",
+            "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+            "profile": "profile step=600 accept=0.0s builtin=1.1s clock=0.2s observe_plugin=0.0s plugins_busy=19.2s plugins_wall=1.6s receipts=0.1s screen=0.3s submit=2.9s wave=0.2s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\05-pool-related.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\05-pool-related.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "poll",
+            "wall_seconds": 6.995198099997651,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 1.0,
+              "clock": 0.1,
+              "observe_plugin": 0.0,
+              "plugins_busy": 18.6,
+              "plugins_wall": 1.3,
+              "receipts": 0.1,
+              "screen": 0.2,
+              "submit": 3.6,
+              "wave": 0.3
+            },
+            "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+            "profile": "profile step=600 accept=0.0s builtin=1.0s clock=0.1s observe_plugin=0.0s plugins_busy=18.6s plugins_wall=1.3s receipts=0.1s screen=0.2s submit=3.6s wave=0.3s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\06-baseline-poll.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\06-baseline-poll.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "poll",
+            "wall_seconds": 6.201772100001108,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.9,
+              "clock": 0.0,
+              "observe_plugin": 0.0,
+              "plugins_busy": 18.0,
+              "plugins_wall": 1.3,
+              "receipts": 0.0,
+              "screen": 0.2,
+              "submit": 3.1,
+              "wave": 0.2
+            },
+            "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "8e11218ce4d67074ca736acdbfaac7218b07f21ca8d7d4d521489485ecde558a",
+            "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+            "profile": "profile step=600 accept=0.0s builtin=0.9s clock=0.0s observe_plugin=0.0s plugins_busy=18.0s plugins_wall=1.3s receipts=0.0s screen=0.2s submit=3.1s wave=0.2s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\07-pool-poll.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\07-pool-poll.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "live",
+            "wall_seconds": 4.388675199996214,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.9,
+              "clock": 0.1,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.1,
+              "screen": 0.0,
+              "submit": 2.9,
+              "wave": 0.2
+            },
+            "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+            "profile": "profile step=600 accept=0.0s builtin=0.9s clock=0.1s plugins_busy=0.0s plugins_wall=0.0s receipts=0.1s screen=0.0s submit=2.9s wave=0.2s wakes(calls/acting/actions):  poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\08-baseline-live.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\08-baseline-live.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 8466,
+              "V-BTC-SPOT": 10217
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "live",
+            "wall_seconds": 4.681042199998046,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.9,
+              "clock": 0.1,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.1,
+              "screen": 0.0,
+              "submit": 3.1,
+              "wave": 0.2
+            },
+            "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "8e11218ce4d67074ca736acdbfaac7218b07f21ca8d7d4d521489485ecde558a",
+            "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+            "profile": "profile step=600 accept=0.0s builtin=0.9s clock=0.1s plugins_busy=0.0s plugins_wall=0.0s receipts=0.1s screen=0.0s submit=3.1s wave=0.2s wakes(calls/acting/actions):  poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\09-pool-live.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\09-pool-live.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 8466,
+              "V-BTC-SPOT": 10217
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "long",
+            "wall_seconds": 42.173480900004506,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.5,
+              "clock": 0.9,
+              "observe_plugin": 2.2,
+              "plugins_busy": 227.4,
+              "plugins_wall": 24.7,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 8.4,
+              "wave": 0.8
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=3.5s clock=0.9s observe_plugin=2.2s plugins_busy=227.4s plugins_wall=24.7s receipts=0.2s screen=0.1s submit=8.4s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\10-baseline-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\10-baseline-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          },
+          {
+            "variant": "pool",
+            "case": "long",
+            "wall_seconds": 42.954853200004436,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.6,
+              "clock": 0.9,
+              "observe_plugin": 2.2,
+              "plugins_busy": 233.0,
+              "plugins_wall": 25.1,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 8.6,
+              "wave": 0.8
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "8e11218ce4d67074ca736acdbfaac7218b07f21ca8d7d4d521489485ecde558a",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=3.6s clock=0.9s observe_plugin=2.2s plugins_busy=233.0s plugins_wall=25.1s receipts=0.2s screen=0.1s submit=8.6s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\11-pool-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\screen-v2-runs\\11-pool-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          }
+        ],
+        "all_equal": true
+      }
+    },
+    {
+      "experiment": "rejected_committed_prefix_certificate",
+      "evidence": ".local\\optimization-20261023\\prefix-runs",
+      "before_variant": "screen",
+      "after_variant": "prefix",
+      "groups": [
+        {
+          "case": "long",
+          "before_seconds": [
+            41.71374189999915,
+            42.261255899997195
+          ],
+          "after_seconds": [
+            41.18144079999911,
+            42.15695140000025
+          ],
+          "before_mean": 41.98749889999817,
+          "after_mean": 41.66919609999968,
+          "reduction_percent": 0.7580894512354663,
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b"
+        },
+        {
+          "case": "scale",
+          "before_seconds": [
+            43.242238999999245
+          ],
+          "after_seconds": [
+            42.84176540000044
+          ],
+          "before_mean": 43.242238999999245,
+          "after_mean": 42.84176540000044,
+          "reduction_percent": 0.9261167073213117,
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875"
+        },
+        {
+          "case": "related",
+          "before_seconds": [
+            5.4108749000006355
+          ],
+          "after_seconds": [
+            5.490428500001144
+          ],
+          "before_mean": 5.4108749000006355,
+          "after_mean": 5.490428500001144,
+          "reduction_percent": -1.4702539140296844,
+          "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7"
+        },
+        {
+          "case": "poll",
+          "before_seconds": [
+            5.9024210999996285
+          ],
+          "after_seconds": [
+            5.603324099996826
+          ],
+          "before_mean": 5.9024210999996285,
+          "after_mean": 5.603324099996826,
+          "reduction_percent": 5.067361256261805,
+          "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a"
+        },
+        {
+          "case": "live",
+          "before_seconds": [
+            3.5280870999995386
+          ],
+          "after_seconds": [
+            3.282516899998882
+          ],
+          "before_mean": 3.5280870999995386,
+          "after_mean": 3.282516899998882,
+          "reduction_percent": 6.960434735318433,
+          "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6"
+        }
+      ],
+      "plan": {
+        "cases": {
+          "scale": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\s3000.json",
+            "steps": 1800,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          },
+          "related": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\rel241.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          },
+          "poll": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\p241.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_POLL_MS": "60000"
+            }
+          },
+          "live": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\perf0.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {}
+          },
+          "long": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\long24.json",
+            "steps": 1500,
+            "seconds": 3,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          }
+        },
+        "variants": {
+          "prefix": {
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-prefix",
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue.exe"
+          },
+          "screen": {
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline",
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\pool-queue.exe"
+          }
+        },
+        "runs": [
+          {
+            "case": "long",
+            "variant": "screen"
+          },
+          {
+            "case": "long",
+            "variant": "prefix"
+          },
+          {
+            "case": "long",
+            "variant": "prefix"
+          },
+          {
+            "case": "long",
+            "variant": "screen"
+          },
+          {
+            "case": "scale",
+            "variant": "screen"
+          },
+          {
+            "case": "scale",
+            "variant": "prefix"
+          },
+          {
+            "case": "related",
+            "variant": "screen"
+          },
+          {
+            "case": "related",
+            "variant": "prefix"
+          },
+          {
+            "case": "poll",
+            "variant": "screen"
+          },
+          {
+            "case": "poll",
+            "variant": "prefix"
+          },
+          {
+            "case": "live",
+            "variant": "screen"
+          },
+          {
+            "case": "live",
+            "variant": "prefix"
+          }
+        ]
+      },
+      "summary": {
+        "plan_sha256": "0e054e7544e8e971683dbe5aa54480dcad872a3a29f0d02bf48748d2279d78bc",
+        "runs": [
+          {
+            "case": "long",
+            "variant": "screen",
+            "wall_seconds": 41.71374189999915,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.5,
+              "clock": 0.8,
+              "observe_plugin": 2.2,
+              "plugins_busy": 227.9,
+              "plugins_wall": 24.5,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 8.3,
+              "wave": 0.8
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=3.5s clock=0.8s observe_plugin=2.2s plugins_busy=227.9s plugins_wall=24.5s receipts=0.2s screen=0.1s submit=8.3s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\00-screen-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\00-screen-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          },
+          {
+            "case": "long",
+            "variant": "prefix",
+            "wall_seconds": 41.18144079999911,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.4,
+              "clock": 0.8,
+              "observe_plugin": 2.1,
+              "plugins_busy": 229.3,
+              "plugins_wall": 24.4,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 8.0,
+              "wave": 0.8
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=3.4s clock=0.8s observe_plugin=2.1s plugins_busy=229.3s plugins_wall=24.4s receipts=0.2s screen=0.1s submit=8.0s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\01-prefix-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\01-prefix-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          },
+          {
+            "case": "long",
+            "variant": "prefix",
+            "wall_seconds": 42.15695140000025,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.5,
+              "clock": 0.8,
+              "observe_plugin": 2.2,
+              "plugins_busy": 233.6,
+              "plugins_wall": 24.9,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 8.1,
+              "wave": 0.8
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=3.5s clock=0.8s observe_plugin=2.2s plugins_busy=233.6s plugins_wall=24.9s receipts=0.2s screen=0.1s submit=8.1s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\02-prefix-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\02-prefix-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          },
+          {
+            "case": "long",
+            "variant": "screen",
+            "wall_seconds": 42.261255899997195,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.6,
+              "clock": 0.9,
+              "observe_plugin": 2.3,
+              "plugins_busy": 230.3,
+              "plugins_wall": 24.7,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 8.3,
+              "wave": 0.8
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=3.6s clock=0.9s observe_plugin=2.3s plugins_busy=230.3s plugins_wall=24.7s receipts=0.2s screen=0.1s submit=8.3s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\03-screen-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\03-screen-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          },
+          {
+            "case": "scale",
+            "variant": "screen",
+            "wall_seconds": 43.242238999999245,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.3,
+              "clock": 1.6,
+              "observe_plugin": 0.5,
+              "plugins_busy": 340.9,
+              "plugins_wall": 22.4,
+              "receipts": 0.1,
+              "screen": 2.0,
+              "submit": 8.0,
+              "wave": 0.9
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.1s builtin=3.3s clock=1.6s observe_plugin=0.5s plugins_busy=340.9s plugins_wall=22.4s receipts=0.1s screen=2.0s submit=8.0s wave=0.9s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\04-screen-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\04-screen-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "case": "scale",
+            "variant": "prefix",
+            "wall_seconds": 42.84176540000044,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.3,
+              "clock": 1.5,
+              "observe_plugin": 0.5,
+              "plugins_busy": 337.7,
+              "plugins_wall": 22.2,
+              "receipts": 0.1,
+              "screen": 1.9,
+              "submit": 7.9,
+              "wave": 0.9
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.1s builtin=3.3s clock=1.5s observe_plugin=0.5s plugins_busy=337.7s plugins_wall=22.2s receipts=0.1s screen=1.9s submit=7.9s wave=0.9s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\05-prefix-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\05-prefix-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "case": "related",
+            "variant": "screen",
+            "wall_seconds": 5.4108749000006355,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.8,
+              "clock": 0.2,
+              "observe_plugin": 0.0,
+              "plugins_busy": 17.0,
+              "plugins_wall": 1.4,
+              "receipts": 0.0,
+              "screen": 0.2,
+              "submit": 2.2,
+              "wave": 0.2
+            },
+            "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+            "profile": "profile step=600 accept=0.0s builtin=0.8s clock=0.2s observe_plugin=0.0s plugins_busy=17.0s plugins_wall=1.4s receipts=0.0s screen=0.2s submit=2.2s wave=0.2s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\06-screen-related.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\06-screen-related.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "case": "related",
+            "variant": "prefix",
+            "wall_seconds": 5.490428500001144,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.9,
+              "clock": 0.2,
+              "observe_plugin": 0.0,
+              "plugins_busy": 17.4,
+              "plugins_wall": 1.5,
+              "receipts": 0.0,
+              "screen": 0.2,
+              "submit": 2.2,
+              "wave": 0.2
+            },
+            "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+            "profile": "profile step=600 accept=0.0s builtin=0.9s clock=0.2s observe_plugin=0.0s plugins_busy=17.4s plugins_wall=1.5s receipts=0.0s screen=0.2s submit=2.2s wave=0.2s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\07-prefix-related.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\07-prefix-related.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "case": "poll",
+            "variant": "screen",
+            "wall_seconds": 5.9024210999996285,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.9,
+              "clock": 0.0,
+              "observe_plugin": 0.0,
+              "plugins_busy": 17.6,
+              "plugins_wall": 1.2,
+              "receipts": 0.0,
+              "screen": 0.2,
+              "submit": 2.9,
+              "wave": 0.2
+            },
+            "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+            "profile": "profile step=600 accept=0.0s builtin=0.9s clock=0.0s observe_plugin=0.0s plugins_busy=17.6s plugins_wall=1.2s receipts=0.0s screen=0.2s submit=2.9s wave=0.2s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\08-screen-poll.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\08-screen-poll.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "case": "poll",
+            "variant": "prefix",
+            "wall_seconds": 5.603324099996826,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.8,
+              "clock": 0.0,
+              "observe_plugin": 0.0,
+              "plugins_busy": 17.1,
+              "plugins_wall": 1.2,
+              "receipts": 0.0,
+              "screen": 0.2,
+              "submit": 2.8,
+              "wave": 0.2
+            },
+            "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+            "profile": "profile step=600 accept=0.0s builtin=0.8s clock=0.0s observe_plugin=0.0s plugins_busy=17.1s plugins_wall=1.2s receipts=0.0s screen=0.2s submit=2.8s wave=0.2s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\09-prefix-poll.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\09-prefix-poll.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "case": "live",
+            "variant": "screen",
+            "wall_seconds": 3.5280870999995386,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.7,
+              "clock": 0.0,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.0,
+              "screen": 0.0,
+              "submit": 2.4,
+              "wave": 0.1
+            },
+            "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+            "profile": "profile step=600 accept=0.0s builtin=0.7s clock=0.0s plugins_busy=0.0s plugins_wall=0.0s receipts=0.0s screen=0.0s submit=2.4s wave=0.1s wakes(calls/acting/actions):  poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\10-screen-live.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\10-screen-live.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 8466,
+              "V-BTC-SPOT": 10217
+            }
+          },
+          {
+            "case": "live",
+            "variant": "prefix",
+            "wall_seconds": 3.282516899998882,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.6,
+              "clock": 0.0,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.0,
+              "screen": 0.0,
+              "submit": 2.2,
+              "wave": 0.1
+            },
+            "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "cadae8c1b9bb423e9ac422201d2ae15c8c46aaeedf2fd4423f3bd70cbce7d80c",
+            "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+            "profile": "profile step=600 accept=0.0s builtin=0.6s clock=0.0s plugins_busy=0.0s plugins_wall=0.0s receipts=0.0s screen=0.0s submit=2.2s wave=0.1s wakes(calls/acting/actions):  poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\11-prefix-live.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\prefix-runs\\11-prefix-live.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 8466,
+              "V-BTC-SPOT": 10217
+            }
+          }
+        ],
+        "all_equal": true
+      }
+    },
+    {
+      "experiment": "retained_armed_protection_early_return",
+      "evidence": ".local\\optimization-20261023\\protection-runs",
+      "before_variant": "before",
+      "after_variant": "after",
+      "groups": [
+        {
+          "case": "uncapped",
+          "before_seconds": [
+            0.2445568999974057,
+            0.3065003999945475
+          ],
+          "after_seconds": [
+            0.5641316999972332,
+            0.20781759999954375
+          ],
+          "before_mean": 0.2755286499959766,
+          "after_mean": 0.3859746499983885,
+          "reduction_percent": -40.0851236356091,
+          "receipt_sha256": "c42cb404e2c15f04e3a14d3650685cb6c02a62c76956f15260b392b00541470d"
+        },
+        {
+          "case": "capped",
+          "before_seconds": [
+            2.7152000999994925,
+            2.657525499998883
+          ],
+          "after_seconds": [
+            0.22552300000097603,
+            0.21186779999698047
+          ],
+          "before_mean": 2.6863627999991877,
+          "after_mean": 0.21869539999897825,
+          "reduction_percent": 91.85905194938509,
+          "receipt_sha256": "22377f0f8201b35c7cbad8460d9ef9910bbda3f9da675c74de30f5c2c1842f95"
+        }
+      ],
+      "plan": {
+        "variants": {
+          "before": {
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-before.exe",
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline"
+          },
+          "after": {
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-after.exe",
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline"
+          }
+        },
+        "cases": {
+          "uncapped": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-uncapped.json",
+            "steps": 5000,
+            "seconds": 1
+          },
+          "capped": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-capped.json",
+            "steps": 5000,
+            "seconds": 1
+          }
+        },
+        "runs": [
+          {
+            "variant": "before",
+            "case": "uncapped"
+          },
+          {
+            "variant": "after",
+            "case": "uncapped"
+          },
+          {
+            "variant": "after",
+            "case": "uncapped"
+          },
+          {
+            "variant": "before",
+            "case": "uncapped"
+          },
+          {
+            "variant": "before",
+            "case": "capped"
+          },
+          {
+            "variant": "after",
+            "case": "capped"
+          },
+          {
+            "variant": "after",
+            "case": "capped"
+          },
+          {
+            "variant": "before",
+            "case": "capped"
+          }
+        ]
+      },
+      "summary": {
+        "plan_sha256": "9b0929f0f9cb9f69ba80726194b693fdea37d24a32acd97650f3ee734147ec8e",
+        "runs": [
+          {
+            "variant": "before",
+            "case": "uncapped",
+            "wall_seconds": 0.2445568999974057,
+            "phases_seconds": {
+              "protections": 0.182631
+            },
+            "receipt_sha256": "c42cb404e2c15f04e3a14d3650685cb6c02a62c76956f15260b392b00541470d",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "62a4e6c422b08455306d92e63a8e752c5dfb1a7aa01cc2c10768e90bc02aef66",
+            "recipe_sha256": "35e6e14a410b30817232ea9c7070f507043d55c71943ad868865af01ab0e6373",
+            "profile": "profile step=5000 protections=0.182631s",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\00-before-uncapped.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\00-before-uncapped.log",
+            "completed": true,
+            "trades": 128
+          },
+          {
+            "variant": "after",
+            "case": "uncapped",
+            "wall_seconds": 0.5641316999972332,
+            "phases_seconds": {
+              "protections": 0.164066
+            },
+            "receipt_sha256": "c42cb404e2c15f04e3a14d3650685cb6c02a62c76956f15260b392b00541470d",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "3c96e692c558577c02530c7f4b648fa33f5247b465f78e969400f9ae7ac4a399",
+            "recipe_sha256": "35e6e14a410b30817232ea9c7070f507043d55c71943ad868865af01ab0e6373",
+            "profile": "profile step=5000 protections=0.164066s",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\01-after-uncapped.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\01-after-uncapped.log",
+            "completed": true,
+            "trades": 128
+          },
+          {
+            "variant": "after",
+            "case": "uncapped",
+            "wall_seconds": 0.20781759999954375,
+            "phases_seconds": {
+              "protections": 0.163413
+            },
+            "receipt_sha256": "c42cb404e2c15f04e3a14d3650685cb6c02a62c76956f15260b392b00541470d",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "3c96e692c558577c02530c7f4b648fa33f5247b465f78e969400f9ae7ac4a399",
+            "recipe_sha256": "35e6e14a410b30817232ea9c7070f507043d55c71943ad868865af01ab0e6373",
+            "profile": "profile step=5000 protections=0.163413s",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\02-after-uncapped.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\02-after-uncapped.log",
+            "completed": true,
+            "trades": 128
+          },
+          {
+            "variant": "before",
+            "case": "uncapped",
+            "wall_seconds": 0.3065003999945475,
+            "phases_seconds": {
+              "protections": 0.243567
+            },
+            "receipt_sha256": "c42cb404e2c15f04e3a14d3650685cb6c02a62c76956f15260b392b00541470d",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "62a4e6c422b08455306d92e63a8e752c5dfb1a7aa01cc2c10768e90bc02aef66",
+            "recipe_sha256": "35e6e14a410b30817232ea9c7070f507043d55c71943ad868865af01ab0e6373",
+            "profile": "profile step=5000 protections=0.243567s",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\03-before-uncapped.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\03-before-uncapped.log",
+            "completed": true,
+            "trades": 128
+          },
+          {
+            "variant": "before",
+            "case": "capped",
+            "wall_seconds": 2.7152000999994925,
+            "phases_seconds": {
+              "protections": 2.660074
+            },
+            "receipt_sha256": "22377f0f8201b35c7cbad8460d9ef9910bbda3f9da675c74de30f5c2c1842f95",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "62a4e6c422b08455306d92e63a8e752c5dfb1a7aa01cc2c10768e90bc02aef66",
+            "recipe_sha256": "5e63e1d5b69332d788a6ff9eb25bd3254b6713d28c1097e50460e410b2ee0da4",
+            "profile": "profile step=5000 protections=2.660074s",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\04-before-capped.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\04-before-capped.log",
+            "completed": true,
+            "trades": 128
+          },
+          {
+            "variant": "after",
+            "case": "capped",
+            "wall_seconds": 0.22552300000097603,
+            "phases_seconds": {
+              "protections": 0.169697
+            },
+            "receipt_sha256": "22377f0f8201b35c7cbad8460d9ef9910bbda3f9da675c74de30f5c2c1842f95",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "3c96e692c558577c02530c7f4b648fa33f5247b465f78e969400f9ae7ac4a399",
+            "recipe_sha256": "5e63e1d5b69332d788a6ff9eb25bd3254b6713d28c1097e50460e410b2ee0da4",
+            "profile": "profile step=5000 protections=0.169697s",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\05-after-capped.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\05-after-capped.log",
+            "completed": true,
+            "trades": 128
+          },
+          {
+            "variant": "after",
+            "case": "capped",
+            "wall_seconds": 0.21186779999698047,
+            "phases_seconds": {
+              "protections": 0.161152
+            },
+            "receipt_sha256": "22377f0f8201b35c7cbad8460d9ef9910bbda3f9da675c74de30f5c2c1842f95",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "3c96e692c558577c02530c7f4b648fa33f5247b465f78e969400f9ae7ac4a399",
+            "recipe_sha256": "5e63e1d5b69332d788a6ff9eb25bd3254b6713d28c1097e50460e410b2ee0da4",
+            "profile": "profile step=5000 protections=0.161152s",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\06-after-capped.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\06-after-capped.log",
+            "completed": true,
+            "trades": 128
+          },
+          {
+            "variant": "before",
+            "case": "capped",
+            "wall_seconds": 2.657525499998883,
+            "phases_seconds": {
+              "protections": 2.611555
+            },
+            "receipt_sha256": "22377f0f8201b35c7cbad8460d9ef9910bbda3f9da675c74de30f5c2c1842f95",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "62a4e6c422b08455306d92e63a8e752c5dfb1a7aa01cc2c10768e90bc02aef66",
+            "recipe_sha256": "5e63e1d5b69332d788a6ff9eb25bd3254b6713d28c1097e50460e410b2ee0da4",
+            "profile": "profile step=5000 protections=2.611555s",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\07-before-capped.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-runs\\07-before-capped.log",
+            "completed": true,
+            "trades": 128
+          }
+        ],
+        "all_equal": true
+      }
+    },
+    {
+      "experiment": "retained_armed_protection_uncapped_repeat",
+      "evidence": ".local\\optimization-20261023\\protection-repeat-runs",
+      "before_variant": "before",
+      "after_variant": "after",
+      "groups": [
+        {
+          "case": "uncapped_stable",
+          "before_seconds": [
+            1.7879869000025792,
+            1.7336264999976265
+          ],
+          "after_seconds": [
+            1.6131934999939403,
+            1.5934264000024996
+          ],
+          "before_mean": 1.7608067000001029,
+          "after_mean": 1.60330994999822,
+          "reduction_percent": 8.944579209170078,
+          "receipt_sha256": "8e0fd0b28399cb0052106ebde6315fe2ec1b0b81ddf39bfd3aeb9dba26050f6d"
+        }
+      ],
+      "plan": {
+        "variants": {
+          "before": {
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-before.exe",
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline"
+          },
+          "after": {
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-after.exe",
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline"
+          }
+        },
+        "cases": {
+          "uncapped_stable": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-uncapped.json",
+            "steps": 50000,
+            "seconds": 1
+          }
+        },
+        "runs": [
+          {
+            "case": "uncapped_stable",
+            "variant": "before"
+          },
+          {
+            "case": "uncapped_stable",
+            "variant": "after"
+          },
+          {
+            "case": "uncapped_stable",
+            "variant": "after"
+          },
+          {
+            "case": "uncapped_stable",
+            "variant": "before"
+          }
+        ]
+      },
+      "summary": {
+        "plan_sha256": "52bc9e8986cd2949c3280c1f0cd8a2d8dc0a7591e80764a47b2c773b5e945ea3",
+        "runs": [
+          {
+            "case": "uncapped_stable",
+            "variant": "before",
+            "wall_seconds": 1.7879869000025792,
+            "phases_seconds": {
+              "protections": 1.725824
+            },
+            "receipt_sha256": "8e0fd0b28399cb0052106ebde6315fe2ec1b0b81ddf39bfd3aeb9dba26050f6d",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "62a4e6c422b08455306d92e63a8e752c5dfb1a7aa01cc2c10768e90bc02aef66",
+            "recipe_sha256": "35e6e14a410b30817232ea9c7070f507043d55c71943ad868865af01ab0e6373",
+            "profile": "profile step=50000 protections=1.725824s",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-repeat-runs\\00-before-uncapped_stable.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-repeat-runs\\00-before-uncapped_stable.log",
+            "completed": true,
+            "trades": 128
+          },
+          {
+            "case": "uncapped_stable",
+            "variant": "after",
+            "wall_seconds": 1.6131934999939403,
+            "phases_seconds": {
+              "protections": 1.56485
+            },
+            "receipt_sha256": "8e0fd0b28399cb0052106ebde6315fe2ec1b0b81ddf39bfd3aeb9dba26050f6d",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "3c96e692c558577c02530c7f4b648fa33f5247b465f78e969400f9ae7ac4a399",
+            "recipe_sha256": "35e6e14a410b30817232ea9c7070f507043d55c71943ad868865af01ab0e6373",
+            "profile": "profile step=50000 protections=1.564850s",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-repeat-runs\\01-after-uncapped_stable.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-repeat-runs\\01-after-uncapped_stable.log",
+            "completed": true,
+            "trades": 128
+          },
+          {
+            "case": "uncapped_stable",
+            "variant": "after",
+            "wall_seconds": 1.5934264000024996,
+            "phases_seconds": {
+              "protections": 1.553321
+            },
+            "receipt_sha256": "8e0fd0b28399cb0052106ebde6315fe2ec1b0b81ddf39bfd3aeb9dba26050f6d",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "3c96e692c558577c02530c7f4b648fa33f5247b465f78e969400f9ae7ac4a399",
+            "recipe_sha256": "35e6e14a410b30817232ea9c7070f507043d55c71943ad868865af01ab0e6373",
+            "profile": "profile step=50000 protections=1.553321s",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-repeat-runs\\02-after-uncapped_stable.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-repeat-runs\\02-after-uncapped_stable.log",
+            "completed": true,
+            "trades": 128
+          },
+          {
+            "case": "uncapped_stable",
+            "variant": "before",
+            "wall_seconds": 1.7336264999976265,
+            "phases_seconds": {
+              "protections": 1.692795
+            },
+            "receipt_sha256": "8e0fd0b28399cb0052106ebde6315fe2ec1b0b81ddf39bfd3aeb9dba26050f6d",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "62a4e6c422b08455306d92e63a8e752c5dfb1a7aa01cc2c10768e90bc02aef66",
+            "recipe_sha256": "35e6e14a410b30817232ea9c7070f507043d55c71943ad868865af01ab0e6373",
+            "profile": "profile step=50000 protections=1.692795s",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-repeat-runs\\03-before-uncapped_stable.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\protection-repeat-runs\\03-before-uncapped_stable.log",
+            "completed": true,
+            "trades": 128
+          }
+        ],
+        "all_equal": true
+      }
+    },
+    {
+      "experiment": "final_vs_original",
+      "evidence": ".local\\optimization-20261023\\final-runs",
+      "before_variant": "baseline",
+      "after_variant": "final",
+      "groups": [
+        {
+          "case": "scale",
+          "before_seconds": [
+            43.17232550000335,
+            43.717638299996906
+          ],
+          "after_seconds": [
+            41.943384199999855,
+            41.43976410000323
+          ],
+          "before_mean": 43.44498190000013,
+          "after_mean": 41.69157415000154,
+          "reduction_percent": 4.035926989299954,
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875"
+        },
+        {
+          "case": "long",
+          "before_seconds": [
+            40.47319900000002,
+            40.232545999999274
+          ],
+          "after_seconds": [
+            40.80613400000584,
+            39.710523099995044
+          ],
+          "before_mean": 40.35287249999965,
+          "after_mean": 40.25832855000044,
+          "reduction_percent": 0.2342929862036658,
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b"
+        },
+        {
+          "case": "related",
+          "before_seconds": [
+            5.154678699997021
+          ],
+          "after_seconds": [
+            4.714595899997221
+          ],
+          "before_mean": 5.154678699997021,
+          "after_mean": 4.714595899997221,
+          "reduction_percent": 8.537540855845283,
+          "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7"
+        },
+        {
+          "case": "poll",
+          "before_seconds": [
+            5.230623800001922
+          ],
+          "after_seconds": [
+            5.06994449999911
+          ],
+          "before_mean": 5.230623800001922,
+          "after_mean": 5.06994449999911,
+          "reduction_percent": 3.071895554842863,
+          "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a"
+        },
+        {
+          "case": "live",
+          "before_seconds": [
+            3.231155300003593
+          ],
+          "after_seconds": [
+            3.3233691999994335
+          ],
+          "before_mean": 3.231155300003593,
+          "after_mean": 3.3233691999994335,
+          "reduction_percent": -2.853898727669879,
+          "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6"
+        }
+      ],
+      "plan": {
+        "variants": {
+          "baseline": {
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\baseline.exe",
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline"
+          },
+          "final": {
+            "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final.exe",
+            "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline"
+          }
+        },
+        "cases": {
+          "scale": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\s3000.json",
+            "steps": 1800,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          },
+          "related": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\rel241.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          },
+          "poll": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\p241.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {
+              "RESEARCH_PLUGIN_POLL_MS": "60000"
+            }
+          },
+          "live": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\perf0.json",
+            "steps": 600,
+            "seconds": 1,
+            "env": {}
+          },
+          "long": {
+            "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\long24.json",
+            "steps": 1500,
+            "seconds": 3,
+            "env": {
+              "RESEARCH_PLUGIN_WAKES": "events"
+            }
+          }
+        },
+        "runs": [
+          {
+            "variant": "baseline",
+            "case": "scale"
+          },
+          {
+            "variant": "final",
+            "case": "scale"
+          },
+          {
+            "variant": "final",
+            "case": "scale"
+          },
+          {
+            "variant": "baseline",
+            "case": "scale"
+          },
+          {
+            "variant": "baseline",
+            "case": "long"
+          },
+          {
+            "variant": "final",
+            "case": "long"
+          },
+          {
+            "variant": "final",
+            "case": "long"
+          },
+          {
+            "variant": "baseline",
+            "case": "long"
+          },
+          {
+            "variant": "baseline",
+            "case": "related"
+          },
+          {
+            "variant": "final",
+            "case": "related"
+          },
+          {
+            "variant": "baseline",
+            "case": "poll"
+          },
+          {
+            "variant": "final",
+            "case": "poll"
+          },
+          {
+            "variant": "baseline",
+            "case": "live"
+          },
+          {
+            "variant": "final",
+            "case": "live"
+          }
+        ]
+      },
+      "summary": {
+        "plan_sha256": "d4fcc19b65e5a7fb36f460620588bca55da448871fdc944ad135156b5206ac16",
+        "runs": [
+          {
+            "variant": "baseline",
+            "case": "scale",
+            "wall_seconds": 43.17232550000335,
+            "phases_seconds": {
+              "accept": 0.2,
+              "builtin": 3.3,
+              "clock": 1.6,
+              "observe_plugin": 0.5,
+              "plugins_busy": 317.8,
+              "plugins_wall": 21.2,
+              "receipts": 0.1,
+              "screen": 3.3,
+              "submit": 8.0,
+              "wave": 0.9
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.2s builtin=3.3s clock=1.6s observe_plugin=0.5s plugins_busy=317.8s plugins_wall=21.2s receipts=0.1s screen=3.3s submit=8.0s wave=0.9s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\00-baseline-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\00-baseline-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "final",
+            "case": "scale",
+            "wall_seconds": 41.943384199999855,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.3,
+              "clock": 1.5,
+              "observe_plugin": 0.5,
+              "plugins_busy": 325.4,
+              "plugins_wall": 21.4,
+              "receipts": 0.1,
+              "screen": 1.9,
+              "submit": 7.8,
+              "wave": 0.9
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.1s builtin=3.3s clock=1.5s observe_plugin=0.5s plugins_busy=325.4s plugins_wall=21.4s receipts=0.1s screen=1.9s submit=7.8s wave=0.9s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\01-final-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\01-final-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "final",
+            "case": "scale",
+            "wall_seconds": 41.43976410000323,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.2,
+              "clock": 1.5,
+              "observe_plugin": 0.5,
+              "plugins_busy": 324.3,
+              "plugins_wall": 21.3,
+              "receipts": 0.1,
+              "screen": 1.9,
+              "submit": 7.7,
+              "wave": 0.9
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.1s builtin=3.2s clock=1.5s observe_plugin=0.5s plugins_busy=324.3s plugins_wall=21.3s receipts=0.1s screen=1.9s submit=7.7s wave=0.9s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\02-final-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\02-final-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "scale",
+            "wall_seconds": 43.717638299996906,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.3,
+              "clock": 1.6,
+              "observe_plugin": 0.6,
+              "plugins_busy": 322.8,
+              "plugins_wall": 21.5,
+              "receipts": 0.1,
+              "screen": 3.3,
+              "submit": 8.1,
+              "wave": 0.9
+            },
+            "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+            "profile": "profile step=1800 accept=0.1s builtin=3.3s clock=1.6s observe_plugin=0.6s plugins_busy=322.8s plugins_wall=21.5s receipts=0.1s screen=3.3s submit=8.1s wave=0.9s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\03-baseline-scale.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\03-baseline-scale.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 17277,
+              "V-BTC-SPOT": 18544
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "long",
+            "wall_seconds": 40.47319900000002,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.4,
+              "clock": 0.8,
+              "observe_plugin": 2.2,
+              "plugins_busy": 212.6,
+              "plugins_wall": 23.8,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 8.0,
+              "wave": 0.8
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=3.4s clock=0.8s observe_plugin=2.2s plugins_busy=212.6s plugins_wall=23.8s receipts=0.2s screen=0.1s submit=8.0s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\04-baseline-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\04-baseline-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          },
+          {
+            "variant": "final",
+            "case": "long",
+            "wall_seconds": 40.80613400000584,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.7,
+              "clock": 0.8,
+              "observe_plugin": 2.5,
+              "plugins_busy": 219.5,
+              "plugins_wall": 23.5,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 8.0,
+              "wave": 0.8
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=3.7s clock=0.8s observe_plugin=2.5s plugins_busy=219.5s plugins_wall=23.5s receipts=0.2s screen=0.1s submit=8.0s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\05-final-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\05-final-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          },
+          {
+            "variant": "final",
+            "case": "long",
+            "wall_seconds": 39.710523099995044,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.4,
+              "clock": 0.8,
+              "observe_plugin": 2.1,
+              "plugins_busy": 217.5,
+              "plugins_wall": 23.2,
+              "receipts": 0.1,
+              "screen": 0.1,
+              "submit": 7.9,
+              "wave": 0.8
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=3.4s clock=0.8s observe_plugin=2.1s plugins_busy=217.5s plugins_wall=23.2s receipts=0.1s screen=0.1s submit=7.9s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\06-final-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\06-final-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "long",
+            "wall_seconds": 40.232545999999274,
+            "phases_seconds": {
+              "accept": 0.1,
+              "builtin": 3.4,
+              "clock": 0.8,
+              "observe_plugin": 2.1,
+              "plugins_busy": 210.9,
+              "plugins_wall": 23.7,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 8.0,
+              "wave": 0.8
+            },
+            "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+            "profile": "profile step=1500 accept=0.1s builtin=3.4s clock=0.8s observe_plugin=2.1s plugins_busy=210.9s plugins_wall=23.7s receipts=0.2s screen=0.1s submit=8.0s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\07-baseline-long.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\07-baseline-long.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 28374,
+              "V-BTC-SPOT": 29909
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "related",
+            "wall_seconds": 5.154678699997021,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.7,
+              "clock": 0.2,
+              "observe_plugin": 0.0,
+              "plugins_busy": 16.0,
+              "plugins_wall": 1.3,
+              "receipts": 0.0,
+              "screen": 0.3,
+              "submit": 2.0,
+              "wave": 0.2
+            },
+            "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+            "profile": "profile step=600 accept=0.0s builtin=0.7s clock=0.2s observe_plugin=0.0s plugins_busy=16.0s plugins_wall=1.3s receipts=0.0s screen=0.3s submit=2.0s wave=0.2s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\08-baseline-related.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\08-baseline-related.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "final",
+            "case": "related",
+            "wall_seconds": 4.714595899997221,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.7,
+              "clock": 0.2,
+              "observe_plugin": 0.0,
+              "plugins_busy": 15.3,
+              "plugins_wall": 1.3,
+              "receipts": 0.0,
+              "screen": 0.1,
+              "submit": 1.9,
+              "wave": 0.1
+            },
+            "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+            "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+            "profile": "profile step=600 accept=0.0s builtin=0.7s clock=0.2s observe_plugin=0.0s plugins_busy=15.3s plugins_wall=1.3s receipts=0.0s screen=0.1s submit=1.9s wave=0.1s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\09-final-related.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\09-final-related.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "poll",
+            "wall_seconds": 5.230623800001922,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.7,
+              "clock": 0.0,
+              "observe_plugin": 0.0,
+              "plugins_busy": 15.5,
+              "plugins_wall": 1.1,
+              "receipts": 0.0,
+              "screen": 0.3,
+              "submit": 2.5,
+              "wave": 0.2
+            },
+            "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+            "profile": "profile step=600 accept=0.0s builtin=0.7s clock=0.0s observe_plugin=0.0s plugins_busy=15.5s plugins_wall=1.1s receipts=0.0s screen=0.3s submit=2.5s wave=0.2s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\10-baseline-poll.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\10-baseline-poll.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "final",
+            "case": "poll",
+            "wall_seconds": 5.06994449999911,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.7,
+              "clock": 0.0,
+              "observe_plugin": 0.0,
+              "plugins_busy": 15.7,
+              "plugins_wall": 1.1,
+              "receipts": 0.0,
+              "screen": 0.1,
+              "submit": 2.5,
+              "wave": 0.2
+            },
+            "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+            "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+            "profile": "profile step=600 accept=0.0s builtin=0.7s clock=0.0s observe_plugin=0.0s plugins_busy=15.7s plugins_wall=1.1s receipts=0.0s screen=0.1s submit=2.5s wave=0.2s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\11-final-poll.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\11-final-poll.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 7603,
+              "V-BTC-SPOT": 9817
+            }
+          },
+          {
+            "variant": "baseline",
+            "case": "live",
+            "wall_seconds": 3.231155300003593,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.6,
+              "clock": 0.0,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.0,
+              "screen": 0.0,
+              "submit": 2.2,
+              "wave": 0.1
+            },
+            "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "2996ca5fcd6a6fb7dc12ffd8e2d3980c489d530495bbf78a808788aac157d542",
+            "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+            "profile": "profile step=600 accept=0.0s builtin=0.6s clock=0.0s plugins_busy=0.0s plugins_wall=0.0s receipts=0.0s screen=0.0s submit=2.2s wave=0.1s wakes(calls/acting/actions):  poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\12-baseline-live.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\12-baseline-live.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 8466,
+              "V-BTC-SPOT": 10217
+            }
+          },
+          {
+            "variant": "final",
+            "case": "live",
+            "wall_seconds": 3.3233691999994335,
+            "phases_seconds": {
+              "accept": 0.0,
+              "builtin": 0.6,
+              "clock": 0.0,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.0,
+              "screen": 0.0,
+              "submit": 2.2,
+              "wave": 0.1
+            },
+            "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+            "equal": true,
+            "exit_code": 0,
+            "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+            "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+            "profile": "profile step=600 accept=0.0s builtin=0.6s clock=0.0s plugins_busy=0.0s plugins_wall=0.0s receipts=0.0s screen=0.0s submit=2.2s wave=0.1s wakes(calls/acting/actions):  poll_actions={}",
+            "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\13-final-live.receipt.json",
+            "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final-runs\\13-final-live.log",
+            "completed": true,
+            "trades": {
+              "V-BTC-PERP": 8466,
+              "V-BTC-SPOT": 10217
+            }
+          }
+        ],
+        "all_equal": true
+      }
+    }
+  ],
+  "receipt_sha256_by_case": {
+    "scale": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+    "related": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+    "poll": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+    "live": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+    "long": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+    "uncapped": "c42cb404e2c15f04e3a14d3650685cb6c02a62c76956f15260b392b00541470d",
+    "capped": "22377f0f8201b35c7cbad8460d9ef9910bbda3f9da675c74de30f5c2c1842f95",
+    "uncapped_stable": "8e0fd0b28399cb0052106ebde6315fe2ec1b0b81ddf39bfd3aeb9dba26050f6d"
+  },
+  "validation_logs": {
+    "final-rust-tests.log": {
+      "path": ".local\\optimization-20261023\\final-rust-tests.log",
+      "sha256": "42469cabd53878a6483f359df1b2fee42687ba7628831ad330415e036baffab9",
+      "result_lines": [
+        "test result: ok. 444 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 245.76s",
+        "test result: FAILED. 327 passed; 12 failed; 9 ignored; 0 measured; 0 filtered out; finished in 3.63s"
+      ],
+      "tail": [
+        "    bot_plugins::tests::resident_state_deltas_rebuild_exact_states_and_roll_back_to_host_state",
+        "    bot_plugins::tests::routed_orders_and_real_receipts_survive_partial_action_recovery",
+        "    bot_workers::tests::service_budget_evicts_idle_plugins_and_rebuilds_from_durable_state",
+        "    tests::plugin_training_restart_and_idempotent_steps_preserve_score_and_state",
+        "",
+        "test result: FAILED. 327 passed; 12 failed; 9 ignored; 0 measured; 0 filtered out; finished in 3.63s",
+        "",
+        "error: test failed, to rerun pass `-p exchange-server --lib`"
+      ]
+    },
+    "final-server-tests.log": {
+      "path": ".local\\optimization-20261023\\final-server-tests.log",
+      "sha256": "efb886f186ead9cfe9a1a322d05e25f02feeb2cacdb77752f93452d193592621",
+      "result_lines": [
+        "test result: ok. 339 passed; 0 failed; 9 ignored; 0 measured; 0 filtered out; finished in 4.39s"
+      ],
+      "tail": [
+        "test competition::tests::formal_identity_password_login_logout_and_expiration ... ok",
+        "test journal::scheduler_json::parallel_tests::parallel_full_eviction_matches_serial_including_unconsumed_hot_entries ... ok",
+        "test tests::http_event_stream_falls_back_to_explicitly_trusted_instance_on_transport_failure ... ok",
+        "test venue_order_tests::venue_perp_sparse_risk_merge_and_restore_match_serial_execution ... ok",
+        "test bot_workers::tests::service_budget_evicts_idle_plugins_and_rebuilds_from_durable_state ... ok",
+        "",
+        "test result: ok. 339 passed; 0 failed; 9 ignored; 0 measured; 0 filtered out; finished in 4.39s",
+        ""
+      ]
+    },
+    "final-python-tests.log": {
+      "path": ".local\\optimization-20261023\\final-python-tests.log",
+      "sha256": "a5fdb962fc5e51c6b240e77074a56cfea6050d1e45eba1cd884327e02dd2e30a",
+      "result_lines": [
+        "Ran 75 tests in 8.574s"
+      ],
+      "tail": [
+        "...........................................................................",
+        "----------------------------------------------------------------------",
+        "Ran 75 tests in 8.574s",
+        "",
+        "OK"
+      ]
+    },
+    "final-clippy.log": {
+      "path": ".local\\optimization-20261023\\final-clippy.log",
+      "sha256": "3071f8f5051219a772291224f3c9933b3e1aaa24003685a5bbcfe4863892f284",
+      "result_lines": [],
+      "tail": [
+        "    Checking libmimalloc-sys v0.1.49",
+        "    Checking mimalloc v0.1.52",
+        "    Checking crossbeam-epoch v0.9.21",
+        "    Checking crossbeam-deque v0.8.8",
+        "    Checking rayon-core v1.13.0",
+        "    Checking rayon v1.12.0",
+        "    Checking exchange-server v0.1.0 (E:\\projects\\MarketForge-tuning\\exchange-server)",
+        "    Finished `dev` profile [unoptimized] target(s) in 27.96s"
+      ]
+    }
+  },
+  "test_fixture_repairs": [
+    "Allow the explicitly qualified 0.3.1+mf1 runtime, as the adapter already does.",
+    "Diagnostics session stub returns the current intent result structure instead of an obsolete string."
+  ]
+}

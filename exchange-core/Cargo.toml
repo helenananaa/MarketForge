@@ -15,3 +15,6 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 # Durable native indicator state must survive JSON bytes without float drift.
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 sha2 = "0.10"
+
+[dev-dependencies]
+rayon = "1.12"

@@ -52,4 +52,5 @@ libc = "0.2"
 
 [dev-dependencies]
 mimalloc = "0.1.52"
+rayon = "1.12"
 tokio-tungstenite = "0.29"

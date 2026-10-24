@@ -36,6 +36,13 @@ mod bot_dispatch;
 mod bot_history;
 pub mod bot_plugins;
 mod bot_runtime_diagnostics;
+/// Routing and evaluation counters for offline acceptance runners. Counters
+/// contain no script sources, configurations or account data.
+pub fn bot_runtime_metrics() -> String {
+    let mut body = String::new();
+    bot_runtime_diagnostics::append_metrics(&mut body);
+    body
+}
 mod bot_wire;
 mod bot_workers;
 mod competition;

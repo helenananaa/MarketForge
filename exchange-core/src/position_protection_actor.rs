@@ -559,6 +559,13 @@ impl ExchangeActor {
             new_reason
         };
         current.trailing_watermark_tick = watermark;
+        // Cursor and trailing watermark still advance on every evaluation.
+        // Without an exit reason, quantity/depth limits and pending-order
+        // lookups cannot affect the result; avoid that work on armed entries.
+        if reason.is_none() {
+            current.status = "armed".into();
+            return None;
+        }
         let preempt = matches!(
             p.triggered_by.as_deref(),
             Some("take_profit" | "take_profit_step")

@@ -1,0 +1,2988 @@
+{
+  "date": "2026-10-23",
+  "baseline": {
+    "variant": {
+      "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final.exe",
+      "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline"
+    },
+    "receipt_sha256_by_case": {
+      "scale": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+      "related": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+      "poll": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+      "live": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+      "long": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+      "uncapped": "c42cb404e2c15f04e3a14d3650685cb6c02a62c76956f15260b392b00541470d",
+      "capped": "22377f0f8201b35c7cbad8460d9ef9910bbda3f9da675c74de30f5c2c1842f95",
+      "uncapped_stable": "8e0fd0b28399cb0052106ebde6315fe2ec1b0b81ddf39bfd3aeb9dba26050f6d"
+    },
+    "starting_source_sha256": {
+      "Cargo.lock": "601ab6a953c6940b054e98a79b057316ff4dda08b537d1e27a99cc1ee2e1b76c",
+      "exchange-core/Cargo.toml": "4eb126d433334ed31cef68cd9eab67d002172ad89171885a4b48b1b2ebb085ce",
+      "exchange-core/examples/strategy_market.rs": "3896c88963d82c434838d5559a1cd7c7c959b99a9898807583f013ab1d5afb38",
+      "exchange-core/src/position_protection_actor.rs": "8ca084481e780d4fd6021e52dca4b70cffb56559e57abe7f3b8398fb0184e551",
+      "exchange-server/Cargo.toml": "a36df00aeb1b995b1a288dd793c654904949fd63d47dcee4c95e09fc15694f14",
+      "python/tests/test_bot_runtime_receipts.py": "d0971e40de0c4bedbaa90a1b63fa3f0aa73f221a28ae2d074073844bbf17f614",
+      "python/tests/test_pine_bot.py": "27211214f71db1ff7c219ed2a4df5efc3cf7470cb5827b8ebe489ae309a38dfc",
+      "exchange-core/examples/position_protection_bench.rs": "f6356a3078420bac87055f8f3fea385e4ac18fa51bffc121c0d8856321b85ee5",
+      "scripts/benchmark_research_optimizations.py": "ec27e366fcdfa26b446436c1123d1b72d55097397d90ecd1a4c3ec226ad44b7d"
+    }
+  },
+  "experiments": {
+    "profile-runs": {
+      "runs": [
+        {
+          "variant": "baseline",
+          "case": "scale",
+          "wall_seconds": 41.041361499999766,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 3.1,
+            "clock": 1.4,
+            "observe_plugin": 0.5,
+            "plugins_busy": 320.3,
+            "plugins_wall": 21.1,
+            "receipts": 0.1,
+            "screen": 1.8,
+            "submit": 7.4,
+            "wave": 0.8
+          },
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+          "profile": "profile step=1800 accept=0.1s builtin=3.1s clock=1.4s observe_plugin=0.5s plugins_busy=320.3s plugins_wall=21.1s receipts=0.1s screen=1.8s submit=7.4s wave=0.8s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\profile-runs\\00-baseline-scale.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\profile-runs\\00-baseline-scale.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 17277,
+            "V-BTC-SPOT": 18544
+          }
+        },
+        {
+          "variant": "baseline",
+          "case": "long",
+          "wall_seconds": 44.47934130000067,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 3.6,
+            "clock": 0.9,
+            "observe_plugin": 2.2,
+            "plugins_busy": 241.9,
+            "plugins_wall": 26.3,
+            "receipts": 0.2,
+            "screen": 0.1,
+            "submit": 8.8,
+            "wave": 0.9
+          },
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+          "profile": "profile step=1500 accept=0.1s builtin=3.6s clock=0.9s observe_plugin=2.2s plugins_busy=241.9s plugins_wall=26.3s receipts=0.2s screen=0.1s submit=8.8s wave=0.9s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\profile-runs\\01-baseline-long.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\profile-runs\\01-baseline-long.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 28374,
+            "V-BTC-SPOT": 29909
+          }
+        }
+      ],
+      "comparisons": {
+        "scale": {
+          "baseline": {
+            "wall": [
+              41.041361499999766
+            ],
+            "mean_wall": 41.041361499999766,
+            "mean_phases": {
+              "accept": 0.1,
+              "builtin": 3.1,
+              "clock": 1.4,
+              "observe_plugin": 0.5,
+              "plugins_busy": 320.3,
+              "plugins_wall": 21.1,
+              "receipts": 0.1,
+              "screen": 1.8,
+              "submit": 7.4,
+              "wave": 0.8
+            }
+          }
+        },
+        "long": {
+          "baseline": {
+            "wall": [
+              44.47934130000067
+            ],
+            "mean_wall": 44.47934130000067,
+            "mean_phases": {
+              "accept": 0.1,
+              "builtin": 3.6,
+              "clock": 0.9,
+              "observe_plugin": 2.2,
+              "plugins_busy": 241.9,
+              "plugins_wall": 26.3,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 8.8,
+              "wave": 0.9
+            }
+          }
+        }
+      }
+    },
+    "diagnostic-runs": {
+      "runs": [
+        {
+          "variant": "baseline",
+          "case": "scale",
+          "wall_seconds": 41.90975830000389,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 3.2,
+            "clock": 1.5,
+            "observe_plugin": 0.6,
+            "plugins_busy": 326.5,
+            "plugins_wall": 21.5,
+            "receipts": 0.1,
+            "screen": 1.9,
+            "submit": 7.6,
+            "wave": 0.8
+          },
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "8e11bac8259c43d0b8601c01e64576008e99495143e01da664f0b0b45a36dd92",
+          "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+          "profile": "profile step=1800 accept=0.1s builtin=3.2s clock=1.5s observe_plugin=0.6s plugins_busy=326.5s plugins_wall=21.5s receipts=0.1s screen=1.9s submit=7.6s wave=0.8s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\diagnostic-runs\\00-baseline-scale.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\diagnostic-runs\\00-baseline-scale.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 17277,
+            "V-BTC-SPOT": 18544
+          }
+        },
+        {
+          "variant": "baseline",
+          "case": "long",
+          "wall_seconds": 41.587001100000634,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 3.5,
+            "clock": 0.8,
+            "observe_plugin": 2.3,
+            "plugins_busy": 225.6,
+            "plugins_wall": 24.4,
+            "receipts": 0.2,
+            "screen": 0.1,
+            "submit": 8.2,
+            "wave": 0.8
+          },
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "8e11bac8259c43d0b8601c01e64576008e99495143e01da664f0b0b45a36dd92",
+          "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+          "profile": "profile step=1500 accept=0.1s builtin=3.5s clock=0.8s observe_plugin=2.3s plugins_busy=225.6s plugins_wall=24.4s receipts=0.2s screen=0.1s submit=8.2s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\diagnostic-runs\\01-baseline-long.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\diagnostic-runs\\01-baseline-long.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 28374,
+            "V-BTC-SPOT": 29909
+          }
+        }
+      ],
+      "comparisons": {
+        "scale": {
+          "baseline": {
+            "wall": [
+              41.90975830000389
+            ],
+            "mean_wall": 41.90975830000389,
+            "mean_phases": {
+              "accept": 0.1,
+              "builtin": 3.2,
+              "clock": 1.5,
+              "observe_plugin": 0.6,
+              "plugins_busy": 326.5,
+              "plugins_wall": 21.5,
+              "receipts": 0.1,
+              "screen": 1.9,
+              "submit": 7.6,
+              "wave": 0.8
+            }
+          }
+        },
+        "long": {
+          "baseline": {
+            "wall": [
+              41.587001100000634
+            ],
+            "mean_wall": 41.587001100000634,
+            "mean_phases": {
+              "accept": 0.1,
+              "builtin": 3.5,
+              "clock": 0.8,
+              "observe_plugin": 2.3,
+              "plugins_busy": 225.6,
+              "plugins_wall": 24.4,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 8.2,
+              "wave": 0.8
+            }
+          }
+        }
+      }
+    },
+    "python-profile-runs": {
+      "runs": [
+        {
+          "variant": "baseline",
+          "case": "long",
+          "wall_seconds": 54.565861800001585,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 4.9,
+            "clock": 1.1,
+            "observe_plugin": 2.9,
+            "plugins_busy": 279.5,
+            "plugins_wall": 30.6,
+            "receipts": 0.2,
+            "screen": 0.1,
+            "submit": 11.7,
+            "wave": 1.1
+          },
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+          "profile": "profile step=1500 accept=0.1s builtin=4.9s clock=1.1s observe_plugin=2.9s plugins_busy=279.5s plugins_wall=30.6s receipts=0.2s screen=0.1s submit=11.7s wave=1.1s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\python-profile-runs\\00-baseline-long.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\python-profile-runs\\00-baseline-long.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 28374,
+            "V-BTC-SPOT": 29909
+          }
+        }
+      ],
+      "comparisons": {
+        "long": {
+          "baseline": {
+            "wall": [
+              54.565861800001585
+            ],
+            "mean_wall": 54.565861800001585,
+            "mean_phases": {
+              "accept": 0.1,
+              "builtin": 4.9,
+              "clock": 1.1,
+              "observe_plugin": 2.9,
+              "plugins_busy": 279.5,
+              "plugins_wall": 30.6,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 11.7,
+              "wave": 1.1
+            }
+          }
+        }
+      }
+    },
+    "dispatch-runs": {
+      "runs": [
+        {
+          "variant": "baseline",
+          "case": "scale",
+          "wall_seconds": 57.04068890000053,
+          "phases_seconds": {
+            "accept": 0.2,
+            "builtin": 5.2,
+            "clock": 2.2,
+            "observe_plugin": 0.8,
+            "plugins_busy": 388.1,
+            "plugins_wall": 25.6,
+            "receipts": 0.2,
+            "screen": 2.7,
+            "submit": 12.9,
+            "wave": 1.4
+          },
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+          "profile": "profile step=1800 accept=0.2s builtin=5.2s clock=2.2s observe_plugin=0.8s plugins_busy=388.1s plugins_wall=25.6s receipts=0.2s screen=2.7s submit=12.9s wave=1.4s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\00-baseline-scale.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\00-baseline-scale.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 17277,
+            "V-BTC-SPOT": 18544
+          }
+        },
+        {
+          "variant": "callers32",
+          "case": "scale",
+          "wall_seconds": 48.3621523000038,
+          "phases_seconds": {
+            "accept": 0.2,
+            "builtin": 4.4,
+            "clock": 1.9,
+            "observe_plugin": 0.7,
+            "plugins_busy": 613.4,
+            "plugins_wall": 21.4,
+            "receipts": 0.2,
+            "screen": 2.4,
+            "submit": 10.8,
+            "wave": 1.2
+          },
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+          "profile": "profile step=1800 accept=0.2s builtin=4.4s clock=1.9s observe_plugin=0.7s plugins_busy=613.4s plugins_wall=21.4s receipts=0.2s screen=2.4s submit=10.8s wave=1.2s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\01-callers32-scale.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\01-callers32-scale.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 17277,
+            "V-BTC-SPOT": 18544
+          }
+        },
+        {
+          "variant": "callers32",
+          "case": "scale",
+          "wall_seconds": 42.99917689999711,
+          "phases_seconds": {
+            "accept": 0.2,
+            "builtin": 3.7,
+            "clock": 1.7,
+            "observe_plugin": 0.6,
+            "plugins_busy": 580.5,
+            "plugins_wall": 20.0,
+            "receipts": 0.1,
+            "screen": 2.2,
+            "submit": 9.5,
+            "wave": 1.0
+          },
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+          "profile": "profile step=1800 accept=0.2s builtin=3.7s clock=1.7s observe_plugin=0.6s plugins_busy=580.5s plugins_wall=20.0s receipts=0.1s screen=2.2s submit=9.5s wave=1.0s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\02-callers32-scale.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\02-callers32-scale.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 17277,
+            "V-BTC-SPOT": 18544
+          }
+        },
+        {
+          "variant": "baseline",
+          "case": "scale",
+          "wall_seconds": 52.621313499999815,
+          "phases_seconds": {
+            "accept": 0.2,
+            "builtin": 4.7,
+            "clock": 2.1,
+            "observe_plugin": 0.7,
+            "plugins_busy": 372.2,
+            "plugins_wall": 24.5,
+            "receipts": 0.2,
+            "screen": 2.5,
+            "submit": 12.0,
+            "wave": 1.2
+          },
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+          "profile": "profile step=1800 accept=0.2s builtin=4.7s clock=2.1s observe_plugin=0.7s plugins_busy=372.2s plugins_wall=24.5s receipts=0.2s screen=2.5s submit=12.0s wave=1.2s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\03-baseline-scale.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\03-baseline-scale.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 17277,
+            "V-BTC-SPOT": 18544
+          }
+        },
+        {
+          "variant": "baseline",
+          "case": "long",
+          "wall_seconds": 49.616893500002334,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 4.7,
+            "clock": 1.0,
+            "observe_plugin": 3.0,
+            "plugins_busy": 252.6,
+            "plugins_wall": 27.5,
+            "receipts": 0.2,
+            "screen": 0.1,
+            "submit": 10.6,
+            "wave": 1.0
+          },
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+          "profile": "profile step=1500 accept=0.1s builtin=4.7s clock=1.0s observe_plugin=3.0s plugins_busy=252.6s plugins_wall=27.5s receipts=0.2s screen=0.1s submit=10.6s wave=1.0s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\04-baseline-long.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\04-baseline-long.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 28374,
+            "V-BTC-SPOT": 29909
+          }
+        },
+        {
+          "variant": "callers32",
+          "case": "long",
+          "wall_seconds": 41.52561450000212,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 3.5,
+            "clock": 0.8,
+            "observe_plugin": 2.1,
+            "plugins_busy": 283.0,
+            "plugins_wall": 24.6,
+            "receipts": 0.2,
+            "screen": 0.1,
+            "submit": 8.1,
+            "wave": 0.8
+          },
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+          "profile": "profile step=1500 accept=0.1s builtin=3.5s clock=0.8s observe_plugin=2.1s plugins_busy=283.0s plugins_wall=24.6s receipts=0.2s screen=0.1s submit=8.1s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\05-callers32-long.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\05-callers32-long.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 28374,
+            "V-BTC-SPOT": 29909
+          }
+        },
+        {
+          "variant": "callers32",
+          "case": "long",
+          "wall_seconds": 54.64690040000278,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 5.1,
+            "clock": 1.0,
+            "observe_plugin": 3.0,
+            "plugins_busy": 332.4,
+            "plugins_wall": 30.0,
+            "receipts": 0.2,
+            "screen": 0.1,
+            "submit": 12.1,
+            "wave": 1.1
+          },
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+          "profile": "profile step=1500 accept=0.1s builtin=5.1s clock=1.0s observe_plugin=3.0s plugins_busy=332.4s plugins_wall=30.0s receipts=0.2s screen=0.1s submit=12.1s wave=1.1s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\06-callers32-long.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\06-callers32-long.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 28374,
+            "V-BTC-SPOT": 29909
+          }
+        },
+        {
+          "variant": "baseline",
+          "case": "long",
+          "wall_seconds": 47.296140799997374,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 4.1,
+            "clock": 1.0,
+            "observe_plugin": 2.5,
+            "plugins_busy": 249.3,
+            "plugins_wall": 27.1,
+            "receipts": 0.2,
+            "screen": 0.1,
+            "submit": 9.9,
+            "wave": 0.9
+          },
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+          "profile": "profile step=1500 accept=0.1s builtin=4.1s clock=1.0s observe_plugin=2.5s plugins_busy=249.3s plugins_wall=27.1s receipts=0.2s screen=0.1s submit=9.9s wave=0.9s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\07-baseline-long.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\dispatch-runs\\07-baseline-long.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 28374,
+            "V-BTC-SPOT": 29909
+          }
+        }
+      ],
+      "comparisons": {
+        "scale": {
+          "baseline": {
+            "wall": [
+              57.04068890000053,
+              52.621313499999815
+            ],
+            "mean_wall": 54.83100120000017,
+            "mean_phases": {
+              "accept": 0.2,
+              "builtin": 4.95,
+              "clock": 2.1500000000000004,
+              "observe_plugin": 0.75,
+              "plugins_busy": 380.15,
+              "plugins_wall": 25.05,
+              "receipts": 0.2,
+              "screen": 2.6,
+              "submit": 12.45,
+              "wave": 1.2999999999999998
+            }
+          },
+          "callers32": {
+            "wall": [
+              48.3621523000038,
+              42.99917689999711
+            ],
+            "mean_wall": 45.680664600000455,
+            "mean_phases": {
+              "accept": 0.2,
+              "builtin": 4.050000000000001,
+              "clock": 1.7999999999999998,
+              "observe_plugin": 0.6499999999999999,
+              "plugins_busy": 596.95,
+              "plugins_wall": 20.7,
+              "receipts": 0.15000000000000002,
+              "screen": 2.3,
+              "submit": 10.15,
+              "wave": 1.1
+            }
+          }
+        },
+        "long": {
+          "baseline": {
+            "wall": [
+              49.616893500002334,
+              47.296140799997374
+            ],
+            "mean_wall": 48.456517149999854,
+            "mean_phases": {
+              "accept": 0.1,
+              "builtin": 4.4,
+              "clock": 1.0,
+              "observe_plugin": 2.75,
+              "plugins_busy": 250.95,
+              "plugins_wall": 27.3,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 10.25,
+              "wave": 0.95
+            }
+          },
+          "callers32": {
+            "wall": [
+              41.52561450000212,
+              54.64690040000278
+            ],
+            "mean_wall": 48.08625745000245,
+            "mean_phases": {
+              "accept": 0.1,
+              "builtin": 4.3,
+              "clock": 0.9,
+              "observe_plugin": 2.55,
+              "plugins_busy": 307.7,
+              "plugins_wall": 27.3,
+              "receipts": 0.2,
+              "screen": 0.1,
+              "submit": 10.1,
+              "wave": 0.9500000000000001
+            }
+          }
+        }
+      }
+    },
+    "metadata-runs": {
+      "runs": [
+        {
+          "variant": "baseline",
+          "case": "scale",
+          "wall_seconds": 46.86429689999932,
+          "phases_seconds": {
+            "accept": 0.2,
+            "builtin": 3.7,
+            "clock": 1.7,
+            "observe_plugin": 0.6,
+            "plugins_busy": 364.4,
+            "plugins_wall": 24.0,
+            "receipts": 0.1,
+            "screen": 2.1,
+            "submit": 9.0,
+            "wave": 1.0
+          },
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+          "profile": "profile step=1800 accept=0.2s builtin=3.7s clock=1.7s observe_plugin=0.6s plugins_busy=364.4s plugins_wall=24.0s receipts=0.1s screen=2.1s submit=9.0s wave=1.0s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\00-baseline-scale.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\00-baseline-scale.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 17277,
+            "V-BTC-SPOT": 18544
+          }
+        },
+        {
+          "variant": "metadata",
+          "case": "scale",
+          "wall_seconds": 45.21753929999977,
+          "phases_seconds": {
+            "accept": 0.2,
+            "builtin": 3.7,
+            "clock": 1.7,
+            "observe_plugin": 0.6,
+            "plugins_busy": 340.0,
+            "plugins_wall": 22.4,
+            "receipts": 0.1,
+            "screen": 2.0,
+            "submit": 8.7,
+            "wave": 1.0
+          },
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+          "profile": "profile step=1800 accept=0.2s builtin=3.7s clock=1.7s observe_plugin=0.6s plugins_busy=340.0s plugins_wall=22.4s receipts=0.1s screen=2.0s submit=8.7s wave=1.0s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\01-metadata-scale.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\01-metadata-scale.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 17277,
+            "V-BTC-SPOT": 18544
+          }
+        },
+        {
+          "variant": "metadata",
+          "case": "scale",
+          "wall_seconds": 43.68013720000454,
+          "phases_seconds": {
+            "accept": 0.2,
+            "builtin": 3.5,
+            "clock": 1.7,
+            "observe_plugin": 0.6,
+            "plugins_busy": 331.8,
+            "plugins_wall": 21.9,
+            "receipts": 0.1,
+            "screen": 2.0,
+            "submit": 8.4,
+            "wave": 1.0
+          },
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+          "profile": "profile step=1800 accept=0.2s builtin=3.5s clock=1.7s observe_plugin=0.6s plugins_busy=331.8s plugins_wall=21.9s receipts=0.1s screen=2.0s submit=8.4s wave=1.0s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\02-metadata-scale.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\02-metadata-scale.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 17277,
+            "V-BTC-SPOT": 18544
+          }
+        },
+        {
+          "variant": "baseline",
+          "case": "scale",
+          "wall_seconds": 48.18714999999793,
+          "phases_seconds": {
+            "accept": 0.2,
+            "builtin": 3.9,
+            "clock": 1.9,
+            "observe_plugin": 0.6,
+            "plugins_busy": 374.3,
+            "plugins_wall": 24.6,
+            "receipts": 0.1,
+            "screen": 2.1,
+            "submit": 9.1,
+            "wave": 1.1
+          },
+          "receipt_sha256": "603c62b5ba7907772f94949e85492bffb89ff7d325ce9ff5413ade001f65b875",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "25aaf7bab60eff9de5695ae74e16ebd55658d946b337c65c9f3c865fd7903423",
+          "profile": "profile step=1800 accept=0.2s builtin=3.9s clock=1.9s observe_plugin=0.6s plugins_busy=374.3s plugins_wall=24.6s receipts=0.1s screen=2.1s submit=9.1s wave=1.1s wakes(calls/acting/actions): account=7967/9/9 bar=63392/1391/1393 first=3000/0/0 receipt=10/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\03-baseline-scale.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\03-baseline-scale.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 17277,
+            "V-BTC-SPOT": 18544
+          }
+        },
+        {
+          "variant": "baseline",
+          "case": "long",
+          "wall_seconds": 41.27784740000061,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 3.5,
+            "clock": 0.8,
+            "observe_plugin": 2.2,
+            "plugins_busy": 227.4,
+            "plugins_wall": 24.3,
+            "receipts": 0.2,
+            "screen": 0.1,
+            "submit": 8.2,
+            "wave": 0.8
+          },
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+          "profile": "profile step=1500 accept=0.1s builtin=3.5s clock=0.8s observe_plugin=2.2s plugins_busy=227.4s plugins_wall=24.3s receipts=0.2s screen=0.1s submit=8.2s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\04-baseline-long.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\04-baseline-long.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 28374,
+            "V-BTC-SPOT": 29909
+          }
+        },
+        {
+          "variant": "metadata",
+          "case": "long",
+          "wall_seconds": 38.49219060000178,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 3.3,
+            "clock": 0.8,
+            "observe_plugin": 2.0,
+            "plugins_busy": 202.1,
+            "plugins_wall": 22.0,
+            "receipts": 0.1,
+            "screen": 0.1,
+            "submit": 8.0,
+            "wave": 0.8
+          },
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+          "profile": "profile step=1500 accept=0.1s builtin=3.3s clock=0.8s observe_plugin=2.0s plugins_busy=202.1s plugins_wall=22.0s receipts=0.1s screen=0.1s submit=8.0s wave=0.8s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\05-metadata-long.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\05-metadata-long.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 28374,
+            "V-BTC-SPOT": 29909
+          }
+        },
+        {
+          "variant": "metadata",
+          "case": "long",
+          "wall_seconds": 36.95763160000206,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 3.2,
+            "clock": 0.8,
+            "observe_plugin": 2.0,
+            "plugins_busy": 195.0,
+            "plugins_wall": 21.2,
+            "receipts": 0.1,
+            "screen": 0.1,
+            "submit": 7.6,
+            "wave": 0.7
+          },
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+          "profile": "profile step=1500 accept=0.1s builtin=3.2s clock=0.8s observe_plugin=2.0s plugins_busy=195.0s plugins_wall=21.2s receipts=0.1s screen=0.1s submit=7.6s wave=0.7s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\06-metadata-long.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\06-metadata-long.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 28374,
+            "V-BTC-SPOT": 29909
+          }
+        },
+        {
+          "variant": "baseline",
+          "case": "long",
+          "wall_seconds": 37.45194569999876,
+          "phases_seconds": {
+            "accept": 0.1,
+            "builtin": 3.1,
+            "clock": 0.7,
+            "observe_plugin": 1.9,
+            "plugins_busy": 205.9,
+            "plugins_wall": 22.0,
+            "receipts": 0.1,
+            "screen": 0.1,
+            "submit": 7.4,
+            "wave": 0.7
+          },
+          "receipt_sha256": "75a573eb9b81e02fb802484fc7fe0ca063d6af9427a09fc033c9515e5440254b",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "c5ef2e213936bbb6af42b9c10790bf10340181f8f2533d375d09e19668889ef6",
+          "profile": "profile step=1500 accept=0.1s builtin=3.1s clock=0.7s observe_plugin=1.9s plugins_busy=205.9s plugins_wall=22.0s receipts=0.1s screen=0.1s submit=7.4s wave=0.7s wakes(calls/acting/actions): bar=35976/2123/2521 first=24/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\07-baseline-long.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\07-baseline-long.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 28374,
+            "V-BTC-SPOT": 29909
+          }
+        },
+        {
+          "variant": "baseline",
+          "case": "related",
+          "wall_seconds": 4.4477429000035045,
+          "phases_seconds": {
+            "accept": 0.0,
+            "builtin": 0.6,
+            "clock": 0.1,
+            "observe_plugin": 0.0,
+            "plugins_busy": 15.4,
+            "plugins_wall": 1.3,
+            "receipts": 0.0,
+            "screen": 0.1,
+            "submit": 1.8,
+            "wave": 0.1
+          },
+          "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+          "profile": "profile step=600 accept=0.0s builtin=0.6s clock=0.1s observe_plugin=0.0s plugins_busy=15.4s plugins_wall=1.3s receipts=0.0s screen=0.1s submit=1.8s wave=0.1s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\08-baseline-related.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\08-baseline-related.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 7603,
+            "V-BTC-SPOT": 9817
+          }
+        },
+        {
+          "variant": "metadata",
+          "case": "related",
+          "wall_seconds": 4.3693971000029705,
+          "phases_seconds": {
+            "accept": 0.0,
+            "builtin": 0.6,
+            "clock": 0.1,
+            "observe_plugin": 0.0,
+            "plugins_busy": 14.7,
+            "plugins_wall": 1.2,
+            "receipts": 0.0,
+            "screen": 0.1,
+            "submit": 1.8,
+            "wave": 0.1
+          },
+          "receipt_sha256": "cda64e389c73e74834a356138045a39a106096f4fb5e728ae96cefaea1e429d7",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "743e2fd9556d604d6cbb28992b5fb40bb12a15a2db1e4fe1cd35eb6033a616d9",
+          "profile": "profile step=600 accept=0.0s builtin=0.6s clock=0.1s observe_plugin=0.0s plugins_busy=14.7s plugins_wall=1.2s receipts=0.0s screen=0.1s submit=1.8s wave=0.1s wakes(calls/acting/actions): account=189/0/0 bar=1680/34/34 first=241/0/0 receipt=1/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\09-metadata-related.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\09-metadata-related.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 7603,
+            "V-BTC-SPOT": 9817
+          }
+        },
+        {
+          "variant": "baseline",
+          "case": "poll",
+          "wall_seconds": 5.080200200005493,
+          "phases_seconds": {
+            "accept": 0.0,
+            "builtin": 0.7,
+            "clock": 0.0,
+            "observe_plugin": 0.0,
+            "plugins_busy": 16.6,
+            "plugins_wall": 1.2,
+            "receipts": 0.0,
+            "screen": 0.2,
+            "submit": 2.5,
+            "wave": 0.1
+          },
+          "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+          "profile": "profile step=600 accept=0.0s builtin=0.7s clock=0.0s observe_plugin=0.0s plugins_busy=16.6s plugins_wall=1.2s receipts=0.0s screen=0.2s submit=2.5s wave=0.1s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\10-baseline-poll.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\10-baseline-poll.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 7603,
+            "V-BTC-SPOT": 9817
+          }
+        },
+        {
+          "variant": "metadata",
+          "case": "poll",
+          "wall_seconds": 5.12047370000073,
+          "phases_seconds": {
+            "accept": 0.0,
+            "builtin": 0.7,
+            "clock": 0.0,
+            "observe_plugin": 0.0,
+            "plugins_busy": 15.4,
+            "plugins_wall": 1.1,
+            "receipts": 0.0,
+            "screen": 0.2,
+            "submit": 2.5,
+            "wave": 0.2
+          },
+          "receipt_sha256": "a3905992c65107e973ece3bd9693e67a45ff0bd36889d8527d092bc424b6d85a",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "0b658b72b22cf39b22f6906aed1ee0e7475751936a222d13d79425475721b3e9",
+          "profile": "profile step=600 accept=0.0s builtin=0.7s clock=0.0s observe_plugin=0.0s plugins_busy=15.4s plugins_wall=1.1s receipts=0.0s screen=0.2s submit=2.5s wave=0.2s wakes(calls/acting/actions): account=17/0/0 bar=1664/34/34 first=241/0/0 poll=746/0/0 poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\11-metadata-poll.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\11-metadata-poll.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 7603,
+            "V-BTC-SPOT": 9817
+          }
+        },
+        {
+          "variant": "baseline",
+          "case": "live",
+          "wall_seconds": 3.172290199996496,
+          "phases_seconds": {
+            "accept": 0.0,
+            "builtin": 0.6,
+            "clock": 0.0,
+            "plugins_busy": 0.0,
+            "plugins_wall": 0.0,
+            "receipts": 0.0,
+            "screen": 0.0,
+            "submit": 2.2,
+            "wave": 0.1
+          },
+          "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+          "profile": "profile step=600 accept=0.0s builtin=0.6s clock=0.0s plugins_busy=0.0s plugins_wall=0.0s receipts=0.0s screen=0.0s submit=2.2s wave=0.1s wakes(calls/acting/actions):  poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\12-baseline-live.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\12-baseline-live.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 8466,
+            "V-BTC-SPOT": 10217
+          }
+        },
+        {
+          "variant": "metadata",
+          "case": "live",
+          "wall_seconds": 3.213270200001716,
+          "phases_seconds": {
+            "accept": 0.0,
+            "builtin": 0.6,
+            "clock": 0.0,
+            "plugins_busy": 0.0,
+            "plugins_wall": 0.0,
+            "receipts": 0.0,
+            "screen": 0.0,
+            "submit": 2.2,
+            "wave": 0.1
+          },
+          "receipt_sha256": "8a8af95b56bb729c2d1f56d9aa38aa1a040aef07f181c3c67d09ad33b05817b6",
+          "equal": true,
+          "exit_code": 0,
+          "exe_sha256": "ebfaa51e3ce3ab1edd782d58fabd8056807f0a8f69f8c629354837480b98105f",
+          "recipe_sha256": "ce88cc1bc5b6132cbc1e243be743591b7fbca555ef088f59d6e9d8c330e74b7b",
+          "profile": "profile step=600 accept=0.0s builtin=0.6s clock=0.0s plugins_busy=0.0s plugins_wall=0.0s receipts=0.0s screen=0.0s submit=2.2s wave=0.1s wakes(calls/acting/actions):  poll_actions={}",
+          "receipt": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\13-metadata-live.receipt.json",
+          "log": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\metadata-runs\\13-metadata-live.log",
+          "completed": true,
+          "trades": {
+            "V-BTC-PERP": 8466,
+            "V-BTC-SPOT": 10217
+          }
+        }
+      ],
+      "comparisons": {
+        "scale": {
+          "baseline": {
+            "wall": [
+              46.86429689999932,
+              48.18714999999793
+            ],
+            "mean_wall": 47.52572344999862,
+            "mean_phases": {
+              "accept": 0.2,
+              "builtin": 3.8,
+              "clock": 1.7999999999999998,
+              "observe_plugin": 0.6,
+              "plugins_busy": 369.35,
+              "plugins_wall": 24.3,
+              "receipts": 0.1,
+              "screen": 2.1,
+              "submit": 9.05,
+              "wave": 1.05
+            }
+          },
+          "metadata": {
+            "wall": [
+              45.21753929999977,
+              43.68013720000454
+            ],
+            "mean_wall": 44.448838250002154,
+            "mean_phases": {
+              "accept": 0.2,
+              "builtin": 3.6,
+              "clock": 1.7,
+              "observe_plugin": 0.6,
+              "plugins_busy": 335.9,
+              "plugins_wall": 22.15,
+              "receipts": 0.1,
+              "screen": 2.0,
+              "submit": 8.55,
+              "wave": 1.0
+            }
+          }
+        },
+        "long": {
+          "baseline": {
+            "wall": [
+              41.27784740000061,
+              37.45194569999876
+            ],
+            "mean_wall": 39.364896549999685,
+            "mean_phases": {
+              "accept": 0.1,
+              "builtin": 3.3,
+              "clock": 0.75,
+              "observe_plugin": 2.05,
+              "plugins_busy": 216.65,
+              "plugins_wall": 23.15,
+              "receipts": 0.15000000000000002,
+              "screen": 0.1,
+              "submit": 7.8,
+              "wave": 0.75
+            }
+          },
+          "metadata": {
+            "wall": [
+              38.49219060000178,
+              36.95763160000206
+            ],
+            "mean_wall": 37.72491110000192,
+            "mean_phases": {
+              "accept": 0.1,
+              "builtin": 3.25,
+              "clock": 0.8,
+              "observe_plugin": 2.0,
+              "plugins_busy": 198.55,
+              "plugins_wall": 21.6,
+              "receipts": 0.1,
+              "screen": 0.1,
+              "submit": 7.8,
+              "wave": 0.75
+            }
+          }
+        },
+        "related": {
+          "baseline": {
+            "wall": [
+              4.4477429000035045
+            ],
+            "mean_wall": 4.4477429000035045,
+            "mean_phases": {
+              "accept": 0.0,
+              "builtin": 0.6,
+              "clock": 0.1,
+              "observe_plugin": 0.0,
+              "plugins_busy": 15.4,
+              "plugins_wall": 1.3,
+              "receipts": 0.0,
+              "screen": 0.1,
+              "submit": 1.8,
+              "wave": 0.1
+            }
+          },
+          "metadata": {
+            "wall": [
+              4.3693971000029705
+            ],
+            "mean_wall": 4.3693971000029705,
+            "mean_phases": {
+              "accept": 0.0,
+              "builtin": 0.6,
+              "clock": 0.1,
+              "observe_plugin": 0.0,
+              "plugins_busy": 14.7,
+              "plugins_wall": 1.2,
+              "receipts": 0.0,
+              "screen": 0.1,
+              "submit": 1.8,
+              "wave": 0.1
+            }
+          }
+        },
+        "poll": {
+          "baseline": {
+            "wall": [
+              5.080200200005493
+            ],
+            "mean_wall": 5.080200200005493,
+            "mean_phases": {
+              "accept": 0.0,
+              "builtin": 0.7,
+              "clock": 0.0,
+              "observe_plugin": 0.0,
+              "plugins_busy": 16.6,
+              "plugins_wall": 1.2,
+              "receipts": 0.0,
+              "screen": 0.2,
+              "submit": 2.5,
+              "wave": 0.1
+            }
+          },
+          "metadata": {
+            "wall": [
+              5.12047370000073
+            ],
+            "mean_wall": 5.12047370000073,
+            "mean_phases": {
+              "accept": 0.0,
+              "builtin": 0.7,
+              "clock": 0.0,
+              "observe_plugin": 0.0,
+              "plugins_busy": 15.4,
+              "plugins_wall": 1.1,
+              "receipts": 0.0,
+              "screen": 0.2,
+              "submit": 2.5,
+              "wave": 0.2
+            }
+          }
+        },
+        "live": {
+          "baseline": {
+            "wall": [
+              3.172290199996496
+            ],
+            "mean_wall": 3.172290199996496,
+            "mean_phases": {
+              "accept": 0.0,
+              "builtin": 0.6,
+              "clock": 0.0,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.0,
+              "screen": 0.0,
+              "submit": 2.2,
+              "wave": 0.1
+            }
+          },
+          "metadata": {
+            "wall": [
+              3.213270200001716
+            ],
+            "mean_wall": 3.213270200001716,
+            "mean_phases": {
+              "accept": 0.0,
+              "builtin": 0.6,
+              "clock": 0.0,
+              "plugins_busy": 0.0,
+              "plugins_wall": 0.0,
+              "receipts": 0.0,
+              "screen": 0.0,
+              "submit": 2.2,
+              "wave": 0.1
+            }
+          }
+        }
+      }
+    }
+  },
+  "plans": {
+    "dispatch": {
+      "variants": {
+        "baseline": {
+          "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final.exe",
+          "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline"
+        },
+        "callers32": {
+          "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final.exe",
+          "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline",
+          "env": {
+            "RESEARCH_PLUGIN_THREADS": "32"
+          }
+        }
+      },
+      "cases": {
+        "scale": {
+          "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\s3000.json",
+          "steps": 1800,
+          "seconds": 1,
+          "env": {
+            "RESEARCH_PLUGIN_WAKES": "events"
+          }
+        },
+        "related": {
+          "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\rel241.json",
+          "steps": 600,
+          "seconds": 1,
+          "env": {
+            "RESEARCH_PLUGIN_WAKES": "events"
+          }
+        },
+        "poll": {
+          "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\p241.json",
+          "steps": 600,
+          "seconds": 1,
+          "env": {
+            "RESEARCH_PLUGIN_POLL_MS": "60000"
+          }
+        },
+        "live": {
+          "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\perf0.json",
+          "steps": 600,
+          "seconds": 1,
+          "env": {}
+        },
+        "long": {
+          "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\long24.json",
+          "steps": 1500,
+          "seconds": 3,
+          "env": {
+            "RESEARCH_PLUGIN_WAKES": "events"
+          }
+        }
+      },
+      "runs": [
+        {
+          "variant": "baseline",
+          "case": "scale"
+        },
+        {
+          "variant": "callers32",
+          "case": "scale"
+        },
+        {
+          "variant": "callers32",
+          "case": "scale"
+        },
+        {
+          "variant": "baseline",
+          "case": "scale"
+        },
+        {
+          "variant": "baseline",
+          "case": "long"
+        },
+        {
+          "variant": "callers32",
+          "case": "long"
+        },
+        {
+          "variant": "callers32",
+          "case": "long"
+        },
+        {
+          "variant": "baseline",
+          "case": "long"
+        }
+      ]
+    },
+    "metadata": {
+      "variants": {
+        "baseline": {
+          "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final.exe",
+          "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\python-baseline"
+        },
+        "metadata": {
+          "exe": "E:\\projects\\MarketForge-tuning\\.local\\optimization-20261023\\final.exe",
+          "cwd": "E:\\projects\\MarketForge-tuning\\.local\\optimization2-20261023\\python-metadata"
+        }
+      },
+      "cases": {
+        "scale": {
+          "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\s3000.json",
+          "steps": 1800,
+          "seconds": 1,
+          "env": {
+            "RESEARCH_PLUGIN_WAKES": "events"
+          }
+        },
+        "related": {
+          "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\rel241.json",
+          "steps": 600,
+          "seconds": 1,
+          "env": {
+            "RESEARCH_PLUGIN_WAKES": "events"
+          }
+        },
+        "poll": {
+          "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\p241.json",
+          "steps": 600,
+          "seconds": 1,
+          "env": {
+            "RESEARCH_PLUGIN_POLL_MS": "60000"
+          }
+        },
+        "live": {
+          "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\perf0.json",
+          "steps": 600,
+          "seconds": 1,
+          "env": {}
+        },
+        "long": {
+          "recipe": "E:\\projects\\MarketForge-tuning\\.local\\tuning\\long24.json",
+          "steps": 1500,
+          "seconds": 3,
+          "env": {
+            "RESEARCH_PLUGIN_WAKES": "events"
+          }
+        }
+      },
+      "runs": [
+        {
+          "variant": "baseline",
+          "case": "scale"
+        },
+        {
+          "variant": "metadata",
+          "case": "scale"
+        },
+        {
+          "variant": "metadata",
+          "case": "scale"
+        },
+        {
+          "variant": "baseline",
+          "case": "scale"
+        },
+        {
+          "variant": "baseline",
+          "case": "long"
+        },
+        {
+          "variant": "metadata",
+          "case": "long"
+        },
+        {
+          "variant": "metadata",
+          "case": "long"
+        },
+        {
+          "variant": "baseline",
+          "case": "long"
+        },
+        {
+          "variant": "baseline",
+          "case": "related"
+        },
+        {
+          "variant": "metadata",
+          "case": "related"
+        },
+        {
+          "variant": "baseline",
+          "case": "poll"
+        },
+        {
+          "variant": "metadata",
+          "case": "poll"
+        },
+        {
+          "variant": "baseline",
+          "case": "live"
+        },
+        {
+          "variant": "metadata",
+          "case": "live"
+        }
+      ]
+    }
+  },
+  "plugin_sha256": {
+    "bot.json": {
+      "baseline": "46f6024475152e1c1c27429966004949887c25255bad75038fa876a3505ed08a",
+      "metadata": "46f6024475152e1c1c27429966004949887c25255bad75038fa876a3505ed08a"
+    },
+    "bot.py": {
+      "baseline": "ae48fe94730aa5ee580454d7aff8120eca26f302690990017a71efeb454d8dd1",
+      "metadata": "ae48fe94730aa5ee580454d7aff8120eca26f302690990017a71efeb454d8dd1"
+    },
+    "broker.py": {
+      "baseline": "229eb40f283c003e1ca5fa9d837d153e0de613812b8002e7f7962616a2f7d236",
+      "metadata": "229eb40f283c003e1ca5fa9d837d153e0de613812b8002e7f7962616a2f7d236"
+    },
+    "incremental-qualified.json": {
+      "baseline": "5c929a1965f9b3c095e8c065bd085c89d5b733099e653b16862780308011686b",
+      "metadata": "5c929a1965f9b3c095e8c065bd085c89d5b733099e653b16862780308011686b"
+    },
+    "incremental.py": {
+      "baseline": "c0bd1deaf23244ffc853dda924080dfa062f1ac78359eef4f7f2babe1c73d58a",
+      "metadata": "66158d6dca7f746dbdddaf79135bff9c3aa2517dbc5a89c67fdd7482496c8f32"
+    },
+    "requirements.txt": {
+      "baseline": "3d821cea89cfca890dbe05adf78a691f9c36bcb965f39b26d3c83c0076d312ae",
+      "metadata": "3d821cea89cfca890dbe05adf78a691f9c36bcb965f39b26d3c83c0076d312ae"
+    },
+    "transport.py": {
+      "baseline": "84c5a4a5275732c4ece30f121dd0848fc73fab1b884b586f3ed6029b7e041a58",
+      "metadata": "84c5a4a5275732c4ece30f121dd0848fc73fab1b884b586f3ed6029b7e041a58"
+    }
+  },
+  "source_sha256": {
+    "bot-plugins/pine-strategy/incremental.py": "66158d6dca7f746dbdddaf79135bff9c3aa2517dbc5a89c67fdd7482496c8f32",
+    "python/tests/test_strategy_runtime.py": "9b81567129b9407e397f61c1bcbb346ec2b5a88890c6ed3c37f493b2b94de285"
+  },
+  "runtime_sha256": "4e12faa2992f5934f8c7fdc875fe6858ea56bc469d89e2b2fc203286d6b54075",
+  "profile": {
+    "scale": {
+      "totals": {
+        "decode_ms": 25368.86340087949,
+        "decide_ms": 104146.07099977002,
+        "encode_ms": 14359.302100041532,
+        "state_copy_ms": 7118.198101808957,
+        "input_bytes": 578859782,
+        "reply_bytes": 87450347,
+        "evaluate_ms": 47678.83250000159
+      },
+      "counts": {
+        "decode_ms": 74369,
+        "decide_ms": 74369,
+        "encode_ms": 74369,
+        "state_copy_ms": 74369,
+        "evaluate_ms": 63392
+      },
+      "history_buckets": {
+        "0": {
+          "calls": 74369,
+          "decode_ms": 25368.86340087949,
+          "decide_ms": 104146.07099977002,
+          "encode_ms": 14359.302100041532,
+          "state_copy_ms": 7118.198101808957,
+          "evaluate_ms": 47678.83250000159
+        }
+      }
+    },
+    "long": {
+      "totals": {
+        "decode_ms": 15963.742600266414,
+        "decide_ms": 63652.155000163475,
+        "encode_ms": 12631.719900018652,
+        "state_copy_ms": 6797.2200001677265,
+        "input_bytes": 284570313,
+        "reply_bytes": 57853817,
+        "evaluate_ms": 31686.733999711578
+      },
+      "counts": {
+        "decode_ms": 35881,
+        "decide_ms": 35881,
+        "encode_ms": 35881,
+        "state_copy_ms": 35881,
+        "evaluate_ms": 35592
+      },
+      "history_buckets": {
+        "0": {
+          "calls": 12198,
+          "decode_ms": 4105.937199790787,
+          "decide_ms": 18755.918900380493,
+          "encode_ms": 3111.6074993333314,
+          "state_copy_ms": 1598.566100205062,
+          "evaluate_ms": 9700.992999649316
+        },
+        "1": {
+          "calls": 12022,
+          "decode_ms": 5419.022500565916,
+          "decide_ms": 21100.247499838588,
+          "encode_ms": 4277.837900073791,
+          "state_copy_ms": 2354.219300286786,
+          "evaluate_ms": 10575.67599988397
+        },
+        "2": {
+          "calls": 11661,
+          "decode_ms": 6438.782899909711,
+          "decide_ms": 23795.988599944394,
+          "encode_ms": 5242.274500611529,
+          "state_copy_ms": 2844.4345996758784,
+          "evaluate_ms": 11410.065000178292
+        }
+      }
+    }
+  },
+  "sampled_python_profile": [
+    {
+      "file": "bot.py",
+      "line": 336,
+      "function": "decide",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.0192223,
+      "cumulative_seconds": 1.6847299
+    },
+    {
+      "file": "broker.py",
+      "line": 737,
+      "function": "decide",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.0887425,
+      "cumulative_seconds": 1.6641079999999997
+    },
+    {
+      "file": "broker.py",
+      "line": 822,
+      "function": "<lambda>",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0080933,
+      "cumulative_seconds": 0.6551254000000002
+    },
+    {
+      "file": "incremental.py",
+      "line": 96,
+      "function": "evaluate",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.052522700000000005,
+      "cumulative_seconds": 0.6470321000000001
+    },
+    {
+      "file": "pathlib.py",
+      "line": 835,
+      "function": "stat",
+      "primitive_calls": 1660,
+      "calls": 1660,
+      "self_seconds": 0.0029918,
+      "cumulative_seconds": 0.4587918000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method nt.stat>",
+      "primitive_calls": 1660,
+      "calls": 1660,
+      "self_seconds": 0.45142410000000005,
+      "cumulative_seconds": 0.4558
+    },
+    {
+      "file": "copy.py",
+      "line": 118,
+      "function": "deepcopy",
+      "primitive_calls": 6094,
+      "calls": 194818,
+      "self_seconds": 0.19901149999999998,
+      "cumulative_seconds": 0.4194351
+    },
+    {
+      "file": "copy.py",
+      "line": 217,
+      "function": "_deepcopy_dict",
+      "primitive_calls": 2770,
+      "calls": 14040,
+      "self_seconds": 0.0854888,
+      "cumulative_seconds": 0.3994615
+    },
+    {
+      "file": "broker.py",
+      "line": 717,
+      "function": "decision_state",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.0196204,
+      "cumulative_seconds": 0.34683420000000004
+    },
+    {
+      "file": "incremental.py",
+      "line": 29,
+      "function": "qualified",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.012081900000000001,
+      "cumulative_seconds": 0.3280442
+    },
+    {
+      "file": "bot.py",
+      "line": 49,
+      "function": "load_source",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.0065008,
+      "cumulative_seconds": 0.20520960000000005
+    },
+    {
+      "file": "incremental.py",
+      "line": 40,
+      "function": "append",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0046948,
+      "cumulative_seconds": 0.19941589999999998
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'append' of 'builtins.ExternalSession' objects>",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.15420970000000003,
+      "cumulative_seconds": 0.18621340000000003
+    },
+    {
+      "file": "pathlib.py",
+      "line": 886,
+      "function": "is_file",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0025769,
+      "cumulative_seconds": 0.1638155
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'get' of 'dict' objects>",
+      "primitive_calls": 428511,
+      "calls": 428511,
+      "self_seconds": 0.0855488,
+      "cumulative_seconds": 0.0857667
+    },
+    {
+      "file": "__init__.py",
+      "line": 183,
+      "function": "dumps",
+      "primitive_calls": 3634,
+      "calls": 3634,
+      "self_seconds": 0.014437600000000002,
+      "cumulative_seconds": 0.08185580000000002
+    },
+    {
+      "file": "broker.py",
+      "line": 296,
+      "function": "sync_feedback",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.011353000000000002,
+      "cumulative_seconds": 0.073039
+    },
+    {
+      "file": "broker.py",
+      "line": 87,
+      "function": "bars_of",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.011062200000000003,
+      "cumulative_seconds": 0.0684715
+    },
+    {
+      "file": "encoder.py",
+      "line": 183,
+      "function": "encode",
+      "primitive_calls": 3634,
+      "calls": 3634,
+      "self_seconds": 0.0105212,
+      "cumulative_seconds": 0.066196
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.all>",
+      "primitive_calls": 2769,
+      "calls": 2769,
+      "self_seconds": 0.053071900000000005,
+      "cumulative_seconds": 0.060526800000000006
+    },
+    {
+      "file": "broker.py",
+      "line": 37,
+      "function": "same_prefix",
+      "primitive_calls": 1662,
+      "calls": 1662,
+      "self_seconds": 0.0026434999999999996,
+      "cumulative_seconds": 0.0530085
+    },
+    {
+      "file": "encoder.py",
+      "line": 205,
+      "function": "iterencode",
+      "primitive_calls": 3634,
+      "calls": 3634,
+      "self_seconds": 0.05038630000000001,
+      "cumulative_seconds": 0.05038630000000001
+    },
+    {
+      "file": "pathlib.py",
+      "line": 628,
+      "function": "with_name",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.004904,
+      "cumulative_seconds": 0.040180799999999996
+    },
+    {
+      "file": "broker.py",
+      "line": 199,
+      "function": "instance_identity",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.0036434,
+      "cumulative_seconds": 0.038086800000000004
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'copy' of 'list' objects>",
+      "primitive_calls": 1662,
+      "calls": 1662,
+      "self_seconds": 0.0332145,
+      "cumulative_seconds": 0.0332145
+    },
+    {
+      "file": "incremental.py",
+      "line": 64,
+      "function": "session_key",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0031473000000000004,
+      "cumulative_seconds": 0.029581500000000007
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.id>",
+      "primitive_calls": 231954,
+      "calls": 231954,
+      "self_seconds": 0.028040900000000004,
+      "cumulative_seconds": 0.028040900000000004
+    },
+    {
+      "file": "pathlib.py",
+      "line": 583,
+      "function": "name",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0012858000000000001,
+      "cumulative_seconds": 0.0273854
+    },
+    {
+      "file": "pathlib.py",
+      "line": 569,
+      "function": "_tail",
+      "primitive_calls": 1106,
+      "calls": 1106,
+      "self_seconds": 0.005920099999999999,
+      "cumulative_seconds": 0.026161499999999997
+    },
+    {
+      "file": "broker.py",
+      "line": 171,
+      "function": "account_of",
+      "primitive_calls": 2715,
+      "calls": 2715,
+      "self_seconds": 0.0153756,
+      "cumulative_seconds": 0.0259975
+    },
+    {
+      "file": "copy.py",
+      "line": 191,
+      "function": "_deepcopy_list",
+      "primitive_calls": 3115,
+      "calls": 3143,
+      "self_seconds": 0.0050328,
+      "cumulative_seconds": 0.0244089
+    },
+    {
+      "file": "copy.py",
+      "line": 231,
+      "function": "_keep_alive",
+      "primitive_calls": 17183,
+      "calls": 17183,
+      "self_seconds": 0.015588300000000001,
+      "cumulative_seconds": 0.0215598
+    },
+    {
+      "file": "pathlib.py",
+      "line": 407,
+      "function": "_load_parts",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.002951,
+      "cumulative_seconds": 0.020241400000000003
+    },
+    {
+      "file": "broker.py",
+      "line": 558,
+      "function": "translate",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0051245,
+      "cumulative_seconds": 0.01936
+    },
+    {
+      "file": "pathlib.py",
+      "line": 387,
+      "function": "_parse_path",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0072944,
+      "cumulative_seconds": 0.017073400000000002
+    },
+    {
+      "file": "broker.py",
+      "line": 263,
+      "function": "normalized_fills",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.006430600000000001,
+      "cumulative_seconds": 0.016839
+    },
+    {
+      "file": "broker.py",
+      "line": 376,
+      "function": "frame",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.007154200000000001,
+      "cumulative_seconds": 0.015735600000000002
+    },
+    {
+      "file": "copy.py",
+      "line": 172,
+      "function": "_deepcopy_atomic",
+      "primitive_calls": 177634,
+      "calls": 177634,
+      "self_seconds": 0.015734500000000002,
+      "cumulative_seconds": 0.015734500000000002
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'disable' of '_lsprof.Profiler' objects>",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.013370200000000002,
+      "cumulative_seconds": 0.013370200000000002
+    },
+    {
+      "file": "__init__.py",
+      "line": 299,
+      "function": "loads",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0028553000000000003,
+      "cumulative_seconds": 0.0129925
+    },
+    {
+      "file": "incremental.py",
+      "line": 82,
+      "function": "finished",
+      "primitive_calls": 1106,
+      "calls": 1106,
+      "self_seconds": 0.0024716,
+      "cumulative_seconds": 0.011110600000000002
+    },
+    {
+      "file": "broker.py",
+      "line": 614,
+      "function": "evaluate_exits",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.0026558000000000003,
+      "cumulative_seconds": 0.0107991
+    },
+    {
+      "file": "pathlib.py",
+      "line": 1157,
+      "function": "__init__",
+      "primitive_calls": 1106,
+      "calls": 1106,
+      "self_seconds": 0.0053314,
+      "cumulative_seconds": 0.009595900000000001
+    },
+    {
+      "file": "decoder.py",
+      "line": 332,
+      "function": "decode",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.003087,
+      "cumulative_seconds": 0.009213400000000002
+    },
+    {
+      "file": "broker.py",
+      "line": 58,
+      "function": "quantized",
+      "primitive_calls": 147,
+      "calls": 147,
+      "self_seconds": 0.0023218,
+      "cumulative_seconds": 0.0091796
+    },
+    {
+      "file": "incremental.py",
+      "line": 143,
+      "function": "<lambda>",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0016813,
+      "cumulative_seconds": 0.008507699999999998
+    },
+    {
+      "file": "fractions.py",
+      "line": 186,
+      "function": "__new__",
+      "primitive_calls": 460,
+      "calls": 460,
+      "self_seconds": 0.0041707,
+      "cumulative_seconds": 0.0081811
+    },
+    {
+      "file": "pathlib.py",
+      "line": 420,
+      "function": "_from_parsed_parts",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0023849,
+      "cumulative_seconds": 0.0076714
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'append' of 'list' objects>",
+      "primitive_calls": 19933,
+      "calls": 19933,
+      "self_seconds": 0.007655,
+      "cumulative_seconds": 0.007655
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.isinstance>",
+      "primitive_calls": 11923,
+      "calls": 11923,
+      "self_seconds": 0.005760500000000001,
+      "cumulative_seconds": 0.007152400000000001
+    },
+    {
+      "file": "broker.py",
+      "line": 797,
+      "function": "pass_factory",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0049062,
+      "cumulative_seconds": 0.006826400000000001
+    },
+    {
+      "file": "incremental.py",
+      "line": 123,
+      "function": "<genexpr>",
+      "primitive_calls": 1106,
+      "calls": 1106,
+      "self_seconds": 0.0066827,
+      "cumulative_seconds": 0.006806
+    },
+    {
+      "file": "incremental.py",
+      "line": 77,
+      "function": "intent_json",
+      "primitive_calls": 314,
+      "calls": 314,
+      "self_seconds": 0.0013266,
+      "cumulative_seconds": 0.0067879
+    },
+    {
+      "file": "broker.py",
+      "line": 890,
+      "function": "closed_bars",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0013027999999999998,
+      "cumulative_seconds": 0.006591200000000001
+    },
+    {
+      "file": "broker.py",
+      "line": 104,
+      "function": "parse_candles",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.0052844,
+      "cumulative_seconds": 0.0065815000000000005
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.len>",
+      "primitive_calls": 28546,
+      "calls": 28546,
+      "self_seconds": 0.0059938000000000005,
+      "cumulative_seconds": 0.0059938000000000005
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'items' of 'dict' objects>",
+      "primitive_calls": 24548,
+      "calls": 24548,
+      "self_seconds": 0.0059924,
+      "cumulative_seconds": 0.0059924
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method sys.intern>",
+      "primitive_calls": 4424,
+      "calls": 4424,
+      "self_seconds": 0.005792400000000001,
+      "cumulative_seconds": 0.005792400000000001
+    },
+    {
+      "file": "broker.py",
+      "line": 67,
+      "function": "strategy_price",
+      "primitive_calls": 192,
+      "calls": 192,
+      "self_seconds": 0.00026000000000000003,
+      "cumulative_seconds": 0.0055715
+    },
+    {
+      "file": "broker.py",
+      "line": 42,
+      "function": "number",
+      "primitive_calls": 13737,
+      "calls": 13737,
+      "self_seconds": 0.0055253,
+      "cumulative_seconds": 0.0055253
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _bisect.bisect_right>",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0024959,
+      "cumulative_seconds": 0.0052884
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.any>",
+      "primitive_calls": 2059,
+      "calls": 2059,
+      "self_seconds": 0.0039437,
+      "cumulative_seconds": 0.0051514
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'copy' of '_hashlib.HASH' objects>",
+      "primitive_calls": 1106,
+      "calls": 1106,
+      "self_seconds": 0.0050236000000000005,
+      "cumulative_seconds": 0.0050236000000000005
+    },
+    {
+      "file": "broker.py",
+      "line": 30,
+      "function": "remember",
+      "primitive_calls": 1108,
+      "calls": 1108,
+      "self_seconds": 0.0023836,
+      "cumulative_seconds": 0.004516599999999999
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'update' of 'dict' objects>",
+      "primitive_calls": 2318,
+      "calls": 2318,
+      "self_seconds": 0.0044981,
+      "cumulative_seconds": 0.0044981
+    },
+    {
+      "file": "bot.py",
+      "line": 173,
+      "function": "compile_program",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0042511,
+      "cumulative_seconds": 0.004481500000000001
+    },
+    {
+      "file": "pathlib.py",
+      "line": 447,
+      "function": "__fspath__",
+      "primitive_calls": 1660,
+      "calls": 1660,
+      "self_seconds": 0.0038959000000000008,
+      "cumulative_seconds": 0.0043759
+    },
+    {
+      "file": "pathlib.py",
+      "line": 358,
+      "function": "__init__",
+      "primitive_calls": 1106,
+      "calls": 1106,
+      "self_seconds": 0.0026985000000000004,
+      "cumulative_seconds": 0.004264500000000001
+    },
+    {
+      "file": "pathlib.py",
+      "line": 380,
+      "function": "with_segments",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0012076,
+      "cumulative_seconds": 0.0041214
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'match' of 're.Pattern' objects>",
+      "primitive_calls": 1319,
+      "calls": 1319,
+      "self_seconds": 0.0033973000000000007,
+      "cumulative_seconds": 0.0033973000000000007
+    },
+    {
+      "file": "decoder.py",
+      "line": 343,
+      "function": "raw_decode",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0033664000000000003,
+      "cumulative_seconds": 0.0033664000000000003
+    },
+    {
+      "file": "pathlib.py",
+      "line": 1164,
+      "function": "__new__",
+      "primitive_calls": 1106,
+      "calls": 1106,
+      "self_seconds": 0.0019303,
+      "cumulative_seconds": 0.0030665
+    },
+    {
+      "file": "broker.py",
+      "line": 896,
+      "function": "interval_from_timeframe",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.002047,
+      "cumulative_seconds": 0.0029649
+    },
+    {
+      "file": "broker.py",
+      "line": 893,
+      "function": "<lambda>",
+      "primitive_calls": 4784,
+      "calls": 4784,
+      "self_seconds": 0.0027925,
+      "cumulative_seconds": 0.0027925
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'pop' of 'collections.OrderedDict' objects>",
+      "primitive_calls": 1661,
+      "calls": 1661,
+      "self_seconds": 0.0027678,
+      "cumulative_seconds": 0.0027678
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'hexdigest' of '_hashlib.HASH' objects>",
+      "primitive_calls": 1227,
+      "calls": 1227,
+      "self_seconds": 0.0027603000000000003,
+      "cumulative_seconds": 0.0027603000000000003
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.next>",
+      "primitive_calls": 6083,
+      "calls": 6083,
+      "self_seconds": 0.0024357000000000003,
+      "cumulative_seconds": 0.0026512000000000003
+    },
+    {
+      "file": "<frozen ntpath>",
+      "line": 179,
+      "function": "splitroot",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0020394999999999996,
+      "cumulative_seconds": 0.0024901000000000003
+    },
+    {
+      "file": "broker.py",
+      "line": 542,
+      "function": "replacements",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.0018115000000000002,
+      "cumulative_seconds": 0.0023044000000000003
+    },
+    {
+      "file": "broker.py",
+      "line": 77,
+      "function": "timeframe",
+      "primitive_calls": 1106,
+      "calls": 1106,
+      "self_seconds": 0.0022675,
+      "cumulative_seconds": 0.0022675
+    },
+    {
+      "file": "fractions.py",
+      "line": 613,
+      "function": "forward",
+      "primitive_calls": 157,
+      "calls": 157,
+      "self_seconds": 0.0006288,
+      "cumulative_seconds": 0.0021463000000000003
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'join' of 'str' objects>",
+      "primitive_calls": 4187,
+      "calls": 4187,
+      "self_seconds": 0.0019628,
+      "cumulative_seconds": 0.0019628
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.iter>",
+      "primitive_calls": 5512,
+      "calls": 5512,
+      "self_seconds": 0.0016024000000000004,
+      "cumulative_seconds": 0.0016024000000000004
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'setdefault' of 'dict' objects>",
+      "primitive_calls": 4193,
+      "calls": 4193,
+      "self_seconds": 0.0014994000000000001,
+      "cumulative_seconds": 0.0014994000000000001
+    },
+    {
+      "file": "broker.py",
+      "line": 410,
+      "function": "owned_orders",
+      "primitive_calls": 386,
+      "calls": 386,
+      "self_seconds": 0.0011481,
+      "cumulative_seconds": 0.0014881000000000002
+    },
+    {
+      "file": "broker.py",
+      "line": 416,
+      "function": "cancel_orders",
+      "primitive_calls": 158,
+      "calls": 158,
+      "self_seconds": 0.0008447999999999999,
+      "cumulative_seconds": 0.0014322
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method __new__ of type object at 0x00007FFDC17A6A20>",
+      "primitive_calls": 1813,
+      "calls": 1813,
+      "self_seconds": 0.0014297,
+      "cumulative_seconds": 0.0014297
+    },
+    {
+      "file": "broker.py",
+      "line": 241,
+      "function": "order_key",
+      "primitive_calls": 121,
+      "calls": 121,
+      "self_seconds": 0.0005233000000000001,
+      "cumulative_seconds": 0.0013931
+    },
+    {
+      "file": "<frozen abc>",
+      "line": 117,
+      "function": "__instancecheck__",
+      "primitive_calls": 460,
+      "calls": 460,
+      "self_seconds": 0.00039240000000000005,
+      "cumulative_seconds": 0.0013919
+    },
+    {
+      "file": "encoder.py",
+      "line": 105,
+      "function": "__init__",
+      "primitive_calls": 2528,
+      "calls": 2528,
+      "self_seconds": 0.0012222000000000003,
+      "cumulative_seconds": 0.0012222000000000003
+    },
+    {
+      "file": "broker.py",
+      "line": 443,
+      "function": "submit_order",
+      "primitive_calls": 18,
+      "calls": 18,
+      "self_seconds": 0.0005131000000000001,
+      "cumulative_seconds": 0.0012155
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'rsplit' of 'str' objects>",
+      "primitive_calls": 1106,
+      "calls": 1106,
+      "self_seconds": 0.0011898000000000002,
+      "cumulative_seconds": 0.0011898000000000002
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'update' of '_hashlib.HASH' objects>",
+      "primitive_calls": 1420,
+      "calls": 1420,
+      "self_seconds": 0.00118,
+      "cumulative_seconds": 0.00118
+    },
+    {
+      "file": "pathlib.py",
+      "line": 429,
+      "function": "_format_parsed_parts",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0007377999999999999,
+      "cumulative_seconds": 0.0011651
+    },
+    {
+      "file": "broker.py",
+      "line": 247,
+      "function": "split_id",
+      "primitive_calls": 416,
+      "calls": 416,
+      "self_seconds": 0.0007108,
+      "cumulative_seconds": 0.0010403
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'startswith' of 'str' objects>",
+      "primitive_calls": 1056,
+      "calls": 1056,
+      "self_seconds": 0.0010220000000000001,
+      "cumulative_seconds": 0.0010220000000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'split' of 'str' objects>",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0010101,
+      "cumulative_seconds": 0.0010101
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _abc._abc_instancecheck>",
+      "primitive_calls": 460,
+      "calls": 460,
+      "self_seconds": 0.0009995,
+      "cumulative_seconds": 0.0009995
+    },
+    {
+      "file": "fractions.py",
+      "line": 627,
+      "function": "reverse",
+      "primitive_calls": 90,
+      "calls": 90,
+      "self_seconds": 0.0003156,
+      "cumulative_seconds": 0.0009923
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.max>",
+      "primitive_calls": 670,
+      "calls": 670,
+      "self_seconds": 0.0009798,
+      "cumulative_seconds": 0.0009798
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.hasattr>",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.0009660999999999999,
+      "cumulative_seconds": 0.0009660999999999999
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'endswith' of 'str' objects>",
+      "primitive_calls": 1106,
+      "calls": 1106,
+      "self_seconds": 0.0009178999999999999,
+      "cumulative_seconds": 0.0009178999999999999
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'values' of 'dict' objects>",
+      "primitive_calls": 2245,
+      "calls": 2245,
+      "self_seconds": 0.0009140000000000002,
+      "cumulative_seconds": 0.0009140000000000002
+    },
+    {
+      "file": "fractions.py",
+      "line": 758,
+      "function": "_div",
+      "primitive_calls": 157,
+      "calls": 157,
+      "self_seconds": 0.0006010000000000001,
+      "cumulative_seconds": 0.0008678000000000001
+    },
+    {
+      "file": "broker.py",
+      "line": 671,
+      "function": "hedge",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.0005700000000000001,
+      "cumulative_seconds": 0.0007960000000000002
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'replace' of 'str' objects>",
+      "primitive_calls": 1253,
+      "calls": 1253,
+      "self_seconds": 0.0007628,
+      "cumulative_seconds": 0.0007628
+    },
+    {
+      "file": "broker.py",
+      "line": 750,
+      "function": "<lambda>",
+      "primitive_calls": 1108,
+      "calls": 1108,
+      "self_seconds": 0.0007253000000000001,
+      "cumulative_seconds": 0.0007253000000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'group' of 're.Match' objects>",
+      "primitive_calls": 1065,
+      "calls": 1065,
+      "self_seconds": 0.0007115,
+      "cumulative_seconds": 0.0007115
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'pop' of 'dict' objects>",
+      "primitive_calls": 1784,
+      "calls": 1784,
+      "self_seconds": 0.0007028000000000001,
+      "cumulative_seconds": 0.0007028000000000001
+    },
+    {
+      "file": "incremental.py",
+      "line": 156,
+      "function": "<genexpr>",
+      "primitive_calls": 783,
+      "calls": 783,
+      "self_seconds": 0.0006613000000000001,
+      "cumulative_seconds": 0.0006613000000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'extend' of 'list' objects>",
+      "primitive_calls": 2388,
+      "calls": 2388,
+      "self_seconds": 0.0006515000000000002,
+      "cumulative_seconds": 0.0006515000000000002
+    },
+    {
+      "file": "broker.py",
+      "line": 726,
+      "function": "<genexpr>",
+      "primitive_calls": 1108,
+      "calls": 1108,
+      "self_seconds": 0.0006489,
+      "cumulative_seconds": 0.0006489
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _hashlib.openssl_sha256>",
+      "primitive_calls": 121,
+      "calls": 121,
+      "self_seconds": 0.0006277,
+      "cumulative_seconds": 0.0006277
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'copy' of 'dict' objects>",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.0006145,
+      "cumulative_seconds": 0.0006145
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method nt.fspath>",
+      "primitive_calls": 1659,
+      "calls": 1659,
+      "self_seconds": 0.0005628,
+      "cumulative_seconds": 0.0005628
+    },
+    {
+      "file": "pathlib.py",
+      "line": 437,
+      "function": "__str__",
+      "primitive_calls": 1660,
+      "calls": 1660,
+      "self_seconds": 0.00048,
+      "cumulative_seconds": 0.00048
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method _stat.S_ISREG>",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 0.00040880000000000007,
+      "cumulative_seconds": 0.00040880000000000007
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'keys' of 'dict' objects>",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.0003778000000000001,
+      "cumulative_seconds": 0.0003778000000000001
+    },
+    {
+      "file": "fractions.py",
+      "line": 726,
+      "function": "_sub",
+      "primitive_calls": 90,
+      "calls": 90,
+      "self_seconds": 0.0002347,
+      "cumulative_seconds": 0.00035840000000000004
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'end' of 're.Match' objects>",
+      "primitive_calls": 1106,
+      "calls": 1106,
+      "self_seconds": 0.00035160000000000004,
+      "cumulative_seconds": 0.00035160000000000004
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'encode' of 'str' objects>",
+      "primitive_calls": 435,
+      "calls": 435,
+      "self_seconds": 0.0003253000000000001,
+      "cumulative_seconds": 0.0003253000000000001
+    },
+    {
+      "file": "fractions.py",
+      "line": 317,
+      "function": "_from_coprime_ints",
+      "primitive_calls": 247,
+      "calls": 247,
+      "self_seconds": 0.00024450000000000003,
+      "cumulative_seconds": 0.0003054
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method math.gcd>",
+      "primitive_calls": 617,
+      "calls": 617,
+      "self_seconds": 0.0002523,
+      "cumulative_seconds": 0.0002523
+    },
+    {
+      "file": "incremental.py",
+      "line": 113,
+      "function": "<lambda>",
+      "primitive_calls": 2212,
+      "calls": 2212,
+      "self_seconds": 0.00024440000000000003,
+      "cumulative_seconds": 0.00024440000000000003
+    },
+    {
+      "file": "incremental.py",
+      "line": 154,
+      "function": "<genexpr>",
+      "primitive_calls": 867,
+      "calls": 867,
+      "self_seconds": 0.00023329999999999998,
+      "cumulative_seconds": 0.00023329999999999998
+    },
+    {
+      "file": "broker.py",
+      "line": 588,
+      "function": "<genexpr>",
+      "primitive_calls": 344,
+      "calls": 344,
+      "self_seconds": 0.00022250000000000001,
+      "cumulative_seconds": 0.00023
+    },
+    {
+      "file": "numbers.py",
+      "line": 308,
+      "function": "__float__",
+      "primitive_calls": 100,
+      "calls": 100,
+      "self_seconds": 0.00020240000000000001,
+      "cumulative_seconds": 0.000228
+    },
+    {
+      "file": "pathlib.py",
+      "line": 524,
+      "function": "__hash__",
+      "primitive_calls": 554,
+      "calls": 554,
+      "self_seconds": 0.00021790000000000007,
+      "cumulative_seconds": 0.00021790000000000007
+    },
+    {
+      "file": "broker.py",
+      "line": 237,
+      "function": "entry_name",
+      "primitive_calls": 364,
+      "calls": 364,
+      "self_seconds": 0.0002155,
+      "cumulative_seconds": 0.0002155
+    },
+    {
+      "file": "broker.py",
+      "line": 625,
+      "function": "<genexpr>",
+      "primitive_calls": 202,
+      "calls": 202,
+      "self_seconds": 0.0001908,
+      "cumulative_seconds": 0.0001908
+    },
+    {
+      "file": "incremental.py",
+      "line": 157,
+      "function": "<genexpr>",
+      "primitive_calls": 867,
+      "calls": 867,
+      "self_seconds": 0.00018130000000000002,
+      "cumulative_seconds": 0.00018130000000000002
+    },
+    {
+      "file": "broker.py",
+      "line": 433,
+      "function": "qty_for_close",
+      "primitive_calls": 61,
+      "calls": 61,
+      "self_seconds": 0.0001139,
+      "cumulative_seconds": 0.0001699
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.abs>",
+      "primitive_calls": 237,
+      "calls": 237,
+      "self_seconds": 0.00016370000000000002,
+      "cumulative_seconds": 0.00016370000000000002
+    },
+    {
+      "file": "broker.py",
+      "line": 288,
+      "function": "<genexpr>",
+      "primitive_calls": 575,
+      "calls": 575,
+      "self_seconds": 0.00015560000000000001,
+      "cumulative_seconds": 0.00015560000000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.sorted>",
+      "primitive_calls": 51,
+      "calls": 51,
+      "self_seconds": 0.0001291,
+      "cumulative_seconds": 0.0001291
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.min>",
+      "primitive_calls": 163,
+      "calls": 163,
+      "self_seconds": 0.00011490000000000001,
+      "cumulative_seconds": 0.00011490000000000001
+    },
+    {
+      "file": "broker.py",
+      "line": 569,
+      "function": "<genexpr>",
+      "primitive_calls": 169,
+      "calls": 169,
+      "self_seconds": 9.539999999999999e-05,
+      "cumulative_seconds": 0.000107
+    },
+    {
+      "file": "pathlib.py",
+      "line": 551,
+      "function": "drive",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 8.44e-05,
+      "cumulative_seconds": 8.44e-05
+    },
+    {
+      "file": "pathlib.py",
+      "line": 560,
+      "function": "root",
+      "primitive_calls": 553,
+      "calls": 553,
+      "self_seconds": 7.37e-05,
+      "cumulative_seconds": 7.37e-05
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method math.isfinite>",
+      "primitive_calls": 147,
+      "calls": 147,
+      "self_seconds": 5.74e-05,
+      "cumulative_seconds": 5.74e-05
+    },
+    {
+      "file": "broker.py",
+      "line": 579,
+      "function": "<genexpr>",
+      "primitive_calls": 144,
+      "calls": 144,
+      "self_seconds": 4.88e-05,
+      "cumulative_seconds": 4.88e-05
+    },
+    {
+      "file": "broker.py",
+      "line": 644,
+      "function": "<genexpr>",
+      "primitive_calls": 156,
+      "calls": 156,
+      "self_seconds": 4.75e-05,
+      "cumulative_seconds": 4.75e-05
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.sum>",
+      "primitive_calls": 18,
+      "calls": 18,
+      "self_seconds": 3.93e-05,
+      "cumulative_seconds": 4.190000000000001e-05
+    },
+    {
+      "file": "fractions.py",
+      "line": 397,
+      "function": "numerator",
+      "primitive_calls": 247,
+      "calls": 247,
+      "self_seconds": 3.52e-05,
+      "cumulative_seconds": 3.52e-05
+    },
+    {
+      "file": "broker.py",
+      "line": 259,
+      "function": "tracked",
+      "primitive_calls": 44,
+      "calls": 44,
+      "self_seconds": 3.44e-05,
+      "cumulative_seconds": 3.44e-05
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'sort' of 'list' objects>",
+      "primitive_calls": 5,
+      "calls": 5,
+      "self_seconds": 1.55e-05,
+      "cumulative_seconds": 3.15e-05
+    },
+    {
+      "file": "fractions.py",
+      "line": 401,
+      "function": "denominator",
+      "primitive_calls": 247,
+      "calls": 247,
+      "self_seconds": 2.9100000000000006e-05,
+      "cumulative_seconds": 2.9100000000000006e-05
+    },
+    {
+      "file": "fractions.py",
+      "line": 410,
+      "function": "__str__",
+      "primitive_calls": 21,
+      "calls": 21,
+      "self_seconds": 2.2700000000000003e-05,
+      "cumulative_seconds": 2.2700000000000003e-05
+    },
+    {
+      "file": "broker.py",
+      "line": 356,
+      "function": "<lambda>",
+      "primitive_calls": 5,
+      "calls": 5,
+      "self_seconds": 1.2500000000000002e-05,
+      "cumulative_seconds": 1.6000000000000003e-05
+    },
+    {
+      "file": "broker.py",
+      "line": 478,
+      "function": "<genexpr>",
+      "primitive_calls": 54,
+      "calls": 54,
+      "self_seconds": 1.34e-05,
+      "cumulative_seconds": 1.34e-05
+    },
+    {
+      "file": "broker.py",
+      "line": 456,
+      "function": "<genexpr>",
+      "primitive_calls": 18,
+      "calls": 18,
+      "self_seconds": 3.6000000000000007e-06,
+      "cumulative_seconds": 3.6000000000000007e-06
+    },
+    {
+      "file": "broker.py",
+      "line": 464,
+      "function": "<genexpr>",
+      "primitive_calls": 18,
+      "calls": 18,
+      "self_seconds": 2.6e-06,
+      "cumulative_seconds": 2.6e-06
+    }
+  ],
+  "metadata_micro": [
+    {
+      "variant": "baseline",
+      "seconds": 0.6685342999990098,
+      "calls": 5000,
+      "qualified_count": 5000
+    },
+    {
+      "variant": "metadata",
+      "seconds": 0.24722119999933057,
+      "calls": 5000,
+      "qualified_count": 5000
+    },
+    {
+      "variant": "metadata",
+      "seconds": 0.24460499999986496,
+      "calls": 5000,
+      "qualified_count": 5000
+    },
+    {
+      "variant": "baseline",
+      "seconds": 0.5582506999999168,
+      "calls": 5000,
+      "qualified_count": 5000
+    },
+    {
+      "variant": "baseline",
+      "seconds": 0.5610303000066779,
+      "calls": 5000,
+      "qualified_count": 5000
+    },
+    {
+      "variant": "metadata",
+      "seconds": 0.2520282999976189,
+      "calls": 5000,
+      "qualified_count": 5000
+    },
+    {
+      "variant": "metadata",
+      "seconds": 0.3756961000035517,
+      "calls": 5000,
+      "qualified_count": 5000
+    },
+    {
+      "variant": "baseline",
+      "seconds": 0.580779199997778,
+      "calls": 5000,
+      "qualified_count": 5000
+    }
+  ],
+  "validation": {
+    "python": {
+      "passed": 76,
+      "log_sha256": "14e6ddb99efc49d26a94b9d329aa8ce281144d379b336654eb8f28370758316a"
+    },
+    "server_lib": {
+      "passed": 339,
+      "ignored": 9,
+      "failed": 0,
+      "log_sha256": "50ccf0371184e47f0af7321a641dd24e513ca1b14d12d20ab5a9c14567c92e69"
+    }
+  },
+  "decisions": {
+    "metadata": "retained",
+    "callers32": "not retained: long plugin wall is unchanged and host noise is large"
+  }
+}

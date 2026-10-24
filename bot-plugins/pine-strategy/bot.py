@@ -424,7 +424,7 @@ def serve_worker():
         print(encoded, flush=True)
         if fold is not None:
             # The host folds the same patches once it accepts this reply.
-            decoder.fold_state(key, fold[1])
+            decoder._fold_verified_state(key, fold[3])
             lengths.remember(key, decoder.requests[key][1]["state"], fold[2])
         if trace and "response" in response:
             data = request["observation"].get("bot_market_data") or {}
@@ -469,7 +469,9 @@ def state_reply(transport, lengths, key, old, response, encoded_response):
         # The full reply fits; the state passed the size check above.
         encoded_response.append(json.dumps(decision, allow_nan=False))
         return None
-    return encoded, patches, length
+    # The exact-delta proof above also authorizes retaining this immutable
+    # value-equivalent state locally; no extra state is sent across the wire.
+    return encoded, patches, length, decision["state"]
 
 
 def encode_worker_response(response, encoded_response):

@@ -10,6 +10,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let registry =
         exchange_server::bot_plugins::load_bot_plugins(std::path::Path::new("bot-plugins"))?;
     let result = research::run(registry);
+    if std::env::var_os("RESEARCH_PROFILE").is_some() {
+        eprint!("{}", exchange_server::bot_runtime_metrics());
+    }
     // Diagnostic builds also report the plugin host's cumulative phase timers.
     #[cfg(feature = "bench-execution-timing")]
     for line in exchange_server::bench_execution_metrics().lines() {

@@ -210,7 +210,8 @@ class WorkerDiagnosticsTests(unittest.TestCase):
     def test_evaluation_mode_is_reported_at_actual_append_rebuild_or_replay(self):
         incremental = load_module("diagnostic_incremental", "bot-plugins/pine-strategy/incremental.py")
         class Program:
-            def external_session(self, **kwargs): return SimpleNamespace(append=lambda *args, **kwargs: "result")
+            def external_session(self, **kwargs):
+                return SimpleNamespace(append=lambda *args, **kwargs: {"intents": [], "intent_count": 0})
             def run_external(self, *args, **kwargs): return "replay"
         request = {"participant": "one", "seed": 7, "config": {}, "state": {}}
         program = Program()

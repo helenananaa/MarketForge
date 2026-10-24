@@ -60,7 +60,9 @@ class PineBotTests(unittest.TestCase):
             if os.environ.get("MARKETFORGE_REQUIRE_PINE_TESTS") == "1":
                 raise AssertionError("forced Pine tests require pine-compat-runtime==0.3.1")
             raise unittest.SkipTest("optional Pine runtime not installed")
-        if pine_compat.__version__ != "0.3.1":
+        # Match the adapter's explicit runtime gate, including the installed
+        # external-broker build used by strategy-ecosystem research.
+        if pine_compat.__version__ not in ("0.3.1", "0.3.1+mf1"):
             raise AssertionError("install the qualified 0.3.1 runtime for Pine acceptance")
 
     def test_real_pine_all_three_strategies_enter_and_exit(self):

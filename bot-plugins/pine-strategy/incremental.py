@@ -9,9 +9,11 @@ from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
+from stat import S_ISREG
 
 SESSIONS = OrderedDict()
 QUALIFIED = {}  # mtime_ns -> qualified source hashes
+QUALIFICATION_FILE = Path(__file__).with_name("incremental-qualified.json")
 # ExternalSession.append options the runtime accepts: 3 stream_tails, intents_from
 # and include_output; 2 intents_from and include_output; 1 include_output; 0 none.
 APPEND_LEVEL = None
@@ -27,10 +29,18 @@ def source_sha256(source):
 
 
 def qualified(source):
-    path = Path(__file__).with_name("incremental-qualified.json")
-    if not path.is_file():
+    path = QUALIFICATION_FILE
+    try:
+        metadata = path.stat()
+    except OSError:
+        # Preserve Path.is_file's missing/invalid-path fallback and its error
+        # behavior. The ordinary path needs only one metadata query.
+        if not path.is_file():
+            return False
+        raise
+    if not S_ISREG(metadata.st_mode):
         return False
-    stamp = path.stat().st_mtime_ns
+    stamp = metadata.st_mtime_ns
     if stamp not in QUALIFIED:
         QUALIFIED.clear()
         QUALIFIED[stamp] = set(json.loads(path.read_text(encoding="utf-8"))["source_sha256"].values())

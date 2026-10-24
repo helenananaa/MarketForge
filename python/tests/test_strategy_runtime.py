@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import random
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -22,6 +23,31 @@ class IncrementalPineTests(unittest.TestCase):
             if os.environ.get("MARKETFORGE_REQUIRE_INCREMENTAL_TESTS") == "1":
                 raise AssertionError("private external-session runtime required")
             raise unittest.SkipTest("private external-session adapter not selected")
+
+    def test_qualification_refresh_missing_nonfile_and_errors(self):
+        incremental = bot.incremental_module()
+        source = 'strategy("qualification")'
+        digest = incremental.source_sha256(source)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "qualified.json"
+            with patch.object(incremental, "QUALIFICATION_FILE", path), patch.object(incremental, "QUALIFIED", {}):
+                self.assertFalse(incremental.qualified(source))
+                path.mkdir()
+                self.assertFalse(incremental.qualified(source))
+                path.rmdir()
+                path.write_text(json.dumps({"source_sha256": {"script": digest}}))
+                self.assertTrue(incremental.qualified(source))
+                old_stamp = path.stat().st_mtime_ns
+                path.write_text(json.dumps({"source_sha256": {"script": "revoked"}}))
+                os.utime(path, ns=(old_stamp + 1_000_000, old_stamp + 1_000_000))
+                self.assertFalse(incremental.qualified(source))
+                path.unlink()
+                self.assertFalse(incremental.qualified(source))
+            with patch.object(incremental, "QUALIFICATION_FILE") as inaccessible:
+                inaccessible.stat.side_effect = PermissionError("metadata denied")
+                inaccessible.is_file.side_effect = PermissionError("metadata denied")
+                with self.assertRaises(PermissionError):
+                    incremental.qualified(source)
 
     def test_all_qualified_sources_match_frozen_replay_across_prefixes_and_recovery(self):
         incremental = bot.incremental_module()
@@ -274,6 +300,25 @@ class WorkerTransportTests(unittest.TestCase):
         third = decoder.decode_readonly({"id":3, "cache_key":key, "base":2, "request_delta":[]})
         self.assertEqual(third["state"], {"bars":[1, 2]})
 
+    def test_verified_fold_preserves_equal_history_identity_and_old_inputs(self):
+        decoder = self.module.RequestDecoder();key = "f" * 64
+        frames = [{"time":i, "fields":[1, 2.0, "x"]} for i in range(128)]
+        old = decoder.decode_readonly({"id":1, "cache_key":key,
+            "request":{"state":{"bars":copy.deepcopy(frames)}, "observation":{}}})
+        saved = copy.deepcopy(old)
+        state = {"bars":frames + [{"time":128}]}
+        patches, _ = self.module.state_delta(old["state"], state)
+        expected = self.module.apply_patches(old, patches, ("state",))
+        decoder._fold_verified_state(key, state)
+        self.assertTrue(self.module.same(decoder.requests[key][1], expected))
+        self.assertIs(decoder.requests[key][1]["state"]["bars"][0], frames[0])
+        self.assertEqual(old, saved)
+        updated = decoder.decode_readonly({"id":2, "cache_key":key, "base":1,
+            "request_delta":[{"op":"set", "path":["state","bars",0,"time"], "value":999}]})
+        self.assertEqual(updated["state"]["bars"][0]["time"], 999)
+        self.assertEqual(state["bars"][0]["time"], 0)
+        self.assertEqual(old, saved)
+
     def test_state_delta_is_exact_type_strict_and_measures_the_full_encoding(self):
         rng = random.Random(3)
         leaves = [0, 1, 1.0, -0.0, 0.0, True, None, "x", "汉\"\n", 2**40]
@@ -345,7 +390,7 @@ class WorkerTransportTests(unittest.TestCase):
             prefixed = [dict(p, path=["state", *p["path"]]) for p in sent["state_delta"]]
             state = self.module.apply_patches({"state": wire["state"]}, prefixed)["state"]
             self.assertTrue(self.module.same(state, json.loads(json.dumps(expected["state"]))), end)
-            decoder.fold_state(key, fold[1]);lengths.remember(key, decoder.requests[key][1]["state"], fold[2])
+            decoder._fold_verified_state(key, fold[3]);lengths.remember(key, decoder.requests[key][1]["state"], fold[2])
             host = (end, self.module.apply_patches(wire, prefixed))
             state = json.loads(json.dumps(state))
 

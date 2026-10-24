@@ -1,4 +1,4 @@
-"""Exact, bounded reconstruction of host input deltas. Never caches bot output.
+"""Exact, bounded reconstruction of host input and verified reply deltas.
 
 Patches are applied copy-on-write: every container on a patch path is replaced
 by a fresh copy, and no decoded object is ever changed in place. An object that
@@ -108,6 +108,19 @@ class RequestDecoder:
         delta is then relative to that state."""
         identity, request = self.requests[key]
         self.requests[key] = (identity, apply_patches(request, patches, ("state",)))
+
+    def _fold_verified_state(self, key, state):
+        """Worker-only: retain state after state_reply proved the exact delta.
+
+        The synchronous broker transfers this state to the immutable decoder;
+        neither it nor the old input may be mutated afterwards. Host patches
+        still contain the same exact values. Retaining the already validated
+        output also preserves parsed-history identities after cold recovery or
+        a Rust handoff, instead of keeping equal but separately decoded frames.
+        Generic/mutable consumers must use fold_state() instead.
+        """
+        identity, request = self.requests[key]
+        self.requests[key] = (identity, dict(request, state=state))
 
 
 class StateLengths:
