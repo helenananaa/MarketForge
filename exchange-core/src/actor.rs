@@ -1332,15 +1332,13 @@ impl ExchangeActor {
             });
         }
 
-        let mut staged = {
-            let _timer = crate::performance::Timer::start(0);
-            self.clone()
-        };
+        // PROTOTYPE: in place; a rollback panics.
+        let staged: &mut ExchangeActor = unsafe { &mut *(self as *mut ExchangeActor) };
         if let Err(error) = staged.reconcile_market_reservations() {
-            return Ok(self.clearing_rejection(instrument_id, command_seq, error));
+            panic!("in-place prototype needs a rollback: {error:?}");
         }
         if let Err(error) = staged.sync_market_accounts_from_venue(instrument_id) {
-            return Ok(self.clearing_rejection(instrument_id, command_seq, error));
+            panic!("in-place prototype needs a rollback: {error:?}");
         }
         // Pre-command reconciliation and full margin synchronization establish a baseline.
         // Only ordinary perp orders have account-local effects; mark/funding
@@ -1402,21 +1400,21 @@ impl ExchangeActor {
                 staged.reconcile_market_reservations()
             };
             if let Err(error) = reconciled {
-                return Ok(self.clearing_rejection(instrument_id, command_seq, error));
+                panic!("in-place prototype needs a rollback: {error:?}");
             }
             if let Err(error) = staged.sync_venue_accounts_from_execution(instrument_id, &execution)
             {
-                return Ok(self.clearing_rejection(instrument_id, command_seq, error));
+                panic!("in-place prototype needs a rollback: {error:?}");
             }
             if let Err(error) =
                 staged.refresh_price_links(instrument_id, before_book.as_ref(), &mut execution)
             {
-                return Ok(self.clearing_rejection(instrument_id, command_seq, error));
+                panic!("in-place prototype needs a rollback: {error:?}");
             }
             if !execution.price_updates.is_empty()
                 && let Err(error) = staged.reconcile_market_reservations()
             {
-                return Ok(self.clearing_rejection(instrument_id, command_seq, error));
+                panic!("in-place prototype needs a rollback: {error:?}");
             }
             if !execution.price_updates.is_empty() {
                 affected_accounts = None;
@@ -1425,11 +1423,10 @@ impl ExchangeActor {
                 if let Err(error) =
                     staged.sync_perp_cross_margin_group_for(quote_asset, affected_accounts.as_ref())
                 {
-                    return Ok(self.clearing_rejection(instrument_id, command_seq, error));
+                    panic!("in-place prototype needs a rollback: {error:?}");
                 }
             }
         }
-        *self = staged;
         Ok(execution)
     }
 

@@ -154,10 +154,11 @@ impl SpotTradingEngine {
     }
 
     pub fn apply(&mut self, command: Command) -> Result<SpotTradingExecution, ClearingError> {
-        let mut staged = self.clone();
-        let execution = staged.apply_inner(command)?;
-        *self = staged;
-        Ok(execution)
+        // PROTOTYPE: in place; a rollback panics.
+        match self.apply_inner(command) {
+            Ok(execution) => Ok(execution),
+            Err(error) => panic!("in-place prototype needs an engine rollback: {error:?}"),
+        }
     }
 
     fn apply_inner(&mut self, command: Command) -> Result<SpotTradingExecution, ClearingError> {
@@ -429,10 +430,11 @@ impl PerpTradingEngine {
     }
 
     pub fn apply(&mut self, command: Command) -> Result<PerpTradingExecution, ClearingError> {
-        let mut staged = self.clone();
-        let execution = staged.apply_inner(command)?;
-        *self = staged;
-        Ok(execution)
+        // PROTOTYPE: in place; a rollback panics.
+        match self.apply_inner(command) {
+            Ok(execution) => Ok(execution),
+            Err(error) => panic!("in-place prototype needs an engine rollback: {error:?}"),
+        }
     }
 
     fn apply_inner(&mut self, command: Command) -> Result<PerpTradingExecution, ClearingError> {
