@@ -45,6 +45,8 @@ enable the candidate mechanism by default.
 - Passed 54 targeted Python tests covering research recipes, analysis,
   streaming JSON, memory controls, receipts, and relay behavior in tuning.
 - Passed three economic-market tests in the endogenous working directory.
+- Tuning's `cargo test -p exchange-core --lib --quiet` completed with 487 passed,
+  zero failed and 12 ignored tests.
 - The ecosystem snapshot's Pine broker test run discovered 17 tests and
   reported 16 errors because the active Python environment lacked the required
   qualified `pine-compat-runtime==0.3.1`; that suite is not recorded as passing.
