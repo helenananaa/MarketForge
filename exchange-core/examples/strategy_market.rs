@@ -78,6 +78,13 @@ pub fn run(registry: BotRegistry) -> Result<(), Box<dyn std::error::Error>> {
                 (Side::Buy, 1000),
                 (Side::Sell, 1000),
             ] {
+                if let Ok(values) = std::env::var("MF_RESEARCH_PROBE_QTYS")
+                    && !values
+                        .split(',')
+                        .any(|v| v.parse::<u64>().ok() == Some(qty))
+                {
+                    continue;
+                }
                 let name = format!("{}-{:?}-{}", instrument, side, qty);
                 if checkpoint::stopped() {
                     result["fork_receipts"] = serde_json::json!(branches);
@@ -151,7 +158,12 @@ pub fn run(registry: BotRegistry) -> Result<(), Box<dyn std::error::Error>> {
                     &mut branch_rooms,
                     &mut branch_bots,
                     &mut branch_order_id,
-                    (600 / seconds).max(1),
+                    (std::env::var("MF_RESEARCH_PROBE_SECONDS")
+                        .ok()
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .unwrap_or(600)
+                        / seconds)
+                        .max(1),
                     seconds,
                 )?;
                 branch["intervention"] = intervention;
@@ -230,6 +242,8 @@ fn run_waves(
         .collect::<std::collections::BTreeSet<_>>();
     let mut book_snapshots = vec![];
     let mut actions_per_bot = BTreeMap::<String, u64>::new();
+    let mut market_exit_receipts = vec![];
+    let mut economic_quote_checks = 0_u64;
     let mut history_cursor = rooms
         .execution_history_len(room)
         .map_err(|e| format!("{e:?}"))?;
@@ -279,6 +293,55 @@ fn run_waves(
                 if actions.len() > 64 {
                     return Err("strategy exceeded action limit".into());
                 }
+                if let AgentTemplate::Plugin(p) = t
+                    && p.plugin_id == "AdaptiveLiquidityMaker"
+                    && p.plugin_version == "1.2.0"
+                    && let (Some(bid), Some(ask)) =
+                        (obs.public.book.bids.first(), obs.public.book.asks.first())
+                {
+                    let mid = (bid.price_tick as f64 + ask.price_tick as f64) / 2.;
+                    let cost = (p.config["maker_fee_ppm"].as_u64().unwrap()
+                        + p.config["minimum_edge_ppm"].as_u64().unwrap())
+                        as f64
+                        / 1e6;
+                    for action in &actions {
+                        let quote = match action {
+                            OrderAction::PlacePostOnly {
+                                side, price_tick, ..
+                            } => Some((*side, *price_tick)),
+                            OrderAction::PlaceProtected {
+                                side,
+                                price_tick,
+                                order_type: model::ProtectedOrderType::PostOnly,
+                                ..
+                            } => Some((*side, *price_tick)),
+                            OrderAction::Amend {
+                                order_id,
+                                price_tick: Some(price),
+                                ..
+                            } => obs
+                                .own_orders
+                                .iter()
+                                .find(|o| o.order_id == *order_id)
+                                .map(|o| (o.side, *price)),
+                            _ => None,
+                        };
+                        if let Some((side, price)) = quote {
+                            economic_quote_checks += 1;
+                            let valid = match side {
+                                Side::Buy => (price as f64) * (1. + cost) <= mid + 1e-7,
+                                Side::Sell => (price as f64) * (1. - cost) >= mid - 1e-7,
+                            };
+                            if !valid {
+                                return Err(format!(
+                                    "fee quote contract violated by {}",
+                                    t.participant_id()
+                                )
+                                .into());
+                            }
+                        }
+                    }
+                }
                 bots::validate_bot_orders(instrument, &related[i], &actions, &bot.snapshot())?;
                 *actions_per_bot
                     .entry(t.participant_id().into())
@@ -306,6 +369,35 @@ fn run_waves(
                     .map_err(|e| format!("{e:?}"))?;
                 *order_id = gateway.next_order_id();
                 bots[i].execution_feedback(&action, &execution);
+                if let OrderAction::PlaceMarket { qty, side }
+                | OrderAction::PlaceReduceOnlyMarket { qty, side } = &resolved
+                {
+                    let filled = match &execution.execution.result {
+                        ActorExecutionResult::Accepted(result) => {
+                            let events = match result {
+                                MarketExecution::Spot(r) => &r.events,
+                                MarketExecution::Perp(r) => &r.events,
+                            };
+                            events
+                                .iter()
+                                .filter_map(|e| match &e.event {
+                                    Event::TradePrinted(t)
+                                        if t.taker_account_id == cfg.account_id =>
+                                    {
+                                        Some(t.qty)
+                                    }
+                                    _ => None,
+                                })
+                                .sum::<u64>()
+                        }
+                        _ => 0,
+                    };
+                    market_exit_receipts.push(serde_json::json!({"participant_id":t.participant_id(),
+                        "account_id":cfg.account_id,"instrument_id":instrument,"time_ms":execution.execution.market_time_ms,
+                        "side":side,"requested_qty":qty,"filled_qty":filled,"command":execution.command,
+                        "is_liquidation":execution.execution.is_liquidation,
+                        "accepted":matches!(&execution.execution.result,ActorExecutionResult::Accepted(_))}));
+                }
                 if matches!(action, OrderAction::BotOrder { .. }) {
                     let mut state = bots[i].snapshot();
                     bots::record_bot_execution(&mut state, &action, &execution);
@@ -389,6 +481,8 @@ fn run_waves(
         serde_json::json!({"runner":"existing_native_observation_wave","bots":templates.len(),"steps":steps,"simulation_time_ms":rooms.clock(room).map_err(|e|format!("{e:?}"))?.market_time_ms(),
         "trades":trades,"fills":fills,"trade_receipts":receipts,"book_snapshots":book_snapshots,"rejections":rejections,"assets_before":before,"assets_after":rooms.net_worth_snapshot(room).map_err(|e|format!("{e:?}"))?,"actions_per_bot":actions_per_bot,"clock_step_seconds":seconds,
         "states":templates.iter().zip(bots.iter()).map(|(t,b)|serde_json::json!({"id":t.participant_id(),"state":b.snapshot()})).collect::<Vec<_>>(),
+        "market_exit_receipts":market_exit_receipts,
+        "economic_quote_checks":economic_quote_checks,
         "qualification":"real finite-capital synthetic matching via the existing native delivery API; not live-market or durable-server qualification"}),
     )
 }

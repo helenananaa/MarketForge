@@ -100,7 +100,9 @@ fn fills(actions: &[OrderAction]) -> i128 {
     actions
         .iter()
         .map(|a| match a {
-            OrderAction::PlaceProtected { side, qty, .. } => {
+            OrderAction::PlaceProtected { side, qty, .. }
+            | OrderAction::PlaceMarket { side, qty }
+            | OrderAction::PlaceReduceOnlyMarket { side, qty } => {
                 if *side == Side::Buy {
                     *qty as i128
                 } else {
@@ -264,4 +266,159 @@ fn rejects_inverted_horizons_and_foreign_state() {
             .create(&template(2, json!({})), &bot.snapshot())
             .is_err()
     );
+}
+
+#[test]
+fn stop_market_exit_is_latched_through_partial_fill_empty_book_and_restore() {
+    let mut source: Value = serde_json::from_str(include_str!(
+        "../../scripts/fixtures/microstructure_market.json"
+    ))
+    .unwrap();
+    let scenario = &mut source["scenario"];
+    scenario["room_id"] = json!("style");
+    scenario["accounts"] = json!([{"Basic":{"account_id":10,"cash_balance":1000000}},
+        {"Basic":{"account_id":20,"cash_balance":1000000}}, {"Basic":{"account_id":30,"cash_balance":1000000}}]);
+    scenario["seed_orders"] = json!([]);
+    scenario["routed_seed_orders"] = json!([]);
+    let market = &mut scenario["extra_markets"][0]["Perp"];
+    market["instrument"]["instrument_id"] = json!("TEST");
+    market["instrument"]["symbol"] = json!("TEST");
+    market["initial_mark_price_tick"] = json!(100);
+    market["price_link"] = Value::Null;
+    market["funding"] = Value::Null;
+    let mut rooms = RoomManager::new();
+    rooms
+        .create_room(serde_json::from_value(scenario.clone()).unwrap())
+        .unwrap();
+    let mut id = 10000;
+    let submit = |rooms: &mut RoomManager, id: &mut u64, account, action| {
+        let mut gateway = OrderGateway::new_scheduler(rooms, *id);
+        let execution = gateway
+            .submit_action(GatewayRequest {
+                participant_id: "fixture".into(),
+                room_id: "style".into(),
+                instrument_id: Some("TEST".into()),
+                account_id: account,
+                action,
+            })
+            .unwrap();
+        *id = gateway.next_order_id();
+        execution
+    };
+    submit(
+        &mut rooms,
+        &mut id,
+        10,
+        OrderAction::PlaceLimit {
+            side: Side::Sell,
+            price_tick: 100,
+            qty: 10,
+        },
+    );
+    submit(
+        &mut rooms,
+        &mut id,
+        20,
+        OrderAction::PlaceMarket {
+            side: Side::Buy,
+            qty: 10,
+        },
+    );
+    submit(
+        &mut rooms,
+        &mut id,
+        30,
+        OrderAction::PlaceLimit {
+            side: Side::Buy,
+            price_tick: 70,
+            qty: 3,
+        },
+    );
+    let stale_ask = id;
+    submit(
+        &mut rooms,
+        &mut id,
+        10,
+        OrderAction::PlaceLimit {
+            side: Side::Sell,
+            price_tick: 90,
+            qty: 10,
+        },
+    );
+    let t = template(
+        9,
+        json!({"stop_mode":"Internal", "max_slippage_ppm":1, "stop_cooldown_ms":30000}),
+    );
+    let mut bot = make(&t);
+    let mut saved = state(bot.as_ref());
+    saved.stop_tick = Some(95);
+    saved.last_position = 10;
+    saved.target = 10;
+    saved.next_ms = 999999; // A risk exit must bypass the signal clock.
+    let mut persisted = t.initial_state();
+    let PersistedAgentKindState::Plugin { data, .. } = &mut persisted else {
+        unreachable!()
+    };
+    *data = Arc::new(serde_json::to_value(saved).unwrap());
+    bot = BotRegistry::with_builtins().create(&t, &persisted).unwrap();
+    for second in 1..=3 {
+        rooms.advance_clock("style", 1).unwrap();
+        if second == 3 {
+            submit(
+                &mut rooms,
+                &mut id,
+                10,
+                OrderAction::Cancel {
+                    order_id: stale_ask,
+                },
+            );
+            submit(
+                &mut rooms,
+                &mut id,
+                10,
+                OrderAction::PlaceLimit {
+                    side: Side::Sell,
+                    price_tick: 130,
+                    qty: 10,
+                },
+            );
+            submit(
+                &mut rooms,
+                &mut id,
+                30,
+                OrderAction::PlaceLimit {
+                    side: Side::Buy,
+                    price_tick: 120,
+                    qty: 7,
+                },
+            );
+        }
+        let observation = rooms.participant_observation("style", "TEST", 20).unwrap();
+        let actions = bot.decide(&observation).unwrap();
+        assert!(actions.iter().any(|a| matches!(a, OrderAction::PlaceReduceOnlyMarket { side:Side::Sell, qty } if *qty == if second==1 {10} else {7})));
+        for action in actions {
+            let execution = submit(&mut rooms, &mut id, 20, action.clone());
+            bot.execution_feedback(&action, &execution);
+        }
+        assert_eq!(state(bot.as_ref()).stop_triggers, 1);
+        assert!(state(bot.as_ref()).exit_pending);
+        if second == 1 {
+            assert_eq!(state(bot.as_ref()).exit_filled_qty, 3);
+            let snapshot = bot.snapshot();
+            bot = BotRegistry::with_builtins().create(&t, &snapshot).unwrap();
+        }
+    }
+    rooms.advance_clock("style", 1).unwrap();
+    assert!(
+        bot.decide(&rooms.participant_observation("style", "TEST", 20).unwrap())
+            .unwrap()
+            .is_empty()
+    );
+    let s = state(bot.as_ref());
+    assert!(!s.exit_pending);
+    assert_eq!(s.exit_completions, 1);
+    assert_eq!(s.exit_submissions, 3);
+    assert_eq!(s.exit_filled_qty, 10);
+    assert_eq!(s.exit_remaining_qty, 0);
+    assert!(s.cooldown_until_ms >= 34000);
 }

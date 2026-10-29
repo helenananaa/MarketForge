@@ -1,0 +1,1553 @@
+{
+  "decision": "rejected_candidate_and_restored_previous_population",
+  "restored_default": "scripts/run_economic_market.py --profile legacy-stop (default)",
+  "retained_runtime_repair": "latched market stops, perp reduce-only, actual execution accounting",
+  "rejected_profile": "explicit --profile rejected-economic only; frozen evidence preserved",
+  "historical_matched_window": [
+    {
+      "seed": 7,
+      "profile": "previous-population",
+      "instrument": "V-BTC-SPOT",
+      "start_ms": 1200000,
+      "end_ms": 7200000,
+      "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\endogenous-20261015\\touch7.receipt.json",
+      "receipt_sha256": "07d4b5ce93bb0a6b263ea9450f65c12a8061278a31b2321f0d64a6c559340bcc",
+      "roster_sha256": "63d2b4f7c098aefc8da869b933a50e1e39866bf73ea7bde0cd64357f4b316d10",
+      "ret_acf_lag1": -0.014566741499117549,
+      "longest_same_direction_minutes": 8,
+      "maximum_absolute_minute_return_bps": 6.680659739242145,
+      "peak_to_trough_drawdown_pct": 0.20932388385515033,
+      "no_trade_minute_fraction": 0.0,
+      "actual_trades": 31372,
+      "actual_qty": 53125,
+      "noise_taker_qty_fraction": 0.9113976470588235
+    },
+    {
+      "seed": 7,
+      "profile": "previous-population",
+      "instrument": "V-BTC-PERP",
+      "start_ms": 1200000,
+      "end_ms": 7200000,
+      "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\endogenous-20261015\\touch7.receipt.json",
+      "receipt_sha256": "07d4b5ce93bb0a6b263ea9450f65c12a8061278a31b2321f0d64a6c559340bcc",
+      "roster_sha256": "63d2b4f7c098aefc8da869b933a50e1e39866bf73ea7bde0cd64357f4b316d10",
+      "ret_acf_lag1": 0.3488305477281569,
+      "longest_same_direction_minutes": 9,
+      "maximum_absolute_minute_return_bps": 4.889804854517621,
+      "peak_to_trough_drawdown_pct": 0.18947326432517952,
+      "no_trade_minute_fraction": 0.0,
+      "actual_trades": 33912,
+      "actual_qty": 85619,
+      "noise_taker_qty_fraction": 0.794975414335603
+    },
+    {
+      "seed": 7,
+      "profile": "rejected-economic",
+      "instrument": "V-BTC-SPOT",
+      "start_ms": 1200000,
+      "end_ms": 7200000,
+      "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\economic-market-20261016\\final\\seed-7.receipt.json",
+      "receipt_sha256": "1981eb7cbcebf157b15af93273020a8cfb37f97ede59bbf690c0d9c9a979ad1f",
+      "roster_sha256": "2d8287f48e8aba7028316ebb68f6d15b52a43acccfc2384353286130b2365886",
+      "ret_acf_lag1": 0.6166183544432786,
+      "longest_same_direction_minutes": 28,
+      "maximum_absolute_minute_return_bps": 326.78792345011584,
+      "peak_to_trough_drawdown_pct": 5.962794494984836,
+      "no_trade_minute_fraction": 0.0,
+      "actual_trades": 13371,
+      "actual_qty": 41002,
+      "noise_taker_qty_fraction": 0.15487049412223794
+    },
+    {
+      "seed": 7,
+      "profile": "rejected-economic",
+      "instrument": "V-BTC-PERP",
+      "start_ms": 1200000,
+      "end_ms": 7200000,
+      "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\economic-market-20261016\\final\\seed-7.receipt.json",
+      "receipt_sha256": "1981eb7cbcebf157b15af93273020a8cfb37f97ede59bbf690c0d9c9a979ad1f",
+      "roster_sha256": "2d8287f48e8aba7028316ebb68f6d15b52a43acccfc2384353286130b2365886",
+      "ret_acf_lag1": 0.6632400224057133,
+      "longest_same_direction_minutes": 31,
+      "maximum_absolute_minute_return_bps": 309.754988084201,
+      "peak_to_trough_drawdown_pct": 6.087599910433516,
+      "no_trade_minute_fraction": 0.0,
+      "actual_trades": 18769,
+      "actual_qty": 59787,
+      "noise_taker_qty_fraction": 0.11863783096659809
+    },
+    {
+      "seed": 19,
+      "profile": "previous-population",
+      "instrument": "V-BTC-SPOT",
+      "start_ms": 1200000,
+      "end_ms": 7200000,
+      "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\endogenous-20261015\\touch19.receipt.json",
+      "receipt_sha256": "a1efb655bc2813ccf5d6ad35aaed262aa1cde97f6e002092aea6e6028c77f351",
+      "roster_sha256": "99e13264a83d9c095a65aa966e3547c697626e53a4472f8270f24f168278e4d7",
+      "ret_acf_lag1": -0.12994628353696608,
+      "longest_same_direction_minutes": 7,
+      "maximum_absolute_minute_return_bps": 5.203694740600895,
+      "peak_to_trough_drawdown_pct": 0.11597796418680861,
+      "no_trade_minute_fraction": 0.0,
+      "actual_trades": 32189,
+      "actual_qty": 54012,
+      "noise_taker_qty_fraction": 0.8860253277049545
+    },
+    {
+      "seed": 19,
+      "profile": "previous-population",
+      "instrument": "V-BTC-PERP",
+      "start_ms": 1200000,
+      "end_ms": 7200000,
+      "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\endogenous-20261015\\touch19.receipt.json",
+      "receipt_sha256": "a1efb655bc2813ccf5d6ad35aaed262aa1cde97f6e002092aea6e6028c77f351",
+      "roster_sha256": "99e13264a83d9c095a65aa966e3547c697626e53a4472f8270f24f168278e4d7",
+      "ret_acf_lag1": 0.029418318739632174,
+      "longest_same_direction_minutes": 6,
+      "maximum_absolute_minute_return_bps": 4.293795531520317,
+      "peak_to_trough_drawdown_pct": 0.08293696790439009,
+      "no_trade_minute_fraction": 0.0,
+      "actual_trades": 27475,
+      "actual_qty": 69946,
+      "noise_taker_qty_fraction": 0.7655048180024591
+    },
+    {
+      "seed": 19,
+      "profile": "rejected-economic",
+      "instrument": "V-BTC-SPOT",
+      "start_ms": 1200000,
+      "end_ms": 7200000,
+      "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\economic-market-20261016\\final\\seed-19.receipt.json",
+      "receipt_sha256": "e4f01af7ed906a649cf7f9c840114b9454d0acbf3841f8f680f0a377f81702a7",
+      "roster_sha256": "fc8d817ee820706ef17ed5183101329770b67bddc0f8c13488887cb7f8405780",
+      "ret_acf_lag1": 0.8818436820543107,
+      "longest_same_direction_minutes": 27,
+      "maximum_absolute_minute_return_bps": 1050.9463952794817,
+      "peak_to_trough_drawdown_pct": 51.578059908748266,
+      "no_trade_minute_fraction": 0.0,
+      "actual_trades": 10634,
+      "actual_qty": 36226,
+      "noise_taker_qty_fraction": 0.09454535416551647
+    },
+    {
+      "seed": 19,
+      "profile": "rejected-economic",
+      "instrument": "V-BTC-PERP",
+      "start_ms": 1200000,
+      "end_ms": 7200000,
+      "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\economic-market-20261016\\final\\seed-19.receipt.json",
+      "receipt_sha256": "e4f01af7ed906a649cf7f9c840114b9454d0acbf3841f8f680f0a377f81702a7",
+      "roster_sha256": "fc8d817ee820706ef17ed5183101329770b67bddc0f8c13488887cb7f8405780",
+      "ret_acf_lag1": 0.8984296354927117,
+      "longest_same_direction_minutes": 23,
+      "maximum_absolute_minute_return_bps": 1229.652565866406,
+      "peak_to_trough_drawdown_pct": 51.27164986378732,
+      "no_trade_minute_fraction": 0.0,
+      "actual_trades": 19517,
+      "actual_qty": 91004,
+      "noise_taker_qty_fraction": 0.0552832842512417
+    }
+  ],
+  "controlled_smoke": [
+    {
+      "seed": 7,
+      "runtimes": {
+        "previous-runtime": {
+          "receipt_sha256": "ee438c4b77b3c791fa613518e680cbd9dbd4391b4885c559096d797da448fb41",
+          "recipe_sha256": "3ef9b2e863bec0702354c9180fd313eac6094fc209440d8048d6e5b74c3eb341",
+          "trades": {
+            "V-BTC-PERP": 15580,
+            "V-BTC-SPOT": 15011
+          },
+          "simulation_time_ms": 1800000
+        },
+        "market-stop-runtime": {
+          "receipt_sha256": "ecfd59612f365e3422b3c0c2393328e5c75b987ed0859b013bcf75199796a55f",
+          "recipe_sha256": "3ef9b2e863bec0702354c9180fd313eac6094fc209440d8048d6e5b74c3eb341",
+          "trades": {
+            "V-BTC-PERP": 15553,
+            "V-BTC-SPOT": 15011
+          },
+          "simulation_time_ms": 1800000
+        }
+      },
+      "current_stop_execution": {
+        "stop_triggers": 2,
+        "exit_submissions": 2,
+        "exit_filled_qty": 7,
+        "exit_completions": 2,
+        "exit_remaining_qty": 0,
+        "pending_instances": 0
+      },
+      "identical_trade_prefix_count": 26030,
+      "first_divergent_trade_time_ms": 1389000,
+      "first_market_stop_time_ms": 1389000,
+      "note": "exact recipe match isolates rejected population changes; a short run does not qualify realism"
+    },
+    {
+      "seed": 19,
+      "runtimes": {
+        "previous-runtime": {
+          "receipt_sha256": "d75e3159edb01034bc92217d7561969b9293123d764fb18e4ae0abff2f6bfcc8",
+          "recipe_sha256": "e245c554d2816a93d34eadc325ee7edc8f6732732b20fadec57b4100142f3904",
+          "trades": {
+            "V-BTC-PERP": 9868,
+            "V-BTC-SPOT": 13214
+          },
+          "simulation_time_ms": 1800000
+        },
+        "market-stop-runtime": {
+          "receipt_sha256": "5d5502c16d49be6a3e33ad7fbbb9102e8d0687ef613c01fe6a0161aa70101f42",
+          "recipe_sha256": "e245c554d2816a93d34eadc325ee7edc8f6732732b20fadec57b4100142f3904",
+          "trades": {
+            "V-BTC-PERP": 10452,
+            "V-BTC-SPOT": 13214
+          },
+          "simulation_time_ms": 1800000
+        }
+      },
+      "current_stop_execution": {
+        "stop_triggers": 4,
+        "exit_submissions": 4,
+        "exit_filled_qty": 15,
+        "exit_completions": 4,
+        "exit_remaining_qty": 0,
+        "pending_instances": 0
+      },
+      "identical_trade_prefix_count": 15802,
+      "first_divergent_trade_time_ms": 840000,
+      "first_market_stop_time_ms": 840000,
+      "note": "exact recipe match isolates rejected population changes; a short run does not qualify realism"
+    }
+  ],
+  "zero_trade_quote_probe": {
+    "branches": [
+      {
+        "displacement_bps": 0.0,
+        "first_mid": 89382.5,
+        "inventory": 216,
+        "inventory_offset": 0,
+        "last_mid": 89382.5,
+        "trace": [
+          {
+            "ask": 89466,
+            "bid": 89299,
+            "mid": 89382.5,
+            "time_ms": 14404000
+          },
+          {
+            "ask": 89466,
+            "bid": 89299,
+            "mid": 89382.5,
+            "time_ms": 14405000
+          },
+          {
+            "ask": 89466,
+            "bid": 89299,
+            "mid": 89382.5,
+            "time_ms": 14406000
+          },
+          {
+            "ask": 89466,
+            "bid": 89299,
+            "mid": 89382.5,
+            "time_ms": 14407000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14408000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14409000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14410000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14411000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14412000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14413000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14414000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14415000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14416000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14417000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14418000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14419000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14420000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14421000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14422000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14423000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14424000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14425000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14426000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14427000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14428000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14429000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14430000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14431000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14432000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14433000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14434000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14435000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14436000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14437000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14438000
+          },
+          {
+            "ask": 89506,
+            "bid": 89259,
+            "mid": 89382.5,
+            "time_ms": 14439000
+          },
+          {
+            "ask": 89432,
+            "bid": 89333,
+            "mid": 89382.5,
+            "time_ms": 14444000
+          },
+          {
+            "ask": 89432,
+            "bid": 89333,
+            "mid": 89382.5,
+            "time_ms": 14445000
+          },
+          {
+            "ask": 89432,
+            "bid": 89333,
+            "mid": 89382.5,
+            "time_ms": 14446000
+          },
+          {
+            "ask": 89432,
+            "bid": 89333,
+            "mid": 89382.5,
+            "time_ms": 14447000
+          },
+          {
+            "ask": 89469,
+            "bid": 89296,
+            "mid": 89382.5,
+            "time_ms": 14448000
+          },
+          {
+            "ask": 89469,
+            "bid": 89296,
+            "mid": 89382.5,
+            "time_ms": 14449000
+          },
+          {
+            "ask": 89469,
+            "bid": 89296,
+            "mid": 89382.5,
+            "time_ms": 14450000
+          },
+          {
+            "ask": 89469,
+            "bid": 89296,
+            "mid": 89382.5,
+            "time_ms": 14451000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14452000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14453000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14454000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14455000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14456000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14457000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14458000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14459000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14460000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14461000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14462000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14463000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14464000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14465000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14466000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14467000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14468000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14469000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14470000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14471000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14472000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14473000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14474000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14475000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14476000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14477000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14478000
+          },
+          {
+            "ask": 89492,
+            "bid": 89273,
+            "mid": 89382.5,
+            "time_ms": 14479000
+          },
+          {
+            "ask": 89437,
+            "bid": 89328,
+            "mid": 89382.5,
+            "time_ms": 14484000
+          },
+          {
+            "ask": 89437,
+            "bid": 89328,
+            "mid": 89382.5,
+            "time_ms": 14485000
+          },
+          {
+            "ask": 89437,
+            "bid": 89328,
+            "mid": 89382.5,
+            "time_ms": 14486000
+          },
+          {
+            "ask": 89437,
+            "bid": 89328,
+            "mid": 89382.5,
+            "time_ms": 14487000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14488000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14489000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14490000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14491000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14492000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14493000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14494000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14495000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14496000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14497000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14498000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14499000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14500000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14501000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14502000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14503000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14504000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14505000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14506000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14507000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14508000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14509000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14510000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14511000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14512000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14513000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14514000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14515000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14516000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14517000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14518000
+          },
+          {
+            "ask": 89477,
+            "bid": 89288,
+            "mid": 89382.5,
+            "time_ms": 14519000
+          }
+        ],
+        "trades": 0
+      },
+      {
+        "displacement_bps": -192.26886231575202,
+        "first_mid": 89146.0,
+        "inventory": 324,
+        "inventory_offset": 108,
+        "last_mid": 87432.0,
+        "trace": [
+          {
+            "ask": 89393,
+            "bid": 88899,
+            "mid": 89146.0,
+            "time_ms": 14404000
+          },
+          {
+            "ask": 89393,
+            "bid": 88899,
+            "mid": 89146.0,
+            "time_ms": 14405000
+          },
+          {
+            "ask": 89393,
+            "bid": 88899,
+            "mid": 89146.0,
+            "time_ms": 14406000
+          },
+          {
+            "ask": 89393,
+            "bid": 88899,
+            "mid": 89146.0,
+            "time_ms": 14407000
+          },
+          {
+            "ask": 89393,
+            "bid": 88636,
+            "mid": 89014.5,
+            "time_ms": 14408000
+          },
+          {
+            "ask": 89393,
+            "bid": 88636,
+            "mid": 89014.5,
+            "time_ms": 14409000
+          },
+          {
+            "ask": 89393,
+            "bid": 88636,
+            "mid": 89014.5,
+            "time_ms": 14410000
+          },
+          {
+            "ask": 89393,
+            "bid": 88636,
+            "mid": 89014.5,
+            "time_ms": 14411000
+          },
+          {
+            "ask": 89393,
+            "bid": 88501,
+            "mid": 88947.0,
+            "time_ms": 14412000
+          },
+          {
+            "ask": 89393,
+            "bid": 88501,
+            "mid": 88947.0,
+            "time_ms": 14413000
+          },
+          {
+            "ask": 89393,
+            "bid": 88501,
+            "mid": 88947.0,
+            "time_ms": 14414000
+          },
+          {
+            "ask": 89393,
+            "bid": 88501,
+            "mid": 88947.0,
+            "time_ms": 14415000
+          },
+          {
+            "ask": 89393,
+            "bid": 88423,
+            "mid": 88908.0,
+            "time_ms": 14416000
+          },
+          {
+            "ask": 89393,
+            "bid": 88423,
+            "mid": 88908.0,
+            "time_ms": 14417000
+          },
+          {
+            "ask": 89393,
+            "bid": 88423,
+            "mid": 88908.0,
+            "time_ms": 14418000
+          },
+          {
+            "ask": 89393,
+            "bid": 88423,
+            "mid": 88908.0,
+            "time_ms": 14419000
+          },
+          {
+            "ask": 89393,
+            "bid": 88391,
+            "mid": 88892.0,
+            "time_ms": 14420000
+          },
+          {
+            "ask": 89393,
+            "bid": 88391,
+            "mid": 88892.0,
+            "time_ms": 14421000
+          },
+          {
+            "ask": 89393,
+            "bid": 88391,
+            "mid": 88892.0,
+            "time_ms": 14422000
+          },
+          {
+            "ask": 89393,
+            "bid": 88391,
+            "mid": 88892.0,
+            "time_ms": 14423000
+          },
+          {
+            "ask": 89393,
+            "bid": 88382,
+            "mid": 88887.5,
+            "time_ms": 14424000
+          },
+          {
+            "ask": 89393,
+            "bid": 88382,
+            "mid": 88887.5,
+            "time_ms": 14425000
+          },
+          {
+            "ask": 89393,
+            "bid": 88382,
+            "mid": 88887.5,
+            "time_ms": 14426000
+          },
+          {
+            "ask": 89393,
+            "bid": 88382,
+            "mid": 88887.5,
+            "time_ms": 14427000
+          },
+          {
+            "ask": 89393,
+            "bid": 88367,
+            "mid": 88880.0,
+            "time_ms": 14428000
+          },
+          {
+            "ask": 89393,
+            "bid": 88367,
+            "mid": 88880.0,
+            "time_ms": 14429000
+          },
+          {
+            "ask": 89393,
+            "bid": 88367,
+            "mid": 88880.0,
+            "time_ms": 14430000
+          },
+          {
+            "ask": 89393,
+            "bid": 88367,
+            "mid": 88880.0,
+            "time_ms": 14431000
+          },
+          {
+            "ask": 89393,
+            "bid": 88355,
+            "mid": 88874.0,
+            "time_ms": 14432000
+          },
+          {
+            "ask": 89393,
+            "bid": 88355,
+            "mid": 88874.0,
+            "time_ms": 14433000
+          },
+          {
+            "ask": 89393,
+            "bid": 88355,
+            "mid": 88874.0,
+            "time_ms": 14434000
+          },
+          {
+            "ask": 89393,
+            "bid": 88355,
+            "mid": 88874.0,
+            "time_ms": 14435000
+          },
+          {
+            "ask": 89393,
+            "bid": 88338,
+            "mid": 88865.5,
+            "time_ms": 14436000
+          },
+          {
+            "ask": 89393,
+            "bid": 88338,
+            "mid": 88865.5,
+            "time_ms": 14437000
+          },
+          {
+            "ask": 89393,
+            "bid": 88338,
+            "mid": 88865.5,
+            "time_ms": 14438000
+          },
+          {
+            "ask": 89393,
+            "bid": 88338,
+            "mid": 88865.5,
+            "time_ms": 14439000
+          },
+          {
+            "ask": 88876,
+            "bid": 88365,
+            "mid": 88620.5,
+            "time_ms": 14444000
+          },
+          {
+            "ask": 88876,
+            "bid": 88365,
+            "mid": 88620.5,
+            "time_ms": 14445000
+          },
+          {
+            "ask": 88876,
+            "bid": 88365,
+            "mid": 88620.5,
+            "time_ms": 14446000
+          },
+          {
+            "ask": 88876,
+            "bid": 88365,
+            "mid": 88620.5,
+            "time_ms": 14447000
+          },
+          {
+            "ask": 88876,
+            "bid": 88091,
+            "mid": 88483.5,
+            "time_ms": 14448000
+          },
+          {
+            "ask": 88876,
+            "bid": 88091,
+            "mid": 88483.5,
+            "time_ms": 14449000
+          },
+          {
+            "ask": 88876,
+            "bid": 88091,
+            "mid": 88483.5,
+            "time_ms": 14450000
+          },
+          {
+            "ask": 88876,
+            "bid": 88091,
+            "mid": 88483.5,
+            "time_ms": 14451000
+          },
+          {
+            "ask": 88876,
+            "bid": 87784,
+            "mid": 88330.0,
+            "time_ms": 14452000
+          },
+          {
+            "ask": 88876,
+            "bid": 87784,
+            "mid": 88330.0,
+            "time_ms": 14453000
+          },
+          {
+            "ask": 88876,
+            "bid": 87784,
+            "mid": 88330.0,
+            "time_ms": 14454000
+          },
+          {
+            "ask": 88876,
+            "bid": 87784,
+            "mid": 88330.0,
+            "time_ms": 14455000
+          },
+          {
+            "ask": 88876,
+            "bid": 87613,
+            "mid": 88244.5,
+            "time_ms": 14456000
+          },
+          {
+            "ask": 88876,
+            "bid": 87613,
+            "mid": 88244.5,
+            "time_ms": 14457000
+          },
+          {
+            "ask": 88876,
+            "bid": 87613,
+            "mid": 88244.5,
+            "time_ms": 14458000
+          },
+          {
+            "ask": 88876,
+            "bid": 87613,
+            "mid": 88244.5,
+            "time_ms": 14459000
+          },
+          {
+            "ask": 88876,
+            "bid": 87526,
+            "mid": 88201.0,
+            "time_ms": 14460000
+          },
+          {
+            "ask": 88876,
+            "bid": 87526,
+            "mid": 88201.0,
+            "time_ms": 14461000
+          },
+          {
+            "ask": 88876,
+            "bid": 87526,
+            "mid": 88201.0,
+            "time_ms": 14462000
+          },
+          {
+            "ask": 88876,
+            "bid": 87526,
+            "mid": 88201.0,
+            "time_ms": 14463000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14464000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14465000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14466000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14467000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14468000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14469000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14470000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14471000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14472000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14473000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14474000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14475000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14476000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14477000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14478000
+          },
+          {
+            "ask": 88876,
+            "bid": 87481,
+            "mid": 88178.5,
+            "time_ms": 14479000
+          },
+          {
+            "ask": 88189,
+            "bid": 87520,
+            "mid": 87854.5,
+            "time_ms": 14484000
+          },
+          {
+            "ask": 88189,
+            "bid": 87520,
+            "mid": 87854.5,
+            "time_ms": 14485000
+          },
+          {
+            "ask": 88189,
+            "bid": 87520,
+            "mid": 87854.5,
+            "time_ms": 14486000
+          },
+          {
+            "ask": 88189,
+            "bid": 87520,
+            "mid": 87854.5,
+            "time_ms": 14487000
+          },
+          {
+            "ask": 88189,
+            "bid": 87117,
+            "mid": 87653.0,
+            "time_ms": 14488000
+          },
+          {
+            "ask": 88189,
+            "bid": 87117,
+            "mid": 87653.0,
+            "time_ms": 14489000
+          },
+          {
+            "ask": 88189,
+            "bid": 87117,
+            "mid": 87653.0,
+            "time_ms": 14490000
+          },
+          {
+            "ask": 88189,
+            "bid": 87117,
+            "mid": 87653.0,
+            "time_ms": 14491000
+          },
+          {
+            "ask": 88189,
+            "bid": 86890,
+            "mid": 87539.5,
+            "time_ms": 14492000
+          },
+          {
+            "ask": 88189,
+            "bid": 86890,
+            "mid": 87539.5,
+            "time_ms": 14493000
+          },
+          {
+            "ask": 88189,
+            "bid": 86890,
+            "mid": 87539.5,
+            "time_ms": 14494000
+          },
+          {
+            "ask": 88189,
+            "bid": 86890,
+            "mid": 87539.5,
+            "time_ms": 14495000
+          },
+          {
+            "ask": 88189,
+            "bid": 86769,
+            "mid": 87479.0,
+            "time_ms": 14496000
+          },
+          {
+            "ask": 88189,
+            "bid": 86769,
+            "mid": 87479.0,
+            "time_ms": 14497000
+          },
+          {
+            "ask": 88189,
+            "bid": 86769,
+            "mid": 87479.0,
+            "time_ms": 14498000
+          },
+          {
+            "ask": 88189,
+            "bid": 86769,
+            "mid": 87479.0,
+            "time_ms": 14499000
+          },
+          {
+            "ask": 88189,
+            "bid": 86707,
+            "mid": 87448.0,
+            "time_ms": 14500000
+          },
+          {
+            "ask": 88189,
+            "bid": 86707,
+            "mid": 87448.0,
+            "time_ms": 14501000
+          },
+          {
+            "ask": 88189,
+            "bid": 86707,
+            "mid": 87448.0,
+            "time_ms": 14502000
+          },
+          {
+            "ask": 88189,
+            "bid": 86707,
+            "mid": 87448.0,
+            "time_ms": 14503000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14504000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14505000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14506000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14507000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14508000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14509000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14510000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14511000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14512000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14513000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14514000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14515000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14516000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14517000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14518000
+          },
+          {
+            "ask": 88189,
+            "bid": 86675,
+            "mid": 87432.0,
+            "time_ms": 14519000
+          }
+        ],
+        "trades": 0
+      }
+    ],
+    "duration_seconds": 120,
+    "participant": "maker-spot-0",
+    "restored_state_from": ".local\\economic-market-20261016\\final\\seed-41.receipt.json"
+  },
+  "limits": [
+    "The original recipe still has fee-unaware quotes, reactive-noise-dominated volume and quote-reference feedback.",
+    "The 30-minute paired run validates restoration and retained stop execution, not multi-hour realism.",
+    "Quote-reference feedback has been reproduced, not repaired in this rollback.",
+    "The combined failed experiment cannot attribute all degradation to one individual parameter."
+  ]
+}

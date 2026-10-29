@@ -218,6 +218,23 @@ struct State {
     switches: u64,
     stop_outs: u64,
     style_decisions: [u64; 3],
+    /// A triggered exit stays latched through partial fills, empty books and restart.
+    #[serde(default)]
+    exit_pending: bool,
+    #[serde(default)]
+    stop_triggers: u64,
+    #[serde(default)]
+    exit_requests: u64,
+    #[serde(default)]
+    exit_submissions: u64,
+    #[serde(default)]
+    exit_filled_qty: u64,
+    #[serde(default)]
+    exit_rejections: u64,
+    #[serde(default)]
+    exit_completions: u64,
+    #[serde(default)]
+    exit_remaining_qty: u64,
 }
 
 impl State {
@@ -371,6 +388,64 @@ impl Trader {
                 .unwrap_or(self.c.fallback_price_tick as f64),
         };
         self.observe(v, mid);
+        // Risk exits are checked on every delivered observation, independent of
+        // the stochastic signal timer. A stop is a market exit, not a new
+        // price-limited rebalance; the venue remains authoritative for fills.
+        let position = match v.own_account.as_ref() {
+            Some(AccountSnapshot::Spot(a)) => a.position_qty,
+            Some(AccountSnapshot::Perp(a)) => a.position_qty,
+            None => return Ok(vec![]),
+        };
+        let internal = matches!(v.own_account, Some(AccountSnapshot::Spot(_)))
+            || self.c.stop_mode == "Internal";
+        let hit = internal
+            && position != 0
+            && self.state.stop_tick.is_some_and(|stop| {
+                if position > 0 {
+                    mid <= stop as f64
+                } else {
+                    mid >= stop as f64
+                }
+            });
+        if hit && !self.state.exit_pending {
+            self.state.exit_pending = true;
+            self.state.stop_triggers += 1;
+            self.state.stop_outs += 1;
+        }
+        if self.state.exit_pending {
+            let s = &mut self.state;
+            s.style = Style::Out;
+            s.target = 0;
+            s.last_position = position.clamp(i64::MIN.into(), i64::MAX.into()) as i64;
+            s.exit_remaining_qty = position.unsigned_abs().min(u64::MAX.into()) as u64;
+            if position == 0 {
+                s.exit_pending = false;
+                s.exit_completions += 1;
+                s.stop_tick = None;
+                s.cooldown_until_ms = now.saturating_add(self.c.stop_cooldown_ms);
+                return Ok(vec![]);
+            }
+            let mut actions: Vec<_> = v
+                .own_orders
+                .iter()
+                .map(|o| OrderAction::Cancel {
+                    order_id: o.order_id,
+                })
+                .collect();
+            let qty = s.exit_remaining_qty / lot * lot;
+            if qty > 0 {
+                let side = if position > 0 { Side::Sell } else { Side::Buy };
+                // Spot forbids the reduce_only flag, but its no-short risk
+                // check still prevents an exit from opening a short position.
+                actions.push(if matches!(v.own_account, Some(AccountSnapshot::Spot(_))) {
+                    OrderAction::PlaceMarket { side, qty }
+                } else {
+                    OrderAction::PlaceReduceOnlyMarket { side, qty }
+                });
+                s.exit_requests += 1;
+            }
+            return Ok(actions);
+        }
         if now < self.state.next_ms {
             return Ok(vec![]);
         }
@@ -455,21 +530,6 @@ impl Trader {
         let mut actions = vec![];
         // Spot, or perpetual in Internal mode, checks the stop itself.
         let internal = spot || self.c.stop_mode == "Internal";
-        let stopped_internally = internal
-            && position != 0
-            && s.stop_tick.is_some_and(|stop| {
-                if position > 0 {
-                    mid <= stop as f64
-                } else {
-                    mid >= stop as f64
-                }
-            });
-        if stopped_internally {
-            s.stop_outs += 1;
-            s.style = Style::Out;
-            s.target = 0;
-            s.cooldown_until_ms = now.saturating_add(self.c.stop_cooldown_ms);
-        }
         let delta = s.target - position;
         let min_trade = (capacity * self.c.min_trade_ppm as f64 / 1e6).max(lot as f64);
         if (delta.unsigned_abs() as f64) >= min_trade || (s.target == 0 && delta != 0) {
@@ -477,7 +537,7 @@ impl Trader {
             // Exits (stop-outs, going flat) are worked at twice the normal
             // child size so one bot cannot sweep a thin book in one order.
             let normal = ((capacity * self.c.child_ppm as f64 / 1e6) as u64).max(lot);
-            let child_cap = if stopped_internally || s.style == Style::Out {
+            let child_cap = if s.style == Style::Out {
                 normal.saturating_mul(2)
             } else {
                 normal
@@ -558,6 +618,38 @@ impl Trader {
 }
 
 impl ScheduledBot for Trader {
+    fn execution_feedback(&mut self, action: &OrderAction, execution: &GatewayExecution) {
+        if !self.state.exit_pending
+            || !matches!(
+                action,
+                OrderAction::PlaceMarket { .. } | OrderAction::PlaceReduceOnlyMarket { .. }
+            )
+        {
+            return;
+        }
+        self.state.exit_submissions += 1;
+        let ActorExecutionResult::Accepted(result) = &execution.execution.result else {
+            self.state.exit_rejections += 1;
+            return;
+        };
+        let events = match result {
+            MarketExecution::Spot(r) => &r.events,
+            MarketExecution::Perp(r) => &r.events,
+        };
+        for event in events {
+            match &event.event {
+                Event::TradePrinted(t) if t.taker_account_id == self.p.participant.account_id => {
+                    self.state.exit_filled_qty += t.qty;
+                    self.state.exit_remaining_qty =
+                        self.state.exit_remaining_qty.saturating_sub(t.qty);
+                }
+                Event::OrderRejected { .. } | Event::RiskRejected { .. } => {
+                    self.state.exit_rejections += 1
+                }
+                _ => {}
+            }
+        }
+    }
     fn decide(&mut self, v: &ParticipantObservation) -> Result<Vec<OrderAction>, BotError> {
         if v.room_id != self.p.participant.room_id {
             return Err(BotError("style trader room mismatch".into()));

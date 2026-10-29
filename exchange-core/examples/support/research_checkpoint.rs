@@ -72,12 +72,22 @@ fn merge(total: &mut Value, part: Value) {
             total[key][id] = json!(old + count.as_u64().unwrap());
         }
     }
-    for key in ["trade_receipts", "book_snapshots"] {
+    for key in ["trade_receipts", "book_snapshots", "market_exit_receipts"] {
+        if total[key].is_null() {
+            total[key] = json!([]);
+        }
+        let Some(rows) = part[key].as_array() else {
+            continue;
+        };
         total[key]
             .as_array_mut()
             .unwrap()
-            .extend(part[key].as_array().unwrap().iter().cloned());
+            .extend(rows.iter().cloned());
     }
+    total["economic_quote_checks"] = json!(
+        total["economic_quote_checks"].as_u64().unwrap_or(0)
+            + part["economic_quote_checks"].as_u64().unwrap_or(0)
+    );
     total["steps"] = json!(total["steps"].as_u64().unwrap() + part["steps"].as_u64().unwrap());
     for key in ["simulation_time_ms", "assets_after", "states"] {
         total[key] = part[key].clone();

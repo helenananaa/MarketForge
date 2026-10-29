@@ -15,6 +15,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 pub(crate) const ID: &str = "BasisLinkTrader";
 pub(crate) const VERSION: &str = "1.0.0";
+const COST_VERSION: &str = "1.1.0";
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -31,6 +32,10 @@ struct Config {
     jitter_ms: u64,
     target_leverage: u32,
     fee_buffer_ppm: u32,
+    #[serde(default)]
+    round_trip_fee_ppm: u32,
+    #[serde(default)]
+    minimum_edge_ppm: u32,
 }
 
 fn n(default: i64, min: i64, max: i64) -> BotParameter {
@@ -56,7 +61,7 @@ fn s(default: &str, choices: &[&str]) -> BotParameter {
 }
 
 pub(crate) fn register(r: &mut BotRegistry) {
-    let parameters = BTreeMap::from([
+    let mut parameters = BTreeMap::from([
         ("leg".into(), s("Spot", &["Spot", "Perp"])),
         (
             "hedge_instrument_id".into(),
@@ -76,6 +81,15 @@ pub(crate) fn register(r: &mut BotRegistry) {
         ("target_leverage".into(), n(2, 1, 20)),
         ("fee_buffer_ppm".into(), n(1000, 0, 100000)),
     ]);
+    for name in ["round_trip_fee_ppm", "minimum_edge_ppm"] {
+        parameters.insert(
+            name.into(),
+            BotParameter {
+                default: None,
+                ..n(0, 0, 100000)
+            },
+        );
+    }
     r.register(Factory(BotDescriptor {
         id: ID.into(),
         name: "双向现货永续基差交易者".into(),
@@ -94,8 +108,29 @@ impl Factory {
         let AgentTemplate::Plugin(p) = t else {
             return Err(BotError("basis plugin required".into()));
         };
-        if p.plugin_id != ID || p.plugin_version != VERSION || p.state_version != 1 {
+        if p.plugin_id != ID
+            || ![VERSION, COST_VERSION].contains(&p.plugin_version.as_str())
+            || p.state_version != 1
+        {
             return Err(BotError("basis trader identity mismatch".into()));
+        }
+        let fields = ["round_trip_fee_ppm", "minimum_edge_ppm"];
+        let supplied = p
+            .config
+            .as_object()
+            .is_some_and(|c| fields.iter().any(|k| c.contains_key(*k)));
+        if p.plugin_version == VERSION && supplied {
+            return Err(BotError("basis fee contract requires 1.1.0".into()));
+        }
+        if p.plugin_version == COST_VERSION
+            && !p
+                .config
+                .as_object()
+                .is_some_and(|c| fields.iter().all(|k| c.contains_key(*k)))
+        {
+            return Err(BotError(
+                "basis 1.1.0 requires explicit round-trip fees and edge".into(),
+            ));
         }
         let mut p = p.clone();
         p.config = self.0.validate_config(&p.config)?;
@@ -113,6 +148,9 @@ impl Factory {
 }
 
 impl BotFactory for Factory {
+    fn supports_plugin_version(&self, version: &str) -> bool {
+        [VERSION, COST_VERSION].contains(&version)
+    }
     fn descriptor(&self) -> &BotDescriptor {
         &self.0
     }
@@ -140,7 +178,7 @@ impl BotFactory for Factory {
         else {
             return Err(BotError("basis trader state required".into()));
         };
-        if plugin_id != ID || plugin_version != VERSION || *state_version != 1 {
+        if plugin_id != ID || *plugin_version != p.plugin_version || *state_version != 1 {
             return Err(BotError("basis trader state version mismatch".into()));
         }
         let state = if data.is_null() {
@@ -316,7 +354,7 @@ impl Trader {
             if residual.abs() > self.c.step_qty as i64 {
                 return Ok(vec![]);
             }
-            let target = lead_target(
+            let mut target = lead_target(
                 p,
                 basis,
                 self.c.entry_ppm as f64 / 1e6,
@@ -325,12 +363,37 @@ impl Trader {
                 self.c.max_hedge,
                 s.max(0) + p.max(0),
             );
+            // Flatten before reversing: the profitability gate for a new
+            // opposite entry must never block closing the existing hedge.
+            if self.p.plugin_version == COST_VERSION && p != 0 && target.signum() != p.signum() {
+                target = 0;
+            }
             let delta = target - p;
             if delta == 0 {
                 return Ok(vec![]);
             }
             let exit = self.c.exit_ppm as f64 / 1e6;
             let unwinding = target.abs() < p.abs();
+            // Entry must leave room for BOTH legs' entry/exit fees, the
+            // intended residual basis and the observed cost of closing the
+            // two books. Hedge/unwind orders remain risk exits, not entries.
+            let premium = if self.p.plugin_version == COST_VERSION && !unwinding {
+                let half_spreads = [spot, perp]
+                    .iter()
+                    .filter_map(|v| {
+                        let b = v.book.bids.first()?;
+                        let a = v.book.asks.first()?;
+                        Some(
+                            (a.price_tick - b.price_tick) as f64
+                                / (a.price_tick + b.price_tick) as f64,
+                        )
+                    })
+                    .sum::<f64>();
+                exit + (self.c.round_trip_fee_ppm + self.c.minimum_edge_ppm) as f64 / 1e6
+                    + half_spreads
+            } else {
+                exit
+            };
             if unwinding {
                 self.state.unwinds += 1;
             } else {
@@ -344,7 +407,16 @@ impl Trader {
                     if unwinding {
                         l
                     } else {
-                        l.min(spot_mid * (1. - exit))
+                        l.min(
+                            if self.p.plugin_version == COST_VERSION {
+                                spot.book
+                                    .bids
+                                    .first()
+                                    .map_or(spot_mid, |b| b.price_tick as f64)
+                            } else {
+                                spot_mid
+                            } * (1. - premium),
+                        )
                     },
                 )
             } else {
@@ -354,7 +426,16 @@ impl Trader {
                     if unwinding {
                         l
                     } else {
-                        l.max(spot_mid * (1. + exit))
+                        l.max(
+                            if self.p.plugin_version == COST_VERSION {
+                                spot.book
+                                    .asks
+                                    .first()
+                                    .map_or(spot_mid, |a| a.price_tick as f64)
+                            } else {
+                                spot_mid
+                            } * (1. + premium),
+                        )
                     },
                 )
             };
@@ -429,7 +510,7 @@ impl ScheduledBot for Trader {
     fn snapshot(&self) -> PersistedAgentKindState {
         PersistedAgentKindState::Plugin {
             plugin_id: ID.into(),
-            plugin_version: VERSION.into(),
+            plugin_version: self.p.plugin_version.clone(),
             state_version: 1,
             data: Arc::new(serde_json::to_value(&self.state).expect("basis state")),
         }
@@ -439,6 +520,98 @@ impl ScheduledBot for Trader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn executable_basis_entry_covers_both_legs_fees_and_survives_restore() {
+        let registry = BotRegistry::with_builtins();
+        let template = |version: &str| {
+            AgentTemplate::Plugin(BotConfig {
+                participant: ParticipantConfig {
+                    participant_id: "basis".into(),
+                    kind: ParticipantKind::Strategy,
+                    room_id: "basis".into(),
+                    account_id: 20,
+                    instrument_id: Some("PERP".into()),
+                },
+                plugin_id: ID.into(),
+                plugin_version: version.into(),
+                config_version: 1,
+                state_version: 1,
+                seed: 7,
+                config: if version == VERSION {
+                    json!({"leg":"Perp","hedge_instrument_id":"SPOT","entry_ppm":1000,"exit_ppm":300})
+                } else {
+                    json!({"leg":"Perp","hedge_instrument_id":"SPOT","entry_ppm":1000,"exit_ppm":300,"round_trip_fee_ppm":1200,"minimum_edge_ppm":10})
+                },
+            })
+        };
+        let account=serde_json::from_value::<crate::PerpAccountSnapshot>(json!({"account_id":20,"cash_balance":1000000000,
+            "position_qty":0,"avg_entry_price_tick":0,"realized_pnl":0,"unrealized_pnl":0,"equity":1000000000,
+            "initial_margin":0,"fees_paid":0,"margin_status":"flat"})).unwrap();
+        let mut value = json!({"version":1,"room_id":"basis","venue_id":"default-venue","instrument_id":"PERP",
+            "status":MarketStatus::Running,"step":0,"market_time_ms":0,"book":{"bids":[{"price_tick":99870,"qty":100}],"asks":[{"price_tick":99890,"qty":100}]},
+            "public_trades":[],"own_orders":[],"own_account":AccountSnapshot::Perp(account)});
+        let mut peer = value.clone();
+        peer["instrument_id"] = json!("SPOT");
+        peer["book"] = json!({"bids":[{"price_tick":99990,"qty":100}],"asks":[{"price_tick":100010,"qty":100}]});
+        peer["own_account"] = json!(AccountSnapshot::Spot(
+            SpotAccount {
+                account_id: 20,
+                cash_balance: 1000000000,
+                position_qty: 100,
+                reserved_cash: 0,
+                reserved_position: 0,
+                fees_paid: 0
+            }
+            .snapshot()
+        ));
+        value["related_markets"] = json!([peer]);
+        let v: ParticipantObservation = serde_json::from_value(value).unwrap();
+        let old = template(VERSION);
+        let mut oldbot = registry.create(&old, &old.initial_state()).unwrap();
+        assert!(
+            !oldbot.decide(&v).unwrap().is_empty(),
+            "legacy mid-basis rule pays for an edge smaller than fees"
+        );
+        let new = template(COST_VERSION);
+        let mut bot = registry.create(&new, &new.initial_state()).unwrap();
+        assert!(
+            bot.decide(&v).unwrap().is_empty(),
+            "do not trade an unprofitable executable basis"
+        );
+        let restored = registry.create(&new, &bot.snapshot()).unwrap();
+        assert_eq!(restored.snapshot(), bot.snapshot());
+        let mut cheap = v.clone();
+        cheap.market_time_ms = 10000;
+        cheap.book.bids[0].price_tick = 99490;
+        cheap.book.asks[0].price_tick = 99510;
+        let actions = bot.decide(&cheap).unwrap();
+        assert!(
+            !actions.is_empty(),
+            "a sufficiently large executable opportunity remains tradable"
+        );
+        assert!(actions.iter().all(|a|matches!(a,OrderAction::PlaceProtected{side:Side::Buy,price_tick,..} if *price_tick<99830)));
+        let mut exit = v.clone();
+        if let Some(AccountSnapshot::Perp(a)) = &mut exit.own_account {
+            a.position_qty = -4;
+        }
+        if let Some(AccountSnapshot::Spot(a)) = &mut exit.related_markets[0].own_account {
+            a.position_qty = 104;
+        }
+        let mut exitbot = registry.create(&new, &new.initial_state()).unwrap();
+        let unwind = exitbot.decide(&exit).unwrap();
+        assert!(
+            unwind.iter().any(|a| matches!(
+                a,
+                OrderAction::PlaceProtected {
+                    side: Side::Buy,
+                    qty: 4,
+                    ..
+                }
+            )),
+            "a new-entry fee gate must not block unwinding an existing hedge"
+        );
+    }
 
     #[test]
     fn lead_target_closes_gaps_holds_band_and_unwinds() {

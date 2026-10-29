@@ -19,6 +19,8 @@ const ID: &str = "AdaptiveLiquidityMaker";
 /// identities and snapshots are byte-identical to the original release.
 const VERSION: &str = "1.0.0";
 const FLOW_VERSION: &str = "1.1.0";
+const ECONOMIC_VERSION: &str = "1.2.0";
+const COST_PARAMETERS: [&str; 2] = ["maker_fee_ppm", "minimum_edge_ppm"];
 const FLOW_PARAMETERS: [&str; 3] = ["flow_skew_ppm", "flow_widen_ppm", "flow_half_life_ms"];
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -50,6 +52,10 @@ struct Config {
     flow_widen_ppm: u32,
     #[serde(default)]
     flow_half_life_ms: u64,
+    #[serde(default)]
+    maker_fee_ppm: u32,
+    #[serde(default)]
+    minimum_edge_ppm: u32,
 }
 fn n(default: i64, min: i64, max: i64) -> BotParameter {
     BotParameter {
@@ -93,6 +99,15 @@ pub(crate) fn register(r: &mut BotRegistry) {
             },
         );
     }
+    for name in COST_PARAMETERS {
+        parameters.insert(
+            name.into(),
+            BotParameter {
+                default: None,
+                ..n(0, 0, 100000)
+            },
+        );
+    }
     parameters.insert(
         "model".into(),
         BotParameter {
@@ -122,7 +137,7 @@ impl Factory {
             return Err(BotError("maker plugin required".into()));
         };
         if p.plugin_id != ID
-            || ![VERSION, FLOW_VERSION].contains(&p.plugin_version.as_str())
+            || ![VERSION, FLOW_VERSION, ECONOMIC_VERSION].contains(&p.plugin_version.as_str())
             || p.state_version != 1
         {
             return Err(BotError("maker identity mismatch".into()));
@@ -133,6 +148,23 @@ impl Factory {
             .is_some_and(|c| FLOW_PARAMETERS.iter().any(|k| c.contains_key(*k)));
         if p.plugin_version == VERSION && flow_keys {
             return Err(BotError("flow parameters require maker 1.1.0".into()));
+        }
+        let cost_keys = p
+            .config
+            .as_object()
+            .is_some_and(|c| COST_PARAMETERS.iter().any(|k| c.contains_key(*k)));
+        if p.plugin_version != ECONOMIC_VERSION && cost_keys {
+            return Err(BotError("cost parameters require maker 1.2.0".into()));
+        }
+        if p.plugin_version == ECONOMIC_VERSION
+            && !p
+                .config
+                .as_object()
+                .is_some_and(|c| COST_PARAMETERS.iter().all(|k| c.contains_key(*k)))
+        {
+            return Err(BotError(
+                "maker 1.2.0 requires an explicit venue maker fee and minimum edge".into(),
+            ));
         }
         let mut p = p.clone();
         p.config = self.0.validate_config(&p.config)?;
@@ -153,7 +185,7 @@ impl BotFactory for Factory {
         &self.0
     }
     fn supports_plugin_version(&self, version: &str) -> bool {
-        [VERSION, FLOW_VERSION].contains(&version)
+        [VERSION, FLOW_VERSION, ECONOMIC_VERSION].contains(&version)
     }
     fn supports_native_batching(&self) -> bool {
         true
@@ -413,7 +445,7 @@ impl Maker {
                 }
             }
         }
-        if self.p.plugin_version == FLOW_VERSION && self.c.flow_half_life_ms > 0 {
+        if self.p.plugin_version != VERSION && self.c.flow_half_life_ms > 0 {
             self.observe_flow(v);
         }
         self.state.last_ms = Some(v.market_time_ms);
@@ -480,7 +512,7 @@ impl Maker {
             self.c.min_half_spread_ticks as f64,
             self.c.max_half_spread_ticks as f64,
         );
-        if self.p.plugin_version == FLOW_VERSION {
+        if self.p.plugin_version != VERSION {
             // Persistent one-sided flow (decayed memory) only widens against
             // adverse selection. The quote leans once per unit of *new* flow
             // since the previous quote: a permanent, non-compounding impact,
@@ -503,6 +535,14 @@ impl Maker {
             self.state.center = self.state.center.clamp(mid - reach, mid + reach);
         }
         let mut desired = BTreeMap::new();
+        // Each quote must cover its actual execution fee plus the configured
+        // minimum edge at this observation's mid, even after inventory skew.
+        // A narrow configured maximum is not permission to quote at a loss.
+        let cost = if self.p.plugin_version == ECONOMIC_VERSION {
+            f64::from(self.c.maker_fee_ppm + self.c.minimum_edge_ppm) / 1e6
+        } else {
+            0.
+        };
         for level in 0..self.c.levels {
             let dist =
                 (self.state.half_spread + level as f64 * self.c.level_spacing_ticks as f64) * tick;
@@ -512,11 +552,23 @@ impl Maker {
                 } else {
                     ((self.state.center + dist) / tick).ceil() * tick
                 };
-                let price = if side == Side::Buy {
+                let mut price = if side == Side::Buy {
                     ask.map_or(raw, |a| raw.min(a.price_tick as f64 - tick))
                 } else {
                     bid.map_or(raw, |b| raw.max(b.price_tick as f64 + tick))
                 } as i64;
+                if self.p.plugin_version == ECONOMIC_VERSION {
+                    let offset = i64::from(level) * self.c.level_spacing_ticks * precision.0.max(1);
+                    price = if side == Side::Buy {
+                        price.min(
+                            (mid / (1. + cost) / tick).floor() as i64 * precision.0.max(1) - offset,
+                        )
+                    } else {
+                        price.max(
+                            (mid / (1. - cost) / tick).ceil() as i64 * precision.0.max(1) + offset,
+                        )
+                    };
+                }
                 if price <= 0 {
                     continue;
                 }
@@ -535,6 +587,74 @@ impl Maker {
                     ((self.c.max_qty as f64 * factor).round() as u64 / precision.1) * precision.1;
                 desired.insert((if side == Side::Buy { 0 } else { 1 }, price), qty);
             }
+        }
+        if self.p.plugin_version == ECONOMIC_VERSION {
+            // Amend existing post-only quotes through the authoritative gateway:
+            // failed amendments retain the old order. Reprice without a whole
+            // cancel-only observation wave; only new levels use free budget.
+            let mut actions = vec![];
+            let mut levels: [Vec<_>; 2] = [vec![], vec![]];
+            for o in v.own_orders {
+                levels[usize::from(o.side == Side::Sell)].push(o);
+            }
+            for orders in &mut levels {
+                orders.sort_by_key(|o| o.order_id);
+            }
+            for ((s, price), target) in desired {
+                let side = if s == 0 { Side::Buy } else { Side::Sell };
+                if let Some(order) = levels[s].pop() {
+                    if budget.reduce_only
+                        || v.market_time_ms - self.state.born[&order.order_id]
+                            >= self.c.quote_ttl_ms
+                    {
+                        actions.push(OrderAction::Cancel {
+                            order_id: order.order_id,
+                        });
+                    } else if order.price_tick != price {
+                        // Quantity is retained: the engine rechecks collateral,
+                        // position limits and post-only crossing atomically.
+                        actions.push(OrderAction::Amend {
+                            order_id: order.order_id,
+                            price_tick: Some(price),
+                            qty: None,
+                        });
+                    }
+                } else {
+                    let qty = budget.allocate(side, price, target) / precision.1 * precision.1;
+                    if qty > 0 {
+                        actions.push(if budget.reduce_only {
+                            OrderAction::PlaceProtected {
+                                side,
+                                position_side: PositionSide::Both,
+                                qty,
+                                order_type: model::ProtectedOrderType::PostOnly,
+                                price_tick: price,
+                                reduce_only: true,
+                                valid_until_market_time_ms: None,
+                                expires_at_market_time_ms: None,
+                            }
+                        } else {
+                            OrderAction::PlacePostOnly {
+                                side,
+                                price_tick: price,
+                                qty,
+                            }
+                        });
+                    }
+                }
+            }
+            for order in levels.into_iter().flatten() {
+                actions.push(OrderAction::Cancel {
+                    order_id: order.order_id,
+                });
+            }
+            self.state.pending_signed = 0.;
+            self.state.pending_total = 0.;
+            self.state.quoted += actions
+                .iter()
+                .filter(|a| !matches!(a, OrderAction::Cancel { .. }))
+                .count() as u64;
+            return Ok(actions);
         }
         let mut cancels = vec![];
         for o in v.own_orders {
@@ -812,5 +932,65 @@ mod tests {
         assert!((c2 - 0.3003387451171875).abs() < 1e-12);
         assert!(glft(0.05, 1., 0.4).1 > c2);
         assert!(glft(0.05, 2., 0.2).0 > c1);
+    }
+
+    #[test]
+    fn economic_quotes_cover_fees_after_skew_and_reprice_without_cancel_wave() {
+        let registry = BotRegistry::with_builtins();
+        let t = template(
+            ECONOMIC_VERSION,
+            json!({"inventory_target":0,"inventory_cap":100,
+            "maker_fee_ppm":1000,"minimum_edge_ppm":100,"max_half_spread_ticks":1,
+            "min_half_spread_ticks":1,"levels":2,"refresh_ms":1000,"jitter_ms":0}),
+        );
+        let mut bot = registry.create(&t, &t.initial_state()).unwrap();
+        let first = bot.decide(&observation(0, vec![])).unwrap();
+        assert_eq!(
+            first.len(),
+            4,
+            "fee clipping must not collapse all depth levels"
+        );
+        let mut v = observation(1, vec![]);
+        for (i, a) in first.iter().enumerate() {
+            let OrderAction::PlacePostOnly {
+                side,
+                price_tick,
+                qty,
+            } = a
+            else {
+                panic!("post only");
+            };
+            match side {
+                Side::Buy => assert!((*price_tick as f64) * 1.0011 <= 10000.),
+                Side::Sell => assert!((*price_tick as f64) * 0.9989 >= 10000.),
+            }
+            v.own_orders.push(crate::Order {
+                order_id: 100 + i as u64,
+                account_id: 20,
+                side: *side,
+                position_side: PositionSide::Both,
+                price_tick: *price_tick,
+                remaining_qty: *qty,
+                seq: i as u64,
+            });
+        }
+        v.book.bids[0].price_tick += 100;
+        v.book.asks[0].price_tick += 100;
+        let actions = bot.decide(&v).unwrap();
+        assert_eq!(actions.len(), 4);
+        assert!(
+            actions
+                .iter()
+                .all(|a| matches!(a, OrderAction::Amend { .. })),
+            "replace quotes without dropping the whole book: {actions:?}"
+        );
+        let restored = registry.create(&t, &bot.snapshot()).unwrap();
+        assert_eq!(restored.snapshot(), bot.snapshot());
+        let wrong_version = template(FLOW_VERSION, json!({"maker_fee_ppm":100}));
+        assert!(
+            registry
+                .create(&wrong_version, &wrong_version.initial_state())
+                .is_err()
+        );
     }
 }

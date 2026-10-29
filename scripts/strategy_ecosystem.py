@@ -24,7 +24,7 @@ def varied_parameters(family,index):
     return {k:p[k]for k in keys}
 
 def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',original_manifest=None,capital_scale=10.0,periods=None,
-               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False,maker_depth_scale=None,perp_maker_depth_scale=None):
+               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False,maker_depth_scale=None,perp_maker_depth_scale=None,economic_flow=False,session_ms=14400000):
     if not 100<=count<=10000:raise ValueError('population must be within 100..10000')
     if runtime not in ('native','pine','mixed'):raise ValueError('unknown runtime')
     if value_model not in ('static','endogenous'):raise ValueError('unknown value model')
@@ -48,12 +48,16 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     # basis points at the anchor). Cash scales with price so lot counts match.
     if price_scale<1 or int(price_scale)!=price_scale:raise ValueError('price scale must be a positive integer')
     if fast_flow and flow_mix!='rebalanced':raise ValueError('fast flow requires --flow-mix rebalanced')
+    if economic_flow and (not fast_flow or not ecology or value_model!='endogenous'):
+        raise ValueError('economic flow requires fast flow, ecology and endogenous valuation')
+    if economic_flow and (not isinstance(session_ms,int) or session_ms<1200000):
+        raise ValueError('economic session must be at least 20 minutes')
     price_scale=int(price_scale);capital_scale*=price_scale
     # Fast flow defaults: fast-refreshing makers quote thin, closely spaced
     # levels (perp deeper, as it carries more volume), so net taker flow moves
     # the price while the touch stays one or two ticks wide.
-    if maker_depth_scale is None:maker_depth_scale=.08 if fast_flow else 1.0
-    if perp_maker_depth_scale is None:perp_maker_depth_scale=.18 if fast_flow else maker_depth_scale
+    if maker_depth_scale is None:maker_depth_scale=.08 if fast_flow and not economic_flow else 1.0
+    if perp_maker_depth_scale is None:perp_maker_depth_scale=.18 if fast_flow and not economic_flow else maker_depth_scale
     if not(0<maker_depth_scale<=1 and 0<perp_maker_depth_scale<=1):raise ValueError('maker depth scales must be within (0, 1]')
     anchor=10000*price_scale
     for market in (spot,perp):
@@ -325,7 +329,7 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
     for account in (20,30):
         scenario['accounts'].append({'Spot':{'account_id':account,'cash_balance':(50000000 if ecology and account==20 else 1000000)*price_scale,'position_qty':2000 if ecology and account==20 else 100}})
     scenario['seed_orders']=[{'NewOrder':{'order_id':1+j,'account_id':10,'side':side,'kind':{'Limit':{'price_tick':anchor+offset*price_scale}},'qty':10,'reduce_only':False}}for j,(side,offset)in enumerate([('Buy',-4),('Sell',4)])]
-    roster={'scope':'finite-capital strategy ecosystem','count':count,'flow_mix':flow_mix,'price_scale':price_scale,'fast_flow':fast_flow,'maker_depth_scale':maker_depth_scale,'perp_maker_depth_scale':perp_maker_depth_scale,'runtime':runtime,'seed':seed,'role_counts':role_counts,'maker_model':maker_model if ecology else 'legacy','value_model':value_model,
+    roster={'scope':'finite-capital strategy ecosystem','count':count,'flow_mix':flow_mix,'price_scale':price_scale,'fast_flow':fast_flow,'economic_flow':economic_flow,'session_ms':session_ms if economic_flow else None,'maker_depth_scale':maker_depth_scale,'perp_maker_depth_scale':perp_maker_depth_scale,'runtime':runtime,'seed':seed,'role_counts':role_counts,'maker_model':maker_model if ecology else 'legacy','value_model':value_model,
         'role_cash_pools':pools,'total_cash_pool':sum(pools.values()),'initial_spot_inventory':sum(m['initial_spot_inventory']for m in metadata),
         'families':families,'periods_ms':sorted(set(m['config']['bar_interval_ms']for m in metadata if m['role']=='technical')),
         'participants':metadata,'qualification':'candidate population; inspect actual warmup, activity, fills, account budgets and market outcomes'}
@@ -339,7 +343,7 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                       'half_spread_ticks','inventory_skew_ticks','withdraw_volatility_ticks','size_volatility_ticks'):
                 if k in c:c[k]*=price_scale
             if 'min_half_spread_ticks' in c:c['min_half_spread_ticks']=max(1,c['min_half_spread_ticks']*price_scale//10)
-            if fast_flow and agent['Plugin']['plugin_id']=='AdaptiveLiquidityMaker':
+            if fast_flow and not economic_flow and agent['Plugin']['plugin_id']=='AdaptiveLiquidityMaker':
                 # Competing makers: a one-tick floor, half of them capped at a
                 # few ticks, and closely spaced levels, so the touch is tight
                 # and depth is continuous instead of lumpy.
@@ -349,6 +353,32 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                     # Touch makers: one tick either side of their center,
                     # re-quoting every step so a swept touch is restored at once.
                     c.update(max_half_spread_ticks=1,refresh_ms=1000,jitter_ms=0)
+    if economic_flow:
+        # Freeze this mechanism profile before looking at candles. Funds and
+        # accounts are unchanged; the controls describe costs and demand, not
+        # a desired return path, candle body or volume/return correlation.
+        for agent in spec['agents']:
+            p=agent['Plugin'];c=p['config'];role=next(x['role'] for x in metadata if x['participant_id']==p['participant']['participant_id'])
+            if p['plugin_id']=='AdaptiveLiquidityMaker':
+                p['plugin_version']='1.2.0'
+                c.update(maker_fee_ppm=spot['clearing']['maker_fee_ppm'],minimum_edge_ppm=10)
+                # Heterogeneous clocks; the fee floor is enforced by the bot,
+                # without reducing fees or hard-capping the spread at one tick.
+                mr=random.Random(child_seed(seed,'economic-maker-'+p['participant']['participant_id']))
+                c.update(refresh_ms=mr.choice([1000,2000,3000]),jitter_ms=mr.randrange(250,2001))
+            elif role=='execution':
+                er=random.Random(child_seed(seed,'economic-parent-'+p['participant']['participant_id']))
+                c['horizon_ms']=min(c['horizon_ms'],session_ms//2)
+                c['start_after_ms']=er.randrange(0,session_ms-c['horizon_ms']+1)
+            elif role=='value':
+                c['execution_horizon_ms']=min(c['execution_horizon_ms'],session_ms//4)
+                c['warmup_ms']=min(c['warmup_ms'],session_ms//8)
+            elif p['plugin_id']=='ReactiveFlowTrader':
+                rr=random.Random(child_seed(seed,'economic-residual-'+p['participant']['participant_id']))
+                c.update(base_interval_ms=rr.choice([30000,60000,120000]),attention_ppm=0,excitation_ppm=0)
+            elif p['plugin_id']=='BasisLinkTrader':
+                p['plugin_version']='1.1.0'
+                c.update(round_trip_fee_ppm=2*(spot['clearing']['taker_fee_ppm']+perp['clearing']['taker_fee_ppm']),minimum_edge_ppm=10)
     assert len(spec['agents'])==count
     assert sum(pools.values())==int(100_000_000*capital_scale)
     return spec,roster

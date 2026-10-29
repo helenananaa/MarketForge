@@ -1,0 +1,43 @@
+{
+  "purpose": "Correct cost and execution contracts, then measure finite-capital market ecology without candle-shape targets.",
+  "baseline_commit": "e306311d242184e1d958f862aae0e8e62d6e69af",
+  "population": 300,
+  "seeds": [7, 19, 41, 73],
+  "duration_seconds": 14400,
+  "clock_step_seconds": 1,
+  "warmup_seconds": 1200,
+  "profile": {
+    "ecology": true,
+    "value_model": "endogenous",
+    "value_fraction": 0.2,
+    "flow_mix": "rebalanced",
+    "switching_fraction": 0.06,
+    "price_scale": 10,
+    "fast_flow": true,
+    "economic_flow": true,
+    "periods_ms": [10000, 30000, 60000, 300000]
+  },
+  "controls": [
+    "Preserve account population, initial inventory and cash pools relative to the same-seed fast-flow recipe.",
+    "Use explicit venue maker fees with 10 ppm minimum quote edge; keep fees unchanged.",
+    "Basis entries must leave executable room for both legs' round-trip fees, residual basis, observed closing half-spreads and minimum edge; hedging/exits remain allowed.",
+    "All execution parent schedules fit within the declared session; quantities remain capital constrained.",
+    "Disable price-attention and activity-excitation in residual ReactiveFlowTrader; do not force a volume/return correlation.",
+    "Main profile uses full funded quote depth (base quantity = inventory cap / 16), not the inherited 0.08/0.18 visual depth scales. Earlier prototype runs are retained but excluded from final-code qualification when a risk-exit defect requires a new binary.",
+    "Freeze executable, recipes, inputs and seeds before long runs; no parameter selection by candle appearance."
+  ],
+  "required_checks": [
+    "Unique trade identities, positive prices/quantities, no self trades, reconciled OHLCV and role totals.",
+    "Every newly generated economic maker quote covers its fee and minimum edge at its observed mid.",
+    "Internal stops submit market orders; perpetual exits are reduce-only; pending exits persist through partial/no fills and restart.",
+    "Separate triggers, generated requests, submitted exits, fills, remaining quantity and confirmed completions."
+  ],
+  "report_without_cherry_picking": [
+    "Actual aggressive and passive activity per role; offered parent demand and executed quantities.",
+    "Spread, depth, two-sided coverage, rejection reasons and maker PnL versus holding initial inventory.",
+    "Return and absolute-return autocorrelations at multiple horizons, order signs, volume, concentration and seed dispersion.",
+    "Real paired 10/100-lot buy/sell interventions on seed 7, with no-intervention branches and unchanged parent proof."
+  ],
+  "impact_probe_seconds": 180,
+  "limitations": "Frozen one-second observation waves and ordered gateway submissions remain. Statistical realism requires a declared real-market reference and longer qualification."
+}

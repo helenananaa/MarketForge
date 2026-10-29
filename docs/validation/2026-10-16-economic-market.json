@@ -1,0 +1,1095 @@
+{
+  "date": "2026-10-16",
+  "status": "mechanism_contracts_passed_market_realism_not_qualified",
+  "baseline_commit": "e306311d242184e1d958f862aae0e8e62d6e69af",
+  "final_binary_sha256": "8abeb8f41c66658c9cdfa5b197f59d3b2d00c8e9394133173922840dfa475629",
+  "evidence_directory": "E:\\projects\\MarketForge-endogenous\\.local\\economic-market-20261016\\final",
+  "frozen_plan_sha256": "b2c639902614a5608f58474aa49144a5176f3c6cc49d579ae439395270163cdc",
+  "analysis_file": "E:\\projects\\MarketForge-endogenous\\.local\\economic-market-20261016\\final\\analysis.json",
+  "analysis_sha256": "3098203eb17551702d114f1d41faefff462be004642066948c4249db99d4fb6a",
+  "analysis_script_sha256": "0c526e06b14b833fb3995a0b732cb043ad75a104af3e4dbd500e33b4646ab70b",
+  "analysis_runtime": {
+    "python": "3.12.14",
+    "numpy": "2.3.5"
+  },
+  "quote_reference_probe": {
+    "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\economic-market-20261016\\quote-reference-probe.json",
+    "receipt_sha256": "758e8939e488ff9ac80caecd14399250eef3a2989800f37bb883663eb52ffd89",
+    "source": "exchange-core/examples/quote_reference_probe.rs",
+    "source_sha256": "73628f415771d5d8acac882ab4f6dc8adccbca1e3e7bd76ea01e08e045f2ef6d",
+    "binary_sha256": "3b52ede7202426609f815d3d9887cc1bb43180f8d12cb8b18d7f23abbfe9b36a",
+    "recipe_sha256": "a2b39d97e623a3124a6643bc4cbcffbc03605b9a57e99cf45434faf41dec0da8",
+    "restored_state_receipt_sha256": "97bd7d45c4903e80feb1a1afcc4f99f8685996abbd0731fd1c3ff799529edae6",
+    "branches": [
+      {
+        "displacement_bps": 0.0,
+        "first_mid": 89382.5,
+        "inventory": 216,
+        "inventory_offset": 0,
+        "last_mid": 89382.5,
+        "trades": 0
+      },
+      {
+        "displacement_bps": -192.26886231575202,
+        "first_mid": 89146.0,
+        "inventory": 324,
+        "inventory_offset": 108,
+        "last_mid": 87432.0,
+        "trades": 0
+      }
+    ],
+    "scope": "One isolated restored maker; no new trades. Establishes a quote-reference feedback defect, not its full-market causal contribution."
+  },
+  "validation": {
+    "workspace_library_passed": 774,
+    "workspace_library_ignored": 21,
+    "python_recipe_tests_passed": 3,
+    "clippy": "exchange-core --lib --examples -- -D warnings passed",
+    "fmt": "cargo fmt --all -- --check passed",
+    "library_log": "E:\\projects\\MarketForge-endogenous\\.local\\economic-market-20261016\\workspace-tests-final.log",
+    "library_log_sha256": "f27fbb7eb240f24f433e613224ab0a19f95db4aa0b18b700d04705b8cba4a04b"
+  },
+  "runs": [
+    {
+      "name": "seed-7",
+      "seed": 7,
+      "recipe_sha256": "758caca473e9097184888e73994d15b955f0f502e41996e6986b5b70d684cec4",
+      "roster_sha256": "2d8287f48e8aba7028316ebb68f6d15b52a43acccfc2384353286130b2365886",
+      "cash_pool": 10000000000,
+      "roles": {
+        "maker": 30,
+        "execution": 45,
+        "value": 60,
+        "technical": 107,
+        "noise": 30,
+        "switching": 18,
+        "basis": 10
+      },
+      "maker_depth_scale": 1.0,
+      "perp_maker_depth_scale": 1.0,
+      "exit_code": 0,
+      "wall_seconds": 3828.3909999999996,
+      "receipt_sha256": "1981eb7cbcebf157b15af93273020a8cfb37f97ede59bbf690c0d9c9a979ad1f",
+      "binary_sha256": "8abeb8f41c66658c9cdfa5b197f59d3b2d00c8e9394133173922840dfa475629",
+      "simulation_time_ms": 14400000,
+      "trades": {
+        "V-BTC-PERP": 40911,
+        "V-BTC-SPOT": 30098
+      },
+      "economic_quote_checks": 954468,
+      "forks_complete": true
+    },
+    {
+      "name": "seed-19",
+      "seed": 19,
+      "recipe_sha256": "527461b7b80f6a9210e53a510c5b2decc7ee5948783f43a1184ec43717f32e19",
+      "roster_sha256": "fc8d817ee820706ef17ed5183101329770b67bddc0f8c13488887cb7f8405780",
+      "cash_pool": 10000000000,
+      "roles": {
+        "maker": 30,
+        "execution": 45,
+        "value": 60,
+        "technical": 107,
+        "noise": 30,
+        "switching": 18,
+        "basis": 10
+      },
+      "maker_depth_scale": 1.0,
+      "perp_maker_depth_scale": 1.0,
+      "exit_code": 0,
+      "wall_seconds": 3086.8590000000004,
+      "receipt_sha256": "e4f01af7ed906a649cf7f9c840114b9454d0acbf3841f8f680f0a377f81702a7",
+      "binary_sha256": "8abeb8f41c66658c9cdfa5b197f59d3b2d00c8e9394133173922840dfa475629",
+      "simulation_time_ms": 14400000,
+      "trades": {
+        "V-BTC-PERP": 41388,
+        "V-BTC-SPOT": 21454
+      },
+      "economic_quote_checks": 929826,
+      "forks_complete": null
+    },
+    {
+      "name": "seed-41",
+      "seed": 41,
+      "recipe_sha256": "a2b39d97e623a3124a6643bc4cbcffbc03605b9a57e99cf45434faf41dec0da8",
+      "roster_sha256": "a5483eef1bf9bbfbdd6ab957344fd4c0d4941625e47278ff8160e06870a603a8",
+      "cash_pool": 10000000000,
+      "roles": {
+        "maker": 30,
+        "execution": 45,
+        "value": 60,
+        "technical": 107,
+        "noise": 30,
+        "switching": 18,
+        "basis": 10
+      },
+      "maker_depth_scale": 1.0,
+      "perp_maker_depth_scale": 1.0,
+      "exit_code": 0,
+      "wall_seconds": 2966.7029999999995,
+      "receipt_sha256": "97bd7d45c4903e80feb1a1afcc4f99f8685996abbd0731fd1c3ff799529edae6",
+      "binary_sha256": "8abeb8f41c66658c9cdfa5b197f59d3b2d00c8e9394133173922840dfa475629",
+      "simulation_time_ms": 14400000,
+      "trades": {
+        "V-BTC-PERP": 28969,
+        "V-BTC-SPOT": 22881
+      },
+      "economic_quote_checks": 969960,
+      "forks_complete": null
+    },
+    {
+      "name": "seed-73",
+      "seed": 73,
+      "recipe_sha256": "d61acf7475d1e4dad45d069a7a88277fbf0331bcf765bb9096db16010673b856",
+      "roster_sha256": "334af38d52df676c50c3693100915d6d7705ac566d46a4a5296562759ba76d01",
+      "cash_pool": 10000000000,
+      "roles": {
+        "maker": 30,
+        "execution": 45,
+        "value": 60,
+        "technical": 107,
+        "noise": 30,
+        "switching": 18,
+        "basis": 10
+      },
+      "maker_depth_scale": 1.0,
+      "perp_maker_depth_scale": 1.0,
+      "exit_code": 0,
+      "wall_seconds": 3012.187,
+      "receipt_sha256": "f6482a77b8ff126045f95edf1c5e70dcb742bd22a6dc97be58fd84307f95a515",
+      "binary_sha256": "8abeb8f41c66658c9cdfa5b197f59d3b2d00c8e9394133173922840dfa475629",
+      "simulation_time_ms": 14400000,
+      "trades": {
+        "V-BTC-PERP": 30434,
+        "V-BTC-SPOT": 22697
+      },
+      "economic_quote_checks": 987186,
+      "forks_complete": null
+    }
+  ],
+  "market_rows": [
+    {
+      "seed": 7,
+      "instrument": "V-BTC-PERP",
+      "trade_prints_full_run": 40911,
+      "analysis_traded_qty": 130291,
+      "noise_taker_share_pct": 12.219570039373401,
+      "execution_taker_share_pct": 3.6341727364131065,
+      "value_taker_share_pct": 28.200719926932788,
+      "switching_taker_share_pct": 28.55224075339049,
+      "two_sided_pct": 100.0,
+      "median_spread_bps": 4.742219152379872,
+      "median_depth_25bps_lots": 2645.0,
+      "return_acf_1m_lag1": 0.5987789029830788,
+      "volume_absreturn_corr_1m": 0.6412267395170587,
+      "zero_return_fraction_1m": 0.0045662100456621
+    },
+    {
+      "seed": 7,
+      "instrument": "V-BTC-SPOT",
+      "trade_prints_full_run": 30098,
+      "analysis_traded_qty": 84367,
+      "noise_taker_share_pct": 15.552289402254434,
+      "execution_taker_share_pct": 6.1078383728234975,
+      "value_taker_share_pct": 22.0690554363673,
+      "switching_taker_share_pct": 23.74862209157609,
+      "two_sided_pct": 100.0,
+      "median_spread_bps": 5.9123936752495645,
+      "median_depth_25bps_lots": 2230.5,
+      "return_acf_1m_lag1": 0.5817008685440852,
+      "volume_absreturn_corr_1m": 0.6213402674022304,
+      "zero_return_fraction_1m": 0.0228310502283105
+    },
+    {
+      "seed": 19,
+      "instrument": "V-BTC-PERP",
+      "trade_prints_full_run": 41388,
+      "analysis_traded_qty": 250097,
+      "noise_taker_share_pct": 4.79853816719113,
+      "execution_taker_share_pct": 1.9796319028217053,
+      "value_taker_share_pct": 19.95345805827339,
+      "switching_taker_share_pct": 53.61079900998412,
+      "two_sided_pct": 99.92424242424242,
+      "median_spread_bps": 8.201627170546558,
+      "median_depth_25bps_lots": 1658.5,
+      "return_acf_1m_lag1": 0.8610988480359644,
+      "volume_absreturn_corr_1m": -0.03436091421031421,
+      "zero_return_fraction_1m": 0.0182648401826484
+    },
+    {
+      "seed": 19,
+      "instrument": "V-BTC-SPOT",
+      "trade_prints_full_run": 21454,
+      "analysis_traded_qty": 73894,
+      "noise_taker_share_pct": 10.417625246975398,
+      "execution_taker_share_pct": 6.015373372668958,
+      "value_taker_share_pct": 13.929412401548163,
+      "switching_taker_share_pct": 10.213278479984842,
+      "two_sided_pct": 100.0,
+      "median_spread_bps": 5.439531505882217,
+      "median_depth_25bps_lots": 2196.0,
+      "return_acf_1m_lag1": 0.8412167127124893,
+      "volume_absreturn_corr_1m": 0.0727859395598819,
+      "zero_return_fraction_1m": 0.0182648401826484
+    },
+    {
+      "seed": 41,
+      "instrument": "V-BTC-PERP",
+      "trade_prints_full_run": 28969,
+      "analysis_traded_qty": 106553,
+      "noise_taker_share_pct": 12.977579232870026,
+      "execution_taker_share_pct": 3.404878323463441,
+      "value_taker_share_pct": 17.702927181778083,
+      "switching_taker_share_pct": 40.035475303370156,
+      "two_sided_pct": 100.0,
+      "median_spread_bps": 6.987673154048668,
+      "median_depth_25bps_lots": 2537.0,
+      "return_acf_1m_lag1": 0.8414191121027867,
+      "volume_absreturn_corr_1m": 0.21960130442564865,
+      "zero_return_fraction_1m": 0.0228310502283105
+    },
+    {
+      "seed": 41,
+      "instrument": "V-BTC-SPOT",
+      "trade_prints_full_run": 22881,
+      "analysis_traded_qty": 65985,
+      "noise_taker_share_pct": 12.5422444494961,
+      "execution_taker_share_pct": 8.665605819504432,
+      "value_taker_share_pct": 22.870349321815564,
+      "switching_taker_share_pct": 24.693490944911723,
+      "two_sided_pct": 100.0,
+      "median_spread_bps": 4.32668433908606,
+      "median_depth_25bps_lots": 2519.0,
+      "return_acf_1m_lag1": 0.8388023597649602,
+      "volume_absreturn_corr_1m": 0.45478096512636224,
+      "zero_return_fraction_1m": 0.0136986301369863
+    },
+    {
+      "seed": 73,
+      "instrument": "V-BTC-PERP",
+      "trade_prints_full_run": 30434,
+      "analysis_traded_qty": 93897,
+      "noise_taker_share_pct": 14.699085167790237,
+      "execution_taker_share_pct": 4.4048265652789755,
+      "value_taker_share_pct": 17.833370608219646,
+      "switching_taker_share_pct": 41.53380832188462,
+      "two_sided_pct": 100.0,
+      "median_spread_bps": 6.754308431991967,
+      "median_depth_25bps_lots": 2605.0,
+      "return_acf_1m_lag1": 0.5485230376098198,
+      "volume_absreturn_corr_1m": 0.47519293262374007,
+      "zero_return_fraction_1m": 0.0
+    },
+    {
+      "seed": 73,
+      "instrument": "V-BTC-SPOT",
+      "trade_prints_full_run": 22697,
+      "analysis_traded_qty": 51846,
+      "noise_taker_share_pct": 19.201095552212323,
+      "execution_taker_share_pct": 10.683562859236972,
+      "value_taker_share_pct": 18.551093623423213,
+      "switching_taker_share_pct": 19.949465725417586,
+      "two_sided_pct": 100.0,
+      "median_spread_bps": 6.49817422473835,
+      "median_depth_25bps_lots": 2459.0,
+      "return_acf_1m_lag1": 0.5654402036412922,
+      "volume_absreturn_corr_1m": 0.6082716940722778,
+      "zero_return_fraction_1m": 0.0
+    }
+  ],
+  "stop_totals": {
+    "stop_triggers": 274,
+    "exit_requests": 289,
+    "exit_submissions": 289,
+    "exit_filled_qty": 14025,
+    "exit_rejections": 0,
+    "exit_completions": 274,
+    "exit_remaining_qty": 0,
+    "pending_instances": 0,
+    "partial_fill_attempts": 10,
+    "no_fill_attempts": 5,
+    "receipt_count": 289
+  },
+  "economic_quote_checks": 3841440,
+  "demand_by_seed": {
+    "seed-7": {
+      "execution": {
+        "instances": 45,
+        "with_actual_fills": 45,
+        "filled_participation_qty": 9978,
+        "planned_qty": 9978,
+        "parents_started": 45,
+        "with_actual_parent_fills": 45,
+        "parent_order_filled_qty": 9978,
+        "unfilled_planned_qty": 0,
+        "parents_fully_filled": 45,
+        "parents_overfilled": 0,
+        "observed_deadline_reached": 45,
+        "all_schedules_fit_session": true
+      },
+      "value": {
+        "instances": 60,
+        "with_actual_fills": 60,
+        "filled_participation_qty": 72525,
+        "parents_started": 883,
+        "parents_completed": 208,
+        "parents_abandoned": 616,
+        "children_passive": 11378,
+        "children_aggressive": 27517
+      },
+      "technical": {
+        "instances": 107,
+        "with_actual_fills": 73,
+        "filled_participation_qty": 12976
+      },
+      "basis": {
+        "instances": 10,
+        "with_actual_fills": 10,
+        "filled_participation_qty": 51060
+      }
+    },
+    "seed-19": {
+      "execution": {
+        "instances": 45,
+        "with_actual_fills": 45,
+        "filled_participation_qty": 9755,
+        "planned_qty": 9966,
+        "parents_started": 45,
+        "with_actual_parent_fills": 45,
+        "parent_order_filled_qty": 9755,
+        "unfilled_planned_qty": 211,
+        "parents_fully_filled": 44,
+        "parents_overfilled": 0,
+        "observed_deadline_reached": 45,
+        "all_schedules_fit_session": true
+      },
+      "value": {
+        "instances": 60,
+        "with_actual_fills": 60,
+        "filled_participation_qty": 84258,
+        "parents_started": 646,
+        "parents_completed": 232,
+        "parents_abandoned": 378,
+        "children_passive": 10416,
+        "children_aggressive": 19368
+      },
+      "technical": {
+        "instances": 107,
+        "with_actual_fills": 96,
+        "filled_participation_qty": 14816
+      },
+      "basis": {
+        "instances": 10,
+        "with_actual_fills": 10,
+        "filled_participation_qty": 79536
+      }
+    },
+    "seed-41": {
+      "execution": {
+        "instances": 45,
+        "with_actual_fills": 45,
+        "filled_participation_qty": 9602,
+        "planned_qty": 9980,
+        "parents_started": 45,
+        "with_actual_parent_fills": 45,
+        "parent_order_filled_qty": 9602,
+        "unfilled_planned_qty": 378,
+        "parents_fully_filled": 43,
+        "parents_overfilled": 0,
+        "observed_deadline_reached": 45,
+        "all_schedules_fit_session": true
+      },
+      "value": {
+        "instances": 60,
+        "with_actual_fills": 60,
+        "filled_participation_qty": 50386,
+        "parents_started": 580,
+        "parents_completed": 190,
+        "parents_abandoned": 337,
+        "children_passive": 8973,
+        "children_aggressive": 13734
+      },
+      "technical": {
+        "instances": 107,
+        "with_actual_fills": 88,
+        "filled_participation_qty": 15678
+      },
+      "basis": {
+        "instances": 10,
+        "with_actual_fills": 10,
+        "filled_participation_qty": 34840
+      }
+    },
+    "seed-73": {
+      "execution": {
+        "instances": 45,
+        "with_actual_fills": 45,
+        "filled_participation_qty": 9871,
+        "planned_qty": 9960,
+        "parents_started": 45,
+        "with_actual_parent_fills": 45,
+        "parent_order_filled_qty": 9871,
+        "unfilled_planned_qty": 89,
+        "parents_fully_filled": 44,
+        "parents_overfilled": 0,
+        "observed_deadline_reached": 45,
+        "all_schedules_fit_session": true
+      },
+      "value": {
+        "instances": 60,
+        "with_actual_fills": 60,
+        "filled_participation_qty": 40983,
+        "parents_started": 749,
+        "parents_completed": 209,
+        "parents_abandoned": 494,
+        "children_passive": 9033,
+        "children_aggressive": 15655
+      },
+      "technical": {
+        "instances": 107,
+        "with_actual_fills": 74,
+        "filled_participation_qty": 12939
+      },
+      "basis": {
+        "instances": 10,
+        "with_actual_fills": 10,
+        "filled_participation_qty": 24588
+      }
+    }
+  },
+  "spot_maker_economics_by_seed": {
+    "seed-7": {
+      "initial_seed_book_mark": 100000.0,
+      "final_mark": 95063.5,
+      "accounts": [
+        {
+          "id": "maker-spot-0",
+          "excess_vs_hold": -1588741.0,
+          "absolute_pnl": -2655025.0,
+          "fees": 15113
+        },
+        {
+          "id": "maker-spot-2",
+          "excess_vs_hold": -1269987.5,
+          "absolute_pnl": -2336271.5,
+          "fees": 21219
+        },
+        {
+          "id": "maker-spot-4",
+          "excess_vs_hold": -2477906.5,
+          "absolute_pnl": -3544190.5,
+          "fees": 40482
+        },
+        {
+          "id": "maker-spot-6",
+          "excess_vs_hold": -7608807.5,
+          "absolute_pnl": -8675091.5,
+          "fees": 139084
+        },
+        {
+          "id": "maker-spot-8",
+          "excess_vs_hold": -1140997.0,
+          "absolute_pnl": -2207281.0,
+          "fees": 55968
+        },
+        {
+          "id": "maker-spot-10",
+          "excess_vs_hold": -6708498.0,
+          "absolute_pnl": -7774782.0,
+          "fees": 70647
+        },
+        {
+          "id": "maker-spot-12",
+          "excess_vs_hold": -719968.5,
+          "absolute_pnl": -1786252.5,
+          "fees": 34079
+        },
+        {
+          "id": "maker-spot-14",
+          "excess_vs_hold": -4596477.5,
+          "absolute_pnl": -5662761.5,
+          "fees": 82085
+        },
+        {
+          "id": "maker-spot-16",
+          "excess_vs_hold": -1709824.5,
+          "absolute_pnl": -2776108.5,
+          "fees": 23524
+        },
+        {
+          "id": "maker-spot-18",
+          "excess_vs_hold": -4655760.5,
+          "absolute_pnl": -5722044.5,
+          "fees": 57562
+        },
+        {
+          "id": "maker-spot-20",
+          "excess_vs_hold": -703811.5,
+          "absolute_pnl": -1770095.5,
+          "fees": 13625
+        },
+        {
+          "id": "maker-spot-22",
+          "excess_vs_hold": -1970429.0,
+          "absolute_pnl": -3036713.0,
+          "fees": 19365
+        },
+        {
+          "id": "maker-spot-24",
+          "excess_vs_hold": -578064.5,
+          "absolute_pnl": -1644348.5,
+          "fees": 26019
+        },
+        {
+          "id": "maker-spot-26",
+          "excess_vs_hold": -8666252.0,
+          "absolute_pnl": -9732536.0,
+          "fees": 173295
+        },
+        {
+          "id": "maker-spot-28",
+          "excess_vs_hold": -956771.5,
+          "absolute_pnl": -2023055.5,
+          "fees": 14662
+        }
+      ],
+      "absolute_pnl_quote_units": -61346557.0,
+      "negative_absolute_pnl": 15,
+      "excess_pnl_quote_units": -45352297.0,
+      "fees_quote_units": 786729,
+      "underperformed_hold": 15
+    },
+    "seed-19": {
+      "initial_seed_book_mark": 100000.0,
+      "final_mark": 94673.0,
+      "accounts": [
+        {
+          "id": "maker-spot-0",
+          "excess_vs_hold": -20422708.0,
+          "absolute_pnl": -21573340.0,
+          "fees": 35211
+        },
+        {
+          "id": "maker-spot-2",
+          "excess_vs_hold": -31568401.0,
+          "absolute_pnl": -32719033.0,
+          "fees": 57993
+        },
+        {
+          "id": "maker-spot-4",
+          "excess_vs_hold": -11680069.0,
+          "absolute_pnl": -12830701.0,
+          "fees": 24002
+        },
+        {
+          "id": "maker-spot-6",
+          "excess_vs_hold": -28254914.0,
+          "absolute_pnl": -29405546.0,
+          "fees": 38530
+        },
+        {
+          "id": "maker-spot-8",
+          "excess_vs_hold": -4946525.0,
+          "absolute_pnl": -6097157.0,
+          "fees": 26334
+        },
+        {
+          "id": "maker-spot-10",
+          "excess_vs_hold": -29029959.0,
+          "absolute_pnl": -30180591.0,
+          "fees": 84468
+        },
+        {
+          "id": "maker-spot-12",
+          "excess_vs_hold": -5005986.0,
+          "absolute_pnl": -6156618.0,
+          "fees": 28141
+        },
+        {
+          "id": "maker-spot-14",
+          "excess_vs_hold": -26149908.0,
+          "absolute_pnl": -27300540.0,
+          "fees": 35698
+        },
+        {
+          "id": "maker-spot-16",
+          "excess_vs_hold": -7307920.0,
+          "absolute_pnl": -8458552.0,
+          "fees": 28699
+        },
+        {
+          "id": "maker-spot-18",
+          "excess_vs_hold": -30540158.0,
+          "absolute_pnl": -31690790.0,
+          "fees": 50461
+        },
+        {
+          "id": "maker-spot-20",
+          "excess_vs_hold": -7108748.0,
+          "absolute_pnl": -8259380.0,
+          "fees": 13684
+        },
+        {
+          "id": "maker-spot-22",
+          "excess_vs_hold": -33214603.0,
+          "absolute_pnl": -34365235.0,
+          "fees": 84419
+        },
+        {
+          "id": "maker-spot-24",
+          "excess_vs_hold": -7034923.0,
+          "absolute_pnl": -8185555.0,
+          "fees": 24516
+        },
+        {
+          "id": "maker-spot-26",
+          "excess_vs_hold": -31765200.0,
+          "absolute_pnl": -32915832.0,
+          "fees": 58758
+        },
+        {
+          "id": "maker-spot-28",
+          "excess_vs_hold": -6059351.0,
+          "absolute_pnl": -7209983.0,
+          "fees": 15182
+        }
+      ],
+      "absolute_pnl_quote_units": -297348853.0,
+      "negative_absolute_pnl": 15,
+      "excess_pnl_quote_units": -280089373.0,
+      "fees_quote_units": 606096,
+      "underperformed_hold": 15
+    },
+    "seed-41": {
+      "initial_seed_book_mark": 100000.0,
+      "final_mark": 89382.5,
+      "accounts": [
+        {
+          "id": "maker-spot-0",
+          "excess_vs_hold": -3337327.5,
+          "absolute_pnl": -5630707.5,
+          "fees": 42544
+        },
+        {
+          "id": "maker-spot-2",
+          "excess_vs_hold": -13724184.0,
+          "absolute_pnl": -16017564.0,
+          "fees": 46701
+        },
+        {
+          "id": "maker-spot-4",
+          "excess_vs_hold": -1106928.5,
+          "absolute_pnl": -3400308.5,
+          "fees": 26366
+        },
+        {
+          "id": "maker-spot-6",
+          "excess_vs_hold": -9425770.0,
+          "absolute_pnl": -11719150.0,
+          "fees": 47022
+        },
+        {
+          "id": "maker-spot-8",
+          "excess_vs_hold": -2724163.5,
+          "absolute_pnl": -5017543.5,
+          "fees": 20609
+        },
+        {
+          "id": "maker-spot-10",
+          "excess_vs_hold": -13815632.0,
+          "absolute_pnl": -16109012.0,
+          "fees": 72296
+        },
+        {
+          "id": "maker-spot-12",
+          "excess_vs_hold": -2915493.0,
+          "absolute_pnl": -5208873.0,
+          "fees": 39202
+        },
+        {
+          "id": "maker-spot-14",
+          "excess_vs_hold": -11428616.0,
+          "absolute_pnl": -13721996.0,
+          "fees": 37128
+        },
+        {
+          "id": "maker-spot-16",
+          "excess_vs_hold": -4747691.0,
+          "absolute_pnl": -7041071.0,
+          "fees": 38900
+        },
+        {
+          "id": "maker-spot-18",
+          "excess_vs_hold": -11794716.0,
+          "absolute_pnl": -14088096.0,
+          "fees": 50905
+        },
+        {
+          "id": "maker-spot-20",
+          "excess_vs_hold": -1046050.5,
+          "absolute_pnl": -3339430.5,
+          "fees": 24868
+        },
+        {
+          "id": "maker-spot-22",
+          "excess_vs_hold": -7073186.5,
+          "absolute_pnl": -9366566.5,
+          "fees": 21856
+        },
+        {
+          "id": "maker-spot-24",
+          "excess_vs_hold": -1747785.5,
+          "absolute_pnl": -4041165.5,
+          "fees": 9727
+        },
+        {
+          "id": "maker-spot-26",
+          "excess_vs_hold": -15666096.0,
+          "absolute_pnl": -17959476.0,
+          "fees": 67241
+        },
+        {
+          "id": "maker-spot-28",
+          "excess_vs_hold": -1979406.0,
+          "absolute_pnl": -4272786.0,
+          "fees": 20048
+        }
+      ],
+      "absolute_pnl_quote_units": -136933746.0,
+      "negative_absolute_pnl": 15,
+      "excess_pnl_quote_units": -102533046.0,
+      "fees_quote_units": 565413,
+      "underperformed_hold": 15
+    },
+    "seed-73": {
+      "initial_seed_book_mark": 100000.0,
+      "final_mark": 101593.0,
+      "accounts": [
+        {
+          "id": "maker-spot-0",
+          "excess_vs_hold": -13047.0,
+          "absolute_pnl": 331041.0,
+          "fees": 19180
+        },
+        {
+          "id": "maker-spot-2",
+          "excess_vs_hold": -2370580.0,
+          "absolute_pnl": -2026492.0,
+          "fees": 124098
+        },
+        {
+          "id": "maker-spot-4",
+          "excess_vs_hold": -75129.0,
+          "absolute_pnl": 268959.0,
+          "fees": 13675
+        },
+        {
+          "id": "maker-spot-6",
+          "excess_vs_hold": -107621.0,
+          "absolute_pnl": 236467.0,
+          "fees": 36444
+        },
+        {
+          "id": "maker-spot-8",
+          "excess_vs_hold": -75157.0,
+          "absolute_pnl": 268931.0,
+          "fees": 7227
+        },
+        {
+          "id": "maker-spot-10",
+          "excess_vs_hold": -246637.0,
+          "absolute_pnl": 97451.0,
+          "fees": 40115
+        },
+        {
+          "id": "maker-spot-12",
+          "excess_vs_hold": 17333.0,
+          "absolute_pnl": 361421.0,
+          "fees": 8779
+        },
+        {
+          "id": "maker-spot-14",
+          "excess_vs_hold": 240084.0,
+          "absolute_pnl": 584172.0,
+          "fees": 25516
+        },
+        {
+          "id": "maker-spot-16",
+          "excess_vs_hold": -150456.0,
+          "absolute_pnl": 193632.0,
+          "fees": 13255
+        },
+        {
+          "id": "maker-spot-18",
+          "excess_vs_hold": -452061.0,
+          "absolute_pnl": -107973.0,
+          "fees": 66207
+        },
+        {
+          "id": "maker-spot-20",
+          "excess_vs_hold": -32804.0,
+          "absolute_pnl": 311284.0,
+          "fees": 7151
+        },
+        {
+          "id": "maker-spot-22",
+          "excess_vs_hold": -6700.0,
+          "absolute_pnl": 337388.0,
+          "fees": 9967
+        },
+        {
+          "id": "maker-spot-24",
+          "excess_vs_hold": -135505.0,
+          "absolute_pnl": 208583.0,
+          "fees": 11017
+        },
+        {
+          "id": "maker-spot-26",
+          "excess_vs_hold": -1110734.0,
+          "absolute_pnl": -766646.0,
+          "fees": 68802
+        },
+        {
+          "id": "maker-spot-28",
+          "excess_vs_hold": -12110.0,
+          "absolute_pnl": 331978.0,
+          "fees": 21424
+        }
+      ],
+      "absolute_pnl_quote_units": 630196.0,
+      "negative_absolute_pnl": 3,
+      "excess_pnl_quote_units": -4531124.0,
+      "fees_quote_units": 472857,
+      "underperformed_hold": 13
+    }
+  },
+  "paired_interventions": [
+    {
+      "branch": "V-BTC-PERP-Buy-10",
+      "requested_qty": 10,
+      "filled_qty": 10,
+      "before_mid": 94988.5,
+      "immediate_mid": 94988.5,
+      "execution_cost_from_mid_bps": 2.2634318891223693,
+      "net_control_bps_1s": 0.0,
+      "net_control_bps_30s": 0.10527590181969396,
+      "net_control_bps_180s": 2.579259594582502,
+      "receipt_sha256": "1fc7221f28e28d7024a32598825166349dbc62c9d523e6cd2fa97fab405837c8",
+      "control_receipt_sha256": "f04308f276bad024fa6053ee159f3c86d17ed9a4a9c10a64ea0ed10bb2f14131"
+    },
+    {
+      "branch": "V-BTC-PERP-Buy-100",
+      "requested_qty": 100,
+      "filled_qty": 100,
+      "before_mid": 94988.5,
+      "immediate_mid": 94992.5,
+      "execution_cost_from_mid_bps": 2.7992862293846343,
+      "net_control_bps_1s": 1.4212246745658685,
+      "net_control_bps_30s": 2.684535496402196,
+      "net_control_bps_180s": 3.3688288582302066,
+      "receipt_sha256": "de4eb239cb9a591a71e1c851948c0cd0ed95b9c089aa0a95545b4e57dd83a508",
+      "control_receipt_sha256": "f04308f276bad024fa6053ee159f3c86d17ed9a4a9c10a64ea0ed10bb2f14131"
+    },
+    {
+      "branch": "V-BTC-PERP-Sell-10",
+      "requested_qty": 10,
+      "filled_qty": 10,
+      "before_mid": 94988.5,
+      "immediate_mid": 94988.5,
+      "execution_cost_from_mid_bps": 2.2634318891234795,
+      "net_control_bps_1s": 0.0,
+      "net_control_bps_30s": -0.2105518036393879,
+      "net_control_bps_180s": 2.842449349131737,
+      "receipt_sha256": "85d533b11db843c9d4ca4baed8b4cad542e35fa52f8ccf444a1f3cba24d58673",
+      "control_receipt_sha256": "f04308f276bad024fa6053ee159f3c86d17ed9a4a9c10a64ea0ed10bb2f14131"
+    },
+    {
+      "branch": "V-BTC-PERP-Sell-100",
+      "requested_qty": 100,
+      "filled_qty": 100,
+      "before_mid": 94988.5,
+      "immediate_mid": 94975.0,
+      "execution_cost_from_mid_bps": 3.6751817325253455,
+      "net_control_bps_1s": -1.1580349200166336,
+      "net_control_bps_30s": 0.3158277054590819,
+      "net_control_bps_180s": 5.57962279644378,
+      "receipt_sha256": "45e107da5e461ca3d8e59c86c9da67d69e5bed50888132f2976706ffcc774f57",
+      "control_receipt_sha256": "f04308f276bad024fa6053ee159f3c86d17ed9a4a9c10a64ea0ed10bb2f14131"
+    },
+    {
+      "branch": "V-BTC-SPOT-Buy-10",
+      "requested_qty": 10,
+      "filled_qty": 10,
+      "before_mid": 95063.5,
+      "immediate_mid": 95064.5,
+      "execution_cost_from_mid_bps": 5.922357161265435,
+      "net_control_bps_1s": -0.31557853434809363,
+      "net_control_bps_30s": -0.2629821119567447,
+      "net_control_bps_180s": -4.996660127178149,
+      "receipt_sha256": "73b8995b961f76c015ab4342a25613f55cb09fdced7ac1b2917cd6991a9c0732",
+      "control_receipt_sha256": "ef5f9c866d703fec1c1e6405c6e6a7b1a0573153179ccb6aef89d9815e1dc918"
+    },
+    {
+      "branch": "V-BTC-SPOT-Buy-100",
+      "requested_qty": 100,
+      "filled_qty": 100,
+      "before_mid": 95063.5,
+      "immediate_mid": 95065.5,
+      "execution_cost_from_mid_bps": 6.109600424979433,
+      "net_control_bps_1s": -1.2623141373923745,
+      "net_control_bps_30s": -0.5259642239134894,
+      "net_control_bps_180s": 8.678409694572576,
+      "receipt_sha256": "7f1edd5f904edb231ee532e8f5e06adc61a003e8a45974736ed6fc15199d9530",
+      "control_receipt_sha256": "ef5f9c866d703fec1c1e6405c6e6a7b1a0573153179ccb6aef89d9815e1dc918"
+    },
+    {
+      "branch": "V-BTC-SPOT-Sell-10",
+      "requested_qty": 10,
+      "filled_qty": 10,
+      "before_mid": 95063.5,
+      "immediate_mid": 95057.5,
+      "execution_cost_from_mid_bps": 6.469359954135445,
+      "net_control_bps_1s": 0.5785606463048384,
+      "net_control_bps_30s": 0.36817495673944256,
+      "net_control_bps_180s": -6.364167109353223,
+      "receipt_sha256": "2d3d22423691f2702399aec0345d5b8eafda19d92548fc23b36e13b8c245083b",
+      "control_receipt_sha256": "ef5f9c866d703fec1c1e6405c6e6a7b1a0573153179ccb6aef89d9815e1dc918"
+    },
+    {
+      "branch": "V-BTC-SPOT-Sell-100",
+      "requested_qty": 100,
+      "filled_qty": 100,
+      "before_mid": 95063.5,
+      "immediate_mid": 95039.0,
+      "execution_cost_from_mid_bps": 9.251710698637838,
+      "net_control_bps_1s": -0.8415427582615831,
+      "net_control_bps_30s": -2.524628274784749,
+      "net_control_bps_180s": -4.8914672823954515,
+      "receipt_sha256": "f963d635bdc7c5e085abcf2d4e9aabb934093a16ee9d439f9637c83bbf90d191",
+      "control_receipt_sha256": "ef5f9c866d703fec1c1e6405c6e6a7b1a0573153179ccb6aef89d9815e1dc918"
+    }
+  ],
+  "matched_window_flow_comparison": [
+    {
+      "seed": 7,
+      "phase": "historical",
+      "instrument": "V-BTC-SPOT",
+      "volume": 53125,
+      "noise_pct": 91.13976470588236,
+      "execution_pct": 0.2842352941176471,
+      "value_pct": 3.5990588235294116,
+      "switching_pct": 2.386823529411765
+    },
+    {
+      "seed": 7,
+      "phase": "historical",
+      "instrument": "V-BTC-PERP",
+      "volume": 85619,
+      "noise_pct": 79.49754143356031,
+      "execution_pct": 0.8210794333033555,
+      "value_pct": 3.757343580280078,
+      "switching_pct": 10.00245272661442
+    },
+    {
+      "seed": 7,
+      "phase": "repaired",
+      "instrument": "V-BTC-SPOT",
+      "volume": 41002,
+      "noise_pct": 15.487049412223794,
+      "execution_pct": 3.1315545583142286,
+      "value_pct": 24.198819569777083,
+      "switching_pct": 27.376713331057022
+    },
+    {
+      "seed": 7,
+      "phase": "repaired",
+      "instrument": "V-BTC-PERP",
+      "volume": 59787,
+      "noise_pct": 11.863783096659809,
+      "execution_pct": 4.204927492598726,
+      "value_pct": 31.792864669577,
+      "switching_pct": 25.40853362771171
+    },
+    {
+      "seed": 19,
+      "phase": "historical",
+      "instrument": "V-BTC-SPOT",
+      "volume": 54012,
+      "noise_pct": 88.60253277049544,
+      "execution_pct": 0.7276160853143746,
+      "value_pct": 2.593868029326816,
+      "switching_pct": 2.873435532844553
+    },
+    {
+      "seed": 19,
+      "phase": "historical",
+      "instrument": "V-BTC-PERP",
+      "volume": 69946,
+      "noise_pct": 76.5504818002459,
+      "execution_pct": 0.7620164126611958,
+      "value_pct": 4.00594744517199,
+      "switching_pct": 14.095159122751838
+    },
+    {
+      "seed": 19,
+      "phase": "repaired",
+      "instrument": "V-BTC-SPOT",
+      "volume": 36226,
+      "noise_pct": 9.454535416551648,
+      "execution_pct": 4.797659139844311,
+      "value_pct": 20.88279136531773,
+      "switching_pct": 8.45801358140562
+    },
+    {
+      "seed": 19,
+      "phase": "repaired",
+      "instrument": "V-BTC-PERP",
+      "volume": 91004,
+      "noise_pct": 5.528328425124171,
+      "execution_pct": 2.6888927959210585,
+      "value_pct": 27.87240121313349,
+      "switching_pct": 37.23023163816975
+    }
+  ],
+  "matched_window_sources": [
+    {
+      "seed": 7,
+      "phase": "historical",
+      "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\endogenous-20261015\\touch7.receipt.json",
+      "receipt_sha256": "07d4b5ce93bb0a6b263ea9450f65c12a8061278a31b2321f0d64a6c559340bcc"
+    },
+    {
+      "seed": 7,
+      "phase": "repaired",
+      "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\economic-market-20261016\\final\\seed-7.receipt.json",
+      "receipt_sha256": "1981eb7cbcebf157b15af93273020a8cfb37f97ede59bbf690c0d9c9a979ad1f"
+    },
+    {
+      "seed": 19,
+      "phase": "historical",
+      "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\endogenous-20261015\\touch19.receipt.json",
+      "receipt_sha256": "a1efb655bc2813ccf5d6ad35aaed262aa1cde97f6e002092aea6e6028c77f351"
+    },
+    {
+      "seed": 19,
+      "phase": "repaired",
+      "receipt": "E:\\projects\\MarketForge-endogenous\\.local\\economic-market-20261016\\final\\seed-19.receipt.json",
+      "receipt_sha256": "e4f01af7ed906a649cf7f9c840114b9454d0acbf3841f8f680f0a377f81702a7"
+    }
+  ],
+  "limitations": [
+    "Four synthetic hours per seed are not a real-market similarity qualification.",
+    "One-second frozen observation waves and ordered submissions remain.",
+    "Changes are combined; no individual causal performance gain is claimed.",
+    "Maker quote fee coverage at an observation mid does not guarantee realized profitability.",
+    "Earlier interrupted prototype runs use other executables and are excluded from final-code qualification.",
+    "After-wave snapshots do not resolve intra-wave depletion or cancellations.",
+    "Internal stop triggers still use the observed midpoint, rather than capturing every intra-wave last-trade crossing.",
+    "Runtime quote-check counters cover observations with both book sides; one-sided fallback references are enforced by bot code but not separately counted.",
+    "The historical first-two-hour comparison describes the combined profile change; it is not an individual-change ablation.",
+    "Quote-only feedback is reproduced in the isolated maker probe and remains unfixed in this frozen market candidate."
+  ],
+  "review_decision": "rejected_market_behavior_regression",
+  "replacement_qualified": false,
+  "recovery_evidence": "2026-10-16-market-regression-recovery.json"
+}
