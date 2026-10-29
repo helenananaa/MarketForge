@@ -486,12 +486,14 @@ impl SimulationRoom {
             }
         })?;
         let command_seq = self.take_command_seq();
-        let mut execution = self
+        let t = crate::performance::nano(12);
+        let exchange = self
             .exchanges
             .get_mut(&venue_id)
             .map(Arc::make_mut)
-            .expect("venue id was resolved from exchanges")
-            .apply_to_instrument_from(instrument_id, command, origin)?;
+            .expect("venue id was resolved from exchanges");
+        drop(t);
+        let mut execution = exchange.apply_to_instrument_from(instrument_id, command, origin)?;
         execution.command_seq = command_seq;
         Ok(execution)
     }

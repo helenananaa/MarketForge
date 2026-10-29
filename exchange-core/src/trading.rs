@@ -154,9 +154,15 @@ impl SpotTradingEngine {
     }
 
     pub fn apply(&mut self, command: Command) -> Result<SpotTradingExecution, ClearingError> {
+        let t = crate::performance::nano(27);
         let mut staged = self.clone();
+        drop(t);
+        let t = crate::performance::nano(28);
         let execution = staged.apply_inner(command)?;
+        drop(t);
+        let t = crate::performance::nano(29);
         *self = staged;
+        drop(t);
         Ok(execution)
     }
 
@@ -173,8 +179,11 @@ impl SpotTradingEngine {
             return Err(ClearingError::WrongMarketKind);
         }
 
+        let t = crate::performance::nano(30);
         let risk_context = risk_context(&self.book, &command)?;
-        if let Err(reason) = self.risk.check(&command, &self.accounts, risk_context) {
+        let checked = self.risk.check(&command, &self.accounts, risk_context);
+        drop(t);
+        if let Err(reason) = checked {
             let order_id = command.order_id();
             let recorded = self
                 .log
@@ -186,10 +195,16 @@ impl SpotTradingEngine {
             });
         }
 
+        let t = crate::performance::nano(31);
         let events = self.book.apply(command.clone());
+        drop(t);
+        let t = crate::performance::nano(32);
         let recorded = self.log.record(command, events);
+        drop(t);
+        let t = crate::performance::nano(33);
         let clearing_events =
             self.settle_recorded_events(&recorded.command.command, &recorded.events)?;
+        drop(t);
 
         Ok(SpotTradingExecution {
             command: recorded.command,
@@ -429,9 +444,15 @@ impl PerpTradingEngine {
     }
 
     pub fn apply(&mut self, command: Command) -> Result<PerpTradingExecution, ClearingError> {
+        let t = crate::performance::nano(24);
         let mut staged = self.clone();
+        drop(t);
+        let t = crate::performance::nano(25);
         let execution = staged.apply_inner(command)?;
+        drop(t);
+        let t = crate::performance::nano(26);
         *self = staged;
+        drop(t);
         Ok(execution)
     }
 
@@ -487,8 +508,11 @@ impl PerpTradingEngine {
             });
         }
 
+        let t = crate::performance::nano(34);
         let risk_context = risk_context(&self.book, &command)?;
-        if let Err(reason) = self.risk.check(&command, &self.accounts, risk_context) {
+        let checked = self.risk.check(&command, &self.accounts, risk_context);
+        drop(t);
+        if let Err(reason) = checked {
             let order_id = command.order_id();
             let recorded = self
                 .log
@@ -500,14 +524,20 @@ impl PerpTradingEngine {
             });
         }
 
+        let t = crate::performance::nano(35);
         let mut guard = ReduceOnlyMatching {
             accounts: &self.accounts,
             positions: BTreeMap::new(),
         };
         let events = self.book.apply_guarded(command.clone(), &mut guard);
+        drop(t);
+        let t = crate::performance::nano(36);
         let recorded = self.log.record(command, events);
+        drop(t);
+        let t = crate::performance::nano(37);
         let clearing_events =
             self.settle_recorded_events(&recorded.command.command, &recorded.events)?;
+        drop(t);
 
         Ok(PerpTradingExecution {
             command: recorded.command,

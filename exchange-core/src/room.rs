@@ -594,7 +594,12 @@ impl RoomManager {
             .simulation_room_mut(room_id)?
             .apply_to_instrument_from(instrument_id, command, origin)
             .map_err(RoomManagerError::Actor)?;
-        self.record_execution_and_auto_liquidate(room_id, execution.clone(), true)?;
+        let t = crate::performance::nano(13);
+        let copy = execution.clone();
+        drop(t);
+        let t = crate::performance::nano(14);
+        self.record_execution_and_auto_liquidate(room_id, copy, true)?;
+        drop(t);
         Ok(execution)
     }
 
@@ -689,8 +694,12 @@ impl RoomManager {
             // perp on the same venue. The actor has already refreshed those
             // perp snapshots, so scan the whole room rather than only the
             // instrument that produced the user execution.
+            let t = crate::performance::nano(15);
             self.advance_position_protections(room_id)?;
+            drop(t);
+            let t = crate::performance::nano(16);
             self.advance_pending_liquidations(room_id, usize::MAX)?;
+            drop(t);
         }
 
         Ok(())
@@ -700,11 +709,15 @@ impl RoomManager {
         if self.status(room_id)? != MarketStatus::Running {
             return Ok(());
         }
+        let t = crate::performance::nano(18);
         self.simulation_room_mut(room_id)?
             .complete_flat_position_protections();
+        drop(t);
+        let t = crate::performance::nano(19);
         let entries = self
             .simulation_room_mut(room_id)?
             .prepare_conditional_orders();
+        drop(t);
         for p in entries {
             let id = 7_000_000_000_000_000_000u64
                 .checked_add(self.simulation_room(room_id)?.next_command_seq())
@@ -757,7 +770,9 @@ impl RoomManager {
             self.simulation_room_mut(room_id)?
                 .record_conditional_order(&p, id, admitted);
         }
+        let t = crate::performance::nano(20);
         let exits = self.simulation_room_mut(room_id)?.prepare_position_exits();
+        drop(t);
         for (instrument, account, side, qty, cancellations, limit_price) in exits {
             for order_id in cancellations {
                 let cancel = self

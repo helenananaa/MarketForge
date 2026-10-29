@@ -416,6 +416,7 @@ impl TradingApi for OrderGateway<'_> {
                 .primary_instrument_id()
                 .to_string(),
         };
+        let t = crate::performance::nano(17);
         if let Some(order_id) = existing_order_id(&request.action)
             && let Some(owner_account_id) = self
                 .rooms
@@ -431,6 +432,7 @@ impl TradingApi for OrderGateway<'_> {
                 },
             ));
         }
+        drop(t);
         let command = self.action_to_command(request.account_id, &request.action);
         let execution = self
             .rooms

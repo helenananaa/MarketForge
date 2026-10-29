@@ -1147,8 +1147,10 @@ impl ExchangeActor {
         command: Command,
         origin: CommandOrigin,
     ) -> Result<ActorExecution, ActorRejectReason> {
+        let t = crate::performance::nano(0);
         let wallet_before = self.venue_accounts.wallet_state();
         let margin_before = self.margin_state();
+        drop(t);
         if matches!(command, Command::SetConditionalOrder { .. }) {
             let before = self.market(instrument_id)?.engine.book().depth_state();
             let mut execution = self.apply_conditional_command(instrument_id, command, origin)?;
@@ -1188,8 +1190,10 @@ impl ExchangeActor {
         if matches!(execution.result, ActorExecutionResult::Rejected(_)) {
             execution.rejected_command = Some(retained);
         }
+        let t = crate::performance::nano(11);
         self.attach_wallet_updates(&mut execution, &wallet_before);
         self.attach_margin_updates(&mut execution, &margin_before);
+        drop(t);
         Ok(execution)
     }
 
@@ -1216,6 +1220,7 @@ impl ExchangeActor {
         }
 
         let command_seq = self.take_command_seq();
+        let t = crate::performance::nano(1);
         if let Command::NewOrder(order) = &command {
             let valid_until_market_time_ms = order.kind.valid_until_market_time_ms();
             let expires_at_market_time_ms = order.kind.expires_at_market_time_ms();
@@ -1323,16 +1328,21 @@ impl ExchangeActor {
             });
         }
 
+        drop(t);
+        let t = crate::performance::nano(2);
         let mut staged = {
             let _timer = crate::performance::Timer::start(0);
             self.clone()
         };
+        drop(t);
+        let t = crate::performance::nano(3);
         if let Err(error) = staged.reconcile_market_reservations() {
             return Ok(self.clearing_rejection(instrument_id, command_seq, error));
         }
         if let Err(error) = staged.sync_market_accounts_from_venue(instrument_id) {
             return Ok(self.clearing_rejection(instrument_id, command_seq, error));
         }
+        drop(t);
         // Pre-command reconciliation and full margin synchronization establish a baseline.
         // Only ordinary perp orders have account-local effects; mark/funding
         // changes and spot collateral changes retain the full group path.
@@ -1357,11 +1367,13 @@ impl ExchangeActor {
             } else {
                 None
             };
+        let t = crate::performance::nano(4);
         let mut execution = staged
             .markets
             .get_mut(instrument_id)
             .expect("validated instrument")
             .apply_from(command, origin);
+        drop(t);
         execution.command_seq = command_seq;
         execution.instrument_id = instrument_id.to_string();
         execution.market_time_ms = staged.clock.market_time_ms();
@@ -1380,6 +1392,7 @@ impl ExchangeActor {
             // writes are still tracked per account. Unknown/dense inputs fall
             // back to the complete reconciliation; cross-margin checks below
             // retain their original full scope.
+            let t = crate::performance::nano(5);
             let reconciled = if affected_accounts.is_some() {
                 staged.reconcile_market_reservations_for(affected_accounts.as_ref())
             } else {
@@ -1395,10 +1408,14 @@ impl ExchangeActor {
             if let Err(error) = reconciled {
                 return Ok(self.clearing_rejection(instrument_id, command_seq, error));
             }
+            drop(t);
+            let t = crate::performance::nano(6);
             if let Err(error) = staged.sync_venue_accounts_from_execution(instrument_id, &execution)
             {
                 return Ok(self.clearing_rejection(instrument_id, command_seq, error));
             }
+            drop(t);
+            let t = crate::performance::nano(7);
             if let Err(error) =
                 staged.refresh_price_links(instrument_id, before_book.as_ref(), &mut execution)
             {
@@ -1412,6 +1429,8 @@ impl ExchangeActor {
             if !execution.price_updates.is_empty() {
                 affected_accounts = None;
             }
+            drop(t);
+            let t = if affected_accounts.is_none() { crate::performance::nano(9) } else { crate::performance::nano(8) };
             for quote_asset in &affected_perp_quote_assets {
                 if let Err(error) =
                     staged.sync_perp_cross_margin_group_for(quote_asset, affected_accounts.as_ref())
@@ -1420,7 +1439,9 @@ impl ExchangeActor {
                 }
             }
         }
+        let t = crate::performance::nano(10);
         *self = staged;
+        drop(t);
         Ok(execution)
     }
 
@@ -3412,11 +3433,17 @@ impl MarketActor {
 
     pub fn apply_from(&mut self, command: Command, origin: CommandOrigin) -> ActorExecution {
         let retained = command.clone();
+        let t = crate::performance::nano(21);
         let before = self.engine.book().depth_state();
+        drop(t);
+        let t = crate::performance::nano(22);
         let mut execution = self.apply_from_inner(command, origin);
+        drop(t);
+        let t = crate::performance::nano(23);
         if matches!(execution.result, ActorExecutionResult::Accepted(_)) {
             execution.book_delta = Some(self.engine.book().delta_since(&before));
         }
+        drop(t);
         if matches!(execution.result, ActorExecutionResult::Rejected(_)) {
             execution.rejected_command = Some(retained);
         }

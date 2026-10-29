@@ -443,6 +443,19 @@ impl Profile {
             "profile step={step} {phases} wakes(calls/acting/actions): {wakes} poll_actions={:?}",
             self.poll_actions
         );
+        let nanos = exchange_core::performance::nano_snapshot()
+            .into_iter()
+            .filter(|(_, calls, _)| *calls > 0)
+            .map(|(name, calls, nanos)| format!("{name}={:.1}s/{calls}", nanos as f64 / 1e9))
+            .collect::<Vec<_>>()
+            .join(" ");
+        eprintln!("order path: {nanos}");
+        let counts = exchange_core::performance::count_snapshot()
+            .into_iter()
+            .map(|(name, n)| format!("{name}={n}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        eprintln!("protection counts: {counts}");
     }
 }
 
@@ -678,6 +691,7 @@ fn run_waves(
         .iter()
         .map(|t| registry.reads_own_fills(t))
         .collect::<Vec<_>>();
+    let mut submit_alloc = [0u64; 4];
     for step in 0..steps {
         let started = std::time::Instant::now();
         rooms
@@ -901,6 +915,7 @@ fn run_waves(
             p.add("accept", started);
         }
         let started = std::time::Instant::now();
+        let alloc_before = crate::alloc_snapshot();
         // All agents observe the same committed wave. Matching/risk still run
         // on the current authoritative state for each ordered submission.
         for (i, actions) in decisions.into_iter().enumerate() {
@@ -950,8 +965,21 @@ fn run_waves(
                 }
             }
         }
+        let alloc_after = crate::alloc_snapshot();
+        for i in 0..4 {
+            submit_alloc[i] += alloc_after[i] - alloc_before[i];
+        }
         if let Some(p) = &mut profile {
             p.add("submit", started);
+            if (step + 1) % 600 == 0 {
+                eprintln!(
+                    "submit alloc: allocs={} alloc_s={:.2} frees={} free_s={:.2}",
+                    submit_alloc[0],
+                    submit_alloc[1] as f64 / 1e9,
+                    submit_alloc[2],
+                    submit_alloc[3] as f64 / 1e9
+                );
+            }
         }
         let started = std::time::Instant::now();
         // The authoritative suffix also includes clock-triggered protection,
