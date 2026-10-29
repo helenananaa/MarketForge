@@ -21,6 +21,9 @@ use std::{
 
 pub(crate) const ID: &str = "StyleSwitchingTrader";
 pub(crate) const VERSION: &str = "1.0.0";
+/// Execution-only variant: target position, signals, sizing parameters and stop
+/// rules are unchanged. IOC children respect observed external touch depth.
+const TOUCH_VERSION: &str = "1.1.0";
 const MAX_SAMPLES: usize = 512;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -116,7 +119,10 @@ impl Factory {
         let AgentTemplate::Plugin(p) = t else {
             return Err(BotError("style plugin required".into()));
         };
-        if p.plugin_id != ID || p.plugin_version != VERSION || p.state_version != 1 {
+        if p.plugin_id != ID
+            || ![VERSION, TOUCH_VERSION].contains(&p.plugin_version.as_str())
+            || p.state_version != 1
+        {
             return Err(BotError("style trader identity mismatch".into()));
         }
         let mut p = p.clone();
@@ -133,6 +139,9 @@ impl Factory {
 impl BotFactory for Factory {
     fn descriptor(&self) -> &BotDescriptor {
         &self.0
+    }
+    fn supports_plugin_version(&self, version: &str) -> bool {
+        [VERSION, TOUCH_VERSION].contains(&version)
     }
     fn supports_native_batching(&self) -> bool {
         true
@@ -155,7 +164,7 @@ impl BotFactory for Factory {
         else {
             return Err(BotError("style trader state required".into()));
         };
-        if plugin_id != ID || plugin_version != VERSION || *state_version != 1 {
+        if plugin_id != ID || *plugin_version != p.plugin_version || *state_version != 1 {
             return Err(BotError("style trader state version mismatch".into()));
         }
         let state = if data.is_null() {
@@ -497,14 +506,29 @@ impl Trader {
             let reducing =
                 (position > 0 && side == Side::Sell) || (position < 0 && side == Side::Buy);
             if reachable && wanted > 0 && (!budget.reduce_only || reducing) {
-                let qty = budget.allocate(side, limit, wanted) / lot * lot;
+                let (child_limit, child_wanted) = if self.p.plugin_version == TOUCH_VERSION {
+                    let top = top.expect("reachable touch");
+                    let own = v
+                        .own_orders
+                        .iter()
+                        .filter(|o| o.side != side && o.price_tick == top.price_tick)
+                        .map(|o| o.remaining_qty)
+                        .sum::<u64>();
+                    (top.price_tick, wanted.min(top.qty.saturating_sub(own)))
+                } else {
+                    (limit, wanted)
+                };
+                // The desired position remains in state. A partial/no fill is
+                // observed from the real account next time; submitting a child
+                // never moves the position or declares the target completed.
+                let qty = budget.allocate(side, child_limit, child_wanted) / lot * lot;
                 if qty > 0 {
                     actions.push(OrderAction::PlaceProtected {
                         side,
                         position_side: PositionSide::Both,
                         qty,
                         order_type: model::ProtectedOrderType::ImmediateOrCancel,
-                        price_tick: limit,
+                        price_tick: child_limit,
                         reduce_only: budget.reduce_only,
                         valid_until_market_time_ms: Some(now.saturating_add(30_000)),
                         expires_at_market_time_ms: None,
@@ -585,7 +609,7 @@ impl ScheduledBot for Trader {
     fn snapshot(&self) -> PersistedAgentKindState {
         PersistedAgentKindState::Plugin {
             plugin_id: ID.into(),
-            plugin_version: VERSION.into(),
+            plugin_version: self.p.plugin_version.clone(),
             state_version: 1,
             data: Arc::new(serde_json::to_value(&self.state).expect("finite style state")),
         }

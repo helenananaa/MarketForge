@@ -16,6 +16,10 @@ use std::{collections::BTreeMap, sync::Arc};
 
 pub(crate) const ID: &str = "ReactiveFlowTrader";
 pub(crate) const VERSION: &str = "1.0.0";
+/// Experimental execution policy: aggressive demands persist as finite parent
+/// orders, with each IOC child limited to observed external touch liquidity.
+/// Version 1.0.0 and its random draws/snapshots remain unchanged.
+const SLICED_VERSION: &str = "1.1.0";
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -96,7 +100,10 @@ impl Factory {
         let AgentTemplate::Plugin(p) = t else {
             return Err(BotError("reactive plugin required".into()));
         };
-        if p.plugin_id != ID || p.plugin_version != VERSION || p.state_version != 1 {
+        if p.plugin_id != ID
+            || ![VERSION, SLICED_VERSION].contains(&p.plugin_version.as_str())
+            || p.state_version != 1
+        {
             return Err(BotError("reactive trader identity mismatch".into()));
         }
         let mut p = p.clone();
@@ -116,6 +123,9 @@ impl Factory {
 impl BotFactory for Factory {
     fn descriptor(&self) -> &BotDescriptor {
         &self.0
+    }
+    fn supports_plugin_version(&self, version: &str) -> bool {
+        [VERSION, SLICED_VERSION].contains(&version)
     }
     fn supports_native_batching(&self) -> bool {
         true
@@ -138,7 +148,7 @@ impl BotFactory for Factory {
         else {
             return Err(BotError("reactive trader state required".into()));
         };
-        if plugin_id != ID || plugin_version != VERSION || *state_version != 1 {
+        if plugin_id != ID || *plugin_version != p.plugin_version || *state_version != 1 {
             return Err(BotError("reactive trader state version mismatch".into()));
         }
         let state = if data.is_null() {
@@ -150,7 +160,16 @@ impl BotFactory for Factory {
         } else {
             serde_json::from_value::<State>(data.as_ref().clone()).map_err(err)?
         };
-        if state.identity != identity || !state.valid() {
+        if state.identity != identity
+            || !state.valid()
+            || (p.plugin_version == VERSION
+                && (state.parent.is_some()
+                    || state.last_child_feedback.is_some()
+                    || state.slicing.is_some()))
+            || state.parent.as_ref().is_some_and(|x| {
+                x.remaining > c.max_qty || x.deadline_ms.saturating_sub(x.born_ms) != c.order_ttl_ms
+            })
+        {
             return Err(BotError("invalid reactive trader saved state".into()));
         }
         Ok(Box::new(Trader { p, c, state }))
@@ -176,6 +195,32 @@ struct State {
     flow_total: f64,
     born: BTreeMap<u64, u64>,
     orders: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parent: Option<ParentDemand>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_child_feedback: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    slicing: Option<SlicingLedger>,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SlicingLedger {
+    parents: u64,
+    demand_lots: u64,
+    filled_lots: u64,
+    expired_lots: u64,
+    children: u64,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ParentDemand {
+    side: Side,
+    remaining: u64,
+    limit: i64,
+    born_ms: u64,
+    deadline_ms: u64,
 }
 
 impl State {
@@ -188,6 +233,22 @@ impl State {
             && self.reference.is_none_or(|r| r.is_finite() && r > 0.)
             && self.rng != 0
             && self.born.len() <= 64
+            && self.parent.as_ref().is_none_or(|p| {
+                p.remaining > 0
+                    && p.limit > 0
+                    && p.born_ms < p.deadline_ms
+                    && self.last_ms.is_some_and(|ms| p.born_ms <= ms)
+            })
+            && match &self.slicing {
+                Some(s) => {
+                    s.parents > 0
+                        && u128::from(s.demand_lots)
+                            == u128::from(s.filled_lots)
+                                + u128::from(s.expired_lots)
+                                + u128::from(self.parent.as_ref().map_or(0, |p| p.remaining))
+                }
+                None => self.parent.is_none(),
+            }
     }
 
     fn uniform(&mut self) -> f64 {
@@ -230,6 +291,98 @@ struct Trader {
 }
 
 impl Trader {
+    fn parent_child(
+        &mut self,
+        v: &ParticipantObservationView<'_>,
+        precision: (i64, u64),
+    ) -> Vec<OrderAction> {
+        let Some(parent) = self.state.parent.as_ref() else {
+            return vec![];
+        };
+        let now = v.market_time_ms;
+        if now >= parent.deadline_ms {
+            // An unfilled IOC is not a fill. Outstanding demand remains live
+            // only for the original finite TTL; never move its price boundary.
+            self.state
+                .slicing
+                .as_mut()
+                .expect("parent ledger")
+                .expired_lots += parent.remaining;
+            self.state.parent = None;
+            return vec![];
+        }
+        let side = parent.side;
+        let Some(mut budget) = Budget::for_limits(
+            v,
+            self.c.inventory_cap,
+            self.c.fee_buffer_ppm,
+            self.c.target_leverage,
+        ) else {
+            return vec![];
+        };
+        let reducing = (budget.position > 0 && side == Side::Sell)
+            || (budget.position < 0 && side == Side::Buy);
+        if budget.reduce_only && !reducing {
+            return vec![];
+        }
+        let levels = if side == Side::Buy {
+            &v.book.asks
+        } else {
+            &v.book.bids
+        };
+        let Some(top) = levels.first() else {
+            return vec![];
+        };
+        if (side == Side::Buy && top.price_tick > parent.limit)
+            || (side == Side::Sell && top.price_tick < parent.limit)
+        {
+            return vec![];
+        }
+        let crossing: Vec<_> = v
+            .own_orders
+            .iter()
+            .filter(|o| {
+                o.side != side
+                    && if side == Side::Buy {
+                        o.price_tick <= top.price_tick
+                    } else {
+                        o.price_tick >= top.price_tick
+                    }
+            })
+            .take(64)
+            .map(|o| OrderAction::Cancel {
+                order_id: o.order_id,
+            })
+            .collect();
+        if !crossing.is_empty() {
+            return crossing;
+        }
+        let own_touch = v
+            .own_orders
+            .iter()
+            .filter(|o| o.side != side && o.price_tick == top.price_tick)
+            .map(|o| o.remaining_qty)
+            .sum::<u64>();
+        let requested = parent.remaining.min(top.qty.saturating_sub(own_touch));
+        let lot = precision.1.max(1);
+        let qty = budget.allocate(side, top.price_tick, requested) / lot * lot;
+        if qty == 0 {
+            return vec![];
+        }
+        self.state.orders += 1;
+        self.state.slicing.as_mut().expect("parent ledger").children += 1;
+        vec![OrderAction::PlaceProtected {
+            side,
+            position_side: PositionSide::Both,
+            qty,
+            order_type: model::ProtectedOrderType::ImmediateOrCancel,
+            price_tick: top.price_tick,
+            reduce_only: budget.reduce_only,
+            valid_until_market_time_ms: Some(parent.deadline_ms),
+            expires_at_market_time_ms: None,
+        }]
+    }
+
     fn observe(&mut self, v: &ParticipantObservationView<'_>, mid: f64) {
         let now = v.market_time_ms;
         let s = &mut self.state;
@@ -295,6 +448,11 @@ impl Trader {
                 .unwrap_or(self.c.fallback_price_tick as f64),
         };
         self.observe(v, mid);
+        if self.p.plugin_version == SLICED_VERSION && self.state.parent.is_some() {
+            // Retry on the next authoritative observation, without resampling
+            // direction/size or forgetting the residual after a partial fill.
+            return Ok(self.parent_child(v, precision));
+        }
         if now < self.state.next_ms {
             return Ok(vec![]);
         }
@@ -364,6 +522,25 @@ impl Trader {
             return Ok(vec![]);
         }
         let aggressive = s.uniform() * 1e6 < self.c.aggressive_ppm as f64;
+        if aggressive && self.p.plugin_version == SLICED_VERSION {
+            let slip = mid * self.c.max_slippage_ppm as f64 / 1e6;
+            let limit = match side {
+                Side::Buy => ((mid + slip) / tick as f64).floor() as i64 * tick,
+                Side::Sell => ((mid - slip) / tick as f64).ceil() as i64 * tick,
+            }
+            .max(tick);
+            s.parent = Some(ParentDemand {
+                side,
+                remaining: wanted,
+                limit,
+                born_ms: now,
+                deadline_ms: now.saturating_add(self.c.order_ttl_ms),
+            });
+            let ledger = s.slicing.get_or_insert_with(SlicingLedger::default);
+            ledger.parents += 1;
+            ledger.demand_lots += wanted;
+            return Ok(self.parent_child(v, precision));
+        }
         let action = if aggressive {
             let slip = mid * self.c.max_slippage_ppm as f64 / 1e6;
             let limit = match side {
@@ -439,6 +616,69 @@ impl Trader {
 }
 
 impl ScheduledBot for Trader {
+    fn execution_feedback(&mut self, action: &OrderAction, e: &GatewayExecution) {
+        if self.p.plugin_version != SLICED_VERSION
+            || e.participant_id != self.p.participant.participant_id
+            || e.room_id != self.p.participant.room_id
+            || *action != e.action
+            || e.account_id != self.p.participant.account_id
+            || e.instrument_id != self.p.participant.instrument_id.as_deref().unwrap_or("")
+            || self
+                .state
+                .last_child_feedback
+                .is_some_and(|seq| e.execution.command_seq <= seq)
+        {
+            return;
+        }
+        let OrderAction::PlaceProtected {
+            side,
+            qty,
+            order_type: model::ProtectedOrderType::ImmediateOrCancel,
+            ..
+        } = action
+        else {
+            return;
+        };
+        let Some(parent) = self.state.parent.as_mut() else {
+            return;
+        };
+        if *side != parent.side
+            || e.execution.market_time_ms < parent.born_ms
+            || e.execution.market_time_ms > parent.deadline_ms
+        {
+            return;
+        }
+        self.state.last_child_feedback = Some(e.execution.command_seq);
+        let ActorExecutionResult::Accepted(r) = &e.execution.result else {
+            return;
+        };
+        let events = match r {
+            MarketExecution::Spot(r) => &r.events,
+            MarketExecution::Perp(r) => &r.events,
+        };
+        let filled = events
+            .iter()
+            .filter_map(|x| match &x.event {
+                Event::TradePrinted(t)
+                    if t.taker_account_id == e.account_id && t.taker_side == *side =>
+                {
+                    Some(t.qty)
+                }
+                _ => None,
+            })
+            .sum::<u64>()
+            .min(*qty);
+        let applied = filled.min(parent.remaining);
+        parent.remaining -= applied;
+        self.state
+            .slicing
+            .as_mut()
+            .expect("parent ledger")
+            .filled_lots += applied;
+        if parent.remaining == 0 {
+            self.state.parent = None;
+        }
+    }
     fn decide(&mut self, v: &ParticipantObservation) -> Result<Vec<OrderAction>, BotError> {
         if v.room_id != self.p.participant.room_id {
             return Err(BotError("reactive trader room mismatch".into()));
@@ -466,7 +706,7 @@ impl ScheduledBot for Trader {
     fn snapshot(&self) -> PersistedAgentKindState {
         PersistedAgentKindState::Plugin {
             plugin_id: ID.into(),
-            plugin_version: VERSION.into(),
+            plugin_version: self.p.plugin_version.clone(),
             state_version: 1,
             data: Arc::new(serde_json::to_value(&self.state).expect("finite reactive state")),
         }

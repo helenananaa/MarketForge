@@ -4,7 +4,7 @@ use super::*;
 use serde_json::{Value, json};
 type Error = Box<dyn std::error::Error>;
 
-fn export_execution(e: &ActorExecution) -> Option<Value> {
+pub(super) fn export_execution(e: &ActorExecution) -> Option<Value> {
     let (kind, command, events, clearing) = match &e.result {
         ActorExecutionResult::Accepted(MarketExecution::Spot(r)) => (
             "spot",

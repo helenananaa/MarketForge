@@ -78,6 +78,23 @@ pub struct EventLog {
 }
 
 impl EventLog {
+    /// Research archive compaction only. Keep unread trigger events and the last
+    /// event; sequence allocators must never rewind when old records move to disk.
+    pub(crate) fn compact_archived(&mut self, first_event_seq: u64) {
+        // Last-price protections also read the most recent trade even after
+        // later order lifecycle events have advanced the event cursor.
+        let last_trade = self.events.iter().rev().find_map(|record| {
+            matches!(record.event, Event::TradePrinted(_)).then_some(record.seq)
+        });
+        self.commands = History::default();
+        self.events = self
+            .events
+            .iter()
+            .filter(|e| e.seq >= first_event_seq || Some(e.seq) == last_trade)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into();
+    }
     pub fn new() -> Self {
         Self::default()
     }

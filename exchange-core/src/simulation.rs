@@ -82,6 +82,11 @@ pub struct SimulationRoom {
 }
 
 impl SimulationRoom {
+    pub(crate) fn compact_archived_history(&mut self) {
+        for exchange in self.exchanges.values_mut() {
+            Arc::make_mut(exchange).compact_archived_history();
+        }
+    }
     /// Transfers have their own durable cursor; they are not matching commands.
     pub fn wallet_event_count(&self) -> usize {
         self.wallet_events.len()
@@ -957,7 +962,10 @@ impl SimulationRoom {
     }
 
     /// The exchange `venue_id_for_instrument` resolves, without copying its id.
-    fn instrument_exchange(&self, instrument_id: &str) -> Result<&ExchangeActor, ActorRejectReason> {
+    fn instrument_exchange(
+        &self,
+        instrument_id: &str,
+    ) -> Result<&ExchangeActor, ActorRejectReason> {
         self.exchanges
             .values()
             .find(|exchange| exchange.has_instrument(instrument_id))

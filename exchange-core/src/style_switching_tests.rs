@@ -112,6 +112,139 @@ fn fills(actions: &[OrderAction]) -> i128 {
         .sum()
 }
 
+fn touch_template(version: &str) -> AgentTemplate {
+    let mut t = template(
+        3,
+        json!({"switch_ppm":0,"child_ppm":1000000,"min_trade_ppm":0,"stop_mode":"Internal"}),
+    );
+    if let AgentTemplate::Plugin(p) = &mut t {
+        p.plugin_version = version.into();
+    }
+    t
+}
+
+fn prepared(t: &AgentTemplate, style: Style) -> Box<dyn ScheduledBot> {
+    let mut saved = make(t).snapshot();
+    if let PersistedAgentKindState::Plugin { data, .. } = &mut saved {
+        let mut j = data.as_ref().clone();
+        j["style"] = json!(style);
+        j["fast"] = json!(110.);
+        j["slow"] = json!(100.);
+        j["anchor"] = json!(100.);
+        j["first_ms"] = json!(0);
+        j["last_ms"] = json!(0);
+        j["last_mid"] = json!(100.);
+        *data = Arc::new(j);
+    }
+    BotRegistry::with_builtins().create(t, &saved).unwrap()
+}
+
+fn child(actions: &[OrderAction]) -> Option<(Side, u64, i64)> {
+    actions.iter().find_map(|a| match a {
+        OrderAction::PlaceProtected {
+            side,
+            qty,
+            price_tick,
+            ..
+        } => Some((*side, *qty, *price_tick)),
+        _ => None,
+    })
+}
+
+#[test]
+fn touch_execution_keeps_the_same_target_signals_rng_and_stops() {
+    let mut old = prepared(&touch_template(VERSION), Style::Momentum);
+    let mut new = prepared(&touch_template(TOUCH_VERSION), Style::Momentum);
+    let mut v = spot(1, 100, 0);
+    v.book.asks[0].qty = 3;
+    let a = old.decide(&v).unwrap();
+    let b = new.decide(&v).unwrap();
+    assert_eq!(child(&a), Some((Side::Buy, 100, 105)));
+    assert_eq!(child(&b), Some((Side::Buy, 3, 101)));
+    let mut os = serde_json::to_value(state(old.as_ref())).unwrap();
+    let mut ns = serde_json::to_value(state(new.as_ref())).unwrap();
+    os.as_object_mut().unwrap().remove("identity");
+    ns.as_object_mut().unwrap().remove("identity");
+    assert_eq!(
+        os, ns,
+        "the execution policy cannot change target/fitness/RNG/stop state on the same input"
+    );
+    assert_eq!(
+        state(new.as_ref()).target,
+        100,
+        "submitted size does not complete the target"
+    );
+}
+
+#[test]
+fn touch_execution_works_remaining_exits_from_actual_position_after_restore() {
+    let t = touch_template(TOUCH_VERSION);
+    let mut bot = prepared(&t, Style::Out);
+    let mut v = spot(1, 100, 11);
+    v.book.bids[0].qty = 2;
+    assert_eq!(child(&bot.decide(&v).unwrap()), Some((Side::Sell, 2, 99)));
+    assert_eq!(state(bot.as_ref()).target, 0);
+    let mut restored = BotRegistry::with_builtins()
+        .create(&t, &bot.snapshot())
+        .unwrap();
+    let now = state(bot.as_ref()).next_ms / 1000 + 1;
+    v = spot(now, 100, 10);
+    v.book.bids[0].qty = 2;
+    let a = bot.decide(&v).unwrap();
+    assert_eq!(a, restored.decide(&v).unwrap());
+    assert_eq!(
+        child(&a),
+        Some((Side::Sell, 2, 99)),
+        "partial actual exit leaves a real position to work"
+    );
+    assert_eq!(state(bot.as_ref()).last_position, 10);
+    assert_eq!(state(bot.as_ref()).target, 0);
+}
+
+#[test]
+fn touch_execution_requires_external_liquidity_and_original_price_boundary() {
+    let t = touch_template(TOUCH_VERSION);
+    let mut bot = prepared(&t, Style::Momentum);
+    let mut v = spot(1, 100, 0);
+    v.book.asks[0].qty = 3;
+    v.own_orders = vec![Order {
+        order_id: 77,
+        account_id: 20,
+        side: Side::Sell,
+        position_side: Default::default(),
+        price_tick: 101,
+        remaining_qty: 3,
+        seq: 1,
+    }];
+    assert!(child(&bot.decide(&v).unwrap()).is_none());
+    assert_eq!(state(bot.as_ref()).target, 100);
+    let mut bot = prepared(&t, Style::Momentum);
+    let mut v = spot(1, 100, 0);
+    v.book.bids[0].price_tick = 90;
+    v.book.asks[0].price_tick = 110;
+    assert!(
+        child(&bot.decide(&v).unwrap()).is_none(),
+        "touch outside original5% boundary is not executable"
+    );
+}
+
+#[test]
+fn touch_style_snapshot_version_cannot_be_used_as_a_legacy_snapshot() {
+    let old = touch_template(VERSION);
+    let new = touch_template(TOUCH_VERSION);
+    let bot = prepared(&new, Style::Momentum);
+    assert!(
+        BotRegistry::with_builtins()
+            .create(&old, &bot.snapshot())
+            .is_err()
+    );
+    assert!(
+        BotRegistry::with_builtins()
+            .create(&new, &bot.snapshot())
+            .is_ok()
+    );
+}
+
 #[test]
 fn logit_choice_follows_scores_and_intensity() {
     assert_eq!(choose_style([0., 0., 0.], 1., 0.2), Style::Out);

@@ -1,0 +1,74 @@
+"""Keep implementation proof distinct from the availability of native market results."""
+import json
+from datetime import datetime
+from pathlib import Path
+from research_parent_liquidity import BASE,active_main
+from research_market_mechanisms import ROOT
+
+
+def read(path):return json.loads(path.read_text(encoding='utf-8'))
+
+
+def report():
+    complete=(BASE/'four-seed-complete.json').exists()
+    lines=['# 有限母订单与流动性执行：实现与验证（2026-10-25）','',
+        '状态记录时间：'+datetime.now().astimezone().isoformat(),'']
+    if complete:
+        lines+=['四个固定种子的4小时对照已完成。市场效果见下方完整对照，不由代码测试推断。','']
+    else:
+        lines+=['**实现、编译、离线验证已完成；四种子市场效果尚未验证。没有切换默认机制，也不能据此宣称K线或市场统计已有改善。**','']
+    lines+=['## 已实现的单一机制','',
+        'ExecutionTrader已有20分钟至2小时的有限母订单。本次保留原方向、总目标量、开始配置、期限、TWAP累计额度、max_qty、滑点上界、初始资金、手续费和其他参与者策略；只改变子单执行与确认生命周期。没有新增价值路径、持续注资、扩大套利额度或裁剪成交。','',
+        '新增显式版本1.1.0和liquidity_aware开关。以观察到的最优价为限价，数量不超过该档可见外部流动性、原累计欠单与资金约束；一次只允许一个在途子单。真实订单号、账户、方向一致的权威成交反馈才消耗母需求。部分成交或拒单后，可在新的市场观察中重试欠单，同一时刻不循环提交。','',
+        '到期按模拟时钟终止剩余需求，即使账户或盘口暂时不可用；迟到的真实成交确认可校正过期量，不重开期限。在途子单与需求账本随快照恢复。期限仍采用原策略的实际首次激活起算方式，不把配置不变夸大成动态路径中的绝对截止时刻必然相同。','',
+        '账本恒等式：原始需求＝真实成交＋过期残余＋仍待执行。提交量、观察到的仓位进度与真实成交分别保存，避免提交冒充成交。旧版1拒绝新键，包括false；默认配方不添加该开关，旧快照不增加空字段。','',
+        'CLI入口：`--parent-execution touch-budget`，需原有fast-flow实验条件。可直接审阅冻结的design配方。候选仅改变ExecutionTrader版本和布尔开关，反向删除这两处后与各自控制完全一致。','',
+        '## 已通过的验证','',
+        '- 完整核心测试：487通过、12忽略；其中执行相关42项为子集，包含9项新测试，不重复计数。',
+        '- Python：17项配方、2项新分析、14项输出／解析检查、4项资源时钟保护，共37项通过。',
+        '- 真实撮合网关测试覆盖部分成交、拒单、重复反馈、在途恢复、账户变化不冒充成交、期限、晚到确认、卖出库存边界、新时钟重试和时钟回退。',
+        '- Linux Rust1.97.1 release编译及随后up-to-date检查成功。完整控制源码与候选改动源码、程序、配方均冻结并核对哈希。',
+        '- 四个历史真实4h控制与既有不可变证据ZIP的配方、元数据、回执哈希一致；原六个证据ZIP保持原哈希。它们是缓存，不计新运行。','',
+        '测试日志和offline-verification.json保存在研究目录。初期编译／测试夹具、验证器路径差异及旧测试进程占用链接目标的问题已修复，相关原日志保留；这些不是市场运行失败或成功。','',
+        '## 固定种子与资格范围','',
+        '41、7、19、73四组配方，以及可选新种子271的控制／候选，在新结果出现前冻结。300bots、1秒时钟、每次4小时，主统计窗口[2h,4h)。基线为上一轮raw-flow控制；flow_surprise不启用。新程序旧执行路径必须先重现旧种子41的完整回执及执行档案，才可复用控制做效果判断。','',
+        '联合验收检查母订单完成／过期、真实成交量、订单方向记忆、价差与深度、跨档成交与冲击恢复、收益及绝对收益相关性、厚尾、1m/5m/15m形态、基差尾部和实际对冲残差。多个同订单号的跨档打印先合并为一个执行订单；盘口恢复按完整动作波观测，是描述性响应，不能当作单一订单的孤立因果冲击。1秒时钟也不能认证毫秒级到达特征。','',
+        '不接受靠少成交、大量过期或压平波动得到的图形改善。271只在四种子联合结果值得独立检验时执行；12小时、真实L2校准、跨日期泛化及做市补充／撤退政策均留作独立资格或下一机制，不混入本次候选。','']
+    if not complete:
+        status=read(BASE/'delivery-status.json');data=read(BASE/'pilot/comparison.json')
+        assert status['completed_paired_seeds']==[41] and not status['four_paired_seeds_complete']
+        lines+=['## 已完成的探索结果：仅种子41','',
+            '新程序旧执行路径完成4h复跑：完整市场回执及2,005,944条权威执行档案均与旧程序逐字节一致，兼容性检查通过。候选另完成种子41的4h试跑；四个旧控制与各目录中的种子41副本均为缓存。合计只计2次新完整运行、8个模拟小时，其中市场机制对照只有1个种子，不是四种子验收。','',
+            '全程计划母需求均为9,980手，实际已激活4,768手（20个账户）；尚未激活5,212手。实际成交由3,646增至3,792手，过期量由146降至0；仍在原期限内待执行均为976手。因此79.5%的已激活需求成交率不是所有已到期订单的最终完成率。','',
+            '|机制|已激活需求|真实成交|过期残余|期限内待执行|成交／已激活|','|---|---:|---:|---:|---:|---:|']
+        for r in data['parents']:
+            lines.append(f"|{r['profile']}|{r['activated_demand_lots']}|{r['filled_lots']}|{r['expired_lots']}|{r['remaining_lots']}|{r['filled_fraction']:.1%}|")
+        lines+=['','主统计窗口[2h,4h)，使用全部真实成交：','',
+            '|市场／机制|分钟标准差bp|收益ACF1|5m中位影线占比|成交量|','|---|---:|---:|---:|---:|']
+        for r in data['rows']:
+            lines.append(f"|{r['market']}/{r['profile']}|{r['std_bp']:.3f}|{r['acf1']:.3f}|{r['wick_5m']:.1%}|{r['volume']:,.0f}|")
+        lines+=['',
+            '候选永续母订单的跨档子单由23次降至0次；现货两组均为0次。现货成交量上升、永续成交量略降，没有通过把全部交易和波动一起压低获得结果。但收益自相关两市场均升高，永续影线占比增加，基差绝对值P99由8.374升至8.947bp。更顺利地执行母需求是真实业务改善；市场整体更真实尚未成立，不能据本种子晋升默认。','',
+            '![种子41实际5m OHLCV](../../.local/strategy-research-parent-liquidity-20261025/pilot/parent-liquidity-seed41-5m.png)','',
+            '[完整1m OHLCV](../../.local/strategy-research-parent-liquidity-20261025/pilot/parent-liquidity-seed41-1m.png)；[分析明细](../../.local/strategy-research-parent-liquidity-20261025/pilot/comparison.json)。两图均为完整主窗口、共同坐标尺度，无平滑、删成交或裁剪异常区间。','',
+            '## 中断归因与交付边界','',
+            '用户已选择“先交付实现与离线验证，保留市场效果缺口”。本任务协调器、原生任务和内存中继已停止，无后台排队复跑。四种子主批次未完成：7未得到完整候选回执，19、73未运行；独立种子271与12h复验均未完成。未完成的尝试不计成功小时。','',
+            '种子7首次尝试最后日志步为7,900，受跨系统时间戳约0.159秒的轻微超前触发中继陈旧保护。该条资源记录中的0为无效样本哨兵，不能解释成主机内存实际耗尽；此前有效提交余量约4.75GiB，cgroup无OOM事件。已修复测试框架对[-2s,30s)时钟偏差的判断，4项边界测试通过，3GiB停止线不变。修复后的重试由用户交付选择主动停止，最后日志步为5,700；代理退出码0仍缺最终回执，不记为成功，也不归因成市场机制崩溃。两个停止时刻的精确模拟步均未知。原始日志、部分执行流和失败元数据均保留。','',
+            '资源策略在结果前冻结：最多一个原生任务，退出后才做离线统计；MemoryHigh2G/Max4G/SwapMax2G，6GiB主机提交／8GiB客体启动门槛，3GiB运行保护。没有调低保护线、回收全局缓存、改变WSL配置或停止其他项目。','',
+            '本交付完成的是有限母订单的执行机制及离线证据。独立信息到达、做市流动性的补充／撤退尚未实施；四种子联合市场效果、独立新种子、长周期、真实L2校准及跨日期泛化均保留缺口。维持显式实验开关，默认旧路径。','',
+            '候选程序SHA256：`c34a01bc5ec2a42794a478d1b37ebe7127961774797172c60924e084ba8ddba2`。源代码与经济配方冻结后未改动；时钟修复仅影响资源框架。`delivery-status.json`记录已完成运行、缓存和中断的独立计数，`external-native-data.json`列明本地保留的大型原始数据及哈希；证据ZIP包含源码、程序、测试日志、配方、分析和图，不把大型原始执行流塞入压缩包。','']
+    else:
+        data=read(active_main()/'comparison.json')
+        lines+=['## 完整四种子结果','',
+            '|种子／市场／机制|分钟标准差bp|收益ACF1|5m中位影线占比|成交量|','|---|---:|---:|---:|---:|']
+        for r in data['rows']:lines.append(f"|{r['seed']}/{r['market']}/{r['profile']}|{r['std_bp']:.3f}|{r['acf1']:.3f}|{r['wick_5m']:.1%}|{r['volume']:,.0f}|")
+        lines+=['','|种子／机制|计划需求|已激活需求|真实成交|过期残余|仍待执行|已激活需求完成率|','|---|---:|---:|---:|---:|---:|---:|']
+        for r in data['parents']:lines.append(f"|{r['seed']}/{r['profile']}|{r['planned_demand_lots']}|{r['activated_demand_lots']}|{r['filled_lots']}|{r['expired_lots']}|{r['remaining_lots']}|{r['filled_fraction']:.1%}|")
+        for seed in (41,7,19,73):lines+=['',f'![种子{seed}实际5m OHLCV](../../.local/strategy-research-parent-liquidity-20261025/{active_main().name}/parent-liquidity-seed{seed}-5m.png)']
+    lines+=['','机制与预定规则见[实验协议](../MARKET_PARENT_LIQUIDITY_EXPERIMENTS.md)。']
+    suffix='results'if complete else'implementation'
+    path=ROOT/f'docs/validation/2026-10-25-market-parent-liquidity-{suffix}.md'
+    path.write_text('\n'.join(lines)+'\n',encoding='utf-8');print(path)
+
+
+if __name__=='__main__':report()

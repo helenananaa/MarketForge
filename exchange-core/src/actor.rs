@@ -127,6 +127,44 @@ pub struct ExchangeActor {
 }
 
 impl ExchangeActor {
+    pub(crate) fn compact_archived_history(&mut self) {
+        self.untracked(|actor| {
+            for (instrument, market) in &mut actor.markets {
+                match &mut market.engine {
+                    MarketEngine::Spot(engine) => engine.compact_archived_history(),
+                    MarketEngine::Perp(engine) => {
+                        let latest = engine
+                            .event_history()
+                            .events_iter()
+                            .next_back()
+                            .map_or(0, |e| e.seq);
+                        let protection_cursor = actor
+                            .position_protections
+                            .values()
+                            .filter(|p| {
+                                p.instrument_id == *instrument
+                                    && matches!(
+                                        p.status.as_str(),
+                                        "armed" | "awaiting_fill" | "triggered"
+                                    )
+                            })
+                            .map(|p| p.last_checked_event_seq);
+                        let conditional_cursor = actor
+                            .conditional_orders
+                            .iter()
+                            .filter(|(_, p)| p.instrument_id == *instrument && p.status == "armed")
+                            .map(|(_, p)| actor.conditional_orders.cursor(p));
+                        let first = protection_cursor
+                            .chain(conditional_cursor)
+                            .min()
+                            .unwrap_or(latest)
+                            .min(latest);
+                        engine.compact_archived_history(first);
+                    }
+                }
+            }
+        });
+    }
     /// Conservative eligibility for the indexed spot bar/account wake path.
     /// Perpetual risk, configuration and protection changes use full screening.
     pub(crate) fn spot_bot_changed_accounts(

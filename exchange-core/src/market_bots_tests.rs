@@ -9,6 +9,9 @@ mod behaviors;
 #[path = "market_microstructure_tests.rs"]
 mod microstructure;
 
+#[path = "market_bots_execution_tests.rs"]
+mod parent_execution;
+
 fn template(id: &str, params: serde_json::Value) -> AgentTemplate {
     let mut config = json!({"decision_interval_ms":1000,"jitter_ms":0});
     config

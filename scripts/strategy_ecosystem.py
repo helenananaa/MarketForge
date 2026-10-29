@@ -24,9 +24,22 @@ def varied_parameters(family,index):
     return {k:p[k]for k in keys}
 
 def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',original_manifest=None,capital_scale=10.0,periods=None,
-               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False,maker_depth_scale=None,perp_maker_depth_scale=None,maker_fee_ppm=None,pine_library=0,mark_interval_ms=None):
+               ecology=False,noise_fraction=.05,maker_model='adaptive',original_names=None,value_model='static',value_fraction=.1,flow_mix='default',switching_fraction=0.,price_scale=1,fast_flow=False,maker_depth_scale=None,perp_maker_depth_scale=None,maker_fee_ppm=None,pine_library=0,mark_interval_ms=None,maker_quote_mode='touch',requote_on_cancel_ack=False,basis_execution='midpoint',reservation_innovations=False,market_depth_flow=False,touch_excursion_calibration=False,closed_candle_flow=False,reactive_execution='sweep',style_execution='sweep',persistent_index_anchor=False,book_slope_flow=False,flow_surprise=False,parent_execution='sweep'):
     if not 100<=count<=10000:raise ValueError('population must be within 100..10000')
     if runtime not in ('native','pine','mixed'):raise ValueError('unknown runtime')
+    if maker_quote_mode not in ('touch','model'):raise ValueError('unknown maker quote mode')
+    if reactive_execution not in ('sweep','sliced'):raise ValueError('unknown reactive execution policy')
+    if parent_execution not in ('sweep','touch-budget'):raise ValueError('unknown parent execution policy')
+    if parent_execution!='sweep' and not fast_flow:raise ValueError('liquidity-aware parents require fast flow')
+    if reactive_execution=='sliced' and not fast_flow:raise ValueError('sliced reactive execution requires fast flow')
+    if style_execution not in ('sweep','touch'):raise ValueError('unknown style execution policy')
+    if style_execution=='touch' and (not fast_flow or switching_fraction<=0):raise ValueError('touch style execution requires fast flow and a nonempty switching cohort')
+    if basis_execution not in ('midpoint','executable','touch-hedge'):raise ValueError('unknown basis execution policy')
+    if (maker_quote_mode!='touch' or requote_on_cancel_ack or reservation_innovations or market_depth_flow or touch_excursion_calibration or closed_candle_flow or persistent_index_anchor or book_slope_flow or flow_surprise) and (not fast_flow or maker_model=='legacy'):
+        raise ValueError('experimental maker mechanisms require fast flow and adaptive makers')
+    if persistent_index_anchor and not reservation_innovations:raise ValueError('persistent index anchor requires reservation innovations')
+    if book_slope_flow and not market_depth_flow:raise ValueError('book slope flow requires market depth flow')
+    if flow_surprise and not book_slope_flow:raise ValueError('flow surprise requires book slope flow')
     if value_model not in ('static','endogenous'):raise ValueError('unknown value model')
     if not 0<value_fraction<.5:raise ValueError('value fraction must be within (0, 0.5)')
     periods=periods or PERIODS
@@ -358,7 +371,7 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                 name=f'basis-{leg.lower()}-{j}'
                 config={**common,'leg':leg,'hedge_instrument_id':peer}
                 spec['agents'].append({'Plugin':{'participant':{'participant_id':name,'kind':'RuleAgent','room_id':room,'account_id':account,'instrument_id':instrument},
-                    'plugin_id':'BasisLinkTrader','plugin_version':'1.0.0','state_version':1,'config_version':1,
+                    'plugin_id':'BasisLinkTrader','plugin_version':{'midpoint':'1.0.0','executable':'1.1.0','touch-hedge':'1.2.0'}[basis_execution],'state_version':1,'config_version':1,
                     'seed':max(1,child_seed(seed,name)&(2**53-1)),'config':config}})
                 metadata.append({'participant_id':name,'account_id':account,'role':'basis','family':None,'instrument':instrument,'cash':cash if leg=='Perp' else 0,
                     'initial_spot_inventory':inventory if leg=='Perp' else 0,'config':config,'origin':'basis_link'})
@@ -388,10 +401,51 @@ def population(room='strategy-ecosystem',seed=7,count=1000,runtime='native',orig
                 # and depth is continuous instead of lumpy.
                 c['min_half_spread_ticks']=1
                 c['level_spacing_ticks']=max(1,c['level_spacing_ticks']//5)
-                if child_seed(seed,'tight-'+agent['Plugin']['participant']['participant_id'])%2==0:
+                if maker_quote_mode=='touch' and child_seed(seed,'tight-'+agent['Plugin']['participant']['participant_id'])%2==0:
                     # Touch makers: one tick either side of their center,
                     # re-quoting every step so a swept touch is restored at once.
                     c.update(max_half_spread_ticks=1,refresh_ms=1000,jitter_ms=0)
+    if requote_on_cancel_ack:
+        for agent in spec['agents']:
+            if agent['Plugin']['plugin_id']=='AdaptiveLiquidityMaker':
+                agent['Plugin']['config']['requote_on_cancel_ack']=True
+    if reservation_innovations:
+        for agent in spec['agents']:
+            if agent['Plugin']['plugin_id']=='AdaptiveLiquidityMaker':
+                agent['Plugin']['config']['reservation_innovations']=True
+    if market_depth_flow:
+        for agent in spec['agents']:
+            if agent['Plugin']['plugin_id']=='AdaptiveLiquidityMaker':
+                agent['Plugin']['config']['market_depth_flow']=True
+        roster['market_depth_flow']={'enabled':True,'qualification':'experimental; normalize fresh order flow by observed external liquidity within existing quote reach'}
+    if parent_execution=='touch-budget':
+        for agent in spec['agents']:
+            plugin=agent['Plugin']
+            if plugin['plugin_id']=='ExecutionTrader':
+                plugin['plugin_version']='1.1.0'
+                plugin['config']['liquidity_aware']=True
+        roster['parent_execution']={'policy':'touch-budget','qualification':'experimental finite business parents; unchanged targets and deadlines, external touch children, acknowledgement-driven debt retry on a new clock, authoritative fill/expiry ledger'}
+    for enabled,key in ((touch_excursion_calibration,'touch_excursion_calibration'),(closed_candle_flow,'closed_candle_flow'),(persistent_index_anchor,'persistent_index_anchor'),(book_slope_flow,'book_slope_flow'),(flow_surprise,'flow_surprise')):
+        if enabled:
+            for agent in spec['agents']:
+                if agent['Plugin']['plugin_id']=='AdaptiveLiquidityMaker':
+                    agent['Plugin']['config'][key]=True
+            roster[key]={'enabled':True,'qualification':'experimental observation mechanism; requires paired wick/market validation'}
+    if maker_quote_mode!='touch' or requote_on_cancel_ack:
+        roster['maker_mechanisms']={'quote_mode':maker_quote_mode,'requote_on_cancel_ack':requote_on_cancel_ack,
+            'qualification':'experimental, not a real-market calibration or a promoted default'}
+    if basis_execution!='midpoint':
+        roster['basis_execution']={'policy':basis_execution,'qualification':'experimental; executable pairs and actual hedge capacity, not atomic cross-venue fills'}
+    if reservation_innovations:
+        roster['reservation_innovations']={'enabled':True,'qualification':'experimental closed-loop reservation-bias policy; requires paired market evaluation'}
+    if reactive_execution=='sliced':
+        for agent in spec['agents']:
+            if agent['Plugin']['plugin_id']=='ReactiveFlowTrader':agent['Plugin']['plugin_version']='1.1.0'
+        roster['reactive_execution']={'policy':'sliced','qualification':'experimental; original aggressive demand is retained until real fills or its original finite TTL, children execute at observed external touch only'}
+    if style_execution=='touch':
+        for agent in spec['agents']:
+            if agent['Plugin']['plugin_id']=='StyleSwitchingTrader':agent['Plugin']['plugin_version']='1.1.0'
+        roster['style_execution']={'policy':'touch','qualification':'experimental; unchanged target position/signals/stops and existing child caps, further constrained by observed external touch liquidity'}
     assert len(spec['agents'])==count
     assert sum(pools.values())==int(100_000_000*capital_scale)
     return spec,roster
@@ -410,10 +464,23 @@ def main():
     p.add_argument('--maker-fee-ppm',type=int,help='resting-order fee; default 0 with --fast-flow, else 100')
     p.add_argument('--mark-interval-ms',type=int,help='sample the perp mark once per this much market time at the clock; default: after every spot order that moves it')
     p.add_argument('--pine-library',type=int,default=0,help='bots running distinct originals from --original-manifest (part of --count)')
+    p.add_argument('--maker-quote-mode',choices=['touch','model'],default='touch',help='experimental model mode preserves calculated spreads and independently drawn refresh times; touch preserves the old recipe')
+    p.add_argument('--requote-on-cancel-ack',action='store_true',help='re-evaluate cancelled maker quotes on the next authoritative observation without waiting another refresh interval')
+    p.add_argument('--basis-execution',choices=['midpoint','executable','touch-hedge'],default='midpoint',help='experimental executable basis pairs, depth/capital checks and waiting for the actual hedge')
+    p.add_argument('--reservation-innovations',action='store_true',help='experimental maker policy: apply changes in reservation bias after authoritative quote confirmation')
+    p.add_argument('--market-depth-flow',action='store_true',help='experimental maker policy: normalize public flow by visible external liquidity rather than one bot quote size')
+    p.add_argument('--touch-excursion-calibration',action='store_true',help='experimental maker intensity: measure candle penetration beyond the book visible at interval start')
+    p.add_argument('--closed-candle-flow',action='store_true',help='experimental maker flow: complete aggressor volume from closed public one-second bars')
+    p.add_argument('--persistent-index-anchor',action='store_true',help='experimental maker fix: retain current live index restoring force while differencing local inventory reservation bias')
+    p.add_argument('--book-slope-flow',action='store_true',help='experimental maker response: inverse visible external supply curve instead of half-spread-scaled flow')
+    p.add_argument('--flow-surprise',action='store_true',help='experimental maker response: use signed-flow innovations predicted from the existing public-flow half-life, not repeated predictable flow')
+    p.add_argument('--parent-execution',choices=['sweep','touch-budget'],default='sweep',help='experimental finite business parents: same target/deadline, one outstanding child at external touch, authoritative fill ledger')
+    p.add_argument('--reactive-execution',choices=['sweep','sliced'],default='sweep',help='experimental aggressive-demand execution: retain the original quantity/price boundary/TTL and submit touch-sized IOC children')
+    p.add_argument('--style-execution',choices=['sweep','touch'],default='sweep',help='experimental style execution: keep the target and stop policy, cap each IOC child to observed external touch liquidity')
     a=p.parse_args();names=json.loads(a.original_runtime_manifest.read_text(encoding='utf-8'))['qualified_names'] if a.original_runtime_manifest else None
     spec,roster=population(a.room,a.seed,a.count,a.runtime,a.original_manifest,a.capital_scale,a.periods_ms,
         ecology=a.ecology,noise_fraction=a.noise_fraction,maker_model=a.maker_model,original_names=names,
-        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction,price_scale=a.price_scale,fast_flow=a.fast_flow,maker_depth_scale=a.maker_depth_scale,perp_maker_depth_scale=a.perp_maker_depth_scale,maker_fee_ppm=a.maker_fee_ppm,pine_library=a.pine_library,mark_interval_ms=a.mark_interval_ms)
+        value_model=a.value_model,value_fraction=a.value_fraction,flow_mix=a.flow_mix,switching_fraction=a.switching_fraction,price_scale=a.price_scale,fast_flow=a.fast_flow,maker_depth_scale=a.maker_depth_scale,perp_maker_depth_scale=a.perp_maker_depth_scale,maker_fee_ppm=a.maker_fee_ppm,pine_library=a.pine_library,mark_interval_ms=a.mark_interval_ms,maker_quote_mode=a.maker_quote_mode,requote_on_cancel_ack=a.requote_on_cancel_ack,basis_execution=a.basis_execution,reservation_innovations=a.reservation_innovations,market_depth_flow=a.market_depth_flow,touch_excursion_calibration=a.touch_excursion_calibration,closed_candle_flow=a.closed_candle_flow,reactive_execution=a.reactive_execution,style_execution=a.style_execution,persistent_index_anchor=a.persistent_index_anchor,book_slope_flow=a.book_slope_flow,flow_surprise=a.flow_surprise,parent_execution=a.parent_execution)
     if a.export:
         a.export.parent.mkdir(parents=True,exist_ok=True);a.export.write_text(json.dumps(spec,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         a.export.with_suffix('.roster.json').write_text(json.dumps(roster,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')

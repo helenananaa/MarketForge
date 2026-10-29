@@ -29,6 +29,11 @@ pub struct SpotTradingEngine {
 }
 
 impl SpotTradingEngine {
+    pub(crate) fn compact_archived_history(&mut self) {
+        let latest = self.log.events_iter().next_back().map_or(0, |e| e.seq);
+        self.log.compact_archived(latest);
+        self.clearing_events = History::default();
+    }
     pub(crate) fn bot_changed_accounts(
         &self,
         previous: &Self,
@@ -335,6 +340,10 @@ pub struct PendingLiquidation {
 }
 
 impl PerpTradingEngine {
+    pub(crate) fn compact_archived_history(&mut self, first_event_seq: u64) {
+        self.log.compact_archived(first_event_seq);
+        self.clearing_events = History::default();
+    }
     pub(crate) fn book(&self) -> &OrderBook {
         &self.book
     }

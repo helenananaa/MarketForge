@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
 
 mod observation_projection;
+mod research_history;
 
 use crate::{
     account::{Money, VenueAccountSnapshot},
@@ -1584,6 +1585,16 @@ impl RoomManager {
         instrument_id: &str,
     ) -> Result<Vec<crate::candles::TimedTrade>, RoomManagerError> {
         use crate::model::Event;
+        if self.restored_bot_history.contains_key(room_id) {
+            return self
+                .bot_trade_history(room_id, instrument_id)
+                .map(|(receipts, _)| {
+                    receipts
+                        .iter()
+                        .map(|r| crate::candles::TimedTrade::from_trade(r.market_time_ms, &r.trade))
+                        .collect()
+                });
+        }
         let mut trades = Vec::new();
         for execution in self.execution_history_from(room_id, 0)? {
             if execution.instrument_id != instrument_id {
@@ -2397,8 +2408,13 @@ impl RoomObservationBatch<'_> {
         related: &[String],
     ) -> Result<crate::ParticipantObservation, RoomManagerError> {
         let mut view = self.participant(instrument_id, account_id)?;
-        view.bot_market_data =
-            self.market_data(instrument_id, account_id, request, view.market_time_ms, true)?;
+        view.bot_market_data = self.market_data(
+            instrument_id,
+            account_id,
+            request,
+            view.market_time_ms,
+            true,
+        )?;
         for instrument in related {
             if instrument != instrument_id {
                 view.related_markets.push(self.bot_observation(
@@ -2684,6 +2700,7 @@ pub enum RoomManagerError {
         room_id: RoomId,
     },
     SystemOrderIdOverflow,
+    ResearchHistoryIncomplete,
     OrderOwnershipMismatch {
         order_id: OrderId,
         account_id: AccountId,
@@ -2740,6 +2757,7 @@ mod tests {
     include!("room_bot_checkpoint_window_tests.rs");
     include!("room/observation_projection_tests.rs");
     include!("room/observation_materialize_tests.rs");
+    include!("room/research_history_tests.rs");
 
     #[test]
     fn moving_execution_owners_preserves_all_room_state_and_rejects_overlap() {

@@ -7,6 +7,10 @@ use std::collections::BTreeMap;
 mod audit;
 #[path = "support/research_checkpoint.rs"]
 mod checkpoint;
+#[path = "support/research_trace.rs"]
+mod trace;
+#[path = "support/research_output.rs"]
+mod output;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     run(BotRegistry::with_builtins())
@@ -67,7 +71,7 @@ pub fn run(registry: BotRegistry) -> Result<(), Box<dyn std::error::Error>> {
     {
         let directory = std::path::Path::new(&directory);
         std::fs::create_dir_all(directory)?;
-        std::fs::write(directory.join("parent.json"), serde_json::to_vec(&result)?)?;
+        output::write_file(&directory.join("parent.json"), &result)?;
         let frozen = fingerprint(&rooms, &room)?;
         let states = bots.iter().map(|b| b.snapshot()).collect::<Vec<_>>();
         let mut branches = vec![];
@@ -86,7 +90,7 @@ pub fn run(registry: BotRegistry) -> Result<(), Box<dyn std::error::Error>> {
                     result["fork_receipts"] = serde_json::json!(branches);
                     result["fork_parent_unchanged"] = serde_json::json!(true);
                     result["forks_complete"] = serde_json::json!(false);
-                    println!("{}", serde_json::to_string(&result)?);
+                    output::print_result(&result)?;
                     return Ok(());
                 }
                 eprintln!("fork={name}");
@@ -161,7 +165,7 @@ pub fn run(registry: BotRegistry) -> Result<(), Box<dyn std::error::Error>> {
                 branch["before_book"] = serde_json::to_value(before)?;
                 branch["immediate_book"] = serde_json::to_value(immediate)?;
                 let path = directory.join(format!("{name}.json"));
-                std::fs::write(&path, serde_json::to_vec(&branch)?)?;
+                output::write_file(&path, &branch)?;
                 if fingerprint(&rooms, &room)? != frozen {
                     return Err("research fork mutated the parent".into());
                 }
@@ -172,7 +176,7 @@ pub fn run(registry: BotRegistry) -> Result<(), Box<dyn std::error::Error>> {
         result["fork_parent_unchanged"] = serde_json::json!(true);
         result["forks_complete"] = serde_json::json!(true);
     }
-    println!("{}", serde_json::to_string(&result)?);
+    output::print_result(&result)?;
     Ok(())
 }
 
@@ -619,13 +623,14 @@ fn run_waves(
     let mut fills = BTreeMap::<String, u64>::new();
     let mut rejections = BTreeMap::<String, u64>::new();
     let mut trades = BTreeMap::<String, u64>::new();
-    let mut receipts = vec![];
+    let mut receipts = output::Array::new()?;
     let mut audit = audit::Audit::open()?;
+    let mut trace = trace::Trace::open()?;
     let instruments = templates
         .iter()
         .map(|t| t.config().instrument_id.clone().unwrap())
         .collect::<std::collections::BTreeSet<_>>();
-    let mut book_snapshots = vec![];
+    let mut book_snapshots = output::Array::new()?;
     let mut actions_per_bot = BTreeMap::<String, u64>::new();
     // Every bot is listed, also one that never acts.
     for t in templates {
@@ -634,6 +639,12 @@ fn run_waves(
     let mut history_cursor = rooms
         .execution_history_len(room)
         .map_err(|e| format!("{e:?}"))?;
+    let mut execution_archive = output::ExecutionArchive::open()?;
+    if let Some(archive) = &mut execution_archive {
+        for execution in rooms.execution_history_from(room, 0).map_err(|e|format!("{e:?}"))? {
+            archive.record(execution)?;
+        }
+    }
     // Opt-in for populations with many process plugins. An event-driven
     // plugin still wakes at once on a closed bar, a change in its own orders,
     // protections, position or cash, or a wake it requested; changes that come
@@ -863,6 +874,12 @@ fn run_waves(
                         own_fills[i],
                     )
                     .map_err(|e| format!("{e:?}"))?;
+                let traced = trace
+                    .as_ref()
+                    .is_some_and(|tr| tr.active(obs.public.market_time_ms))
+                    && trace::focused(t);
+                let trace_before = traced.then(|| trace::state(bot.as_ref()));
+                let trace_view = traced.then(|| trace::observation(&obs.view()));
                 let actions = if registry.account_events(t) || !intervals[i].is_empty() {
                     let mut owned = obs.to_owned_observation();
                     batch
@@ -899,6 +916,15 @@ fn run_waves(
                         )
                     })?
                 };
+                if traced {
+                    trace.as_mut().unwrap().decision(
+                        t,
+                        trace_before.unwrap(),
+                        trace_view.unwrap(),
+                        bot.as_ref(),
+                        &actions,
+                    )?;
+                }
                 accept_actions(
                     bot.as_ref(),
                     t,
@@ -981,6 +1007,19 @@ fn run_waves(
             let instrument = cfg.instrument_id.as_ref().unwrap();
             for action in actions {
                 let (instrument, resolved) = bots::resolve_bot_order(instrument, &action)?;
+                let traced = trace
+                    .as_ref()
+                    .is_some_and(|tr| tr.active(rooms.clock(room).unwrap().market_time_ms()));
+                let trace_before = if traced {
+                    Some(trace::Trace::account_book(
+                        rooms,
+                        room,
+                        instrument,
+                        cfg.account_id,
+                    )?)
+                } else {
+                    None
+                };
                 let mut gateway = OrderGateway::new_scheduler(rooms, *order_id);
                 let gateway_started = profile.as_ref().map(|_| std::time::Instant::now());
                 let execution = gateway
@@ -1005,6 +1044,18 @@ fn run_waves(
                 *order_id = gateway.next_order_id();
                 let feedback_started = profile.as_ref().map(|_| std::time::Instant::now());
                 bots[i].execution_feedback(&action, &execution);
+                if traced {
+                    let trace_after =
+                        trace::Trace::account_book(rooms, room, instrument, cfg.account_id)?;
+                    trace.as_mut().unwrap().gateway(
+                        t,
+                        &action,
+                        &execution,
+                        trace_before.unwrap(),
+                        trace_after,
+                        bots[i].as_ref(),
+                    )?;
+                }
                 if matches!(action, OrderAction::BotOrder { .. }) {
                     // Taken, not shared, so recording does not copy the state.
                     let mut state = bots[i].take_snapshot();
@@ -1047,6 +1098,10 @@ fn run_waves(
             .execution_history_from(room, history_cursor)
             .map_err(|e| format!("{e:?}"))?
         {
+            if let Some(archive) = &mut execution_archive { archive.record(execution)?; }
+            if let Some(trace) = &mut trace {
+                trace.authoritative(execution)?;
+            }
             if let Some(audit) = &mut audit {
                 audit.authoritative(execution)?;
             }
@@ -1062,7 +1117,7 @@ fn run_waves(
                         }
                         let instrument = &execution.instrument_id;
                         *trades.entry(instrument.to_string()).or_default() += 1;
-                        receipts.push(serde_json::json!({"instrument_id":instrument,"time_ms":execution.market_time_ms,"price_tick":t.price_tick,"qty":t.qty,"taker_side":t.taker_side,"trade_id":t.trade_id,"taker_order_id":t.taker_order_id,"maker_account_id":t.maker_account_id,"taker_account_id":t.taker_account_id}));
+                        receipts.push(serde_json::json!({"instrument_id":instrument,"time_ms":execution.market_time_ms,"price_tick":t.price_tick,"qty":t.qty,"taker_side":t.taker_side,"trade_id":t.trade_id,"taker_order_id":t.taker_order_id,"maker_account_id":t.maker_account_id,"taker_account_id":t.taker_account_id}))?;
                         for account in [t.maker_account_id, t.taker_account_id] {
                             if let Some(owner) = owners.get(&(account, instrument.to_string())) {
                                 *fills.entry(owner.clone()).or_default() += t.qty;
@@ -1085,13 +1140,21 @@ fn run_waves(
                 "instrument_id": instrument,
                 "time_ms": rooms.clock(room).map_err(|e|format!("{e:?}"))?.market_time_ms(),
                 "phase": "after_all_actions", "book": book
-            }));
+            }))?;
         }
         if let Some(p) = &mut profile {
             p.add("receipts", started);
             if (step + 1) % 600 == 0 || step + 1 == steps {
                 p.report(step + 1);
             }
+        }
+        if (step + 1) % 256 == 0 && let Some(archive) = &mut execution_archive {
+            // Persist the authoritative records before discarding duplicate RAM
+            // archives. Every bot receipt/account frame and trigger cursor stays.
+            archive.flush()?;
+            previous_wave = None;
+            rooms.compact_archived_research_history(room).map_err(|e|format!("{e:?}"))?;
+            history_cursor = 0;
         }
         if (step + 1) % 100 == 0 {
             eprintln!(
@@ -1105,6 +1168,12 @@ fn run_waves(
     if let Some(audit) = &mut audit {
         audit.finish()?;
     }
+    if let Some(trace) = &mut trace {
+        trace.finish()?;
+    }
+    if let Some(archive) = execution_archive { archive.finish()?; }
+    let receipts = receipts.finish()?;
+    let book_snapshots = book_snapshots.finish()?;
     Ok(
         serde_json::json!({"runner":"existing_native_observation_wave","bots":templates.len(),"steps":steps,"simulation_time_ms":rooms.clock(room).map_err(|e|format!("{e:?}"))?.market_time_ms(),
         "trades":trades,"fills":fills,"trade_receipts":receipts,"book_snapshots":book_snapshots,"rejections":rejections,"assets_before":before,"assets_after":rooms.net_worth_snapshot(room).map_err(|e|format!("{e:?}"))?,"actions_per_bot":actions_per_bot,"clock_step_seconds":seconds,

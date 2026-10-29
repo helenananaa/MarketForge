@@ -5,6 +5,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+#[path = "market_bots_execution.rs"]
+mod execution;
+use execution::ExecutionLedger;
+
 use crate::observation::{ParticipantObservationView, SharedParticipantObservation};
 
 use crate::{
@@ -74,6 +78,7 @@ struct Config {
     horizon_ms: u64,
     start_after_ms: u64,
     max_slippage_ticks: i64,
+    liquidity_aware: bool,
     participation_ppm: u32,
     deadline_urgency_ms: u64,
     confidence_ppm: u32,
@@ -135,6 +140,7 @@ impl Default for Config {
             horizon_ms: 120_000,
             start_after_ms: 0,
             max_slippage_ticks: 3,
+            liquidity_aware: false,
             participation_ppm: 100_000,
             deadline_urgency_ms: 0,
             confidence_ppm: 1_000_000,
@@ -187,6 +193,8 @@ struct State {
     last_funding_rate_ppm: Option<i32>,
     target_position: Option<String>,
     deleverage_decisions: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    execution_ledger: Option<ExecutionLedger>,
 }
 
 struct Factory(BotDescriptor);
@@ -249,7 +257,7 @@ pub(crate) fn register_market_bots(registry: &mut BotRegistry) {
         if id == "BasisArbitrageTrader" {
             defaults.as_object_mut().unwrap().remove("risk");
         }
-        let parameters = defaults
+        let mut parameters: BTreeMap<String, BotParameter> = defaults
             .as_object()
             .unwrap()
             .iter()
@@ -300,11 +308,29 @@ pub(crate) fn register_market_bots(registry: &mut BotRegistry) {
                 )
             })
             .collect();
+        if id == "ExecutionTrader" {
+            parameters.insert(
+                "liquidity_aware".into(),
+                BotParameter {
+                    kind: ParameterType::Boolean,
+                    required: false,
+                    default: None,
+                    minimum: None,
+                    maximum: None,
+                    choices: vec![],
+                },
+            );
+        }
         registry
             .register(Factory(BotDescriptor {
                 id: id.into(),
                 name: name.into(),
-                version: "1".into(),
+                version: if id == "ExecutionTrader" {
+                    "1.1.0"
+                } else {
+                    "1"
+                }
+                .into(),
                 protocol_version: crate::BOT_PROTOCOL_VERSION.into(),
                 state_version: 1,
                 runtime: "builtin".into(),
@@ -315,6 +341,9 @@ pub(crate) fn register_market_bots(registry: &mut BotRegistry) {
 }
 
 impl BotFactory for Factory {
+    fn supports_plugin_version(&self, version: &str) -> bool {
+        version == "1" || (self.0.id == "ExecutionTrader" && version == "1.1.0")
+    }
     fn supports_native_batching(&self) -> bool {
         true
     }
@@ -362,6 +391,11 @@ impl BotFactory for Factory {
         let AgentTemplate::Plugin(plugin) = template else {
             return Err(BotError("market bots require Plugin config".into()));
         };
+        if plugin.plugin_version == "1" && plugin.config.get("liquidity_aware").is_some() {
+            return Err(BotError(
+                "liquidity-aware parents require ExecutionTrader 1.1.0".into(),
+            ));
+        }
         let config: Config =
             serde_json::from_value(self.0.validate_config(&plugin.config)?).map_err(json_error)?;
         if !config.risk.validate()
@@ -422,6 +456,10 @@ impl BotFactory for Factory {
                 || state.prices.len() > config.lookback
                 || state.order_seen_ms.len() > 64
                 || state.volatility_ticks < 0
+                || state
+                    .execution_ledger
+                    .as_ref()
+                    .is_some_and(|ledger| !config.liquidity_aware || !ledger.valid(&config, &state))
                 || state.prices.iter().any(|price| *price <= 0)
                 || state.last_mid.is_some_and(|price| price <= 0)
                 || state
@@ -1370,7 +1408,11 @@ impl MarketBot {
         view: &ParticipantObservationView<'_>,
         budget: &mut Budget,
         mid: i64,
+        lot: u64,
     ) -> Vec<OrderAction> {
+        if self.config.liquidity_aware {
+            return self.liquidity_execution(view, budget, mid, lot);
+        }
         if view.market_time_ms < self.config.start_after_ms {
             return vec![];
         }
@@ -1471,7 +1513,24 @@ impl MarketBot {
     fn decide_view(
         &mut self,
         view: &ParticipantObservationView<'_>,
+        lot: u64,
     ) -> Result<Vec<OrderAction>, BotError> {
+        if self.config.liquidity_aware
+            && self
+                .state
+                .last_observation
+                .is_some_and(|(_, old)| view.market_time_ms < old)
+        {
+            return Err(BotError("liquidity-aware parent clock regressed".into()));
+        }
+        if self.config.liquidity_aware
+            && self
+                .state
+                .last_observation
+                .is_some_and(|(_, old)| old == view.market_time_ms)
+        {
+            return Ok(vec![]);
+        }
         if view.status != MarketStatus::Running
             || self.state.last_observation == Some((view.step, view.market_time_ms))
         {
@@ -1496,6 +1555,7 @@ impl MarketBot {
             self.state.next_decision_ms = view.market_time_ms.saturating_add(self.arrival_delay());
         }
         self.state.last_observation = Some((view.step, view.market_time_ms));
+        self.expire_execution_parent(view.market_time_ms);
         let book_mid = match (view.book.bids.first(), view.book.asks.first()) {
             (Some(b), Some(a)) => b.price_tick + (a.price_tick - b.price_tick) / 2,
             (Some(b), None) => b.price_tick,
@@ -1667,7 +1727,7 @@ impl MarketBot {
             "MarketEventTrader" => self.event(view, &mut budget, book_mid),
             "FundingRateTrader" => self.funding(view, &mut budget, book_mid),
             "LeveragedTrendTrader" => self.leveraged_trend(view, &mut budget, book_mid),
-            "ExecutionTrader" | "PovExecutionTrader" => self.execution(view, &mut budget, mid),
+            "ExecutionTrader" | "PovExecutionTrader" => self.execution(view, &mut budget, mid, lot),
             _ => unreachable!("factory identity checked by registry"),
         };
         // Cancel our opposite resting orders before a marketable action. The
@@ -1723,14 +1783,26 @@ impl MarketBot {
 }
 
 impl ScheduledBot for MarketBot {
+    fn execution_feedback(&mut self, action: &OrderAction, result: &crate::GatewayExecution) {
+        self.parent_execution_feedback(action, result);
+    }
     fn decide(&mut self, view: &ParticipantObservation) -> Result<Vec<OrderAction>, BotError> {
-        self.decide_view(&ParticipantObservationView::from(view))
+        self.decide_view(
+            &ParticipantObservationView::from(view),
+            view.instrument.as_ref().map_or(1, |i| i.lot_size.max(1)),
+        )
     }
     fn decide_shared(
         &mut self,
         view: &SharedParticipantObservation,
     ) -> Result<Vec<OrderAction>, BotError> {
-        self.decide_view(&view.view())
+        self.decide_view(
+            &view.view(),
+            view.public
+                .instrument
+                .as_ref()
+                .map_or(1, |i| i.lot_size.max(1)),
+        )
     }
     fn snapshot(&self) -> PersistedAgentKindState {
         PersistedAgentKindState::Plugin {

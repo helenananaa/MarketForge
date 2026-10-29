@@ -275,3 +275,210 @@ fn rejects_invalid_limits() {
     let bad = template(1, json!({"min_qty":60,"max_qty":50}));
     assert!(registry.create(&bad, &bad.initial_state()).is_err());
 }
+
+fn sliced_template() -> AgentTemplate {
+    let mut t = template(3, json!({"order_ttl_ms":20000,"max_qty":50}));
+    if let AgentTemplate::Plugin(p) = &mut t {
+        p.plugin_version = SLICED_VERSION.into();
+    }
+    t
+}
+
+fn with_parent(t: &AgentTemplate, side: Side, remaining: u64, limit: i64) -> Box<dyn ScheduledBot> {
+    let mut state = make(t).snapshot();
+    if let PersistedAgentKindState::Plugin { data, .. } = &mut state {
+        let mut value = data.as_ref().clone();
+        value["last_ms"] = json!(0);
+        value["next_ms"] = json!(100000);
+        value["parent"] = json!({"side":side,"remaining":remaining,"limit":limit,"born_ms":0,"deadline_ms":20000});
+        value["slicing"] = json!({"parents":1,"demand_lots":remaining,"filled_lots":0,"expired_lots":0,"children":0});
+        *data = Arc::new(value);
+    }
+    BotRegistry::with_builtins().create(t, &state).unwrap()
+}
+
+fn state_json(bot: &dyn ScheduledBot) -> Value {
+    let PersistedAgentKindState::Plugin { data, .. } = bot.snapshot() else {
+        panic!()
+    };
+    data.as_ref().clone()
+}
+
+#[test]
+fn sliced_demand_retains_size_direction_and_rng_while_waiting_for_fills() {
+    let t = sliced_template();
+    let mut bot = with_parent(&t, Side::Buy, 32, 110);
+    let mut v = observation(1, 100, vec![]);
+    v.book.asks[0].qty = 3;
+    let rng = state_json(bot.as_ref())["rng"].clone();
+    let a = bot.decide(&v).unwrap();
+    assert_eq!(orders(&a), vec![(Side::Buy, 3)]);
+    assert!(matches!(
+        a[0],
+        OrderAction::PlaceProtected {
+            price_tick: 101,
+            ..
+        }
+    ));
+    assert_eq!(state_json(bot.as_ref())["parent"]["remaining"], 32);
+    assert!(
+        bot.decide(&v).unwrap().is_empty(),
+        "one action per observation time"
+    );
+    let mut restored = BotRegistry::with_builtins()
+        .create(&t, &bot.snapshot())
+        .unwrap();
+    v.market_time_ms = 2000;
+    v.step = 2;
+    assert_eq!(bot.decide(&v).unwrap(), restored.decide(&v).unwrap());
+    assert_eq!(
+        state_json(bot.as_ref())["rng"],
+        rng,
+        "pending demand must not redraw its sign/size"
+    );
+    v.market_time_ms = 3000;
+    v.book.asks[0].price_tick = 111;
+    assert!(
+        bot.decide(&v).unwrap().is_empty(),
+        "retain the original price boundary"
+    );
+    v.market_time_ms = 20000;
+    assert!(bot.decide(&v).unwrap().is_empty());
+    assert!(
+        state_json(bot.as_ref()).get("parent").is_none(),
+        "finite TTL cancels residual intent"
+    );
+}
+
+#[test]
+fn sliced_demand_cancels_own_crossing_quote_without_spending_it_twice() {
+    let t = sliced_template();
+    let mut bot = with_parent(&t, Side::Buy, 32, 110);
+    let mut v = observation(1, 100, vec![]);
+    v.book.asks[0].qty = 3;
+    v.own_orders = vec![Order {
+        order_id: 77,
+        account_id: 20,
+        side: Side::Sell,
+        position_side: Default::default(),
+        price_tick: 101,
+        remaining_qty: 2,
+        seq: 1,
+    }];
+    assert_eq!(
+        bot.decide(&v).unwrap(),
+        vec![OrderAction::Cancel { order_id: 77 }]
+    );
+    assert_eq!(state_json(bot.as_ref())["parent"]["remaining"], 32);
+    v.market_time_ms = 2000;
+    v.own_orders.clear();
+    v.book.asks.clear();
+    assert!(bot.decide(&v).unwrap().is_empty());
+    assert_eq!(state_json(bot.as_ref())["parent"]["remaining"], 32);
+}
+
+#[test]
+fn sliced_demand_subtracts_only_authoritative_fills_and_deduplicates_feedback() {
+    let mut spec: population::BackgroundMarket =
+        serde_json::from_str(include_str!("../../scripts/fixtures/behavior_market.json")).unwrap();
+    spec.scenario.seed_orders.push(
+        serde_json::from_value(json!({"NewOrder":{"order_id":10002,"account_id":10,
+        "side":"Sell","kind":{"Limit":{"price_tick":104}},"qty":20,"reduce_only":false}}))
+        .unwrap(),
+    );
+    let room = spec.scenario.room_id.clone();
+    let mut rooms = RoomManager::new();
+    rooms.create_room(spec.scenario).unwrap();
+    let mut t = sliced_template();
+    if let AgentTemplate::Plugin(p) = &mut t {
+        p.participant.room_id = room.clone();
+        p.participant.instrument_id = Some("V-BTC-SPOT".into());
+    }
+    let mut bot = with_parent(&t, Side::Buy, 32, 110);
+    let mut v = rooms
+        .participant_observation(&room, "V-BTC-SPOT", 20)
+        .unwrap();
+    v.market_time_ms = 1000;
+    // Decision sees28 at touch; only20 actually remain at execution. The deeper
+    //104 ask must never be reached by the102-priced child.
+    v.book.asks[0].qty = 28;
+    let action = bot.decide(&v).unwrap().remove(0);
+    assert_eq!(orders(&[action.clone()]), vec![(Side::Buy, 28)]);
+    assert_eq!(state_json(bot.as_ref())["parent"]["remaining"], 32);
+    let mut gateway = OrderGateway::new_scheduler(&mut rooms, 100000);
+    let mut e = gateway
+        .submit_action(GatewayRequest {
+            participant_id: "reactive-test".into(),
+            room_id: room,
+            instrument_id: Some("V-BTC-SPOT".into()),
+            account_id: 20,
+            action: action.clone(),
+        })
+        .unwrap();
+    e.execution.market_time_ms = 1000;
+    let mut rejected = e.clone();
+    rejected.execution.result = ActorExecutionResult::Rejected(ActorRejectReason::MarketPaused);
+    rejected.execution.command_seq = 0;
+    e.execution.command_seq = 1;
+    bot.execution_feedback(&action, &rejected);
+    assert_eq!(state_json(bot.as_ref())["parent"]["remaining"], 32);
+    bot.execution_feedback(&action, &e);
+    assert_eq!(state_json(bot.as_ref())["parent"]["remaining"], 12);
+    assert_eq!(state_json(bot.as_ref())["slicing"]["filled_lots"], 20);
+    bot.execution_feedback(&action, &e);
+    assert_eq!(state_json(bot.as_ref())["parent"]["remaining"], 12);
+    let restored = BotRegistry::with_builtins()
+        .create(&t, &bot.snapshot())
+        .unwrap();
+    assert_eq!(bot.snapshot(), restored.snapshot());
+    drop(gateway);
+    let mut v = rooms
+        .participant_observation(&e.room_id, "V-BTC-SPOT", 20)
+        .unwrap();
+    v.market_time_ms = 2000;
+    let action = bot.decide(&v).unwrap().remove(0);
+    assert_eq!(orders(&[action.clone()]), vec![(Side::Buy, 12)]);
+    assert!(matches!(
+        action,
+        OrderAction::PlaceProtected {
+            price_tick: 104,
+            ..
+        }
+    ));
+    let mut gateway = OrderGateway::new_scheduler(&mut rooms, 100001);
+    let mut e = gateway
+        .submit_action(GatewayRequest {
+            participant_id: "reactive-test".into(),
+            room_id: e.room_id,
+            instrument_id: Some("V-BTC-SPOT".into()),
+            account_id: 20,
+            action: action.clone(),
+        })
+        .unwrap();
+    e.execution.market_time_ms = 2000;
+    e.execution.command_seq = 2;
+    bot.execution_feedback(&action, &e);
+    assert!(state_json(bot.as_ref()).get("parent").is_none());
+    assert_eq!(state_json(bot.as_ref())["slicing"]["filled_lots"], 32);
+    assert_eq!(state_json(bot.as_ref())["slicing"]["demand_lots"], 32);
+    assert!(
+        BotRegistry::with_builtins()
+            .create(&t, &bot.snapshot())
+            .is_ok()
+    );
+}
+
+#[test]
+fn sliced_policy_is_versioned_and_legacy_states_remain_unchanged() {
+    let t = template(3, json!({}));
+    let bot = make(&t);
+    let j = state_json(bot.as_ref());
+    assert!(j.get("parent").is_none() && j.get("last_child_feedback").is_none());
+    let t = sliced_template();
+    let b = with_parent(&t, Side::Buy, 32, 110);
+    let mut s = b.snapshot();
+    if let PersistedAgentKindState::Plugin { plugin_version, .. } = &mut s {
+        *plugin_version = VERSION.into();
+    }
+    assert!(BotRegistry::with_builtins().create(&t, &s).is_err());
+}

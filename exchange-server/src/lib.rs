@@ -7476,7 +7476,8 @@ fn api_error_from_room(error: RoomManagerError) -> (StatusCode, Json<ErrorRespon
         | RoomManagerError::Scenario(_)
         | RoomManagerError::Simulation(_)
         | RoomManagerError::Candle(_)
-        | RoomManagerError::SystemOrderIdOverflow => StatusCode::BAD_REQUEST,
+        | RoomManagerError::SystemOrderIdOverflow
+        | RoomManagerError::ResearchHistoryIncomplete => StatusCode::BAD_REQUEST,
     };
 
     (
