@@ -911,6 +911,7 @@ fn run_waves(
             p.add("accept", started);
         }
         let started = std::time::Instant::now();
+        crate::profile_submit(true);
         // All agents observe the same committed wave. Matching/risk still run
         // on the current authoritative state for each ordered submission.
         for (i, actions) in decisions.into_iter().enumerate() {
@@ -960,6 +961,7 @@ fn run_waves(
                 }
             }
         }
+        crate::profile_submit(false);
         if let Some(p) = &mut profile {
             p.add("submit", started);
         }
